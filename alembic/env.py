@@ -8,7 +8,17 @@ from app.db.base import Base
 from app.db.session import normalize_database_url
 
 # Import models so Alembic sees them.
-from app.models import Department, User, Event, EventItem  # noqa: F401
+from app.models import (  # noqa: F401
+    Department,
+    User,
+    Event,
+    EventItem,
+    Contractor,
+    TaxpayerCheck,
+    PaymentRequest,
+    EventShare,
+    AuditLog,
+)
 
 
 config = context.config

@@ -2,3 +2,8 @@ from app.models.department import Department
 from app.models.user import User
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.contractor import Contractor
+from app.models.taxpayer_check import TaxpayerCheck
+from app.models.payment_request import PaymentRequest
+from app.models.event_share import EventShare
+from app.models.audit_log import AuditLog

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -48,3 +48,5 @@ class Event(Base):
     department = relationship("Department", back_populates="events")
     manager = relationship("User", back_populates="events")
     items = relationship("EventItem", back_populates="event", cascade="all, delete-orphan")
+    payment_requests = relationship("PaymentRequest", back_populates="event")
+    shares = relationship("EventShare", back_populates="event", cascade="all, delete-orphan")

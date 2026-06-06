@@ -4,10 +4,9 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.2.0"
+    VERSION: str = "0.3.0"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
-    # Railway usually provides DATABASE_URL from the PostgreSQL service.
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
 
     # Keep secrets on Railway Variables, never in GitHub.

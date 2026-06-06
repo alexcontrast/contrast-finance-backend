@@ -54,3 +54,4 @@ class EventItem(Base):
     )
 
     event = relationship("Event", back_populates="items")
+    payment_requests = relationship("PaymentRequest", back_populates="event_item")
