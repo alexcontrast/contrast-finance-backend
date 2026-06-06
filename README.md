@@ -1,4 +1,4 @@
-# Contrast Finance Backend v0.6
+# Contrast Finance Backend v0.7
 
 Backend Contrast Finance 2.0 с PostgreSQL, миграциями и первым слоем таблиц для мероприятий, оплат, КГД и истории.
 
@@ -21,7 +21,7 @@ v0.2:
 - events
 - event_items
 
-v0.6:
+v0.7:
 
 - contractors
 - taxpayer_checks
@@ -69,12 +69,12 @@ users
 Для Railway backend-сервиса лучше использовать публичный PostgreSQL URL, если `.railway.internal` не резолвится при миграциях.
 
 
-## v0.6
+## v0.7
 
 Исправлено короткое имя Alembic revision: `0002_payments_tax_audit`, чтобы помещалось в `alembic_version.version_num`.
 
 
-## v0.6
+## v0.7
 
 Добавлены таблицы:
 
@@ -87,7 +87,7 @@ users
 После деплоя `/db/tables` должен показать полный базовый набор таблиц.
 
 
-## v0.6
+## v0.7
 
 Добавлены первые API:
 
@@ -119,13 +119,13 @@ POST /events
 6. `GET /events`
 
 
-## v0.6
+## v0.7
 
 Исправлена неоднозначная связь `users -> payment_requests`.
 База не меняется, новых миграций нет.
 
 
-## v0.6
+## v0.7
 
 Добавлены API позиций сметы:
 
@@ -157,3 +157,29 @@ PATCH /event-items/{item_id}
 - internal_note
 
 Пока без КГД-интеграции. Только хранение и обновление позиций.
+
+
+## v0.7
+
+Добавлены заявки на оплату:
+
+```text
+GET   /payment-requests
+GET   /events/{event_id}/payment-requests
+POST  /event-items/{item_id}/payment-requests?created_by_user_id=1
+PATCH /payment-requests/{request_id}/status
+```
+
+Что делает создание заявки:
+
+- берёт позицию
+- сохраняет snapshot:
+  - позиция
+  - сумма по смете
+  - факт
+  - оплачено
+  - остаток
+- сохраняет сумму заявки
+- ставит warning_over_remaining=true, если сумма заявки больше остатка
+
+При смене статуса на `paid` система увеличивает `paid_amount` у позиции.
