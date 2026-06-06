@@ -1,4 +1,4 @@
-# Contrast Finance Backend v0.8
+# Contrast Finance Backend v0.9
 
 Backend Contrast Finance 2.0 с PostgreSQL, миграциями и первым слоем таблиц для мероприятий, оплат, КГД и истории.
 
@@ -21,7 +21,7 @@ v0.2:
 - events
 - event_items
 
-v0.8:
+v0.9:
 
 - contractors
 - taxpayer_checks
@@ -69,12 +69,12 @@ users
 Для Railway backend-сервиса лучше использовать публичный PostgreSQL URL, если `.railway.internal` не резолвится при миграциях.
 
 
-## v0.8
+## v0.9
 
 Исправлено короткое имя Alembic revision: `0002_payments_tax_audit`, чтобы помещалось в `alembic_version.version_num`.
 
 
-## v0.8
+## v0.9
 
 Добавлены таблицы:
 
@@ -87,7 +87,7 @@ users
 После деплоя `/db/tables` должен показать полный базовый набор таблиц.
 
 
-## v0.8
+## v0.9
 
 Добавлены первые API:
 
@@ -119,13 +119,13 @@ POST /events
 6. `GET /events`
 
 
-## v0.8
+## v0.9
 
 Исправлена неоднозначная связь `users -> payment_requests`.
 База не меняется, новых миграций нет.
 
 
-## v0.8
+## v0.9
 
 Добавлены API позиций сметы:
 
@@ -159,7 +159,7 @@ PATCH /event-items/{item_id}
 Пока без КГД-интеграции. Только хранение и обновление позиций.
 
 
-## v0.8
+## v0.9
 
 Добавлены заявки на оплату:
 
@@ -185,7 +185,7 @@ PATCH /payment-requests/{request_id}/status
 При смене статуса на `paid` система увеличивает `paid_amount` у позиции.
 
 
-## v0.8
+## v0.9
 
 Добавлены правила валидации по способам оплаты:
 
@@ -220,6 +220,51 @@ self_employed
 На карту
 Налик
 Самозанятый
+```
+
+Новых миграций нет, база не меняется.
+
+
+## v0.9
+
+Добавлена тестовая налоговая механика без реального КГД:
+
+```text
+POST  /event-items/{item_id}/tax/check
+PATCH /event-items/{item_id}/tax/manual
+```
+
+Тестовая логика `tax/check`:
+
+```text
+BIN заканчивается на 1 -> our_vat / ОУР с НДС
+BIN заканчивается на 2 -> our_no_vat / ОУР без НДС
+BIN заканчивается на 3 -> simplified / Упрощенка
+другое -> not_found, BIN не фиксируется, НДС 0, Вычеты 0
+```
+
+Ручная правка админом:
+
+```text
+PATCH /event-items/{item_id}/tax/manual?admin_user_id=1
+```
+
+Body:
+
+```json
+{
+  "tax_status": "our_vat"
+}
+```
+
+Варианты tax_status:
+
+```text
+our_vat
+our_no_vat
+simplified
+self_employed
+not_found
 ```
 
 Новых миграций нет, база не меняется.
