@@ -43,7 +43,7 @@ class PaymentRequestRead(BaseModel):
     contractor_name_snapshot: str | None
     iin_bin_snapshot: str | None
     tax_status_snapshot: str | None
-    tax_status_label: str | None
+    tax_status_label: str | None = None
     vat_status_snapshot: str | None
     vat_amount_snapshot: Decimal
     deduction_amount_snapshot: Decimal
