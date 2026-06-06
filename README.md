@@ -1,4 +1,4 @@
-# Contrast Finance Backend v0.3
+# Contrast Finance Backend v0.3.1
 
 Backend Contrast Finance 2.0 с PostgreSQL, миграциями и первым слоем таблиц для мероприятий, оплат, КГД и истории.
 
@@ -21,7 +21,7 @@ v0.2:
 - events
 - event_items
 
-v0.3:
+v0.3.1:
 
 - contractors
 - taxpayer_checks
@@ -67,3 +67,8 @@ users
 ## Важно
 
 Для Railway backend-сервиса лучше использовать публичный PostgreSQL URL, если `.railway.internal` не резолвится при миграциях.
+
+
+## v0.3.1
+
+Исправлено короткое имя Alembic revision: `0002_payments_tax_audit`, чтобы помещалось в `alembic_version.version_num`.
