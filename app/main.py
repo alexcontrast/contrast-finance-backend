@@ -7,6 +7,7 @@ from app.api.routes.coordinator import router as coordinator_router
 from app.api.routes.monthly import router as monthly_router
 from app.api.routes.monthly_expenses import router as monthly_expenses_router
 from app.api.routes.monthly_closings import router as monthly_closings_router
+from app.api.routes.department_head_dashboard import router as department_head_dashboard_router
 from app.api.routes.event_items import router as event_items_router
 from app.api.routes.payment_requests import router as payment_requests_router
 from app.api.routes.tax import router as tax_router
@@ -31,6 +32,7 @@ app.include_router(coordinator_router)
 app.include_router(monthly_router)
 app.include_router(monthly_expenses_router)
 app.include_router(monthly_closings_router)
+app.include_router(department_head_dashboard_router)
 app.include_router(event_items_router)
 app.include_router(payment_requests_router)
 app.include_router(tax_router)
