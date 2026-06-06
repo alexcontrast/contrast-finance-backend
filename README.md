@@ -1,4 +1,4 @@
-# Contrast Finance Backend v0.5.1
+# Contrast Finance Backend v0.6
 
 Backend Contrast Finance 2.0 с PostgreSQL, миграциями и первым слоем таблиц для мероприятий, оплат, КГД и истории.
 
@@ -21,7 +21,7 @@ v0.2:
 - events
 - event_items
 
-v0.5.1:
+v0.6:
 
 - contractors
 - taxpayer_checks
@@ -69,12 +69,12 @@ users
 Для Railway backend-сервиса лучше использовать публичный PostgreSQL URL, если `.railway.internal` не резолвится при миграциях.
 
 
-## v0.5.1
+## v0.6
 
 Исправлено короткое имя Alembic revision: `0002_payments_tax_audit`, чтобы помещалось в `alembic_version.version_num`.
 
 
-## v0.5.1
+## v0.6
 
 Добавлены таблицы:
 
@@ -87,7 +87,7 @@ users
 После деплоя `/db/tables` должен показать полный базовый набор таблиц.
 
 
-## v0.5.1
+## v0.6
 
 Добавлены первые API:
 
@@ -119,7 +119,41 @@ POST /events
 6. `GET /events`
 
 
-## v0.5.1
+## v0.6
 
 Исправлена неоднозначная связь `users -> payment_requests`.
 База не меняется, новых миграций нет.
+
+
+## v0.6
+
+Добавлены API позиций сметы:
+
+```text
+GET   /events/{event_id}/items
+POST  /events/{event_id}/items
+PATCH /event-items/{item_id}
+```
+
+Внешняя смета:
+
+- external_name
+- external_price
+- external_quantity
+- external_days
+- external_amount
+- external_note
+
+Внутренняя смета:
+
+- amount_fact
+- paid_amount
+- payment_method
+- iin_bin
+- iin_bin_locked
+- tax_check_status
+- vat_amount
+- deduction_amount
+- internal_note
+
+Пока без КГД-интеграции. Только хранение и обновление позиций.
