@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
 from app.schemas.payment_request import (
+    PaymentRequestCardRead,
     PaymentRequestCreate,
     PaymentRequestRead,
     PaymentRequestStatusUpdate,
@@ -16,6 +17,28 @@ from app.schemas.payment_request import (
 
 
 router = APIRouter(tags=["payment_requests"])
+
+
+def tax_status_label(tax_status: str | None) -> str | None:
+    labels = {
+        "our_vat": "ОУР с НДС",
+        "our_no_vat": "ОУР без НДС",
+        "simplified": "Упрощенка",
+        "self_employed": "Самозанятый",
+        "not_found": "Не проверен",
+        None: None,
+    }
+    return labels.get(tax_status, tax_status)
+
+
+def payment_method_label(payment_method: str | None) -> str | None:
+    labels = {
+        "invoice": "По счету",
+        "card": "На карту",
+        "cash": "Налик",
+        "self_employed": "Самозанятый",
+    }
+    return labels.get(payment_method, payment_method)
 
 
 def calculate_item_remaining(item: EventItem) -> Decimal:
@@ -64,7 +87,6 @@ def comment_has_surname(comment: str | None) -> bool:
     """
     Минимальная проверка для самозанятого:
     в комментарии должно быть хотя бы одно слово из 2+ букв.
-    Это не идеальная проверка фамилии, но не даёт оставить поле пустым.
     """
     if not comment:
         return False
@@ -75,17 +97,19 @@ def comment_has_surname(comment: str | None) -> bool:
 
 def validate_payment_request_rules(item: EventItem, payment_method: str, payload: PaymentRequestCreate):
     """
-    Правила v0.8:
+    Правила v0.10:
 
     invoice / По счету:
-    - BIN / ИИН обязателен на позиции
+    - BIN / ИИН обязателен
+    - BIN / ИИН должен быть зафиксирован
+    - налоговый статус должен быть определён
+    - статус not_found не считается полноценной проверкой
 
     card / На карту:
     - номер карты обязателен и должен содержать 16 цифр
 
     self_employed / Самозанятый:
     - фамилия обязательна в комментарии
-    - вычеты 10% будут добавлены следующими слоями расчётов/КГД
 
     cash / Налик:
     - без дополнительных обязательных полей
@@ -95,6 +119,18 @@ def validate_payment_request_rules(item: EventItem, payment_method: str, payload
             raise HTTPException(
                 status_code=400,
                 detail="Для оплаты По счету нужен BIN / ИИН в позиции",
+            )
+
+        if not item.iin_bin_locked:
+            raise HTTPException(
+                status_code=400,
+                detail="Для оплаты По счету BIN / ИИН должен быть проверен и зафиксирован",
+            )
+
+        if not item.tax_check_status or item.tax_check_status == "not_found":
+            raise HTTPException(
+                status_code=400,
+                detail="Для оплаты По счету нужен подтвержденный налоговый статус",
             )
 
     if payment_method == "card":
@@ -118,10 +154,50 @@ def validate_payment_request_rules(item: EventItem, payment_method: str, payload
         )
 
 
+def enrich_payment_request_read(request: PaymentRequest) -> PaymentRequestRead:
+    data = PaymentRequestRead.model_validate(request)
+    data.tax_status_label = tax_status_label(request.tax_status_snapshot)
+    return data
+
+
+def build_payment_request_card(request: PaymentRequest) -> PaymentRequestCardRead:
+    return PaymentRequestCardRead(
+        id=request.id,
+        position=request.item_name_snapshot,
+        amount_plan=request.item_amount_plan_snapshot,
+        fact=request.item_amount_fact_snapshot,
+        remaining=request.item_remaining_snapshot,
+        amount_requested=request.amount_requested,
+        payment_method=payment_method_label(request.payment_method) or request.payment_method,
+        card_number=request.card_number,
+        iin_bin=request.iin_bin_snapshot,
+        tax_status=tax_status_label(request.tax_status_snapshot),
+        comment=request.comment,
+        status=request.status,
+        warning_over_remaining=request.warning_over_remaining,
+    )
+
+
 @router.get("/payment-requests", response_model=list[PaymentRequestRead])
 def list_payment_requests(db: Session = Depends(get_db)):
     result = db.execute(select(PaymentRequest).order_by(PaymentRequest.id.desc()))
-    return result.scalars().all()
+    return [enrich_payment_request_read(request) for request in result.scalars().all()]
+
+
+@router.get("/payment-requests/{request_id}", response_model=PaymentRequestRead)
+def get_payment_request(request_id: int, db: Session = Depends(get_db)):
+    request = db.get(PaymentRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Payment request not found")
+    return enrich_payment_request_read(request)
+
+
+@router.get("/payment-requests/{request_id}/card", response_model=PaymentRequestCardRead)
+def get_payment_request_card(request_id: int, db: Session = Depends(get_db)):
+    request = db.get(PaymentRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Payment request not found")
+    return build_payment_request_card(request)
 
 
 @router.get("/events/{event_id}/payment-requests", response_model=list[PaymentRequestRead])
@@ -131,7 +207,7 @@ def list_event_payment_requests(event_id: int, db: Session = Depends(get_db)):
         .where(PaymentRequest.event_id == event_id)
         .order_by(PaymentRequest.id.desc())
     )
-    return result.scalars().all()
+    return [enrich_payment_request_read(request) for request in result.scalars().all()]
 
 
 @router.post("/event-items/{item_id}/payment-requests", response_model=PaymentRequestRead)
@@ -144,11 +220,10 @@ def create_payment_request(
     """
     Создаёт заявку по конкретной позиции.
 
-    v0.8:
-    - проверяет обязательные поля по способу оплаты
-    - берёт snapshot позиции
-    - считает остаток
-    - если сумма заявки больше остатка, ставит warning_over_remaining = true
+    v0.10:
+    - invoice требует зафиксированный BIN / ИИН и налоговый статус
+    - заявка забирает налоговый snapshot из позиции
+    - карточка заявки показывает налоговый статус, но не суммы НДС/Вычетов
     """
     item = db.get(EventItem, item_id)
     if item is None:
@@ -181,12 +256,16 @@ def create_payment_request(
 
         contractor_id=None,
         contractor_name_snapshot=None,
-        iin_bin_snapshot=item.iin_bin,
-        tax_status_snapshot=item.tax_check_status,
-        vat_status_snapshot=None,
-        vat_amount_snapshot=item.vat_amount,
-        deduction_amount_snapshot=item.deduction_amount,
-        tax_source_snapshot=None,
+        iin_bin_snapshot=item.iin_bin if payment_method == "invoice" else None,
+        tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
+            "self_employed" if payment_method == "self_employed" else None
+        ),
+        vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else "no_vat",
+        vat_amount_snapshot=item.vat_amount if payment_method == "invoice" else Decimal("0.00"),
+        deduction_amount_snapshot=item.deduction_amount if payment_method == "invoice" else (
+            item.deduction_amount if payment_method == "self_employed" else Decimal("0.00")
+        ),
+        tax_source_snapshot="event_item" if payment_method in {"invoice", "self_employed"} else None,
 
         card_number=payload.card_number,
 
@@ -203,7 +282,7 @@ def create_payment_request(
     db.add(request)
     db.commit()
     db.refresh(request)
-    return request
+    return enrich_payment_request_read(request)
 
 
 @router.patch("/payment-requests/{request_id}/status", response_model=PaymentRequestRead)
@@ -251,4 +330,4 @@ def update_payment_request_status(
     db.add(request)
     db.commit()
     db.refresh(request)
-    return request
+    return enrich_payment_request_read(request)

@@ -11,7 +11,7 @@ class PaymentRequestCreate(BaseModel):
     # Optional override. If empty, system uses payment_method from event item.
     payment_method: str | None = Field(default=None, description="invoice / card / cash / self_employed")
 
-    # Required later for card payments, but in v0.7 only stored.
+    # Required for card payments.
     card_number: str | None = None
 
 
@@ -43,6 +43,7 @@ class PaymentRequestRead(BaseModel):
     contractor_name_snapshot: str | None
     iin_bin_snapshot: str | None
     tax_status_snapshot: str | None
+    tax_status_label: str | None
     vat_status_snapshot: str | None
     vat_amount_snapshot: Decimal
     deduction_amount_snapshot: Decimal
@@ -57,3 +58,28 @@ class PaymentRequestRead(BaseModel):
     paid_at: datetime | None
     cash_received_at: datetime | None
     rejected_at: datetime | None
+
+
+class PaymentRequestCardRead(BaseModel):
+    """
+    Лаконичная карточка заявки для будущего frontend/Telegram.
+
+    Суммы НДС и Вычетов намеренно не показываем.
+    Показываем только короткий налоговый статус.
+    """
+    id: int
+    position: str | None
+    amount_plan: Decimal
+    fact: Decimal | None
+    remaining: Decimal
+
+    amount_requested: Decimal
+
+    payment_method: str
+    card_number: str | None = None
+    iin_bin: str | None = None
+    tax_status: str | None = None
+
+    comment: str | None
+    status: str
+    warning_over_remaining: bool
