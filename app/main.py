@@ -1,52 +1,23 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import os
 
-APP_VERSION = "0.1.0"
+from app.api.routes.health import router as health_router
+from app.core.config import get_settings
+
+
+settings = get_settings()
 
 app = FastAPI(
-    title="Contrast Finance 2.0 API",
-    version=APP_VERSION,
-    description="Backend API for Contrast Finance 2.0",
+    title="Contrast Finance API",
+    version=settings.VERSION,
 )
 
-# For the first dev launch we keep CORS open.
-# Later we will restrict this to the real frontend domain.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.include_router(health_router)
 
 
-class HealthResponse(BaseModel):
-    ok: bool
-    service: str
-    version: str
-    environment: str
-    database_configured: bool
-
-
-@app.get("/", tags=["system"])
+@app.get("/")
 def root():
     return {
         "ok": True,
-        "service": "contrast-finance-api",
-        "message": "Contrast Finance 2.0 API is running",
-        "docs": "/docs",
-        "health": "/health",
+        "service": settings.SERVICE_NAME,
+        "message": "Contrast Finance API is running",
     }
-
-
-@app.get("/health", response_model=HealthResponse, tags=["system"])
-def health():
-    return HealthResponse(
-        ok=True,
-        service="contrast-finance-api",
-        version=APP_VERSION,
-        environment=os.getenv("APP_ENV", "dev"),
-        database_configured=bool(os.getenv("DATABASE_URL")),
-    )

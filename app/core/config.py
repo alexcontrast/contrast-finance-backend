@@ -1,0 +1,19 @@
+import os
+from functools import lru_cache
+
+
+class Settings:
+    SERVICE_NAME: str = "contrast-finance-api"
+    VERSION: str = "0.2.0"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
+
+    # Railway usually provides DATABASE_URL from the PostgreSQL service.
+    DATABASE_URL: str | None = os.getenv("DATABASE_URL")
+
+    # Keep secrets on Railway Variables, never in GitHub.
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-change-me")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
