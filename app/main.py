@@ -4,6 +4,7 @@ from app.api.routes.departments import router as departments_router
 from app.api.routes.events import router as events_router
 from app.api.routes.event_summary import router as event_summary_router
 from app.api.routes.coordinator import router as coordinator_router
+from app.api.routes.monthly import router as monthly_router
 from app.api.routes.event_items import router as event_items_router
 from app.api.routes.payment_requests import router as payment_requests_router
 from app.api.routes.tax import router as tax_router
@@ -25,6 +26,7 @@ app.include_router(users_router)
 app.include_router(events_router)
 app.include_router(event_summary_router)
 app.include_router(coordinator_router)
+app.include_router(monthly_router)
 app.include_router(event_items_router)
 app.include_router(payment_requests_router)
 app.include_router(tax_router)
