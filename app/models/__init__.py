@@ -7,3 +7,8 @@ from app.models.taxpayer_check import TaxpayerCheck
 from app.models.payment_request import PaymentRequest
 from app.models.event_share import EventShare
 from app.models.audit_log import AuditLog
+from app.models.monthly_plan import MonthlyPlan
+from app.models.monthly_expense import MonthlyExpense
+from app.models.monthly_closing import MonthlyClosing
+from app.models.export import Export
+from app.models.telegram_message import TelegramMessage

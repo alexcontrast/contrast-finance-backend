@@ -18,6 +18,11 @@ from app.models import (  # noqa: F401
     PaymentRequest,
     EventShare,
     AuditLog,
+    MonthlyPlan,
+    MonthlyExpense,
+    MonthlyClosing,
+    Export,
+    TelegramMessage,
 )
 
 
