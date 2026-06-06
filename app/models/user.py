@@ -42,4 +42,8 @@ class User(Base):
 
     department = relationship("Department", back_populates="users")
     events = relationship("Event", back_populates="manager")
-    payment_requests_created = relationship("PaymentRequest", back_populates="created_by_user")
+    payment_requests_created = relationship(
+        "PaymentRequest",
+        back_populates="created_by_user",
+        foreign_keys="PaymentRequest.created_by_user_id",
+    )
