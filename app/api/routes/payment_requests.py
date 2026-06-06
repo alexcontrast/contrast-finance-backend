@@ -28,6 +28,96 @@ def calculate_item_remaining(item: EventItem) -> Decimal:
     return base_amount - item.paid_amount
 
 
+def normalize_payment_method(payment_method: str | None) -> str | None:
+    if payment_method is None:
+        return None
+
+    aliases = {
+        "по счету": "invoice",
+        "по счёту": "invoice",
+        "invoice": "invoice",
+
+        "на карту": "card",
+        "card": "card",
+
+        "налик": "cash",
+        "нал": "cash",
+        "cash": "cash",
+
+        "самозанятый": "self_employed",
+        "self_employed": "self_employed",
+    }
+
+    key = payment_method.strip().lower()
+    return aliases.get(key, payment_method)
+
+
+def looks_like_card_number(card_number: str | None) -> bool:
+    if not card_number:
+        return False
+
+    digits = "".join(ch for ch in card_number if ch.isdigit())
+    return len(digits) == 16
+
+
+def comment_has_surname(comment: str | None) -> bool:
+    """
+    Минимальная проверка для самозанятого:
+    в комментарии должно быть хотя бы одно слово из 2+ букв.
+    Это не идеальная проверка фамилии, но не даёт оставить поле пустым.
+    """
+    if not comment:
+        return False
+
+    words = [word.strip(" ,.;:!?()[]{}") for word in comment.split()]
+    return any(len(word) >= 2 and any(ch.isalpha() for ch in word) for word in words)
+
+
+def validate_payment_request_rules(item: EventItem, payment_method: str, payload: PaymentRequestCreate):
+    """
+    Правила v0.8:
+
+    invoice / По счету:
+    - BIN / ИИН обязателен на позиции
+
+    card / На карту:
+    - номер карты обязателен и должен содержать 16 цифр
+
+    self_employed / Самозанятый:
+    - фамилия обязательна в комментарии
+    - вычеты 10% будут добавлены следующими слоями расчётов/КГД
+
+    cash / Налик:
+    - без дополнительных обязательных полей
+    """
+    if payment_method == "invoice":
+        if not item.iin_bin:
+            raise HTTPException(
+                status_code=400,
+                detail="Для оплаты По счету нужен BIN / ИИН в позиции",
+            )
+
+    if payment_method == "card":
+        if not looks_like_card_number(payload.card_number):
+            raise HTTPException(
+                status_code=400,
+                detail="Для оплаты На карту нужен номер карты из 16 цифр",
+            )
+
+    if payment_method == "self_employed":
+        if not comment_has_surname(payload.comment):
+            raise HTTPException(
+                status_code=400,
+                detail="Для Самозанятого фамилия обязательна в комментарии",
+            )
+
+    if payment_method not in {"invoice", "card", "cash", "self_employed"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Некорректный способ оплаты. Используй invoice, card, cash или self_employed",
+        )
+
+
 @router.get("/payment-requests", response_model=list[PaymentRequestRead])
 def list_payment_requests(db: Session = Depends(get_db)):
     result = db.execute(select(PaymentRequest).order_by(PaymentRequest.id.desc()))
@@ -54,18 +144,21 @@ def create_payment_request(
     """
     Создаёт заявку по конкретной позиции.
 
-    Пока без КГД:
-    - берём snapshot позиции
-    - считаем остаток
-    - если сумма заявки больше остатка, ставим warning_over_remaining = true
+    v0.8:
+    - проверяет обязательные поля по способу оплаты
+    - берёт snapshot позиции
+    - считает остаток
+    - если сумма заявки больше остатка, ставит warning_over_remaining = true
     """
     item = db.get(EventItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
 
-    payment_method = payload.payment_method or item.payment_method
+    payment_method = normalize_payment_method(payload.payment_method or item.payment_method)
     if not payment_method:
         raise HTTPException(status_code=400, detail="payment_method is required")
+
+    validate_payment_request_rules(item, payment_method, payload)
 
     remaining = calculate_item_remaining(item)
     warning_over_remaining = payload.amount_requested > remaining

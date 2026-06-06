@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.7.0"
+    VERSION: str = "0.8.0"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
