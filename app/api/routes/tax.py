@@ -26,7 +26,13 @@ def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal
         amount_base = Decimal("0.00")
 
     if tax_status == "our_vat":
-        amount_without_vat = amount_base / Decimal("1.12")
+        # Подрядчик ОУР с НДС:
+        # НДС в Казахстане = 16%.
+        # Если сумма позиции уже включает НДС:
+        # - сумма без НДС = amount / 1.16
+        # - НДС = amount - сумма без НДС
+        # - Вычеты = 10% от суммы без НДС
+        amount_without_vat = amount_base / Decimal("1.16")
         vat = amount_base - amount_without_vat
         deduction = amount_without_vat * Decimal("0.10")
         return vat.quantize(Decimal("0.01")), deduction.quantize(Decimal("0.01"))
