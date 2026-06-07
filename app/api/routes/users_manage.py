@@ -39,7 +39,7 @@ def user_to_read(user: User) -> UserRead:
         role=user.role,
         is_active=user.is_active,
         legacy_user_id=user.legacy_user_id,
-        auth_source=user.auth_source,
+        auth_source=user.auth_source or "legacy_apps_script",
         created_at=user.created_at,
         updated_at=user.updated_at,
     )

@@ -11,41 +11,44 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id"),
+        nullable=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
-    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    telegram_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    telegram_username: Mapped[str | None] = mapped_column(String(150), nullable=True)
+
+    # manager / admin / department_head / accountant
     role: Mapped[str] = mapped_column(String(64), nullable=False, default="manager")
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # New auth fields.
-    # legacy_user_id + legacy_pin_hash allow managers to log in with the same PIN as Apps Script.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Legacy Apps Script auth compatibility.
     legacy_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     legacy_pin_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     auth_source: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy_apps_script")
 
-    # Future native auth can use this without breaking legacy PINs.
-    pin_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-
-    department = relationship("Department", back_populates="users")
-
-    # Existing app relationships expected by other models.
-    events = relationship(
-        "Event",
-        back_populates="manager",
-        foreign_keys="Event.manager_id",
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
     )
 
+    department = relationship("Department", back_populates="users")
+    events = relationship("Event", back_populates="manager")
     payment_requests_created = relationship(
         "PaymentRequest",
         back_populates="created_by_user",
         foreign_keys="PaymentRequest.created_by_user_id",
-    )
-
-    manually_set_taxpayer_checks = relationship(
-        "TaxpayerCheck",
-        foreign_keys="TaxpayerCheck.manual_set_by_user_id",
     )

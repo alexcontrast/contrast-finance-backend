@@ -20,7 +20,7 @@ def user_to_auth_read(user: User) -> AuthUserRead:
         role=user.role,
         is_active=user.is_active,
         legacy_user_id=user.legacy_user_id,
-        auth_source=user.auth_source,
+        auth_source=user.auth_source or "legacy_apps_script",
     )
 
 
