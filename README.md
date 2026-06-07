@@ -1,4 +1,4 @@
-# Contrast Finance Backend v0.20
+# Contrast Finance Backend v0.21
 
 Backend Contrast Finance 2.0 с PostgreSQL, миграциями и первым слоем таблиц для мероприятий, оплат, КГД и истории.
 
@@ -21,7 +21,7 @@ v0.2:
 - events
 - event_items
 
-v0.20:
+v0.21:
 
 - contractors
 - taxpayer_checks
@@ -69,12 +69,12 @@ users
 Для Railway backend-сервиса лучше использовать публичный PostgreSQL URL, если `.railway.internal` не резолвится при миграциях.
 
 
-## v0.20
+## v0.21
 
 Исправлено короткое имя Alembic revision: `0002_payments_tax_audit`, чтобы помещалось в `alembic_version.version_num`.
 
 
-## v0.20
+## v0.21
 
 Добавлены таблицы:
 
@@ -87,7 +87,7 @@ users
 После деплоя `/db/tables` должен показать полный базовый набор таблиц.
 
 
-## v0.20
+## v0.21
 
 Добавлены первые API:
 
@@ -119,13 +119,13 @@ POST /events
 6. `GET /events`
 
 
-## v0.20
+## v0.21
 
 Исправлена неоднозначная связь `users -> payment_requests`.
 База не меняется, новых миграций нет.
 
 
-## v0.20
+## v0.21
 
 Добавлены API позиций сметы:
 
@@ -159,7 +159,7 @@ PATCH /event-items/{item_id}
 Пока без КГД-интеграции. Только хранение и обновление позиций.
 
 
-## v0.20
+## v0.21
 
 Добавлены заявки на оплату:
 
@@ -185,7 +185,7 @@ PATCH /payment-requests/{request_id}/status
 При смене статуса на `paid` система увеличивает `paid_amount` у позиции.
 
 
-## v0.20
+## v0.21
 
 Добавлены правила валидации по способам оплаты:
 
@@ -225,7 +225,7 @@ self_employed
 Новых миграций нет, база не меняется.
 
 
-## v0.20
+## v0.21
 
 Добавлена тестовая налоговая механика без реального КГД:
 
@@ -270,7 +270,7 @@ not_found
 Новых миграций нет, база не меняется.
 
 
-## v0.20
+## v0.21
 
 Усилена логика заявок "По счету":
 
@@ -302,13 +302,13 @@ GET /payment-requests/{request_id}/card
 - без сумм НДС и Вычетов
 
 
-## v0.20
+## v0.21
 
 Исправлена ошибка ответа `PaymentRequestRead`: поле `tax_status_label` теперь необязательное.
 База не меняется, миграций нет.
 
 
-## v0.20
+## v0.21
 
 Добавлена сводка мероприятия:
 
@@ -336,7 +336,7 @@ GET /events/{event_id}/summary
 - доля компании добавляется после ЗП менеджера
 
 
-## v0.20
+## v0.21
 
 Добавлен быстрый endpoint для теста координатора:
 
@@ -365,7 +365,7 @@ Body:
 ```
 
 
-## v0.20
+## v0.21
 
 Добавлены планы месяца и первый дашборд:
 
@@ -387,7 +387,7 @@ GET  /monthly-dashboard?month=2026-06&include_drafts=true
 - расходы отдела показываются, если они уже внесены в monthly_expenses
 
 
-## v0.20
+## v0.21
 
 Добавлены расходы месяца:
 
@@ -409,7 +409,7 @@ custom — вручную, сумма Санжар + Рауфаль должна
 Месячный дашборд `/monthly-dashboard` уже подтягивает эти расходы.
 
 
-## v0.20
+## v0.21
 
 Добавлено закрытие месяца:
 
@@ -435,7 +435,7 @@ GET  /monthly-closings/by-month?month=2026-06
 `close` сохраняет snapshot в `monthly_closings`.
 
 
-## v0.20
+## v0.21
 
 Добавлен API кабинета руководителя отдела:
 
@@ -461,7 +461,7 @@ GET /department-head-dashboard?department_id=1&month=2026-06&include_drafts=true
 - общую собственническую часть
 
 
-## v0.20
+## v0.21
 
 Добавлен общий админский dashboard:
 
@@ -485,7 +485,7 @@ GET /admin-dashboard?month=2026-06&include_drafts=true
 Это видит только админский кабинет. Руководитель отдела получает урезанный dashboard через `/department-head-dashboard`.
 
 
-## v0.20
+## v0.21
 
 Подготовка к реальному КГД:
 
@@ -506,7 +506,7 @@ GET /kgd/status
 - `live` режим подготовлен безопасно, но реальный endpoint mapping нужно добавить после подтверждения формата API КГД
 
 
-## v0.20
+## v0.21
 
 Подключён реальный KGD live-клиент по схеме из Apps Script:
 
@@ -537,14 +537,14 @@ Header: X-Portal-Token
 Ключ КГД по-прежнему хранится только в Railway Variables.
 
 
-## v0.20
+## v0.21
 
 Hotfix: исправлен `IndentationError` в `app/api/routes/tax.py`.
 
 База не менялась, миграций нет.
 
 
-## v0.20
+## v0.21
 
 Hotfix: исправлен расчёт НДС подрядчика для `our_vat`.
 
@@ -572,7 +572,7 @@ amount / 1.16
 База не менялась, миграций нет.
 
 
-## v0.20
+## v0.21
 
 Налоговые ставки вынесены в config/Railway Variables:
 
@@ -590,3 +590,40 @@ GET /settings/economics
 ```
 
 База не менялась, миграций нет.
+
+
+## v0.21
+
+Добавлена авторизация и совместимость со старым Apps Script PIN.
+
+Новые поля `users`:
+
+```text
+phone
+legacy_user_id
+legacy_pin_hash
+auth_source
+pin_hash
+```
+
+Новые endpoints:
+
+```text
+POST /auth/login
+GET  /auth/me
+POST /users/import-legacy
+```
+
+Логика legacy PIN:
+
+```text
+SHA256("<legacy_user_id>:<pin>")
+```
+
+Это повторяет Apps Script `hashPin_(pin, userId)`, поэтому менеджеры смогут входить тем же именем и PIN после импорта пользователей.
+
+Новая зависимость:
+
+```text
+PyJWT==2.10.1
+```

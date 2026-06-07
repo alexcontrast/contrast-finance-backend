@@ -5,12 +5,14 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.20.0"
+    VERSION: str = "0.21.0"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
 
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-change-me")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "43200"))
 
     KGD_MODE: str = os.getenv("KGD_MODE", "stub")
     KGD_API_KEY: str | None = os.getenv("KGD_API_KEY")
