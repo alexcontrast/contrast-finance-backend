@@ -1,4 +1,4 @@
-# Contrast Finance Backend v0.18
+# Contrast Finance Backend v0.19
 
 Backend Contrast Finance 2.0 с PostgreSQL, миграциями и первым слоем таблиц для мероприятий, оплат, КГД и истории.
 
@@ -21,7 +21,7 @@ v0.2:
 - events
 - event_items
 
-v0.18:
+v0.19:
 
 - contractors
 - taxpayer_checks
@@ -69,12 +69,12 @@ users
 Для Railway backend-сервиса лучше использовать публичный PostgreSQL URL, если `.railway.internal` не резолвится при миграциях.
 
 
-## v0.18
+## v0.19
 
 Исправлено короткое имя Alembic revision: `0002_payments_tax_audit`, чтобы помещалось в `alembic_version.version_num`.
 
 
-## v0.18
+## v0.19
 
 Добавлены таблицы:
 
@@ -87,7 +87,7 @@ users
 После деплоя `/db/tables` должен показать полный базовый набор таблиц.
 
 
-## v0.18
+## v0.19
 
 Добавлены первые API:
 
@@ -119,13 +119,13 @@ POST /events
 6. `GET /events`
 
 
-## v0.18
+## v0.19
 
 Исправлена неоднозначная связь `users -> payment_requests`.
 База не меняется, новых миграций нет.
 
 
-## v0.18
+## v0.19
 
 Добавлены API позиций сметы:
 
@@ -159,7 +159,7 @@ PATCH /event-items/{item_id}
 Пока без КГД-интеграции. Только хранение и обновление позиций.
 
 
-## v0.18
+## v0.19
 
 Добавлены заявки на оплату:
 
@@ -185,7 +185,7 @@ PATCH /payment-requests/{request_id}/status
 При смене статуса на `paid` система увеличивает `paid_amount` у позиции.
 
 
-## v0.18
+## v0.19
 
 Добавлены правила валидации по способам оплаты:
 
@@ -225,7 +225,7 @@ self_employed
 Новых миграций нет, база не меняется.
 
 
-## v0.18
+## v0.19
 
 Добавлена тестовая налоговая механика без реального КГД:
 
@@ -270,7 +270,7 @@ not_found
 Новых миграций нет, база не меняется.
 
 
-## v0.18
+## v0.19
 
 Усилена логика заявок "По счету":
 
@@ -302,13 +302,13 @@ GET /payment-requests/{request_id}/card
 - без сумм НДС и Вычетов
 
 
-## v0.18
+## v0.19
 
 Исправлена ошибка ответа `PaymentRequestRead`: поле `tax_status_label` теперь необязательное.
 База не меняется, миграций нет.
 
 
-## v0.18
+## v0.19
 
 Добавлена сводка мероприятия:
 
@@ -336,7 +336,7 @@ GET /events/{event_id}/summary
 - доля компании добавляется после ЗП менеджера
 
 
-## v0.18
+## v0.19
 
 Добавлен быстрый endpoint для теста координатора:
 
@@ -365,7 +365,7 @@ Body:
 ```
 
 
-## v0.18
+## v0.19
 
 Добавлены планы месяца и первый дашборд:
 
@@ -387,7 +387,7 @@ GET  /monthly-dashboard?month=2026-06&include_drafts=true
 - расходы отдела показываются, если они уже внесены в monthly_expenses
 
 
-## v0.18
+## v0.19
 
 Добавлены расходы месяца:
 
@@ -409,7 +409,7 @@ custom — вручную, сумма Санжар + Рауфаль должна
 Месячный дашборд `/monthly-dashboard` уже подтягивает эти расходы.
 
 
-## v0.18
+## v0.19
 
 Добавлено закрытие месяца:
 
@@ -435,7 +435,7 @@ GET  /monthly-closings/by-month?month=2026-06
 `close` сохраняет snapshot в `monthly_closings`.
 
 
-## v0.18
+## v0.19
 
 Добавлен API кабинета руководителя отдела:
 
@@ -461,7 +461,7 @@ GET /department-head-dashboard?department_id=1&month=2026-06&include_drafts=true
 - общую собственническую часть
 
 
-## v0.18
+## v0.19
 
 Добавлен общий админский dashboard:
 
@@ -485,7 +485,7 @@ GET /admin-dashboard?month=2026-06&include_drafts=true
 Это видит только админский кабинет. Руководитель отдела получает урезанный dashboard через `/department-head-dashboard`.
 
 
-## v0.18
+## v0.19
 
 Подготовка к реальному КГД:
 
@@ -504,3 +504,34 @@ GET /kgd/status
 - `/kgd/status` показывает только факт настройки ключа, но не сам ключ
 - `tax/check` теперь вызывает KGD service
 - `live` режим подготовлен безопасно, но реальный endpoint mapping нужно добавить после подтверждения формата API КГД
+
+
+## v0.19
+
+Подключён реальный KGD live-клиент по схеме из Apps Script:
+
+```text
+KGD_MODE=live
+KGD_API_KEY=<токен КГД>
+KGD_BASE_URL=https://portal.kgd.gov.kz
+```
+
+Запросы:
+
+```text
+GET /services/isnaportalsync/public/snr-search/search?uin=<BIN/IIN>
+GET /services/isnaportalsync/public/search-payer-data?taxpayerCode=<BIN/IIN>
+Header: X-Portal-Token
+```
+
+Логика:
+
+```text
+ОУР + Плательщик НДС -> our_vat
+ОУР + Без НДС / Снят с НДС -> our_no_vat
+Упрощенка -> simplified
+Другой СНР -> snr
+Не найдено / ошибка -> not_found
+```
+
+Ключ КГД по-прежнему хранится только в Railway Variables.

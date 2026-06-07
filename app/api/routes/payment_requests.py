@@ -24,6 +24,7 @@ def tax_status_label(tax_status: str | None) -> str | None:
         "our_vat": "ОУР с НДС",
         "our_no_vat": "ОУР без НДС",
         "simplified": "Упрощенка",
+        "snr": "СНР",
         "self_employed": "Самозанятый",
         "not_found": "Не проверен",
         None: None,

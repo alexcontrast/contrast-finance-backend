@@ -72,7 +72,8 @@ def upsert_contractor(
         db.flush()
         return contractor
 
-    contractor.tax_status = tax_status
+    contractor.name = contractor_name or contractor.name
+        contractor.tax_status = tax_status
     contractor.vat_status = "vat" if tax_status == "our_vat" else "no_vat"
     contractor.vat_amount = vat_amount
     contractor.deduction_amount = deduction_amount
@@ -264,11 +265,11 @@ def set_event_item_tax_manual(
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
 
-    allowed = {"our_vat", "our_no_vat", "simplified", "self_employed", "not_found"}
+    allowed = {"our_vat", "our_no_vat", "simplified", "snr", "self_employed", "not_found"}
     if payload.tax_status not in allowed:
         raise HTTPException(
             status_code=400,
-            detail="tax_status должен быть our_vat, our_no_vat, simplified, self_employed или not_found",
+            detail="tax_status должен быть our_vat, our_no_vat, simplified, snr, self_employed или not_found",
         )
 
     if not item.iin_bin:

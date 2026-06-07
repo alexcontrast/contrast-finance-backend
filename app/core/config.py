@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.18.0"
+    VERSION: str = "0.19.0"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -17,7 +17,7 @@ class Settings:
     # live = real KGD calls, when KGD endpoint details are connected
     KGD_MODE: str = os.getenv("KGD_MODE", "stub")
     KGD_API_KEY: str | None = os.getenv("KGD_API_KEY")
-    KGD_BASE_URL: str | None = os.getenv("KGD_BASE_URL")
+    KGD_BASE_URL: str = os.getenv("KGD_BASE_URL", "https://portal.kgd.gov.kz")
 
 
 @lru_cache
