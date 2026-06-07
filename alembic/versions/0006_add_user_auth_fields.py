@@ -1,7 +1,7 @@
 """add user auth fields
 
 Revision ID: 0006_add_user_auth_fields
-Revises: 0003
+Revises: 0003_monthly_ops
 Create Date: 2026-06-07
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 
 
 revision: str = "0006_add_user_auth_fields"
-down_revision: Union[str, None] = "0003"
+down_revision: Union[str, None] = "0003_monthly_ops"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
