@@ -4,6 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.contractor import Contractor
@@ -25,27 +26,23 @@ def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal
     if amount_base is None:
         amount_base = Decimal("0.00")
 
+    settings = get_settings()
+    vat_rate = settings.VAT_RATE
+    deduction_rate = settings.CONTRACTOR_DEDUCTION_RATE
+
     if tax_status == "our_vat":
-        # Подрядчик ОУР с НДС:
-        # НДС в Казахстане = 16%.
-        # Если сумма позиции уже включает НДС:
-        # - сумма без НДС = amount / 1.16
-        # - НДС = amount - сумма без НДС
-        # - Вычеты = 10% от суммы без НДС
-        amount_without_vat = amount_base / Decimal("1.16")
+        amount_without_vat = amount_base / (Decimal("1.00") + vat_rate)
         vat = amount_base - amount_without_vat
-        deduction = amount_without_vat * Decimal("0.10")
+        deduction = amount_without_vat * deduction_rate
         return vat.quantize(Decimal("0.01")), deduction.quantize(Decimal("0.01"))
 
     if tax_status == "our_no_vat":
-        return Decimal("0.00"), (amount_base * Decimal("0.10")).quantize(Decimal("0.01"))
+        return Decimal("0.00"), (amount_base * deduction_rate).quantize(Decimal("0.01"))
 
     if tax_status == "self_employed":
-        return Decimal("0.00"), (amount_base * Decimal("0.10")).quantize(Decimal("0.01"))
+        return Decimal("0.00"), (amount_base * deduction_rate).quantize(Decimal("0.01"))
 
-    # simplified / snr / not_found
     return Decimal("0.00"), Decimal("0.00")
-
 
 def get_amount_base(item: EventItem) -> Decimal:
     return item.amount_fact if item.amount_fact is not None else item.external_amount

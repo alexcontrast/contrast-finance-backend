@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from app.core.config import get_settings
 from app.models.event import Event
 from app.models.event_item import EventItem
 
@@ -25,13 +26,13 @@ def calculate_internal_tax(event: Event, regular_external_total: Decimal) -> Dec
 
     if calc_type == "ip_contrast_event":
         amount_without_vat = regular_external_total / Decimal("1.12")
-        return q(amount_without_vat * Decimal("0.12"))
+        return q(amount_without_vat * get_settings().CONTRAST_INTERNAL_TAX_RATE)
 
     if calc_type == "our_no_vat":
-        return q(regular_external_total * Decimal("0.12"))
+        return q(regular_external_total * get_settings().CONTRAST_INTERNAL_TAX_RATE)
 
     if calc_type == "simplified":
-        return q(regular_external_total * Decimal("0.05"))
+        return q(regular_external_total * get_settings().SIMPLIFIED_TAX_RATE)
 
     return Decimal("0.00")
 
