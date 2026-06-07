@@ -37,6 +37,7 @@ def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal
     if tax_status == "self_employed":
         return Decimal("0.00"), (amount_base * Decimal("0.10")).quantize(Decimal("0.01"))
 
+    # simplified / snr / not_found
     return Decimal("0.00"), Decimal("0.00")
 
 
@@ -51,13 +52,14 @@ def upsert_contractor(
     vat_amount: Decimal,
     deduction_amount: Decimal,
     source: str,
+    contractor_name: str | None = None,
 ) -> Contractor:
     contractor = db.query(Contractor).filter(Contractor.iin_bin == iin_bin).first()
 
     if contractor is None:
         contractor = Contractor(
             iin_bin=iin_bin,
-            name=None,
+            name=contractor_name,
             tax_status=tax_status,
             vat_status="vat" if tax_status == "our_vat" else "no_vat",
             vat_amount=vat_amount,
@@ -73,7 +75,7 @@ def upsert_contractor(
         return contractor
 
     contractor.name = contractor_name or contractor.name
-        contractor.tax_status = tax_status
+    contractor.tax_status = tax_status
     contractor.vat_status = "vat" if tax_status == "our_vat" else "no_vat"
     contractor.vat_amount = vat_amount
     contractor.deduction_amount = deduction_amount
@@ -99,7 +101,7 @@ def write_taxpayer_check(
     check = TaxpayerCheck(
         contractor_id=contractor.id if contractor else None,
         iin_bin=iin_bin,
-        name_result=None,
+        name_result=contractor.name if contractor else None,
         tax_status_result=tax_status,
         vat_status_result="vat" if tax_status == "our_vat" else "no_vat",
         status=status,
@@ -147,7 +149,7 @@ def check_event_item_tax(
     - безопасная тестовая заглушка
 
     KGD_MODE=live:
-    - подготовленный live-клиент, но без endpoint mapping до подтверждения формата КГД
+    - реальные запросы в КГД через X-Portal-Token
     """
     item = db.get(EventItem, item_id)
     if item is None:
@@ -195,6 +197,7 @@ def check_event_item_tax(
             vat_amount=vat_amount,
             deduction_amount=deduction_amount,
             source=kgd_result.source,
+            contractor_name=kgd_result.contractor_name,
         )
 
         item.iin_bin = kgd_result.iin_bin
@@ -293,6 +296,7 @@ def set_event_item_tax_manual(
         vat_amount=vat_amount,
         deduction_amount=deduction_amount,
         source="manual",
+        contractor_name=None,
     )
 
     item.iin_bin_locked = True
