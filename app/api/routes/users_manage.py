@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.department import Department
 from app.models.user import User
 from app.schemas.users_manage import NativeUserCreate, UserPinUpdate, UserRead, UserRoleUpdate
-from app.services.auth import native_pin_hash, normalize_phone
+from app.services.auth import native_pin_hash, normalize_phone, require_roles
 
 
 router = APIRouter(tags=["users_manage"])
@@ -68,6 +68,7 @@ def list_users(
     department_id: int | None = None,
     include_inactive: bool = True,
     db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
 ):
     query = select(User)
 
@@ -85,7 +86,11 @@ def list_users(
 
 
 @router.post("/users/native", response_model=UserRead)
-def create_native_user(payload: NativeUserCreate, db: Session = Depends(get_db)):
+def create_native_user(
+    payload: NativeUserCreate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     """
     Создаёт native-пользователя.
 
@@ -167,7 +172,12 @@ def create_native_user(payload: NativeUserCreate, db: Session = Depends(get_db))
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRead)
-def update_user_role(user_id: int, payload: UserRoleUpdate, db: Session = Depends(get_db)):
+def update_user_role(
+    user_id: int,
+    payload: UserRoleUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -191,7 +201,12 @@ def update_user_role(user_id: int, payload: UserRoleUpdate, db: Session = Depend
 
 
 @router.patch("/users/{user_id}/pin", response_model=UserRead)
-def update_user_pin(user_id: int, payload: UserPinUpdate, db: Session = Depends(get_db)):
+def update_user_pin(
+    user_id: int,
+    payload: UserPinUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")

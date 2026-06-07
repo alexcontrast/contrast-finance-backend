@@ -27,3 +27,18 @@ class AuthTokenRead(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: AuthUserRead
+
+
+
+class AuthBootstrapAdminRequest(BaseModel):
+    name: str
+    phone: str | None = None
+    pin: str
+
+
+
+class AuthPermissionsRead(BaseModel):
+    can_view_admin_dashboard: bool
+    can_manage_users: bool
+    can_view_department_dashboard: bool
+    can_edit: bool

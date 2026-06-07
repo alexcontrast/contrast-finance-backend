@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.department import Department
 from app.models.user import User
 from app.schemas.users_import import LegacyUsersImportRequest, LegacyUsersImportResult
-from app.services.auth import normalize_phone
+from app.services.auth import normalize_phone, require_roles
 
 
 router = APIRouter(tags=["users_import"])
@@ -50,7 +50,11 @@ def get_department_id(db: Session, department_id: int | None, department_name: s
 
 
 @router.post("/users/import-legacy", response_model=LegacyUsersImportResult)
-def import_legacy_users(payload: LegacyUsersImportRequest, db: Session = Depends(get_db)):
+def import_legacy_users(
+    payload: LegacyUsersImportRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     created = 0
     updated = 0
     skipped = 0

@@ -22,6 +22,7 @@ from app.schemas.admin_dashboard import (
     AdminPaymentRequestRowRead,
 )
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.auth import require_roles
 
 
 router = APIRouter(tags=["admin_dashboard"])
@@ -125,6 +126,7 @@ def get_admin_dashboard(
     month: str,
     include_drafts: bool = True,
     db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
 ):
     month_date = parse_month(month)
 

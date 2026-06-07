@@ -20,6 +20,7 @@ from app.schemas.department_head_dashboard import (
     DepartmentHeadManagerRead,
 )
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.auth import require_roles
 
 
 router = APIRouter(tags=["department_head_dashboard"])
@@ -112,6 +113,7 @@ def get_department_head_dashboard(
     month: str,
     include_drafts: bool = True,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "department_head")),
 ):
     month_date = parse_month(month)
 
