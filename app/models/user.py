@@ -31,3 +31,21 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     department = relationship("Department", back_populates="users")
+
+    # Existing app relationships expected by other models.
+    events = relationship(
+        "Event",
+        back_populates="manager",
+        foreign_keys="Event.manager_id",
+    )
+
+    payment_requests_created = relationship(
+        "PaymentRequest",
+        back_populates="created_by_user",
+        foreign_keys="PaymentRequest.created_by_user_id",
+    )
+
+    manually_set_taxpayer_checks = relationship(
+        "TaxpayerCheck",
+        foreign_keys="TaxpayerCheck.manual_set_by_user_id",
+    )
