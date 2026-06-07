@@ -12,6 +12,7 @@ from app.api.routes.admin_dashboard import router as admin_dashboard_router
 from app.api.routes.event_items import router as event_items_router
 from app.api.routes.payment_requests import router as payment_requests_router
 from app.api.routes.tax import router as tax_router
+from app.api.routes.kgd import router as kgd_router
 from app.api.routes.health import router as health_router
 from app.api.routes.users import router as users_router
 from app.core.config import get_settings
@@ -38,6 +39,7 @@ app.include_router(admin_dashboard_router)
 app.include_router(event_items_router)
 app.include_router(payment_requests_router)
 app.include_router(tax_router)
+app.include_router(kgd_router)
 
 
 @app.get("/")

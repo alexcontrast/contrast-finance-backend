@@ -10,13 +10,10 @@ from app.models.contractor import Contractor
 from app.models.event_item import EventItem
 from app.models.taxpayer_check import TaxpayerCheck
 from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
+from app.services.kgd.client import check_taxpayer
 
 
 router = APIRouter(tags=["tax"])
-
-
-def normalize_iin_bin(value: str) -> str:
-    return "".join(ch for ch in value if ch.isdigit())
 
 
 def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal, Decimal]:
@@ -24,23 +21,6 @@ def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal
     Возвращает:
     - НДС
     - Вычеты
-
-    Упрощённая тестовая логика v0.9:
-    our_vat:
-      НДС = 12% от суммы
-      Вычеты = 10% от суммы без НДС, условно считаем amount / 1.12
-    our_no_vat:
-      НДС = 0
-      Вычеты = 10% от суммы
-    simplified:
-      НДС = 0
-      Вычеты = 0
-    self_employed:
-      НДС = 0
-      Вычеты = 10% от суммы
-    not_found:
-      НДС = 0
-      Вычеты = 0
     """
     if amount_base is None:
         amount_base = Decimal("0.00")
@@ -60,36 +40,7 @@ def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal
     return Decimal("0.00"), Decimal("0.00")
 
 
-def fake_kgd_status(iin_bin: str) -> tuple[str, str]:
-    """
-    Тестовая заглушка до подключения реального КГД.
-
-    Последняя цифра:
-    1 -> ОУР с НДС
-    2 -> ОУР без НДС
-    3 -> Упрощенка
-    другое -> не найден / ошибка
-    """
-    if not iin_bin:
-        return "not_found", "BIN / ИИН пустой"
-
-    last_digit = iin_bin[-1]
-
-    if last_digit == "1":
-        return "our_vat", "ОУР с НДС"
-    if last_digit == "2":
-        return "our_no_vat", "ОУР без НДС"
-    if last_digit == "3":
-        return "simplified", "Упрощенка"
-
-    return "not_found", "Не найден / КГД не ответил"
-
-
 def get_amount_base(item: EventItem) -> Decimal:
-    """
-    Для расчета налоговой части позиции используем факт, если он есть.
-    Если факта нет — сумму по смете.
-    """
     return item.amount_fact if item.amount_fact is not None else item.external_amount
 
 
@@ -141,6 +92,7 @@ def write_taxpayer_check(
     source: str,
     status: str,
     message: str,
+    raw_response: dict | None = None,
     manual_set_by_user_id: int | None = None,
 ):
     check = TaxpayerCheck(
@@ -151,11 +103,7 @@ def write_taxpayer_check(
         vat_status_result="vat" if tax_status == "our_vat" else "no_vat",
         status=status,
         source=source,
-        raw_response_json={
-            "stub": True,
-            "message": message,
-            "tax_status": tax_status,
-        },
+        raw_response_json=raw_response,
         error_message=None if status in {"success", "manual"} else message,
         manual_set_by_user_id=manual_set_by_user_id,
         checked_at=datetime.utcnow(),
@@ -192,21 +140,22 @@ def check_event_item_tax(
     db: Session = Depends(get_db),
 ):
     """
-    Тестовая проверка BIN / ИИН.
+    Проверка BIN / ИИН через KGD service.
 
-    Пока без реального КГД:
-    - последняя цифра 1 -> ОУР с НДС
-    - последняя цифра 2 -> ОУР без НДС
-    - последняя цифра 3 -> Упрощенка
-    - другое -> BIN красный, НДС 0, Вычеты 0
+    KGD_MODE=stub:
+    - безопасная тестовая заглушка
+
+    KGD_MODE=live:
+    - подготовленный live-клиент, но без endpoint mapping до подтверждения формата КГД
     """
     item = db.get(EventItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
 
-    iin_bin = normalize_iin_bin(payload.iin_bin)
-    if len(iin_bin) not in {12}:
-        raise HTTPException(status_code=400, detail="BIN / ИИН должен содержать 12 цифр")
+    try:
+        kgd_result = check_taxpayer(payload.iin_bin)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     before = {
         "iin_bin": item.iin_bin,
@@ -216,12 +165,11 @@ def check_event_item_tax(
         "deduction_amount": str(item.deduction_amount),
     }
 
-    tax_status, message = fake_kgd_status(iin_bin)
     amount_base = get_amount_base(item)
-    vat_amount, deduction_amount = calculate_tax_values(amount_base, tax_status)
+    vat_amount, deduction_amount = calculate_tax_values(amount_base, kgd_result.tax_status)
 
-    if tax_status == "not_found":
-        item.iin_bin = iin_bin
+    if kgd_result.tax_status == "not_found":
+        item.iin_bin = kgd_result.iin_bin
         item.iin_bin_locked = False
         item.tax_check_status = "not_found"
         item.vat_amount = Decimal("0.00")
@@ -231,25 +179,26 @@ def check_event_item_tax(
         write_taxpayer_check(
             db=db,
             contractor=None,
-            iin_bin=iin_bin,
-            tax_status=tax_status,
-            source="kgd_stub",
+            iin_bin=kgd_result.iin_bin,
+            tax_status=kgd_result.tax_status,
+            source=kgd_result.source,
             status="not_found",
-            message=message,
+            message=kgd_result.message,
+            raw_response=kgd_result.raw_response,
         )
     else:
         contractor = upsert_contractor(
             db=db,
-            iin_bin=iin_bin,
-            tax_status=tax_status,
+            iin_bin=kgd_result.iin_bin,
+            tax_status=kgd_result.tax_status,
             vat_amount=vat_amount,
             deduction_amount=deduction_amount,
-            source="kgd_stub",
+            source=kgd_result.source,
         )
 
-        item.iin_bin = iin_bin
+        item.iin_bin = kgd_result.iin_bin
         item.iin_bin_locked = True
-        item.tax_check_status = tax_status
+        item.tax_check_status = kgd_result.tax_status
         item.vat_amount = vat_amount
         item.deduction_amount = deduction_amount
         item.updated_at = datetime.utcnow()
@@ -257,11 +206,12 @@ def check_event_item_tax(
         write_taxpayer_check(
             db=db,
             contractor=contractor,
-            iin_bin=iin_bin,
-            tax_status=tax_status,
-            source="kgd_stub",
+            iin_bin=kgd_result.iin_bin,
+            tax_status=kgd_result.tax_status,
+            source=kgd_result.source,
             status="success",
-            message=message,
+            message=kgd_result.message,
+            raw_response=kgd_result.raw_response,
         )
 
     after = {
@@ -277,7 +227,7 @@ def check_event_item_tax(
         user_id=None,
         entity_type="event_item",
         entity_id=item.id,
-        action="tax_checked_stub",
+        action=f"tax_checked_{kgd_result.source}",
         before_json=before,
         after_json=after,
     )
@@ -293,8 +243,8 @@ def check_event_item_tax(
         tax_check_status=item.tax_check_status,
         vat_amount=item.vat_amount,
         deduction_amount=item.deduction_amount,
-        source="kgd_stub",
-        message=message,
+        source=kgd_result.source,
+        message=kgd_result.message,
     )
 
 
@@ -358,6 +308,7 @@ def set_event_item_tax_manual(
         source="manual",
         status="manual",
         message="Налоговый режим проставлен вручную админом",
+        raw_response={"manual": True},
         manual_set_by_user_id=admin_user_id,
     )
 
