@@ -91,19 +91,6 @@ def create_native_user(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
-    """
-    Создаёт native-пользователя.
-
-    Если пользователь с таким именем/телефоном уже есть, но он НЕАКТИВНЫЙ,
-    ручка переиспользует эту запись:
-    - включает пользователя
-    - ставит новую роль/отдел
-    - заменяет авторизацию на native PIN
-    - очищает legacy_user_id / legacy_pin_hash
-
-    Это нужно, например, чтобы импортированного неактивного `Рауфаль`
-    превратить в нормальный кабинет руководителя отдела с именем `Рауфаль`.
-    """
     role = validate_role(payload.role)
     ensure_department_exists(db, payload.department_id)
 
@@ -130,7 +117,6 @@ def create_native_user(
         user.role = role
         user.is_active = payload.is_active
 
-        # Convert inactive legacy/imported row into native account.
         user.legacy_user_id = None
         user.legacy_pin_hash = None
         user.auth_source = "native"

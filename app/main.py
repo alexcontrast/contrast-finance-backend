@@ -15,6 +15,7 @@ from app.api.routes.tax import router as tax_router
 from app.api.routes.kgd import router as kgd_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.security import router as security_router
 from app.api.routes.users_import import router as users_import_router
 from app.api.routes.users_manage import router as users_manage_router
 from app.api.routes.health import router as health_router
@@ -46,6 +47,7 @@ app.include_router(tax_router)
 app.include_router(kgd_router)
 app.include_router(settings_router)
 app.include_router(auth_router)
+app.include_router(security_router)
 app.include_router(users_import_router)
 app.include_router(users_manage_router)
 

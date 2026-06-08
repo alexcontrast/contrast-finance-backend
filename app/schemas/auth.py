@@ -2,12 +2,14 @@ from pydantic import BaseModel
 
 
 class AuthLoginRequest(BaseModel):
-    # Same as old site: manager enters name + PIN.
     name: str | None = None
-
-    # Optional future login by phone.
     phone: str | None = None
+    pin: str
 
+
+class AuthBootstrapAdminRequest(BaseModel):
+    name: str
+    phone: str | None = None
     pin: str
 
 
@@ -29,15 +31,9 @@ class AuthTokenRead(BaseModel):
     user: AuthUserRead
 
 
-
-class AuthBootstrapAdminRequest(BaseModel):
-    name: str
-    phone: str | None = None
-    pin: str
-
-
-
 class AuthPermissionsRead(BaseModel):
+    role: str
+    department_id: int | None = None
     can_view_admin_dashboard: bool
     can_manage_users: bool
     can_view_department_dashboard: bool

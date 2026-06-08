@@ -6,8 +6,21 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import AuthBootstrapAdminRequest, AuthLoginRequest, AuthPermissionsRead, AuthTokenRead, AuthUserRead
-from app.services.auth import create_access_token, find_login_user, get_current_user, native_pin_hash, normalize_phone, verify_pin
+from app.schemas.auth import (
+    AuthBootstrapAdminRequest,
+    AuthLoginRequest,
+    AuthPermissionsRead,
+    AuthTokenRead,
+    AuthUserRead,
+)
+from app.services.auth import (
+    create_access_token,
+    find_login_user,
+    get_current_user,
+    native_pin_hash,
+    normalize_phone,
+    verify_pin,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -50,6 +63,17 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
 def me(user: User = Depends(get_current_user)):
     return user_to_auth_read(user)
 
+
+@router.get("/permissions", response_model=AuthPermissionsRead)
+def permissions(user: User = Depends(get_current_user)):
+    return AuthPermissionsRead(
+        role=user.role,
+        department_id=user.department_id,
+        can_view_admin_dashboard=user.role == "admin",
+        can_manage_users=user.role == "admin",
+        can_view_department_dashboard=user.role in {"admin", "department_head"},
+        can_edit=user.role in {"admin", "manager"},
+    )
 
 
 @router.post("/bootstrap-admin", response_model=AuthTokenRead)
@@ -104,15 +128,4 @@ def bootstrap_admin(payload: AuthBootstrapAdminRequest, db: Session = Depends(ge
         access_token=token,
         token_type="bearer",
         user=user_to_auth_read(user),
-    )
-
-
-
-@router.get("/permissions", response_model=AuthPermissionsRead)
-def permissions(user: User = Depends(get_current_user)):
-    return AuthPermissionsRead(
-        can_view_admin_dashboard=user.role == "admin",
-        can_manage_users=user.role == "admin",
-        can_view_department_dashboard=user.role in {"admin", "department_head"},
-        can_edit=user.role in {"admin", "manager"},
     )

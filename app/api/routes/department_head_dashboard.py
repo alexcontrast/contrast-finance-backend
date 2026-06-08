@@ -121,6 +121,9 @@ def get_department_head_dashboard(
     if department is None:
         raise HTTPException(status_code=404, detail="Department not found")
 
+    if current_user.role == "department_head" and current_user.department_id != department_id:
+        raise HTTPException(status_code=403, detail="Department head can view only own department")
+
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
     if plan is None:
         raise HTTPException(status_code=404, detail="Monthly plan not found")
