@@ -198,6 +198,134 @@ function clientNameForRequest(request) {
   return request.event_title || request.event_id || "";
 }
 
+
+function isInvoiceMethod(method) {
+  const value = String(method || "").toLowerCase();
+  return value === "invoice" || value === "по счету" || value === "по счёту";
+}
+
+function isSelfEmployedMethod(method) {
+  const value = String(method || "").toLowerCase();
+  return value === "self_employed" || value === "самозанятый";
+}
+
+function itemVatVisible(item) {
+  return isInvoiceMethod(item.payment_method) ? item.vat_amount : 0;
+}
+
+function itemDeductionVisible(item) {
+  if (isInvoiceMethod(item.payment_method)) {
+    return item.deduction_amount || 0;
+  }
+
+  if (isSelfEmployedMethod(item.payment_method)) {
+    const stored = asNumber(item.deduction_amount);
+    if (stored > 0) return stored;
+
+    const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : asNumber(item.external_amount);
+    return Math.round(base * 0.10 * 100) / 100;
+  }
+
+  return 0;
+}
+
+function sortItemsCoordinatorFirst(items) {
+  return [...(items || [])].sort((a, b) => {
+    const aCoord = String(a.item_type || "").toLowerCase() === "coordinator" || String(a.external_name || "").toLowerCase().includes("координатор");
+    const bCoord = String(b.item_type || "").toLowerCase() === "coordinator" || String(b.external_name || "").toLowerCase().includes("координатор");
+
+    if (aCoord && !bCoord) return -1;
+    if (!aCoord && bCoord) return 1;
+
+    return Number(a.sort_order || a.id || 0) - Number(b.sort_order || b.id || 0);
+  });
+}
+
+function modalFilteredRequests(requests, status) {
+  if (!status || status === "all") return requests || [];
+  if (status === "active") {
+    return (requests || []).filter((request) => !["rejected", "cash_received"].includes(request.status));
+  }
+  if (status === "archive") {
+    return (requests || []).filter((request) => ["rejected", "cash_received"].includes(request.status));
+  }
+  return (requests || []).filter((request) => request.status === status);
+}
+
+function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
+  const filtered = modalFilteredRequests(requests || [], selectedStatus);
+
+  return `
+    <div class="block-title">
+      <h3>Заявки мероприятия</h3>
+      <span class="muted">${filtered.length} из ${(requests || []).length} шт.</span>
+    </div>
+
+    <div class="filters-row">
+      <label class="compact-label">Статус оплаты
+        <select id="eventModalRequestStatusFilter">
+          <option value="all" ${selectedStatus === "all" ? "selected" : ""}>Все</option>
+          <option value="active" ${selectedStatus === "active" ? "selected" : ""}>Активные</option>
+          <option value="new" ${selectedStatus === "new" ? "selected" : ""}>Новая</option>
+          <option value="paid" ${selectedStatus === "paid" ? "selected" : ""}>Оплачено</option>
+          <option value="cash_received" ${selectedStatus === "cash_received" ? "selected" : ""}>Деньги в кассе</option>
+          <option value="rejected" ${selectedStatus === "rejected" ? "selected" : ""}>Отменено</option>
+        </select>
+      </label>
+    </div>
+
+    ${filtered.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Менеджер</th>
+              <th>Позиция</th>
+              <th>Сумма заявки</th>
+              <th>Способ</th>
+              <th>Налоговый статус</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map((request) => `
+              <tr>
+                <td>${managerNameForRequest(request)}</td>
+                <td>${request.position || request.item_name_snapshot || ""}</td>
+                <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
+                <td>${paymentMethodLabel(request.payment_method)}</td>
+                <td>${request.tax_status || request.tax_status_label || ""}</td>
+                <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
+                <td>
+                  <div class="inline-actions">
+                    ${adminRequestActions(request)}
+                    ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
+                  </div>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    ` : `<div class="empty-state">По выбранному статусу заявок нет.</div>`}
+  `;
+}
+
+function attachEventModalRequestFilter(requests) {
+  const select = document.getElementById("eventModalRequestStatusFilter");
+  if (!select) return;
+
+  select.addEventListener("change", () => {
+    const holder = document.getElementById("eventModalRequestsSection");
+    if (!holder) return;
+
+    holder.innerHTML = renderEventPaymentRequestsTable(requests, select.value);
+    attachPaymentRequestActions();
+    attachEventModalRequestFilter(requests);
+  });
+}
+
 function activePaymentRequests(requests) {
   return (requests || []).filter((request) => !["rejected", "cash_received"].includes(request.status));
 }
@@ -664,10 +792,15 @@ async function openEventModal(eventId) {
 
     $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
 
+    const sortedItems = sortItemsCoordinatorFirst(items || []);
+    const taxesAmount = asNumber(summary.internal_tax_amount) + asNumber(summary.simplified_bank_tax_amount);
+
     $("eventModalContent").innerHTML = `
       <div class="grid cards">
         ${metric("Оборот", formatMoney(summary.external_total))}
-        ${metric("Факт", formatMoney(summary.fact_total))}
+        ${metric("Налоги", formatMoney(taxesAmount))}
+        ${metric("НДС", formatMoney(summary.vat_total))}
+        ${metric("Менеджер 21%", formatMoney(summary.manager_salary))}
         ${metric("Оплачено", formatMoney(summary.paid_total))}
         ${metric("Доход компании", formatMoney(summary.final_company_income))}
       </div>
@@ -679,31 +812,32 @@ async function openEventModal(eventId) {
         <table class="estimate-table">
           <thead>
             <tr>
-              <th>Позиция</th><th>Тип</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>Способ</th><th>НДС</th><th>Вычеты</th>
+              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>Способ</th><th>НДС</th><th>Вычеты</th>
             </tr>
           </thead>
           <tbody>
-            ${(items || []).map((item) => `
+            ${sortedItems.map((item) => `
               <tr>
                 <td><strong>${item.external_name}</strong></td>
-                <td>${item.item_type}</td>
                 <td>${formatMoney(item.external_amount)}</td>
                 <td>${formatMoney(item.amount_fact)}</td>
                 <td>${formatMoney(item.paid_amount)}</td>
                 <td>${paymentMethodLabel(item.payment_method)}</td>
-                <td>${formatMoney(item.vat_amount)}</td>
-                <td>${formatMoney(item.deduction_amount)}</td>
+                <td>${formatMoney(itemVatVisible(item))}</td>
+                <td>${formatMoney(itemDeductionVisible(item))}</td>
               </tr>
             `).join("")}
           </tbody>
         </table>
       </div>
 
-      ${renderPaymentRequestsTable(requests || [], "Заявки мероприятия")}
+      <div id="eventModalRequestsSection">
+        ${renderEventPaymentRequestsTable(requests || [], "all")}
+      </div>
     `;
 
     attachPaymentRequestActions();
-    attachFilters();
+    attachEventModalRequestFilter(requests || []);
   } catch (error) {
     $("eventModalContent").innerHTML = `<div class="error">${error.message}</div>`;
   }

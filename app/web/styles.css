@@ -900,3 +900,73 @@ select:focus {
 .tab-btn[data-admin-tab="requests_archive"] {
   color: #58604e;
 }
+
+
+/* v0.31.4 event modal estimate cleanup */
+.estimate-table th:nth-child(1),
+.estimate-table td:nth-child(1) {
+  background: #f5f8f0;
+}
+
+.estimate-table th:nth-child(2),
+.estimate-table td:nth-child(2),
+.estimate-table th:nth-child(3),
+.estimate-table td:nth-child(3) {
+  background: #f1f4f0;
+}
+
+.estimate-table th:nth-child(4),
+.estimate-table td:nth-child(4),
+.estimate-table th:nth-child(5),
+.estimate-table td:nth-child(5) {
+  background: #f4f7ec;
+}
+
+.estimate-table th:nth-child(6),
+.estimate-table td:nth-child(6) {
+  background: #eaf8fb;
+}
+
+.estimate-table th:nth-child(7),
+.estimate-table td:nth-child(7) {
+  background: #f3effb;
+}
+
+#eventModalRequestsSection .filters-row {
+  margin-top: 8px;
+}
+
+
+/* v0.31.7 event modal estimate cleanup */
+.estimate-table th:nth-child(1),
+.estimate-table td:nth-child(1) {
+  background: #f5f8f0;
+}
+
+.estimate-table th:nth-child(2),
+.estimate-table td:nth-child(2),
+.estimate-table th:nth-child(3),
+.estimate-table td:nth-child(3) {
+  background: #f1f4f0;
+}
+
+.estimate-table th:nth-child(4),
+.estimate-table td:nth-child(4),
+.estimate-table th:nth-child(5),
+.estimate-table td:nth-child(5) {
+  background: #f4f7ec;
+}
+
+.estimate-table th:nth-child(6),
+.estimate-table td:nth-child(6) {
+  background: #eaf8fb;
+}
+
+.estimate-table th:nth-child(7),
+.estimate-table td:nth-child(7) {
+  background: #f3effb;
+}
+
+#eventModalRequestsSection .filters-row {
+  margin-top: 8px;
+}
