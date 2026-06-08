@@ -16,6 +16,8 @@ from app.api.routes.kgd import router as kgd_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.security import router as security_router
+from app.api.routes.app_bootstrap import router as app_bootstrap_router
+from app.api.routes.manager_dashboard import router as manager_dashboard_router
 from app.api.routes.users_import import router as users_import_router
 from app.api.routes.users_manage import router as users_manage_router
 from app.api.routes.health import router as health_router
@@ -46,6 +48,8 @@ app.include_router(kgd_router)
 app.include_router(settings_router)
 app.include_router(auth_router)
 app.include_router(security_router)
+app.include_router(app_bootstrap_router)
+app.include_router(manager_dashboard_router)
 app.include_router(users_import_router)
 app.include_router(users_manage_router)
 
