@@ -17,6 +17,7 @@ from app.schemas.payment_request import (
     PaymentRequestStatusUpdate,
 )
 from app.services.auth import get_current_user
+from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.authorization import (
     get_event_or_404,
     get_item_or_404,
@@ -62,6 +63,74 @@ def calculate_item_remaining(item: EventItem) -> Decimal:
     """
     base_amount = item.amount_fact if item.amount_fact is not None else item.external_amount
     return base_amount - item.paid_amount
+
+
+def get_event_items_for_summary(db: Session, event_id: int) -> list[EventItem]:
+    return db.execute(
+        select(EventItem)
+        .where(EventItem.event_id == event_id, EventItem.is_deleted == False)  # noqa: E712
+        .order_by(EventItem.sort_order, EventItem.id)
+    ).scalars().all()
+
+
+def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary: Decimal) -> EventItem:
+    item = db.execute(
+        select(EventItem)
+        .where(
+            EventItem.event_id == event.id,
+            EventItem.item_type == "manager_salary",
+            EventItem.is_deleted == False,  # noqa: E712
+        )
+        .order_by(EventItem.id)
+    ).scalar_one_or_none()
+
+    if item is None:
+        item = EventItem(
+            event_id=event.id,
+            item_type="manager_salary",
+            external_name="Менеджер 21%",
+            external_price=Decimal("0.00"),
+            external_quantity=Decimal("1.00"),
+            external_days=Decimal("1.00"),
+            external_amount=Decimal("0.00"),
+            external_note=None,
+            amount_fact=q(manager_salary),
+            paid_amount=Decimal("0.00"),
+            payment_method=None,
+            iin_bin=None,
+            iin_bin_locked=False,
+            tax_check_status=None,
+            vat_amount=Decimal("0.00"),
+            deduction_amount=Decimal("0.00"),
+            internal_note="Системная позиция ЗП менеджера",
+            sort_order=999999,
+            is_deleted=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(item)
+        db.flush()
+    else:
+        item.external_amount = Decimal("0.00")
+        item.external_price = Decimal("0.00")
+        item.external_quantity = Decimal("1.00")
+        item.external_days = Decimal("1.00")
+        item.amount_fact = q(manager_salary)
+        item.vat_amount = Decimal("0.00")
+        item.deduction_amount = Decimal("0.00")
+        item.updated_at = datetime.utcnow()
+        db.add(item)
+        db.flush()
+
+    return item
+
+
+def validate_manager_salary_payment_rules(payment_method: str, payload: PaymentRequestCreate):
+    if payment_method != "cash":
+        raise HTTPException(
+            status_code=400,
+            detail="ЗП менеджера всегда оформляется как Налик",
+        )
 
 
 def normalize_payment_method(payment_method: str | None) -> str | None:
@@ -319,6 +388,81 @@ def create_payment_request(
         tax_source_snapshot="event_item" if payment_method == "invoice" else None,
 
         card_number=payload.card_number if payment_method == "card" else None,
+        manual_tax_mode=False,
+        warning_over_remaining=warning_over_remaining,
+
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+
+    return enrich_payment_request_read(request, db)
+
+
+
+
+@router.post("/events/{event_id}/manager-salary/payment-requests", response_model=PaymentRequestRead)
+def create_manager_salary_payment_request(
+    event_id: int,
+    payload: PaymentRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+
+    if current_user.role == "department_head":
+        raise HTTPException(status_code=403, detail="Department head is read-only")
+
+    if current_user.role == "manager" and event.manager_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Manager can request salary only for own event")
+
+    if current_user.role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Only admin or manager can create manager salary request")
+
+    # ЗП менеджера всегда оформляется как Налик. Способ оплаты не выбирается.
+    payment_method = "cash"
+
+    validate_manager_salary_payment_rules(payment_method, payload)
+
+    items = get_event_items_for_summary(db, event.id)
+    summary = calculate_event_summary_values(event, items)
+    manager_salary = q(summary["manager_salary"])
+
+    if manager_salary <= 0:
+        raise HTTPException(status_code=400, detail="ЗП менеджера по этому мероприятию равна 0")
+
+    salary_item = get_or_create_manager_salary_item(db, event, manager_salary)
+    remaining = calculate_item_remaining(salary_item)
+    warning_over_remaining = payload.amount_requested > remaining
+
+    request = PaymentRequest(
+        event_id=event.id,
+        event_item_id=salary_item.id,
+        created_by_user_id=current_user.id,
+        amount_requested=payload.amount_requested,
+        payment_method=payment_method,
+        status="new",
+        comment=payload.comment,
+
+        item_name_snapshot=salary_item.external_name,
+        item_amount_plan_snapshot=Decimal("0.00"),
+        item_amount_fact_snapshot=salary_item.amount_fact,
+        item_paid_amount_snapshot=salary_item.paid_amount,
+        item_remaining_snapshot=remaining,
+
+        contractor_id=None,
+        contractor_name_snapshot=None,
+        iin_bin_snapshot=None,
+        tax_status_snapshot=None,
+        vat_status_snapshot=None,
+        vat_amount_snapshot=Decimal("0.00"),
+        deduction_amount_snapshot=Decimal("0.00"),
+        tax_source_snapshot=None,
+
+        card_number=None,
         manual_tax_mode=False,
         warning_over_remaining=warning_over_remaining,
 

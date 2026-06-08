@@ -366,6 +366,17 @@ function attachEventModalRequestFilter(requests) {
   });
 }
 
+
+function attachManagerSalaryRequestButton() {
+  document.querySelectorAll("[data-manager-salary-request]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const [eventId, amount] = button.getAttribute("data-manager-salary-request").split(":");
+      await createManagerSalaryRequest(eventId, amount);
+    });
+  });
+}
+
 function activePaymentRequests(requests) {
   return (requests || []).filter((request) => !["rejected", "cash_received"].includes(request.status));
 }
@@ -817,6 +828,44 @@ function attachEventRows() {
   });
 }
 
+
+function canRequestManagerSalaryForEvent(event) {
+  const user = state.bootstrap?.user;
+  if (!user || !event) return false;
+
+  if (user.role === "admin") return true;
+  if (user.role === "manager" && Number(event.manager_id) === Number(user.id)) return true;
+
+  return false;
+}
+
+async function createManagerSalaryRequest(eventId, defaultAmount) {
+  const rawAmount = prompt("Сумма заявки на ЗП менеджера", String(Math.max(0, Math.round(asNumber(defaultAmount)))));
+  if (rawAmount === null) return;
+
+  const amount = Number(String(rawAmount).replace(/\s/g, "").replace(",", "."));
+  if (!amount || amount <= 0) {
+    alert("Сумма должна быть больше 0");
+    return;
+  }
+
+  const comment = prompt("Комментарий к заявке", "ЗП менеджера") || "ЗП менеджера";
+
+  await withLoading(async () => {
+    await api(`/events/${eventId}/manager-salary/payment-requests`, {
+      method: "POST",
+      body: JSON.stringify({
+        amount_requested: amount,
+        payment_method: "cash",
+        card_number: null,
+        comment,
+      }),
+    });
+    await openEventModal(eventId);
+    await loadDashboard();
+  }, "Создаём заявку на ЗП менеджера…");
+}
+
 async function openEventModal(eventId) {
   $("eventModalBackdrop").classList.remove("hidden");
   $("eventModalTitle").textContent = `Мероприятие #${eventId}`;
@@ -832,8 +881,11 @@ async function openEventModal(eventId) {
 
     $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
 
-    const sortedItems = sortItemsCoordinatorFirst(items || []);
+    const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
     const taxesAmount = asNumber(summary.internal_tax_amount) + asNumber(summary.simplified_bank_tax_amount);
+    const managerSalary = asNumber(summary.manager_salary);
+    const managerSalaryPaid = asNumber(managerSalaryPaidValue(summary));
+    const managerSalaryRemaining = Math.max(0, managerSalary - managerSalaryPaid);
 
     $("eventModalContent").innerHTML = `
       <div class="grid cards modal-metric-cards">
@@ -870,10 +922,13 @@ async function openEventModal(eventId) {
               </tr>
             `).join("")}
             <tr class="manager-salary-row">
-              <td><strong>Менеджер 21%</strong></td>
+              <td>
+                <strong>Менеджер 21%</strong>
+                ${canRequestManagerSalaryForEvent(event) && managerSalaryRemaining > 0 ? `<button class="small secondary salary-request-btn" data-manager-salary-request="${event.id}:${managerSalaryRemaining}">Подать заявку</button>` : ""}
+              </td>
               <td>0</td>
-              <td>${formatMoney(summary.manager_salary)}</td>
-              <td>${formatMoney(managerSalaryPaidValue(summary))}</td>
+              <td>${formatMoney(managerSalary)}</td>
+              <td>${formatMoney(managerSalaryPaid)}</td>
               <td>ЗП менеджера</td>
               <td>0</td>
               <td>0</td>
@@ -889,6 +944,7 @@ async function openEventModal(eventId) {
 
     attachPaymentRequestActions();
     attachEventModalRequestFilter(requests || []);
+    attachManagerSalaryRequestButton();
   } catch (error) {
     $("eventModalContent").innerHTML = `<div class="error">${error.message}</div>`;
   }
