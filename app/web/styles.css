@@ -1649,3 +1649,75 @@ button[data-manager-event-save-draft]:hover {
     grid-template-columns: 1fr 1fr !important;
   }
 }
+
+
+/* v0.35.12 summary cards and draft header editing */
+.manager-summary-grid-six {
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+}
+
+.manager-event-fields input:not(:disabled),
+.manager-event-fields select:not(:disabled) {
+  background: #fff;
+  border-color: rgba(110, 245, 0, .35);
+}
+
+@media (max-width: 1100px) {
+  .manager-summary-grid-six {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .manager-summary-grid-six {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+
+/* v0.35.13 spreadsheet navigation and draggable rows */
+.estimate-table .drag-col {
+  width: 34px;
+  min-width: 34px;
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.drag-handle {
+  cursor: grab;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 28px;
+  border-radius: 8px;
+  color: #7b8574;
+  font-weight: 900;
+  user-select: none;
+}
+
+.drag-handle:hover {
+  background: rgba(110, 245, 0, .16);
+  color: #111;
+}
+
+.drag-handle.muted {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.dragging-row {
+  opacity: .55;
+}
+
+.drag-over-row {
+  outline: 2px solid rgba(110, 245, 0, .75);
+  outline-offset: -2px;
+}
+
+.estimate-table input:focus,
+.estimate-table select:focus {
+  border-color: #6ef500 !important;
+  box-shadow: 0 0 0 2px rgba(110, 245, 0, .18);
+}

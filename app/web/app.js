@@ -14,6 +14,7 @@ const state = {
   managerEstimateTab: "external",
   managerDraftItemsByEventId: {},
   managerDraftDeletedByEventId: {},
+  managerDraftEventsById: {},
   managerDraftTempSeq: 1,
   adminData: null,
   users: [],
@@ -154,6 +155,41 @@ function calcTypeLabel(type) {
 
 function customerPaymentLabel(type) {
   return calcTypeLabel(type);
+}
+
+
+function isDraftEvent(event) {
+  return event?.status === "draft";
+}
+
+function eventDateForInput(value) {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+}
+
+function getDraftEvent(event) {
+  if (!event) return null;
+  if (!state.managerDraftEventsById) state.managerDraftEventsById = {};
+  const key = String(event.id);
+  if (!state.managerDraftEventsById[key]) {
+    state.managerDraftEventsById[key] = JSON.parse(JSON.stringify(event));
+  }
+  return state.managerDraftEventsById[key];
+}
+
+function setDraftEventValue(eventId, field, value) {
+  if (!state.managerDraftEventsById) state.managerDraftEventsById = {};
+  const key = String(eventId);
+  if (!state.managerDraftEventsById[key] && state.currentManagerEvent) {
+    state.managerDraftEventsById[key] = JSON.parse(JSON.stringify(state.currentManagerEvent));
+  }
+  const event = state.managerDraftEventsById[key];
+  if (!event) return;
+  if (["agency_commission_amount", "simplified_bank_tax_percent"].includes(field)) {
+    event[field] = normalizeNumberInput(value);
+  } else {
+    event[field] = value;
+  }
 }
 
 function getSelectedManagerEvent(data) {
@@ -1279,13 +1315,15 @@ async function renderManagerEventDetail(eventId, options = {}) {
           api(`/events/${eventId}/summary`),
         ]);
 
-    state.currentManagerEvent = event;
+    const draftEvent = getDraftEvent(event);
+    state.currentManagerEvent = draftEvent;
     state.currentManagerSummary = summary;
     const draftItems = getDraftItems(eventId, items || []);
     state.currentManagerItems = draftItems;
 
-    holder.innerHTML = renderManagerEventCard(event, draftItems, summary);
+    holder.innerHTML = renderManagerEventCard(draftEvent, draftItems, summary);
     attachManagerCreateWorkspaceActions();
+    attachDraftEventInputs(eventId);
     attachDraftInputs(eventId);
   } catch (error) {
     holder.innerHTML = `<div class="error">${error.message}</div>`;
@@ -1439,6 +1477,42 @@ function setDraftItemValue(eventId, itemId, field, value) {
   }
 }
 
+
+function attachDraftEventInputs(eventId) {
+  document.querySelectorAll("[data-event-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
+    });
+
+    input.addEventListener("change", () => {
+      setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
+      renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+    });
+  });
+}
+
+async function saveDraftEvent(eventId) {
+  const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
+  if (!draftEvent) return;
+
+  await api(`/events/${eventId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      client_name: draftEvent.client_name,
+      title: draftEvent.title,
+      event_date: eventDateForInput(draftEvent.event_date),
+      department_id: draftEvent.department_id,
+      manager_id: draftEvent.manager_id,
+      status: draftEvent.status,
+      client_calc_type: draftEvent.client_calc_type,
+      manager_percent: draftEvent.manager_percent,
+      agency_commission_amount: draftEvent.agency_commission_amount,
+      agency_commission_spread_enabled: draftEvent.agency_commission_spread_enabled,
+      simplified_bank_tax_percent: draftEvent.client_calc_type === "simplified" ? draftEvent.simplified_bank_tax_percent : 0,
+    }),
+  });
+}
+
 function attachDraftInputs(eventId) {
   document.querySelectorAll("[data-item-field]").forEach((input) => {
     input.addEventListener("input", () => {
@@ -1513,6 +1587,179 @@ function internalFactDisplayValue(item) {
   return estimateInputMoney(item.amount_fact);
 }
 
+
+function draggableHandle(item) {
+  if (item.item_type === "coordinator") return `<span class="drag-handle muted" title="Координатор всегда первый">⋮⋮</span>`;
+  return `<span class="drag-handle" draggable="true" data-drag-item="${item.id}" title="Перетащить строку">⋮⋮</span>`;
+}
+
+function addDraftRegularPosition(eventId) {
+  const items = getDraftItems(eventId);
+  items.push({
+    id: `tmp-${state.managerDraftTempSeq++}`,
+    is_temp: true,
+    item_type: "regular",
+    external_name: "Новая позиция",
+    external_price: 0,
+    external_quantity: 1,
+    external_days: 1,
+    external_amount: 0,
+    external_note: "",
+    amount_fact: null,
+    paid_amount: 0,
+    payment_method: null,
+    iin_bin: null,
+    iin_bin_locked: false,
+    tax_check_status: null,
+    vat_amount: 0,
+    deduction_amount: 0,
+    internal_note: null,
+    sort_order: items.length,
+  });
+}
+
+function moveDraftItem(eventId, fromId, toId) {
+  if (!fromId || !toId || String(fromId) === String(toId)) return;
+  const items = getDraftItems(eventId);
+  const fromIndex = items.findIndex((item) => String(item.id) === String(fromId));
+  const toIndex = items.findIndex((item) => String(item.id) === String(toId));
+  if (fromIndex < 0 || toIndex < 0) return;
+
+  const moving = items[fromIndex];
+  const target = items[toIndex];
+  if (moving.item_type === "coordinator" || target.item_type === "coordinator") return;
+
+  items.splice(fromIndex, 1);
+  const newToIndex = items.findIndex((item) => String(item.id) === String(toId));
+  items.splice(newToIndex, 0, moving);
+
+  items.forEach((item, index) => {
+    item.sort_order = item.item_type === "coordinator" ? -100 : index;
+  });
+}
+
+function tableFocusableCells() {
+  return Array.from(document.querySelectorAll(".estimate-table input:not(:disabled), .estimate-table select:not(:disabled), .estimate-table textarea:not(:disabled)"));
+}
+
+function focusTableCell(current, direction) {
+  const cells = tableFocusableCells();
+  const index = cells.indexOf(current);
+  if (index < 0) return false;
+
+  const row = current.closest("tr");
+  const rows = Array.from(current.closest("tbody")?.querySelectorAll("tr[data-event-item-row]") || []);
+  const rowIndex = rows.indexOf(row);
+  const cellIndex = Array.from(row?.querySelectorAll("input:not(:disabled), select:not(:disabled), textarea:not(:disabled)") || []).indexOf(current);
+
+  if (direction === "right") {
+    const next = cells[index + 1];
+    if (next) next.focus();
+    return Boolean(next);
+  }
+
+  if (direction === "left") {
+    const prev = cells[index - 1];
+    if (prev) prev.focus();
+    return Boolean(prev);
+  }
+
+  if (direction === "down" || direction === "enter") {
+    const nextRow = rows[rowIndex + 1];
+    if (nextRow) {
+      const rowCells = Array.from(nextRow.querySelectorAll("input:not(:disabled), select:not(:disabled), textarea:not(:disabled)"));
+      const target = rowCells[Math.min(cellIndex, rowCells.length - 1)] || rowCells[0];
+      if (target) target.focus();
+      return Boolean(target);
+    }
+
+    if (direction === "enter") {
+      addDraftRegularPosition(state.selectedManagerEventId);
+      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      setTimeout(() => {
+        const freshRows = Array.from(document.querySelectorAll("tr[data-event-item-row]"));
+        const lastRow = freshRows[freshRows.length - 1];
+        const firstCell = lastRow?.querySelector("input:not(:disabled), select:not(:disabled), textarea:not(:disabled)");
+        if (firstCell) firstCell.focus();
+      }, 0);
+      return true;
+    }
+
+    return false;
+  }
+
+  if (direction === "up") {
+    const prevRow = rows[rowIndex - 1];
+    if (prevRow) {
+      const rowCells = Array.from(prevRow.querySelectorAll("input:not(:disabled), select:not(:disabled), textarea:not(:disabled)"));
+      const target = rowCells[Math.min(cellIndex, rowCells.length - 1)] || rowCells[0];
+      if (target) target.focus();
+      return Boolean(target);
+    }
+    return false;
+  }
+
+  return false;
+}
+
+function attachEstimateKeyboardNavigation() {
+  document.querySelectorAll(".estimate-table input, .estimate-table select, .estimate-table textarea").forEach((field) => {
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        focusTableCell(field, "right");
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        focusTableCell(field, "left");
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        focusTableCell(field, "down");
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        focusTableCell(field, "up");
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        focusTableCell(field, "enter");
+      }
+    });
+  });
+}
+
+function attachEstimateDragAndDrop() {
+  document.querySelectorAll("[data-drag-item]").forEach((handle) => {
+    handle.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/plain", handle.getAttribute("data-drag-item"));
+      event.dataTransfer.effectAllowed = "move";
+      handle.closest("tr")?.classList.add("dragging-row");
+    });
+
+    handle.addEventListener("dragend", () => {
+      handle.closest("tr")?.classList.remove("dragging-row");
+    });
+  });
+
+  document.querySelectorAll("tr[data-event-item-row]").forEach((row) => {
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      row.classList.add("drag-over-row");
+    });
+
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drag-over-row");
+    });
+
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      row.classList.remove("drag-over-row");
+      const fromId = event.dataTransfer.getData("text/plain");
+      const toId = row.getAttribute("data-event-item-row");
+      moveDraftItem(state.selectedManagerEventId, fromId, toId);
+      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+    });
+  });
+}
+
+
 function renderExternalEstimate(items, eventId, event = null) {
   const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
   const total = externalItemsTotal(shownItems);
@@ -1530,6 +1777,7 @@ function renderExternalEstimate(items, eventId, event = null) {
       <table class="estimate-table external-estimate-table">
         <thead>
           <tr>
+            <th class="drag-col"></th>
             <th>Позиция</th>
             <th>Цена</th>
             <th>Кол-во</th>
@@ -1542,6 +1790,7 @@ function renderExternalEstimate(items, eventId, event = null) {
         <tbody>
           ${shownItems.map((item) => `
             <tr data-event-item-row="${item.id}">
+              <td class="drag-col">${draggableHandle(item)}</td>
               <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
               <td>${rowInput(formatMoney(item.external_price), `data-item-field="external_price" data-item-id="${item.id}"`)}</td>
               <td>${rowInput(item.external_quantity || 1, `data-item-field="external_quantity" data-item-id="${item.id}"`)}</td>
@@ -1574,10 +1823,15 @@ function renderInternalEstimate(items, event, summary = null) {
   const managerSalary = summaryNumber(summary, "manager_salary");
 
   return `
+    <div class="manager-add-position-row">
+      <button class="secondary" id="addInternalPositionBtn">+ Добавить позицию</button>
+    </div>
+
     <div class="table-wrap estimate-table-wrap">
       <table class="estimate-table internal-estimate-table">
         <thead>
           <tr>
+            <th class="drag-col"></th>
             <th>Позиция</th>
             <th>Смета</th>
             <th>Факт</th>
@@ -1595,6 +1849,7 @@ function renderInternalEstimate(items, event, summary = null) {
             const binDisabled = isCoordinatorItem(item) || item.payment_method !== "invoice";
             return `
               <tr data-event-item-row="${item.id}">
+                <td class="drag-col">${draggableHandle(item)}</td>
                 <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
                 <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
                 <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
@@ -1629,19 +1884,6 @@ function renderInternalEstimate(items, event, summary = null) {
             `;
           }).join("")}
 
-          <tr class="system-row agency-row">
-            <td><strong>Комиссия агентства</strong></td>
-            <td><strong>${formatMoney(agency)}</strong></td>
-            <td>0</td>
-            <td>—</td>
-            <td>—</td>
-            <td>—</td>
-            <td>0</td>
-            <td>0</td>
-            <td><strong>${formatMoney(agency)}</strong></td>
-            <td>0</td>
-          </tr>
-
           ${event.client_calc_type === "simplified" ? `
             <tr class="system-row simplified-row">
               <td><strong>Банковские и налоговые платежи</strong></td>
@@ -1656,19 +1898,6 @@ function renderInternalEstimate(items, event, summary = null) {
               <td>0</td>
             </tr>
           ` : ""}
-
-          <tr class="system-row manager-percent-row">
-            <td><strong>Менеджер 21%</strong></td>
-            <td>0</td>
-            <td>0</td>
-            <td>ЗП менеджера</td>
-            <td>—</td>
-            <td>—</td>
-            <td>0</td>
-            <td>0</td>
-            <td><strong>-${formatMoney(managerSalary)}</strong></td>
-            <td>${formatMoney(summaryNumber(summary, "manager_salary_paid"))}</td>
-          </tr>
         </tbody>
       </table>
     </div>
@@ -1695,23 +1924,28 @@ function renderManagerEventCard(event, items = [], summary = null) {
 
       <div class="manager-event-fields">
         <label>Тип расчёта с заказчиком
-          <select disabled><option>${customerPaymentLabel(event.client_calc_type)}</option></select>
+          <select data-event-field="client_calc_type" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"}>
+            <option value="ip_contrast_event" ${event.client_calc_type === "ip_contrast_event" ? "selected" : ""}>ИП Contrast Event</option>
+            <option value="our_no_vat" ${event.client_calc_type === "our_no_vat" ? "selected" : ""}>ОУР без НДС</option>
+            <option value="simplified" ${event.client_calc_type === "simplified" ? "selected" : ""}>Упрощенка</option>
+            <option value="cash" ${event.client_calc_type === "cash" ? "selected" : ""}>Нал</option>
+          </select>
         </label>
         <label>Дата мероприятия
-          <input value="${formatDateRu(event.event_date)}" disabled />
+          <input type="date" value="${eventDateForInput(event.event_date)}" data-event-field="event_date" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
         </label>
         <label>Название заказчика
-          <input value="${event.client_name || ""}" disabled />
+          <input value="${event.client_name || ""}" data-event-field="client_name" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
         </label>
         <label>Название мероприятия
-          <input value="${event.title || ""}" disabled />
+          <input value="${event.title || ""}" data-event-field="title" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
         </label>
         <label>Комиссия агентства, %
-          <input value="${formatMoney(event.agency_commission_amount || 0)}" disabled />
+          <input value="${formatMoney(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
         </label>
         ${event.client_calc_type === "simplified" ? `
           <label>Банк+налоги, %
-            <input value="${event.simplified_bank_tax_percent || 0}" disabled />
+            <input value="${event.simplified_bank_tax_percent || 0}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
           </label>
         ` : ""}
       </div>
@@ -1726,8 +1960,10 @@ function renderManagerEventCard(event, items = [], summary = null) {
       </div>
 
       ${summary && activeTab === "internal" ? `
-        <div class="manager-summary-grid manager-summary-grid-four">
+        <div class="manager-summary-grid manager-summary-grid-six">
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
+          ${metric("Комиссия", formatMoney(summary.total_commission_amount ?? (summary.regular_positions_commission + summary.agency_commission_amount)))}
+          ${metric("Менеджер", formatMoney(summary.manager_salary))}
           ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
           ${metric("НДС", formatMoney(internalVatNet(summary)))}
           <div class="card metric income-metric">
@@ -1883,6 +2119,9 @@ function itemPayloadForSave(item) {
 
 async function saveDraftItems(eventId) {
   const items = getDraftItems(eventId);
+  items.forEach((item, index) => {
+    item.sort_order = item.item_type === "coordinator" ? -100 : index;
+  });
   const deletedIds = getDraftDeletedIds(eventId);
 
   for (const itemId of deletedIds) {
@@ -1908,31 +2147,11 @@ async function saveDraftItems(eventId) {
 
   delete state.managerDraftItemsByEventId[draftKeyForEvent(eventId)];
   delete state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)];
+  if (state.managerDraftEventsById) delete state.managerDraftEventsById[String(eventId)];
 }
 
 async function addExternalPosition(eventId) {
-  const items = getDraftItems(eventId);
-  items.push({
-    id: `tmp-${state.managerDraftTempSeq++}`,
-    is_temp: true,
-    item_type: "regular",
-    external_name: "Новая позиция",
-    external_price: 0,
-    external_quantity: 1,
-    external_days: 1,
-    external_amount: 0,
-    external_note: "",
-    amount_fact: null,
-    paid_amount: 0,
-    payment_method: null,
-    iin_bin: null,
-    iin_bin_locked: false,
-    tax_check_status: null,
-    vat_amount: 0,
-    deduction_amount: 0,
-    internal_note: null,
-    sort_order: 0,
-  });
+  addDraftRegularPosition(eventId);
 }
 
 function deleteDraftItem(eventId, itemId) {
@@ -1980,12 +2199,13 @@ function attachManagerCreateWorkspaceActions() {
   });
 
   const addExternalBtn = document.getElementById("addExternalPositionBtn");
-  if (addExternalBtn) {
-    addExternalBtn.addEventListener("click", () => {
-      addExternalPosition(state.selectedManagerEventId);
+  const addInternalBtn = document.getElementById("addInternalPositionBtn");
+  [addExternalBtn, addInternalBtn].filter(Boolean).forEach((button) => {
+    button.addEventListener("click", () => {
+      addDraftRegularPosition(state.selectedManagerEventId);
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
-  }
+  });
 
   document.querySelectorAll("[data-delete-item]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2011,6 +2231,8 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-save-draft");
       await withLoading(async () => {
+        await saveDraftEvent(eventId);
+        await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         await renderManagerEventDetail(eventId);
@@ -2025,6 +2247,8 @@ function attachManagerCreateWorkspaceActions() {
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
 
       await withLoading(async () => {
+        await saveDraftEvent(eventId);
+        await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         await renderManagerEventDetail(eventId);
@@ -2033,6 +2257,9 @@ function attachManagerCreateWorkspaceActions() {
     });
   });
 
+
+  attachEstimateKeyboardNavigation();
+  attachEstimateDragAndDrop();
 }
 
 
@@ -2129,7 +2356,7 @@ function attachManagerCreateForm() {
 
 
 async function updateManagerEventStatus(eventId, status) {
-  const event = await api(`/events/${eventId}`);
+  const event = state.managerDraftEventsById?.[String(eventId)] || await api(`/events/${eventId}`);
   await api(`/events/${eventId}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -2175,6 +2402,7 @@ function attachManagerDashboardActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-save-draft");
       await withLoading(async () => {
+        await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         await renderManagerEventDetail(eventId);
@@ -2189,6 +2417,7 @@ function attachManagerDashboardActions() {
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
 
       await withLoading(async () => {
+        await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         await renderManagerEventDetail(eventId);
