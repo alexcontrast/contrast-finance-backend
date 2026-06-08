@@ -19,6 +19,10 @@ def q(value: Decimal) -> Decimal:
     return money(value).quantize(Decimal("0.01"))
 
 
+def q0(value: Decimal) -> Decimal:
+    return money(value).quantize(Decimal("1"))
+
+
 def item_fact_or_plan(item: EventItem) -> Decimal:
     return money(item.amount_fact) if item.amount_fact is not None else money(item.external_amount)
 
