@@ -1024,3 +1024,48 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.31.9 modal metric fit and manager salary row correction */
+.modal-metric-cards {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.modal-metric-cards .metric {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.modal-metric-cards .metric .value {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: clamp(24px, 2.55vw, 38px);
+  line-height: .98;
+  letter-spacing: -.06em;
+}
+
+.modal-metric-cards .metric .label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 1200px) {
+  .modal-metric-cards .metric {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+.manager-salary-row td:nth-child(2) {
+  color: var(--muted);
+}
+
+.manager-salary-row td:nth-child(3),
+.manager-salary-row td:nth-child(4) {
+  font-weight: 950;
+}

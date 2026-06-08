@@ -242,18 +242,21 @@ function calculationTypeValue(event, summary) {
 
 function taxPercentLabelForEvent(event, summary) {
   const type = calculationTypeValue(event, summary);
+  const taxAmount = asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount);
 
   if (type.includes("упрощ")) return "5%";
   if (type.includes("нал")) return "0%";
   if (type.includes("оур") || type.includes("contrast") || type.includes("ип")) return "12%";
 
-  const taxAmount = asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount);
-  const base = asNumber(summary?.external_total);
-  if (base > 0 && taxAmount > 0) {
-    return `${Math.round((taxAmount / base) * 10000) / 100}%`;
-  }
+  if (taxAmount <= 0) return "0%";
 
-  return "0%";
+  // Fallback for old/test events where calculation_type was not returned.
+  // ИП Contrast Event tax can look like 8.57% of client total because 12% is taken from amount without VAT.
+  const base = asNumber(summary?.external_total);
+  const ratio = base > 0 ? (taxAmount / base) * 100 : 0;
+
+  if (ratio > 0 && ratio <= 6.5) return "5%";
+  return "12%";
 }
 
 function managerSalaryPaidValue(summary) {
@@ -835,7 +838,7 @@ async function openEventModal(eventId) {
     $("eventModalContent").innerHTML = `
       <div class="grid cards modal-metric-cards">
         ${metric("Оборот", formatMoney(summary.external_total))}
-        ${metric("Налоги", taxPercentLabelForEvent(event, summary))}
+        ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)}`, formatMoney(taxesAmount))}
         ${metric("НДС", formatMoney(summary.vat_total))}
         ${metric("Оплачено", formatMoney(summary.paid_total))}
         <div class="card metric income-metric">
@@ -868,7 +871,7 @@ async function openEventModal(eventId) {
             `).join("")}
             <tr class="manager-salary-row">
               <td><strong>Менеджер 21%</strong></td>
-              <td>${formatMoney(summary.manager_salary)}</td>
+              <td>0</td>
               <td>${formatMoney(summary.manager_salary)}</td>
               <td>${formatMoney(managerSalaryPaidValue(summary))}</td>
               <td>ЗП менеджера</td>
