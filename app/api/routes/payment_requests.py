@@ -330,18 +330,36 @@ def update_payment_request_status(
 ):
     request = get_request_or_404(db, request_id)
 
-    # Only admin can change payment statuses.
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admin can change payment request status")
-
-    require_payment_request_edit(db, current_user, request)
-
     allowed = {"new", "to_pay", "paid", "cash_received", "rejected", "tax_check_needed"}
     if payload.status not in allowed:
         raise HTTPException(
             status_code=400,
             detail="status должен быть new, to_pay, paid, cash_received, rejected или tax_check_needed",
         )
+
+    event = require_payment_request_edit(db, current_user, request)
+
+    # Admin can manage all statuses.
+    # Manager can only cancel own request by setting rejected.
+    # Department head remains read-only because require_payment_request_edit rejects it.
+    if current_user.role != "admin":
+        if current_user.role == "manager" and payload.status == "rejected":
+            if request.status in {"paid", "cash_received"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Оплаченную заявку нельзя отменить менеджером",
+                )
+
+            if request.created_by_user_id != current_user.id and event.manager_id != current_user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Manager can cancel only own payment requests",
+                )
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail="Only admin can change payment request status; manager can only cancel own request",
+            )
 
     request.status = payload.status
     request.updated_at = datetime.utcnow()
