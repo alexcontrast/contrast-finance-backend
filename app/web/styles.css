@@ -844,3 +844,59 @@ select:focus {
   min-height: 48px;
   font-weight: 850;
 }
+
+
+/* v0.31.3 loading and request archive */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(246, 252, 239, .58);
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(3px);
+}
+
+.loading-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255,255,255,.96);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 60px rgba(31, 60, 12, .18);
+  border-radius: 22px;
+  padding: 18px 22px;
+  min-width: 260px;
+}
+
+.loading-card strong {
+  display: block;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.loading-card span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.loading-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(125, 240, 0, .55);
+  animation: cfPulse 1s infinite;
+}
+
+@keyframes cfPulse {
+  0% { transform: scale(.9); box-shadow: 0 0 0 0 rgba(125, 240, 0, .55); }
+  70% { transform: scale(1); box-shadow: 0 0 0 14px rgba(125, 240, 0, 0); }
+  100% { transform: scale(.9); box-shadow: 0 0 0 0 rgba(125, 240, 0, 0); }
+}
+
+.tab-btn[data-admin-tab="requests_archive"] {
+  color: #58604e;
+}

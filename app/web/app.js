@@ -74,7 +74,7 @@ function attachMonthYearSelectors() {
     if (!select) return;
     select.addEventListener("change", async () => {
       state.month = selectedMonthValue();
-      await loadDashboard();
+      await withLoading(loadDashboard, "Загружаем кабинет…");
     });
   });
 }
@@ -144,6 +144,68 @@ async function api(path, options = {}) {
 
   return response.json();
 }
+
+
+let loadingCounter = 0;
+
+function setLoading(isLoading, text = "Обновляем данные…") {
+  const overlay = document.getElementById("loadingOverlay");
+  if (!overlay) return;
+
+  if (isLoading) {
+    loadingCounter += 1;
+    const span = overlay.querySelector("span");
+    if (span) span.textContent = text;
+    overlay.classList.remove("hidden");
+    return;
+  }
+
+  loadingCounter = Math.max(0, loadingCounter - 1);
+  if (loadingCounter === 0) overlay.classList.add("hidden");
+}
+
+async function withLoading(task, text = "Обновляем данные…") {
+  setLoading(true, text);
+  try {
+    return await task();
+  } finally {
+    setLoading(false);
+  }
+}
+
+function eventById(eventId) {
+  const data = state.adminData;
+  if (!data) return null;
+  return (data.events || []).find((event) => Number(event.id) === Number(eventId)) || null;
+}
+
+function managerNameForRequest(request) {
+  if (request.manager_name) return request.manager_name;
+
+  const event = eventById(request.event_id);
+  if (event?.manager_name) return event.manager_name;
+  if (event?.manager_id) return managerNameById(event.manager_id);
+
+  return "";
+}
+
+function clientNameForRequest(request) {
+  if (request.client_name) return request.client_name;
+
+  const event = eventById(request.event_id);
+  if (event?.client_name) return event.client_name;
+
+  return request.event_title || request.event_id || "";
+}
+
+function activePaymentRequests(requests) {
+  return (requests || []).filter((request) => !["rejected", "cash_received"].includes(request.status));
+}
+
+function archivedPaymentRequests(requests) {
+  return (requests || []).filter((request) => ["rejected", "cash_received"].includes(request.status));
+}
+
 
 function showLogin() {
   $("loginScreen").classList.remove("hidden");
@@ -228,18 +290,26 @@ function filteredEvents(events) {
   return list;
 }
 
-function filteredPaymentRequests(requests) {
+function filteredPaymentRequests(requests, mode = "regular") {
   let list = [...(requests || [])];
 
-  if (state.paymentStatusFilter === "active") {
-    list = list.filter((request) => !["rejected", "cash_received"].includes(request.status));
-  } else if (state.paymentStatusFilter !== "all") {
-    list = list.filter((request) => request.status === state.paymentStatusFilter);
+  if (mode === "archive") {
+    if (state.paymentStatusFilter === "all" || state.paymentStatusFilter === "active") {
+      list = list.filter((request) => ["rejected", "cash_received"].includes(request.status));
+    } else {
+      list = list.filter((request) => request.status === state.paymentStatusFilter);
+    }
+  } else {
+    if (state.paymentStatusFilter === "active" || state.paymentStatusFilter === "all") {
+      list = list.filter((request) => !["rejected", "cash_received"].includes(request.status));
+    } else {
+      list = list.filter((request) => request.status === state.paymentStatusFilter);
+    }
   }
 
   const search = String(state.paymentSearch || "").trim().toLowerCase();
   if (search) {
-    list = list.filter((request) => String(request.client_name || "").toLowerCase().includes(search));
+    list = list.filter((request) => String(clientNameForRequest(request) || "").toLowerCase().includes(search));
   }
 
   return list;
@@ -250,6 +320,7 @@ function renderAdminTabs() {
     ["overview", "Обзор"],
     ["events", "Мероприятия"],
     ["requests", "Заявки"],
+    ["requests_archive", "Архив заявок"],
     ["plans", "Задать планы"],
     ["closing", "Закрыть месяц"],
   ];
@@ -264,7 +335,15 @@ function renderAdminTabs() {
   document.querySelectorAll("[data-admin-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeAdminTab = button.getAttribute("data-admin-tab");
-      renderAdminDashboard(state.adminData);
+      state.paymentStatusFilter = state.activeAdminTab === "requests_archive" ? "all" : "active";
+      setLoading(true, "Переключаем вкладку…");
+      setTimeout(() => {
+        try {
+          renderAdminDashboard(state.adminData);
+        } finally {
+          setLoading(false);
+        }
+      }, 80);
     });
   });
 }
@@ -341,17 +420,24 @@ function renderEventFilters(events) {
   `;
 }
 
-function renderPaymentFilters() {
+function renderPaymentFilters(mode = "regular") {
+  const regularOptions = `
+    <option value="active" ${state.paymentStatusFilter === "active" ? "selected" : ""}>Активные</option>
+    <option value="new" ${state.paymentStatusFilter === "new" ? "selected" : ""}>Новая</option>
+    <option value="paid" ${state.paymentStatusFilter === "paid" ? "selected" : ""}>Оплачено</option>
+  `;
+
+  const archiveOptions = `
+    <option value="all" ${state.paymentStatusFilter === "all" || state.paymentStatusFilter === "active" ? "selected" : ""}>Весь архив</option>
+    <option value="cash_received" ${state.paymentStatusFilter === "cash_received" ? "selected" : ""}>Деньги в кассе</option>
+    <option value="rejected" ${state.paymentStatusFilter === "rejected" ? "selected" : ""}>Отменено</option>
+  `;
+
   return `
     <div class="filters-row">
       <label class="compact-label">Статус оплаты
         <select id="paymentStatusFilter">
-          <option value="active" ${state.paymentStatusFilter === "active" ? "selected" : ""}>Активные</option>
-          <option value="all" ${state.paymentStatusFilter === "all" ? "selected" : ""}>Все</option>
-          <option value="new" ${state.paymentStatusFilter === "new" ? "selected" : ""}>Новая</option>
-          <option value="paid" ${state.paymentStatusFilter === "paid" ? "selected" : ""}>Оплачено</option>
-          <option value="cash_received" ${state.paymentStatusFilter === "cash_received" ? "selected" : ""}>Деньги в кассе</option>
-          <option value="rejected" ${state.paymentStatusFilter === "rejected" ? "selected" : ""}>Отменено</option>
+          ${mode === "archive" ? archiveOptions : regularOptions}
         </select>
       </label>
 
@@ -388,13 +474,14 @@ function adminRequestActions(request) {
   return buttons.join("");
 }
 
-function renderPaymentRequestsTable(requests, title = "Заявки на оплату") {
-  const filteredRequests = filteredPaymentRequests(requests);
+function renderPaymentRequestsTable(requests, title = "Заявки на оплату", mode = "regular") {
+  const baseRequests = mode === "archive" ? archivedPaymentRequests(requests) : activePaymentRequests(requests);
+  const filteredRequests = filteredPaymentRequests(requests, mode);
 
-  if (!requests || !requests.length) {
+  if (!baseRequests.length) {
     return `
       <div class="block-title"><h3>${title}</h3></div>
-      ${renderPaymentFilters()}
+      ${renderPaymentFilters(mode)}
       <div class="empty-state">Заявок пока нет.</div>
     `;
   }
@@ -403,9 +490,9 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
     return `
       <div class="block-title">
         <h3>${title}</h3>
-        <span class="muted">0 из ${requests.length} шт.</span>
+        <span class="muted">0 из ${baseRequests.length} шт.</span>
       </div>
-      ${renderPaymentFilters()}
+      ${renderPaymentFilters(mode)}
       <div class="empty-state">По выбранным фильтрам заявок нет.</div>
     `;
   }
@@ -413,9 +500,9 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
   return `
     <div class="block-title">
       <h3>${title}</h3>
-      <span class="muted">${filteredRequests.length} из ${requests.length} шт.</span>
+      <span class="muted">${filteredRequests.length} из ${baseRequests.length} шт.</span>
     </div>
-    ${renderPaymentFilters()}
+    ${renderPaymentFilters(mode)}
     <div class="table-wrap">
       <table>
         <thead>
@@ -433,8 +520,8 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
         <tbody>
           ${filteredRequests.map((request) => `
             <tr>
-              <td>${request.manager_name || ""}</td>
-              <td><strong>${request.client_name || request.event_title || request.event_id || ""}</strong></td>
+              <td>${managerNameForRequest(request)}</td>
+              <td><strong>${clientNameForRequest(request)}</strong></td>
               <td>${request.position || request.item_name_snapshot || ""}</td>
               <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
               <td>${paymentMethodLabel(request.payment_method)}</td>
@@ -459,7 +546,7 @@ function attachFilters() {
   if (paymentStatus) {
     paymentStatus.addEventListener("change", async (event) => {
       state.paymentStatusFilter = event.target.value;
-      await loadDashboard();
+      await withLoading(loadDashboard, "Фильтруем заявки…");
     });
   }
 
@@ -469,7 +556,7 @@ function attachFilters() {
       state.paymentSearch = event.target.value;
       clearTimeout(window.__cfPaymentSearchTimer);
       window.__cfPaymentSearchTimer = setTimeout(() => {
-        loadDashboard().catch((error) => alert(error.message));
+        withLoading(loadDashboard, "Ищем…").catch((error) => alert(error.message));
       }, 350);
     });
   }
@@ -478,7 +565,7 @@ function attachFilters() {
   if (eventDepartment) {
     eventDepartment.addEventListener("change", async (event) => {
       state.eventDepartmentFilter = event.target.value;
-      await loadDashboard();
+      await withLoading(loadDashboard, "Фильтруем мероприятия…");
     });
   }
 
@@ -486,7 +573,7 @@ function attachFilters() {
   if (eventManager) {
     eventManager.addEventListener("change", async (event) => {
       state.eventManagerFilter = event.target.value;
-      await loadDashboard();
+      await withLoading(loadDashboard, "Фильтруем мероприятия…");
     });
   }
 
@@ -494,7 +581,7 @@ function attachFilters() {
   if (eventStatus) {
     eventStatus.addEventListener("change", async (event) => {
       state.eventStatusFilter = event.target.value;
-      await loadDashboard();
+      await withLoading(loadDashboard, "Фильтруем мероприятия…");
     });
   }
 
@@ -504,7 +591,7 @@ function attachFilters() {
       state.eventSearch = event.target.value;
       clearTimeout(window.__cfEventSearchTimer);
       window.__cfEventSearchTimer = setTimeout(() => {
-        loadDashboard().catch((error) => alert(error.message));
+        withLoading(loadDashboard, "Ищем…").catch((error) => alert(error.message));
       }, 350);
     });
   }
@@ -521,7 +608,7 @@ function attachPaymentRequestActions() {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected" }),
         });
-        await loadDashboard();
+        await withLoading(loadDashboard, "Обновляем данные…");
       } catch (error) {
         alert(error.message);
       }
@@ -546,7 +633,7 @@ function attachPaymentRequestActions() {
           method: "PATCH",
           body: JSON.stringify({ status }),
         });
-        await loadDashboard();
+        await withLoading(loadDashboard, "Обновляем данные…");
       } catch (error) {
         alert(error.message);
       }
@@ -765,7 +852,9 @@ function renderAdminDashboard(data) {
   } else if (state.activeAdminTab === "events") {
     $("dashboardContent").innerHTML = renderAdminEvents(data);
   } else if (state.activeAdminTab === "requests") {
-    $("dashboardContent").innerHTML = renderPaymentRequestsTable(data.payment_requests || [], "Все заявки");
+    $("dashboardContent").innerHTML = renderPaymentRequestsTable(data.payment_requests || [], "Все заявки", "regular");
+  } else if (state.activeAdminTab === "requests_archive") {
+    $("dashboardContent").innerHTML = renderPaymentRequestsTable(data.payment_requests || [], "Архив заявок", "archive");
   } else if (state.activeAdminTab === "plans") {
     $("dashboardContent").innerHTML = renderPlansSkeleton(data);
   } else if (state.activeAdminTab === "closing") {
@@ -1007,7 +1096,7 @@ $("logoutBtn").addEventListener("click", () => {
 });
 
 $("reloadBtn").addEventListener("click", () => {
-  loadDashboard().catch((error) => alert(error.message));
+  withLoading(loadDashboard, "Обновляем данные…").catch((error) => alert(error.message));
 });
 
 $("changePinOpenBtn").addEventListener("click", () => {
