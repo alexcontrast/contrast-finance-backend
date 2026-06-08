@@ -5,18 +5,27 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.user import User
 from app.schemas.event_summary import EventSummaryRead
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.auth import get_current_user
+from app.services.authorization import require_event_view
 
 
 router = APIRouter(tags=["event_summary"])
 
 
 @router.get("/events/{event_id}/summary", response_model=EventSummaryRead)
-def get_event_summary(event_id: int, db: Session = Depends(get_db)):
+def get_event_summary(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
+
+    require_event_view(current_user, event)
 
     result = db.execute(
         select(EventItem)

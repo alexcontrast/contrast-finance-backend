@@ -7,15 +7,23 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.user import User
 from app.schemas.coordinator import CoordinatorCreate
 from app.schemas.event_item import EventItemRead
+from app.services.auth import get_current_user
+from app.services.authorization import require_event_edit
 
 
 router = APIRouter(tags=["coordinator"])
 
 
 @router.post("/events/{event_id}/coordinator", response_model=EventItemRead)
-def create_coordinator_item(event_id: int, payload: CoordinatorCreate, db: Session = Depends(get_db)):
+def create_coordinator_item(
+    event_id: int,
+    payload: CoordinatorCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Быстро создаёт позицию координатора.
 
@@ -27,6 +35,8 @@ def create_coordinator_item(event_id: int, payload: CoordinatorCreate, db: Sessi
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
+
+    require_event_edit(current_user, event)
 
     coordinator_fact = (payload.external_amount * Decimal("0.50")).quantize(Decimal("0.01"))
 

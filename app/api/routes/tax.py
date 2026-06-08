@@ -10,8 +10,11 @@ from app.models.audit_log import AuditLog
 from app.models.contractor import Contractor
 from app.models.event_item import EventItem
 from app.models.taxpayer_check import TaxpayerCheck
+from app.models.user import User
 from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
 from app.services.kgd.client import check_taxpayer
+from app.services.auth import get_current_user
+from app.services.authorization import require_item_event_edit
 
 
 router = APIRouter(tags=["tax"])
@@ -144,6 +147,7 @@ def check_event_item_tax(
     item_id: int,
     payload: TaxCheckRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Проверка BIN / ИИН через KGD service.
@@ -157,6 +161,11 @@ def check_event_item_tax(
     item = db.get(EventItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can set manual tax mode")
+
+    require_item_event_edit(db, current_user, item)
 
     try:
         kgd_result = check_taxpayer(payload.iin_bin)
@@ -261,6 +270,7 @@ def set_event_item_tax_manual(
     payload: ManualTaxRequest,
     admin_user_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Ручная правка налогового режима админом.

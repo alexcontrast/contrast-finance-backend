@@ -6,6 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models.user import User
+from app.services.auth import get_current_user
+from app.services.authorization import get_event_or_404, require_event_view, require_event_edit, require_item_event_edit, require_payment_request_view, require_payment_request_edit
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
 from app.schemas.payment_request import (

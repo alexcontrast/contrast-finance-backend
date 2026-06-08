@@ -5,23 +5,31 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.event import Event
 from app.models.event_item import EventItem
-from app.schemas.event_item import EventItemCreate, EventItemRead, EventItemUpdate
+from app.models.user import User
+from app.schemas.event_item import EventItemCreate, EventItemRead
+from app.services.auth import get_current_user
+from app.services.authorization import (
+    get_event_or_404,
+    get_item_or_404,
+    require_event_edit,
+    require_event_view,
+    require_item_event_edit,
+    require_item_event_view,
+)
 
 
 router = APIRouter(tags=["event_items"])
 
 
-def calculate_external_amount(price, quantity, days):
-    return price * quantity * days
-
-
 @router.get("/events/{event_id}/items", response_model=list[EventItemRead])
-def list_event_items(event_id: int, db: Session = Depends(get_db)):
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
+def list_event_items(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+    require_event_view(current_user, event)
 
     result = db.execute(
         select(EventItem)
@@ -32,43 +40,35 @@ def list_event_items(event_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/events/{event_id}/items", response_model=EventItemRead)
-def create_event_item(event_id: int, payload: EventItemCreate, db: Session = Depends(get_db)):
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
-
-    external_amount = calculate_external_amount(
-        payload.external_price,
-        payload.external_quantity,
-        payload.external_days,
-    )
+def create_event_item(
+    event_id: int,
+    payload: EventItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+    require_event_edit(current_user, event)
 
     item = EventItem(
         event_id=event_id,
         item_type=payload.item_type,
-
         external_name=payload.external_name,
         external_price=payload.external_price,
         external_quantity=payload.external_quantity,
         external_days=payload.external_days,
-        external_amount=external_amount,
+        external_amount=payload.external_amount,
         external_note=payload.external_note,
-
         amount_fact=payload.amount_fact,
         paid_amount=payload.paid_amount,
         payment_method=payload.payment_method,
-
         iin_bin=payload.iin_bin,
         iin_bin_locked=payload.iin_bin_locked,
         tax_check_status=payload.tax_check_status,
-
         vat_amount=payload.vat_amount,
         deduction_amount=payload.deduction_amount,
-
         internal_note=payload.internal_note,
         sort_order=payload.sort_order,
         is_deleted=False,
-
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -79,24 +79,62 @@ def create_event_item(event_id: int, payload: EventItemCreate, db: Session = Dep
     return item
 
 
+@router.get("/event-items/{item_id}", response_model=EventItemRead)
+def get_event_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = get_item_or_404(db, item_id)
+    require_item_event_view(db, current_user, item)
+    return item
+
+
 @router.patch("/event-items/{item_id}", response_model=EventItemRead)
-def update_event_item(item_id: int, payload: EventItemUpdate, db: Session = Depends(get_db)):
-    item = db.get(EventItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Event item not found")
+def update_event_item(
+    item_id: int,
+    payload: EventItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = get_item_or_404(db, item_id)
+    require_item_event_edit(db, current_user, item)
 
-    data = payload.model_dump(exclude_unset=True)
+    item.item_type = payload.item_type
+    item.external_name = payload.external_name
+    item.external_price = payload.external_price
+    item.external_quantity = payload.external_quantity
+    item.external_days = payload.external_days
+    item.external_amount = payload.external_amount
+    item.external_note = payload.external_note
+    item.amount_fact = payload.amount_fact
+    item.paid_amount = payload.paid_amount
+    item.payment_method = payload.payment_method
+    item.iin_bin = payload.iin_bin
+    item.iin_bin_locked = payload.iin_bin_locked
+    item.tax_check_status = payload.tax_check_status
+    item.vat_amount = payload.vat_amount
+    item.deduction_amount = payload.deduction_amount
+    item.internal_note = payload.internal_note
+    item.sort_order = payload.sort_order
+    item.updated_at = datetime.utcnow()
 
-    for field, value in data.items():
-        setattr(item, field, value)
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
 
-    if any(field in data for field in ["external_price", "external_quantity", "external_days"]):
-        item.external_amount = calculate_external_amount(
-            item.external_price,
-            item.external_quantity,
-            item.external_days,
-        )
 
+@router.delete("/event-items/{item_id}", response_model=EventItemRead)
+def delete_event_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = get_item_or_404(db, item_id)
+    require_item_event_edit(db, current_user, item)
+
+    item.is_deleted = True
     item.updated_at = datetime.utcnow()
 
     db.add(item)
