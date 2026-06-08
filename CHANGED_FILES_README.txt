@@ -1,9 +1,10 @@
-Contrast Finance Backend v0.32.1 — changed files only
-Copy these files into the same paths in your GitHub project.
+Contrast Finance Backend v0.33.0 — changed files only
 
 Changed/added files:
 - README.md
-- app/api/routes/payment_requests.py
+- app/api/routes/event_summary.py
 - app/core/config.py
+- app/schemas/event_summary.py
+- app/services/event_calculator.py
 - app/web/app.js
 - app/web/index.html

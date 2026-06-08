@@ -30,7 +30,17 @@ class EventSummaryRead(BaseModel):
     manager_salary_base: Decimal
     manager_percent: Decimal
     manager_salary: Decimal
+    manager_salary_paid: Decimal
 
     company_income_before_manager_salary: Decimal
     company_income_after_manager_salary: Decimal
     final_company_income: Decimal
+
+    # Explicit calculation fields for the unified event calculator.
+    turnover_with_vat: Decimal
+    client_vat_amount: Decimal
+    contractor_vat_credit: Decimal
+    vat_to_pay: Decimal
+    tax_rate_percent: Decimal
+    tax_base_amount: Decimal
+    taxes_total: Decimal

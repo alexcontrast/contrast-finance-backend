@@ -241,6 +241,10 @@ function calculationTypeValue(event, summary) {
 }
 
 function taxPercentLabelForEvent(event, summary) {
+  if (summary?.tax_rate_percent !== undefined && summary?.tax_rate_percent !== null) {
+    return `${Number(summary.tax_rate_percent).toFixed(Number(summary.tax_rate_percent) % 1 === 0 ? 0 : 2)}%`;
+  }
+
   const type = calculationTypeValue(event, summary);
   const taxAmount = asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount);
 
@@ -249,13 +253,6 @@ function taxPercentLabelForEvent(event, summary) {
   if (type.includes("оур") || type.includes("contrast") || type.includes("ип")) return "12%";
 
   if (taxAmount <= 0) return "0%";
-
-  // Fallback for old/test events where calculation_type was not returned.
-  // ИП Contrast Event tax can look like 8.57% of client total because 12% is taken from amount without VAT.
-  const base = asNumber(summary?.external_total);
-  const ratio = base > 0 ? (taxAmount / base) * 100 : 0;
-
-  if (ratio > 0 && ratio <= 6.5) return "5%";
   return "12%";
 }
 
@@ -882,16 +879,16 @@ async function openEventModal(eventId) {
     $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
 
     const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
-    const taxesAmount = asNumber(summary.internal_tax_amount) + asNumber(summary.simplified_bank_tax_amount);
+    const taxesAmount = asNumber(summary.taxes_total ?? (asNumber(summary.internal_tax_amount) + asNumber(summary.simplified_bank_tax_amount)));
     const managerSalary = asNumber(summary.manager_salary);
     const managerSalaryPaid = asNumber(managerSalaryPaidValue(summary));
     const managerSalaryRemaining = Math.max(0, managerSalary - managerSalaryPaid);
 
     $("eventModalContent").innerHTML = `
       <div class="grid cards modal-metric-cards">
-        ${metric("Оборот", formatMoney(summary.external_total))}
+        ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
         ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)}`, formatMoney(taxesAmount))}
-        ${metric("НДС", formatMoney(summary.vat_total))}
+        ${metric("НДС", formatMoney(summary.vat_to_pay ?? summary.vat_total))}
         ${metric("Оплачено", formatMoney(summary.paid_total))}
         <div class="card metric income-metric">
           <div class="label">Доход компании</div>

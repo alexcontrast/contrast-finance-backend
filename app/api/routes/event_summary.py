@@ -63,8 +63,17 @@ def get_event_summary(
         manager_salary_base=q(values["manager_salary_base"]),
         manager_percent=q(values["manager_percent"]),
         manager_salary=q(values["manager_salary"]),
+        manager_salary_paid=q(values["manager_salary_paid"]),
 
         company_income_before_manager_salary=q(values["company_income_before_manager_salary"]),
         company_income_after_manager_salary=q(values["company_income_after_manager_salary"]),
         final_company_income=q(values["final_company_income"]),
+
+        turnover_with_vat=q(values["turnover_with_vat"]),
+        client_vat_amount=q(values["client_vat_amount"]),
+        contractor_vat_credit=q(values["contractor_vat_credit"]),
+        vat_to_pay=q(values["vat_to_pay"]),
+        tax_rate_percent=q(values["tax_rate_percent"]),
+        tax_base_amount=q(values["tax_base_amount"]),
+        taxes_total=q(values["taxes_total"]),
     )
