@@ -1721,3 +1721,12 @@ button[data-manager-event-save-draft]:hover {
   border-color: #6ef500 !important;
   box-shadow: 0 0 0 2px rgba(110, 245, 0, .18);
 }
+
+
+/* v0.35.14 internal delete button and live cards */
+.internal-estimate-table th:last-child,
+.internal-estimate-table td:last-child {
+  width: 42px;
+  min-width: 42px;
+  text-align: center;
+}

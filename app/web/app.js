@@ -1317,11 +1317,12 @@ async function renderManagerEventDetail(eventId, options = {}) {
 
     const draftEvent = getDraftEvent(event);
     state.currentManagerEvent = draftEvent;
-    state.currentManagerSummary = summary;
     const draftItems = getDraftItems(eventId, items || []);
+    const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
+    state.currentManagerSummary = previewSummary;
     state.currentManagerItems = draftItems;
 
-    holder.innerHTML = renderManagerEventCard(draftEvent, draftItems, summary);
+    holder.innerHTML = renderManagerEventCard(draftEvent, draftItems, previewSummary);
     attachManagerCreateWorkspaceActions();
     attachDraftEventInputs(eventId);
     attachDraftInputs(eventId);
@@ -1362,6 +1363,71 @@ function externalTotalToPay(items, event) {
     + externalClientVatAmount(items, event)
     + externalSimplifiedMarkupAmount(items, event);
 }
+
+
+function calculateDraftSummaryPreview(items, event, backendSummary = null) {
+  const shown = (items || []).filter((item) => item.item_type !== "manager_salary");
+  const regular = shown.filter((item) => item.item_type !== "coordinator");
+  const coordinators = shown.filter((item) => item.item_type === "coordinator");
+
+  const regularExternal = regular.reduce((sum, item) => sum + externalRowAmount(item), 0);
+  const regularFact = regular.reduce((sum, item) => {
+    const fact = item.amount_fact === null || item.amount_fact === undefined || item.amount_fact === ""
+      ? externalRowAmount(item)
+      : asNumber(item.amount_fact);
+    return sum + fact;
+  }, 0);
+
+  const coordinatorExternal = coordinators.reduce((sum, item) => sum + externalRowAmount(item), 0);
+  const coordinatorCompanyShare = Math.round(coordinatorExternal * 0.5);
+
+  const itemsTotal = shown.reduce((sum, item) => sum + externalRowAmount(item), 0);
+  const agency = externalAgencyCommissionAmount(shown, event);
+  const clientBase = itemsTotal + agency;
+  const clientVat = event?.client_calc_type === "ip_contrast_event" ? Math.round(clientBase * 0.16) : 0;
+  const simplifiedMarkup = event?.client_calc_type === "simplified"
+    ? Math.round(clientBase * asNumber(event?.simplified_bank_tax_percent) / 100)
+    : 0;
+  const turnover = clientBase + clientVat + simplifiedMarkup;
+
+  const contractorVatCredit = regular.reduce((sum, item) => sum + internalVatValue(item), 0);
+  const deductions = regular.reduce((sum, item) => sum + internalDeductionValue(item), 0);
+
+  const taxRate = event?.client_calc_type === "ip_contrast_event" || event?.client_calc_type === "our_no_vat"
+    ? 12
+    : (event?.client_calc_type === "simplified" ? 5 : 0);
+  const taxes = Math.round(clientBase * taxRate / 100);
+  const taxesNet = taxes - deductions;
+
+  const vatNet = Math.max(0, clientVat - contractorVatCredit);
+
+  const regularCommission = regularExternal - regularFact;
+  const managerBase = regularCommission + agency + contractorVatCredit + deductions - taxes;
+  const managerSalary = managerBase > 0 ? Math.round(managerBase * asNumber(event?.manager_percent || 21) / 100) : 0;
+  const companyIncome = managerBase - managerSalary + coordinatorCompanyShare;
+
+  return {
+    ...(backendSummary || {}),
+    turnover_with_vat: turnover,
+    external_total: turnover,
+    agency_commission_amount: agency,
+    client_vat_amount: clientVat,
+    contractor_vat_credit: contractorVatCredit,
+    deductions_total: deductions,
+    taxes_total: taxes,
+    taxes_net: taxesNet,
+    vat_to_pay: vatNet,
+    vat_net: vatNet,
+    regular_positions_commission: regularCommission,
+    total_commission_amount: regularCommission + agency,
+    manager_salary: managerSalary,
+    coordinator_company_share: coordinatorCompanyShare,
+    final_company_income: companyIncome,
+    tax_rate_percent: taxRate,
+    simplified_bank_tax_amount: simplifiedMarkup,
+  };
+}
+
 
 
 function summaryNumber(summary, key) {
@@ -1482,6 +1548,7 @@ function attachDraftEventInputs(eventId) {
   document.querySelectorAll("[data-event-field]").forEach((input) => {
     input.addEventListener("input", () => {
       setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
+      refreshDraftVisibleCalculations(eventId);
     });
 
     input.addEventListener("change", () => {
@@ -1529,6 +1596,27 @@ function attachDraftInputs(eventId) {
 
 function refreshDraftVisibleCalculations(eventId) {
   const items = getDraftItems(eventId);
+  const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+  state.currentManagerSummary = summary;
+
+  const activeTab = state.managerEstimateTab || "external";
+  if (activeTab === "internal") {
+    const grid = document.querySelector(".manager-summary-grid-six");
+    if (grid) {
+      grid.innerHTML = `
+        ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
+        ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}
+        ${metric("Менеджер", formatMoney(summary.manager_salary))}
+        ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
+        ${metric("НДС", formatMoney(internalVatNet(summary)))}
+        <div class="card metric income-metric">
+          <div class="label">Доход компании</div>
+          <div class="value">${formatMoney(summary.final_company_income)}</div>
+        </div>
+      `;
+    }
+  }
+
   document.querySelectorAll("[data-event-item-row]").forEach((row) => {
     const itemId = row.getAttribute("data-event-item-row");
     const item = items.find((candidate) => String(candidate.id) === String(itemId));
@@ -1842,6 +1930,7 @@ function renderInternalEstimate(items, event, summary = null) {
             <th>Вычеты</th>
             <th>Комиссия</th>
             <th>Оплачено</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -1880,6 +1969,7 @@ function renderInternalEstimate(items, event, summary = null) {
                 <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
                 <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
                 <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
+                <td>${item.item_type === "coordinator" ? "" : `<button class="icon-btn danger" data-delete-item="${item.id}">×</button>`}</td>
               </tr>
             `;
           }).join("")}
@@ -1962,7 +2052,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
       ${summary && activeTab === "internal" ? `
         <div class="manager-summary-grid manager-summary-grid-six">
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
-          ${metric("Комиссия", formatMoney(summary.total_commission_amount ?? (summary.regular_positions_commission + summary.agency_commission_amount)))}
+          ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}
           ${metric("Менеджер", formatMoney(summary.manager_salary))}
           ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
           ${metric("НДС", formatMoney(internalVatNet(summary)))}
