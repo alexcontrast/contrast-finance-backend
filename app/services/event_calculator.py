@@ -65,7 +65,7 @@ def client_vat_amount(event: Event, client_base_amount: Decimal) -> Decimal:
     our_no_vat / simplified / cash: НДС клиенту не добавляется.
     """
     if event.client_calc_type == "ip_contrast_event":
-        return q(client_base_amount * get_settings().VAT_RATE)
+        return q0(client_base_amount * get_settings().VAT_RATE)
     return Decimal("0.00")
 
 
@@ -139,7 +139,8 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     # Внешняя смета хранится без клиентского НДС.
     # Оборот для клиента = внешняя смета + агентская комиссия + клиентский НДС/упрощённый markup.
     items_external_total = sum((money(item.external_amount) for item in business_items), Decimal("0.00"))
-    agency_commission_amount = money(event.agency_commission_amount)
+    agency_commission_percent = money(event.agency_commission_amount)
+    agency_commission_amount = q0(items_external_total * agency_commission_percent / Decimal("100.00"))
 
     regular_external_total = sum((money(item.external_amount) for item in regular_items), Decimal("0.00"))
     regular_fact_total = sum((item_fact_or_plan(item) for item in regular_items), Decimal("0.00"))
@@ -159,7 +160,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     manager_salary_paid = sum((money(item.paid_amount) for item in manager_salary_items), Decimal("0.00"))
 
     contractor_vat_credit = sum((item_vat_credit(item) for item in regular_items), Decimal("0.00"))
-    vat_to_pay = q(client_vat - contractor_vat_credit)
+    vat_to_pay = q0(client_vat - contractor_vat_credit)
     if vat_to_pay < 0:
         vat_to_pay = Decimal("0.00")
 
@@ -211,11 +212,11 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "final_company_income": q(final_company_income),
 
         # New explicit fields for frontend and future manager cabinet.
-        "turnover_with_vat": q(turnover_with_vat),
-        "client_vat_amount": q(client_vat),
-        "contractor_vat_credit": q(contractor_vat_credit),
-        "vat_to_pay": q(vat_to_pay),
+        "turnover_with_vat": q0(turnover_with_vat),
+        "client_vat_amount": q0(client_vat),
+        "contractor_vat_credit": q0(contractor_vat_credit),
+        "vat_to_pay": q0(vat_to_pay),
         "tax_rate_percent": q(tax_rate_percent(event)),
         "tax_base_amount": q(tax_base_amount(event, regular_external_total)),
-        "taxes_total": q(internal_tax_amount),
+        "taxes_total": q0(internal_tax_amount),
     }

@@ -1511,3 +1511,96 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* v0.35.6 compact estimates and frontend draft editing */
+.estimate-table {
+  font-size: 13px;
+}
+
+.estimate-table th {
+  font-size: 10px !important;
+  padding: 7px 8px;
+}
+
+.estimate-table td {
+  padding: 6px 8px;
+}
+
+.external-estimate-table input,
+.internal-estimate-table input,
+.internal-estimate-table select {
+  min-height: 30px;
+  border-radius: 8px;
+  padding: 5px 7px;
+  font-size: 12px;
+}
+
+.external-estimate-totals,
+.manager-summary-grid {
+  gap: 8px;
+}
+
+.external-estimate-totals .metric,
+.manager-summary-grid .metric {
+  padding: 10px 12px;
+  min-height: 72px;
+}
+
+.external-estimate-totals .metric .label,
+.manager-summary-grid .metric .label {
+  font-size: 10px;
+}
+
+.external-estimate-totals .metric .value,
+.manager-summary-grid .metric .value {
+  font-size: clamp(18px, 1.45vw, 26px);
+  line-height: 1;
+}
+
+.manager-card-bottom-actions [data-manager-event-save-draft] {
+  background: #2f312f;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0,0,0,.14);
+}
+
+.manager-card-bottom-actions [data-manager-event-save-draft]:hover {
+  background: #1f211f;
+}
+
+.manager-detail-card .empty-state {
+  min-height: 0;
+  padding: 18px;
+}
+
+
+/* v0.35.7 estimate cleanup and real gray save button */
+.external-estimate-totals {
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+}
+
+.external-estimate-totals .metric,
+.manager-summary-grid .metric {
+  min-height: 66px;
+  padding: 9px 11px;
+}
+
+.external-estimate-totals .metric .value,
+.manager-summary-grid .metric .value {
+  font-size: clamp(18px, 1.35vw, 24px);
+  letter-spacing: -.04em;
+}
+
+.save-draft-btn,
+.manager-card-bottom-actions .save-draft-btn,
+button[data-manager-event-save-draft] {
+  background: #3c3f3a !important;
+  color: #ffffff !important;
+  border: 1px solid #3c3f3a !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,.12) !important;
+}
+
+.save-draft-btn:hover,
+button[data-manager-event-save-draft]:hover {
+  background: #252824 !important;
+}

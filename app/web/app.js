@@ -12,6 +12,9 @@ const state = {
   activeManagerTab: "events",
   selectedManagerEventId: null,
   managerEstimateTab: "external",
+  managerDraftItemsByEventId: {},
+  managerDraftDeletedByEventId: {},
+  managerDraftTempSeq: 1,
   adminData: null,
   users: [],
 };
@@ -1248,7 +1251,7 @@ function renderManagerEventList(data) {
   `;
 }
 
-async function renderManagerEventDetail(eventId) {
+async function renderManagerEventDetail(eventId, options = {}) {
   const holder = document.getElementById("managerEventDetail");
   if (!holder) return;
 
@@ -1263,18 +1266,27 @@ async function renderManagerEventDetail(eventId) {
     return;
   }
 
-  holder.innerHTML = `<div class="empty-state">Загрузка мероприятия...</div>`;
+  if (!options.noLoading) {
+    holder.innerHTML = `<div class="empty-state">Загрузка мероприятия...</div>`;
+  }
 
   try {
-    const [event, items, summary] = await Promise.all([
-      api(`/events/${eventId}`),
-      api(`/events/${eventId}/items`),
-      api(`/events/${eventId}/summary`),
-    ]);
+    const [event, items, summary] = options.useDraft && state.currentManagerEvent
+      ? [state.currentManagerEvent, state.currentManagerItems || [], state.currentManagerSummary]
+      : await Promise.all([
+          api(`/events/${eventId}`),
+          api(`/events/${eventId}/items`),
+          api(`/events/${eventId}/summary`),
+        ]);
 
-    state.currentManagerItems = items || [];
-    holder.innerHTML = renderManagerEventCard(event, items, summary);
+    state.currentManagerEvent = event;
+    state.currentManagerSummary = summary;
+    const draftItems = getDraftItems(eventId, items || []);
+    state.currentManagerItems = draftItems;
+
+    holder.innerHTML = renderManagerEventCard(event, draftItems, summary);
     attachManagerCreateWorkspaceActions();
+    attachDraftInputs(eventId);
   } catch (error) {
     holder.innerHTML = `<div class="error">${error.message}</div>`;
   }
@@ -1285,6 +1297,153 @@ function externalRowAmount(item) {
   return asNumber(item.external_price) * asNumber(item.external_quantity || 1) * asNumber(item.external_days || 1);
 }
 
+function externalItemsTotal(items) {
+  return (items || [])
+    .filter((item) => item.item_type !== "manager_salary")
+    .reduce((sum, item) => sum + externalRowAmount(item), 0);
+}
+
+function externalAgencyCommissionAmount(items, event) {
+  const percent = asNumber(event?.agency_commission_amount);
+  return Math.round(externalItemsTotal(items) * percent / 100);
+}
+
+function externalClientVatAmount(items, event) {
+  if (event?.client_calc_type !== "ip_contrast_event") return 0;
+  return Math.round((externalItemsTotal(items) + externalAgencyCommissionAmount(items, event)) * 0.16);
+}
+
+function externalSimplifiedMarkupAmount(items, event) {
+  if (event?.client_calc_type !== "simplified") return 0;
+  return Math.round((externalItemsTotal(items) + externalAgencyCommissionAmount(items, event)) * asNumber(event?.simplified_bank_tax_percent) / 100);
+}
+
+function externalTotalToPay(items, event) {
+  return externalItemsTotal(items)
+    + externalAgencyCommissionAmount(items, event)
+    + externalClientVatAmount(items, event)
+    + externalSimplifiedMarkupAmount(items, event);
+}
+
+function draftKeyForEvent(eventId) {
+  return String(eventId || state.selectedManagerEventId || "");
+}
+
+function cloneItem(item) {
+  return JSON.parse(JSON.stringify(item));
+}
+
+function ensureCoordinator(items) {
+  const existing = (items || []).find((item) => item.item_type === "coordinator");
+  if (existing) return items;
+
+  return [{
+    id: `tmp-coordinator-${Date.now()}`,
+    is_temp: true,
+    item_type: "coordinator",
+    external_name: "Координатор",
+    external_price: 0,
+    external_quantity: 1,
+    external_days: 1,
+    external_amount: 0,
+    external_note: "",
+    amount_fact: null,
+    paid_amount: 0,
+    payment_method: null,
+    iin_bin: null,
+    iin_bin_locked: false,
+    tax_check_status: null,
+    vat_amount: 0,
+    deduction_amount: 0,
+    internal_note: null,
+    sort_order: -100,
+  }, ...(items || [])];
+}
+
+function getDraftItems(eventId, sourceItems = null) {
+  const key = draftKeyForEvent(eventId);
+  if (!state.managerDraftItemsByEventId) state.managerDraftItemsByEventId = {};
+  if (!state.managerDraftDeletedByEventId) state.managerDraftDeletedByEventId = {};
+  if (!state.managerDraftItemsByEventId[key]) {
+    state.managerDraftItemsByEventId[key] = ensureCoordinator(sourceItems || []).map(cloneItem);
+  }
+  return state.managerDraftItemsByEventId[key];
+}
+
+function getDraftDeletedIds(eventId) {
+  const key = draftKeyForEvent(eventId);
+  if (!state.managerDraftDeletedByEventId) state.managerDraftDeletedByEventId = {};
+  if (!state.managerDraftDeletedByEventId[key]) state.managerDraftDeletedByEventId[key] = [];
+  return state.managerDraftDeletedByEventId[key];
+}
+
+function setDraftItemValue(eventId, itemId, field, value) {
+  const items = getDraftItems(eventId);
+  const item = items.find((candidate) => String(candidate.id) === String(itemId));
+  if (!item) return;
+
+  if (["external_price", "external_quantity", "external_days", "amount_fact"].includes(field)) {
+    item[field] = value === "" ? null : normalizeNumberInput(value);
+  } else {
+    item[field] = value;
+  }
+
+  if (field === "payment_method") {
+    if (value === "cash" || value === "card" || value === "") {
+      item.vat_amount = 0;
+      item.deduction_amount = 0;
+      if (value !== "invoice") item.iin_bin_locked = false;
+    }
+
+    if (value === "self_employed") {
+      const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
+      item.vat_amount = 0;
+      item.deduction_amount = Math.round(base * 0.10);
+      item.iin_bin_locked = false;
+    }
+  }
+
+  if (field === "amount_fact" && item.payment_method === "self_employed") {
+    const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
+    item.deduction_amount = Math.round(base * 0.10);
+  }
+}
+
+function attachDraftInputs(eventId) {
+  document.querySelectorAll("[data-item-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      setDraftItemValue(eventId, input.getAttribute("data-item-id"), input.getAttribute("data-item-field"), input.value);
+      refreshDraftVisibleCalculations(eventId);
+    });
+
+    input.addEventListener("change", () => {
+      setDraftItemValue(eventId, input.getAttribute("data-item-id"), input.getAttribute("data-item-field"), input.value);
+      renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+    });
+  });
+}
+
+function refreshDraftVisibleCalculations(eventId) {
+  const items = getDraftItems(eventId);
+  document.querySelectorAll("[data-event-item-row]").forEach((row) => {
+    const itemId = row.getAttribute("data-event-item-row");
+    const item = items.find((candidate) => String(candidate.id) === String(itemId));
+    if (!item) return;
+
+    const sumCell = row.querySelector("[data-row-sum]");
+    if (sumCell) sumCell.textContent = formatMoney(externalRowAmount(item));
+
+    const deductionCell = row.querySelector(".deduction-col strong");
+    if (deductionCell) deductionCell.textContent = formatMoney(internalDeductionValue(item));
+
+    const vatCell = row.querySelector(".vat-col strong");
+    if (vatCell) vatCell.textContent = formatMoney(internalVatValue(item));
+
+    const commissionCell = row.querySelector(".commission-col strong");
+    if (commissionCell) commissionCell.textContent = formatMoney(internalCommissionValue(item));
+  });
+}
+
 function internalCommissionValue(item) {
   const fact = item.amount_fact === null || item.amount_fact === undefined ? 0 : asNumber(item.amount_fact);
   return externalRowAmount(item) - fact;
@@ -1293,7 +1452,7 @@ function internalCommissionValue(item) {
 function internalDeductionValue(item) {
   if (item.payment_method === "self_employed") {
     const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
-    return Math.round(base * 0.10 * 100) / 100;
+    return Math.round(base * 0.10);
   }
   if (item.payment_method === "invoice") return asNumber(item.deduction_amount);
   return 0;
@@ -1308,9 +1467,13 @@ function rowInput(value, attrs = "") {
   return `<input ${attrs} value="${value ?? ""}" />`;
 }
 
-function renderExternalEstimate(items) {
+function renderExternalEstimate(items, eventId, event = null) {
   const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
-  const total = shownItems.reduce((sum, item) => sum + externalRowAmount(item), 0);
+  const total = externalItemsTotal(shownItems);
+  const agency = externalAgencyCommissionAmount(shownItems, event);
+  const vat = externalClientVatAmount(shownItems, event);
+  const simplifiedMarkup = externalSimplifiedMarkupAmount(shownItems, event);
+  const totalToPay = externalTotalToPay(shownItems, event);
 
   return `
     <div class="manager-add-position-row">
@@ -1337,7 +1500,7 @@ function renderExternalEstimate(items) {
               <td>${rowInput(formatMoney(item.external_price), `data-item-field="external_price" data-item-id="${item.id}"`)}</td>
               <td>${rowInput(item.external_quantity || 1, `data-item-field="external_quantity" data-item-id="${item.id}"`)}</td>
               <td>${rowInput(item.external_days || 1, `data-item-field="external_days" data-item-id="${item.id}"`)}</td>
-              <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
+              <td><strong data-row-sum>${formatMoney(externalRowAmount(item))}</strong></td>
               <td>${rowInput(item.external_note || "", `placeholder="Примечание для клиента" data-item-field="external_note" data-item-id="${item.id}"`)}</td>
               <td>${item.item_type === "coordinator" ? "" : `<button class="icon-btn danger" data-delete-item="${item.id}">×</button>`}</td>
             </tr>
@@ -1348,11 +1511,12 @@ function renderExternalEstimate(items) {
 
     <div class="external-estimate-totals">
       ${metric("Итого по позициям", formatMoney(total))}
-      ${metric("Комиссия агентства", "0")}
-      ${metric("НДС 16%", "—")}
+      ${metric(`Комиссия агентства ${asNumber(event?.agency_commission_amount)}%`, formatMoney(agency))}
+      ${event?.client_calc_type === "ip_contrast_event" ? metric("НДС 16%", formatMoney(vat)) : ""}
+      ${event?.client_calc_type === "simplified" ? metric(`Банк+налоги ${asNumber(event?.simplified_bank_tax_percent)}%`, formatMoney(simplifiedMarkup)) : ""}
       <div class="card metric income-metric">
         <div class="label">Итого к оплате</div>
-        <div class="value">${formatMoney(total)}</div>
+        <div class="value">${formatMoney(totalToPay)}</div>
       </div>
     </div>
   `;
@@ -1403,7 +1567,7 @@ function renderInternalEstimate(items, event) {
               </td>
               <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
               <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
-              <td><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
+              <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
               <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
             </tr>
           `).join("")}
@@ -1412,7 +1576,6 @@ function renderInternalEstimate(items, event) {
     </div>
   `;
 }
-
 
 function renderManagerEventCard(event, items = [], summary = null) {
   const activeTab = state.managerEstimateTab || "external";
@@ -1461,7 +1624,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
       </div>
 
       <div id="managerEstimatePanel">
-        ${activeTab === "external" ? renderExternalEstimate(items || []) : renderInternalEstimate(items || [], event)}
+        ${activeTab === "external" ? renderExternalEstimate(items || [], event.id, event) : renderInternalEstimate(items || [], event)}
       </div>
 
       ${summary ? `
@@ -1479,7 +1642,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
       ` : ""}
 
       <div class="manager-card-bottom-actions">
-        <button class="secondary" data-manager-event-save-draft="${event.id}">Сохранить черновик</button>
+        <button class="save-draft-btn" data-manager-event-save-draft="${event.id}">Сохранить черновик</button>
         <button data-manager-event-send-review="${event.id}">Отправить Саше</button>
       </div>
     </section>
@@ -1597,98 +1760,94 @@ function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount)
   return { vat_amount: 0, deduction_amount: 0 };
 }
 
-function collectItemPayloadFromRow(row) {
-  const itemId = row.getAttribute("data-event-item-row");
-  const fields = {};
-  row.querySelectorAll("[data-item-field]").forEach((input) => {
-    const key = input.getAttribute("data-item-field");
-    if (input.type === "checkbox") {
-      fields[key] = input.checked;
-    } else {
-      fields[key] = input.value;
-    }
-  });
 
-  const item = state.currentManagerItems?.find((candidate) => Number(candidate.id) === Number(itemId));
-  if (!item) return null;
-
-  const paymentMethod = fields.payment_method ?? item.payment_method ?? null;
-  const factValue = fields.amount_fact !== undefined && fields.amount_fact !== "" ? normalizeNumberInput(fields.amount_fact) : item.amount_fact;
-
-  let vatAmount = item.vat_amount || 0;
-  let deductionAmount = item.deduction_amount || 0;
-
-  if (paymentMethod === "self_employed") {
-    const base = asNumber(factValue) > 0 ? asNumber(factValue) : externalRowAmount(item);
-    vatAmount = 0;
-    deductionAmount = Math.round(base * 0.10 * 100) / 100;
-  }
-
-  if (paymentMethod === "cash" || paymentMethod === "card" || !paymentMethod) {
-    vatAmount = 0;
-    deductionAmount = 0;
-  }
-
+function itemPayloadForSave(item) {
   return {
     item_type: item.item_type || "regular",
-    external_name: fields.external_name ?? item.external_name,
-    external_price: fields.external_price !== undefined ? normalizeNumberInput(fields.external_price) : item.external_price,
-    external_quantity: fields.external_quantity !== undefined ? normalizeNumberInput(fields.external_quantity) : item.external_quantity,
-    external_days: fields.external_days !== undefined ? normalizeNumberInput(fields.external_days) : item.external_days,
-    external_note: fields.external_note ?? item.external_note,
-    amount_fact: factValue === "" ? null : factValue,
+    external_name: item.external_name || "",
+    external_price: asNumber(item.external_price),
+    external_quantity: asNumber(item.external_quantity || 1),
+    external_days: asNumber(item.external_days || 1),
+    external_note: item.external_note || null,
+    amount_fact: item.amount_fact === "" || item.amount_fact === undefined ? null : item.amount_fact,
     paid_amount: item.paid_amount || 0,
-    payment_method: paymentMethod || null,
-    iin_bin: fields.iin_bin ?? item.iin_bin,
+    payment_method: item.payment_method || null,
+    iin_bin: item.iin_bin || null,
     iin_bin_locked: item.iin_bin_locked || false,
-    tax_check_status: item.tax_check_status,
-    vat_amount: vatAmount,
-    deduction_amount: deductionAmount,
-    internal_note: item.internal_note,
+    tax_check_status: item.tax_check_status || null,
+    vat_amount: item.vat_amount || 0,
+    deduction_amount: item.deduction_amount || 0,
+    internal_note: item.internal_note || null,
     sort_order: item.sort_order || 0,
   };
 }
 
-async function saveVisibleEstimateRows() {
-  const rows = Array.from(document.querySelectorAll("[data-event-item-row]"));
-  for (const row of rows) {
-    const itemId = row.getAttribute("data-event-item-row");
-    const payload = collectItemPayloadFromRow(row);
-    if (!payload) continue;
+async function saveDraftItems(eventId) {
+  const items = getDraftItems(eventId);
+  const deletedIds = getDraftDeletedIds(eventId);
 
-    await api(`/event-items/${itemId}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
+  for (const itemId of deletedIds) {
+    if (!String(itemId).startsWith("tmp-")) {
+      await api(`/event-items/${itemId}`, { method: "DELETE" });
+    }
   }
+
+  for (const item of items) {
+    const payload = itemPayloadForSave(item);
+    if (String(item.id).startsWith("tmp-")) {
+      await api(`/events/${eventId}/items`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await api(`/event-items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    }
+  }
+
+  delete state.managerDraftItemsByEventId[draftKeyForEvent(eventId)];
+  delete state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)];
 }
 
 async function addExternalPosition(eventId) {
-  await api(`/events/${eventId}/items`, {
-    method: "POST",
-    body: JSON.stringify({
-      item_type: "regular",
-      external_name: "Новая позиция",
-      external_price: 0,
-      external_quantity: 1,
-      external_days: 1,
-      external_note: null,
-      amount_fact: null,
-      paid_amount: 0,
-      payment_method: null,
-      iin_bin: null,
-      iin_bin_locked: false,
-      tax_check_status: null,
-      vat_amount: 0,
-      deduction_amount: 0,
-      internal_note: null,
-      sort_order: 0,
-    }),
+  const items = getDraftItems(eventId);
+  items.push({
+    id: `tmp-${state.managerDraftTempSeq++}`,
+    is_temp: true,
+    item_type: "regular",
+    external_name: "Новая позиция",
+    external_price: 0,
+    external_quantity: 1,
+    external_days: 1,
+    external_amount: 0,
+    external_note: "",
+    amount_fact: null,
+    paid_amount: 0,
+    payment_method: null,
+    iin_bin: null,
+    iin_bin_locked: false,
+    tax_check_status: null,
+    vat_amount: 0,
+    deduction_amount: 0,
+    internal_note: null,
+    sort_order: 0,
   });
 }
 
-async function deleteEventItem(itemId) {
-  await api(`/event-items/${itemId}`, { method: "DELETE" });
+function deleteDraftItem(eventId, itemId) {
+  const items = getDraftItems(eventId);
+  const item = items.find((candidate) => String(candidate.id) === String(itemId));
+  if (item?.item_type === "coordinator") {
+    alert("Координатора нельзя удалить");
+    return;
+  }
+
+  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = items.filter((candidate) => String(candidate.id) !== String(itemId));
+  if (!String(itemId).startsWith("tmp-")) {
+    getDraftDeletedIds(eventId).push(itemId);
+  }
 }
 
 async function checkTaxForItem(itemId) {
@@ -1700,40 +1859,40 @@ async function checkTaxForItem(itemId) {
     return;
   }
 
+  if (String(itemId).startsWith("tmp-")) {
+    alert("Сначала нажми “Сохранить черновик”, потом проверяй КГД по новой позиции");
+    return;
+  }
+
   await api(`/event-items/${itemId}/tax/check`, {
     method: "POST",
     body: JSON.stringify({ iin_bin: iinBin }),
   });
+
+  delete state.managerDraftItemsByEventId[draftKeyForEvent(state.selectedManagerEventId)];
 }
 
 function attachManagerCreateWorkspaceActions() {
   document.querySelectorAll("[data-estimate-tab]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       state.managerEstimateTab = button.getAttribute("data-estimate-tab");
-      await renderManagerEventDetail(state.selectedManagerEventId);
+      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   });
 
   const addExternalBtn = document.getElementById("addExternalPositionBtn");
   if (addExternalBtn) {
-    addExternalBtn.addEventListener("click", async () => {
-      await withLoading(async () => {
-        await addExternalPosition(state.selectedManagerEventId);
-        await renderManagerEventDetail(state.selectedManagerEventId);
-        await loadDashboard();
-      }, "Добавляем позицию…");
+    addExternalBtn.addEventListener("click", () => {
+      addExternalPosition(state.selectedManagerEventId);
+      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   }
 
   document.querySelectorAll("[data-delete-item]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", () => {
       if (!confirm("Удалить позицию?")) return;
-      const itemId = button.getAttribute("data-delete-item");
-      await withLoading(async () => {
-        await deleteEventItem(itemId);
-        await renderManagerEventDetail(state.selectedManagerEventId);
-        await loadDashboard();
-      }, "Удаляем позицию…");
+      deleteDraftItem(state.selectedManagerEventId, button.getAttribute("data-delete-item"));
+      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   });
 
@@ -1741,7 +1900,7 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", async () => {
       const itemId = button.getAttribute("data-check-tax-item");
       await withLoading(async () => {
-        await saveVisibleEstimateRows();
+        await saveDraftItems(state.selectedManagerEventId);
         await checkTaxForItem(itemId);
         await renderManagerEventDetail(state.selectedManagerEventId);
         await loadDashboard();
@@ -1749,20 +1908,32 @@ function attachManagerCreateWorkspaceActions() {
     });
   });
 
-  document.querySelectorAll('[data-item-field="payment_method"]').forEach((select) => {
-    select.addEventListener("change", () => {
-      const row = select.closest("[data-event-item-row]");
-      if (!row) return;
-      if (select.value === "self_employed") {
-        const deductionCell = row.querySelector(".deduction-col strong");
-        const itemId = select.getAttribute("data-item-id");
-        const item = state.currentManagerItems?.find((candidate) => Number(candidate.id) === Number(itemId));
-        const factInput = row.querySelector('[data-item-field="amount_fact"]');
-        const base = normalizeNumberInput(factInput?.value) || externalRowAmount(item || {});
-        if (deductionCell) deductionCell.textContent = formatMoney(base * 0.10);
-      }
+  document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-manager-event-save-draft");
+      await withLoading(async () => {
+        await saveDraftItems(eventId);
+        await updateManagerEventStatus(eventId, "draft");
+        await renderManagerEventDetail(eventId);
+        await loadDashboard();
+      }, "Сохраняем черновик…");
     });
   });
+
+  document.querySelectorAll("[data-manager-event-send-review]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-manager-event-send-review");
+      if (!confirm("Отправить мероприятие Саше на проверку?")) return;
+
+      await withLoading(async () => {
+        await saveDraftItems(eventId);
+        await updateManagerEventStatus(eventId, "review");
+        await renderManagerEventDetail(eventId);
+        await loadDashboard();
+      }, "Отправляем на проверку…");
+    });
+  });
+
 }
 
 
@@ -1905,7 +2076,7 @@ function attachManagerDashboardActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-save-draft");
       await withLoading(async () => {
-        await saveVisibleEstimateRows();
+        await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         await renderManagerEventDetail(eventId);
         await loadDashboard();
@@ -1919,7 +2090,7 @@ function attachManagerDashboardActions() {
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
 
       await withLoading(async () => {
-        await saveVisibleEstimateRows();
+        await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         await renderManagerEventDetail(eventId);
         await loadDashboard();
