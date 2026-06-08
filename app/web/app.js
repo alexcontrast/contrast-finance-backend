@@ -93,6 +93,12 @@ function formatMoney(value) {
 }
 
 
+function formatPlainNumber(value) {
+  const n = Number(value || 0);
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n).replace(/,00$/, "");
+}
+
+
 function formatDateRu(value) {
   if (!value) return "";
   const parts = String(value).slice(0, 10).split("-");
@@ -1402,7 +1408,7 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
   const vatNet = Math.max(0, clientVat - contractorVatCredit);
 
   const regularCommission = regularExternal - regularFact;
-  const managerBase = regularCommission + agency + contractorVatCredit + deductions - taxes;
+  const managerBase = regularCommission + agency + simplifiedMarkup + contractorVatCredit + deductions - taxes;
   const managerSalary = managerBase > 0 ? Math.round(managerBase * asNumber(event?.manager_percent || 21) / 100) : 0;
   const companyIncome = managerBase - managerSalary + coordinatorCompanyShare;
 
@@ -1895,7 +1901,9 @@ function renderExternalEstimate(items, eventId, event = null) {
     <div class="external-estimate-totals external-estimate-totals-four">
       ${metric("Итого по позициям", formatMoney(total))}
       ${metric(`Комиссия агентства ${asNumber(event?.agency_commission_amount)}%`, formatMoney(agency))}
-      ${metric(event?.client_calc_type === "ip_contrast_event" ? "НДС 16%" : "НДС", formatMoney(vat))}
+      ${event?.client_calc_type === "simplified"
+        ? metric(`Банк+налоги ${formatPlainNumber(event?.simplified_bank_tax_percent)}%`, formatMoney(simplifiedMarkup))
+        : metric(event?.client_calc_type === "ip_contrast_event" ? "НДС 16%" : "НДС", formatMoney(vat))}
       <div class="card metric income-metric">
         <div class="label">Итого к оплате</div>
         <div class="value">${formatMoney(totalToPay)}</div>
@@ -1973,21 +1981,6 @@ function renderInternalEstimate(items, event, summary = null) {
               </tr>
             `;
           }).join("")}
-
-          ${event.client_calc_type === "simplified" ? `
-            <tr class="system-row simplified-row">
-              <td><strong>Банковские и налоговые платежи</strong></td>
-              <td><strong>${formatMoney(simplifiedMarkup)}</strong></td>
-              <td>0</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>0</td>
-              <td>0</td>
-              <td><strong>${formatMoney(simplifiedMarkup)}</strong></td>
-              <td>0</td>
-            </tr>
-          ` : ""}
         </tbody>
       </table>
     </div>
@@ -2035,7 +2028,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
         </label>
         ${event.client_calc_type === "simplified" ? `
           <label>Банк+налоги, %
-            <input value="${event.simplified_bank_tax_percent || 0}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+            <input value="${formatPlainNumber(event.simplified_bank_tax_percent || 0)}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
           </label>
         ` : ""}
       </div>

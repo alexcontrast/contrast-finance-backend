@@ -182,6 +182,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     manager_salary_base = (
         regular_positions_commission
         + agency_commission_amount
+        + simplified_markup_amount
         + contractor_vat_credit
         + deductions_total
         - internal_tax_amount
@@ -206,6 +207,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "regular_external_total": q(regular_external_total),
         "regular_fact_total": q(regular_fact_total),
         "regular_positions_commission": q0(regular_positions_commission),
+        "total_commission_amount": q0(regular_positions_commission + agency_commission_amount),
         "coordinator_external_total": q(coordinator_external_total),
         "coordinator_fact_amount": q(coordinator_fact_amount),
         "coordinator_company_share": q(coordinator_company_share),
@@ -213,6 +215,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "deductions_total": q(deductions_total),
         "internal_tax_amount": q(internal_tax_amount),
         "simplified_bank_tax_amount": q(simplified_bank_tax_amount),
+        "simplified_markup_amount": q0(simplified_markup_amount),
         "manager_salary_base": q(manager_salary_base),
         "manager_percent": q(manager_percent),
         "manager_salary": q(manager_salary),
@@ -232,5 +235,6 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "taxes_net": q0(internal_tax_amount - deductions_total),
         "vat_net": q0(vat_to_pay),
         "agency_commission_amount": q0(agency_commission_amount),
+        "agency_only_commission_amount": q0(agency_commission_amount),
         "manager_salary_negative_commission": q0(manager_salary * Decimal("-1")),
     }
