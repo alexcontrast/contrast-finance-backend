@@ -134,15 +134,12 @@ function adminRequestActions(request) {
   const status = request.status;
   const buttons = [];
 
-  if (status === "new" || status === "tax_check_needed") {
-    buttons.push(`<button class="small secondary" data-set-request-status="${request.id}:to_pay">На оплату</button>`);
-    buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
-    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Отменить</button>`);
-  } else if (status === "to_pay") {
+  if (status === "new" || status === "tax_check_needed" || status === "to_pay") {
     buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
     buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Отменить</button>`);
   } else if (status === "paid") {
     buttons.push(`<button class="small secondary" data-set-request-status="${request.id}:cash_received">Деньги в кассе</button>`);
+    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Возврат</button>`);
   }
 
   return buttons.join("");
@@ -223,10 +220,9 @@ function attachPaymentRequestActions() {
       const [id, status] = raw.split(":");
 
       const labels = {
-        to_pay: "перевести на оплату",
         paid: "отметить оплаченной",
         cash_received: "отметить деньги в кассе",
-        rejected: "отменить",
+        rejected: "отменить / оформить возврат",
       };
 
       if (!confirm(`Заявку #${id} ${labels[status] || "изменить"}?`)) return;

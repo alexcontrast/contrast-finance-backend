@@ -361,13 +361,16 @@ def update_payment_request_status(
                 detail="Only admin can change payment request status; manager can only cancel own request",
             )
 
+    previous_status = request.status
+
     request.status = payload.status
     request.updated_at = datetime.utcnow()
 
-    if payload.status == "paid":
+    item = db.get(EventItem, request.event_item_id)
+
+    if payload.status == "paid" and previous_status != "paid":
         request.paid_at = datetime.utcnow()
 
-        item = db.get(EventItem, request.event_item_id)
         if item is not None:
             item.paid_amount = item.paid_amount + request.amount_requested
             item.updated_at = datetime.utcnow()
@@ -378,6 +381,14 @@ def update_payment_request_status(
 
     if payload.status == "rejected":
         request.rejected_at = datetime.utcnow()
+
+        # Refund: if an already paid request is cancelled, remove it from paid amount.
+        if previous_status in {"paid", "cash_received"} and item is not None:
+            item.paid_amount = item.paid_amount - request.amount_requested
+            if item.paid_amount < 0:
+                item.paid_amount = 0
+            item.updated_at = datetime.utcnow()
+            db.add(item)
 
     db.add(request)
     db.commit()
