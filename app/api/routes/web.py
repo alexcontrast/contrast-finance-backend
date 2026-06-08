@@ -16,19 +16,38 @@ def read_web_file(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def no_store_response(content, media_type: str):
+    return Response(
+        content,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def web_index():
-    return HTMLResponse(read_web_file("index.html"))
+    return HTMLResponse(
+        read_web_file("index.html"),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @router.get("/web/app.js")
 def web_app_js():
-    return Response(read_web_file("app.js"), media_type="application/javascript; charset=utf-8")
+    return no_store_response(read_web_file("app.js"), "application/javascript; charset=utf-8")
 
 
 @router.get("/web/styles.css")
 def web_styles_css():
-    return Response(read_web_file("styles.css"), media_type="text/css; charset=utf-8")
+    return no_store_response(read_web_file("styles.css"), "text/css; charset=utf-8")
 
 
 @router.get("/web/contrast-logo.jpg")
