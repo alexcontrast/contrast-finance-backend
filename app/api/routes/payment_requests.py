@@ -6,16 +6,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.user import User
-from app.services.auth import get_current_user
-from app.services.authorization import get_event_or_404, require_event_view, require_event_edit, require_item_event_edit, require_payment_request_view, require_payment_request_edit
+from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
+from app.models.user import User
 from app.schemas.payment_request import (
     PaymentRequestCardRead,
     PaymentRequestCreate,
     PaymentRequestRead,
     PaymentRequestStatusUpdate,
+)
+from app.services.auth import get_current_user
+from app.services.authorization import (
+    get_event_or_404,
+    get_item_or_404,
+    get_request_or_404,
+    require_event_view,
+    require_item_event_edit,
+    require_payment_request_edit,
+    require_payment_request_view,
 )
 
 
@@ -88,10 +97,6 @@ def looks_like_card_number(card_number: str | None) -> bool:
 
 
 def comment_has_surname(comment: str | None) -> bool:
-    """
-    Минимальная проверка для самозанятого:
-    в комментарии должно быть хотя бы одно слово из 2+ букв.
-    """
     if not comment:
         return False
 
@@ -101,8 +106,6 @@ def comment_has_surname(comment: str | None) -> bool:
 
 def validate_payment_request_rules(item: EventItem, payment_method: str, payload: PaymentRequestCreate):
     """
-    Правила v0.10:
-
     invoice / По счету:
     - BIN / ИИН обязателен
     - BIN / ИИН должен быть зафиксирован
@@ -182,30 +185,70 @@ def build_payment_request_card(request: PaymentRequest) -> PaymentRequestCardRea
     )
 
 
+def event_scope_query_for_user(query, user: User):
+    """
+    Adds event-based visibility for payment requests:
+    admin -> all
+    manager -> own events
+    department_head -> own department
+    """
+    query = query.join(Event, Event.id == PaymentRequest.event_id)
+
+    if user.role == "admin":
+        return query
+
+    if user.role == "manager":
+        return query.where(Event.manager_id == user.id)
+
+    if user.role == "department_head":
+        return query.where(Event.department_id == user.department_id)
+
+    raise HTTPException(status_code=403, detail="Not enough permissions")
+
+
 @router.get("/payment-requests", response_model=list[PaymentRequestRead])
-def list_payment_requests(db: Session = Depends(get_db)):
-    result = db.execute(select(PaymentRequest).order_by(PaymentRequest.id.desc()))
+def list_payment_requests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = select(PaymentRequest).order_by(PaymentRequest.id.desc())
+    query = event_scope_query_for_user(query, current_user)
+
+    result = db.execute(query)
     return [enrich_payment_request_read(request) for request in result.scalars().all()]
 
 
 @router.get("/payment-requests/{request_id}", response_model=PaymentRequestRead)
-def get_payment_request(request_id: int, db: Session = Depends(get_db)):
-    request = db.get(PaymentRequest, request_id)
-    if request is None:
-        raise HTTPException(status_code=404, detail="Payment request not found")
+def get_payment_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    request = get_request_or_404(db, request_id)
+    require_payment_request_view(db, current_user, request)
     return enrich_payment_request_read(request)
 
 
 @router.get("/payment-requests/{request_id}/card", response_model=PaymentRequestCardRead)
-def get_payment_request_card(request_id: int, db: Session = Depends(get_db)):
-    request = db.get(PaymentRequest, request_id)
-    if request is None:
-        raise HTTPException(status_code=404, detail="Payment request not found")
+def get_payment_request_card(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    request = get_request_or_404(db, request_id)
+    require_payment_request_view(db, current_user, request)
     return build_payment_request_card(request)
 
 
 @router.get("/events/{event_id}/payment-requests", response_model=list[PaymentRequestRead])
-def list_event_payment_requests(event_id: int, db: Session = Depends(get_db)):
+def list_event_payment_requests(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+    require_event_view(current_user, event)
+
     result = db.execute(
         select(PaymentRequest)
         .where(PaymentRequest.event_id == event_id)
@@ -218,24 +261,21 @@ def list_event_payment_requests(event_id: int, db: Session = Depends(get_db)):
 def create_payment_request(
     item_id: int,
     payload: PaymentRequestCreate,
-    created_by_user_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Создаёт заявку по конкретной позиции.
+    item = get_item_or_404(db, item_id)
 
-    v0.10:
-    - invoice требует зафиксированный BIN / ИИН и налоговый статус
-    - заявка забирает налоговый snapshot из позиции
-    - карточка заявки показывает налоговый статус, но не суммы НДС/Вычетов
-    """
-    item = db.get(EventItem, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Event item not found")
+    # Admin can create; manager only for own event; department_head is read-only.
+    event = require_item_event_edit(db, current_user, item)
 
-    payment_method = normalize_payment_method(payload.payment_method or item.payment_method)
+    payment_method = normalize_payment_method(payload.payment_method) or normalize_payment_method(item.payment_method)
+
     if not payment_method:
-        raise HTTPException(status_code=400, detail="payment_method is required")
+        raise HTTPException(
+            status_code=400,
+            detail="У позиции не указан способ оплаты",
+        )
 
     validate_payment_request_rules(item, payment_method, payload)
 
@@ -243,10 +283,9 @@ def create_payment_request(
     warning_over_remaining = payload.amount_requested > remaining
 
     request = PaymentRequest(
-        event_id=item.event_id,
+        event_id=event.id,
         event_item_id=item.id,
-        created_by_user_id=created_by_user_id,
-
+        created_by_user_id=current_user.id,
         amount_requested=payload.amount_requested,
         payment_method=payment_method,
         status="new",
@@ -261,22 +300,14 @@ def create_payment_request(
         contractor_id=None,
         contractor_name_snapshot=None,
         iin_bin_snapshot=item.iin_bin if payment_method == "invoice" else None,
-        tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
-            "self_employed" if payment_method == "self_employed" else None
-        ),
-        vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else "no_vat",
+        tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else None,
+        vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else ("no_vat" if payment_method == "invoice" else None),
         vat_amount_snapshot=item.vat_amount if payment_method == "invoice" else Decimal("0.00"),
-        deduction_amount_snapshot=item.deduction_amount if payment_method == "invoice" else (
-            item.deduction_amount if payment_method == "self_employed" else Decimal("0.00")
-        ),
-        tax_source_snapshot="event_item" if payment_method in {"invoice", "self_employed"} else None,
+        deduction_amount_snapshot=item.deduction_amount if payment_method == "invoice" else Decimal("0.00"),
+        tax_source_snapshot="event_item" if payment_method == "invoice" else None,
 
-        card_number=payload.card_number,
-
+        card_number=payload.card_number if payment_method == "card" else None,
         manual_tax_mode=False,
-        manual_tax_set_by_user_id=None,
-        manual_tax_set_at=None,
-
         warning_over_remaining=warning_over_remaining,
 
         created_at=datetime.utcnow(),
@@ -286,6 +317,7 @@ def create_payment_request(
     db.add(request)
     db.commit()
     db.refresh(request)
+
     return enrich_payment_request_read(request)
 
 
@@ -294,29 +326,27 @@ def update_payment_request_status(
     request_id: int,
     payload: PaymentRequestStatusUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    request = db.get(PaymentRequest, request_id)
-    if request is None:
-        raise HTTPException(status_code=404, detail="Payment request not found")
+    request = get_request_or_404(db, request_id)
 
-    allowed_statuses = {
-        "new",
-        "to_pay",
-        "paid",
-        "cash_received",
-        "rejected",
-        "tax_check_needed",
-    }
-    if payload.status not in allowed_statuses:
-        raise HTTPException(status_code=400, detail="Invalid status")
+    # Only admin can change payment statuses.
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can change payment request status")
 
-    old_status = request.status
-    new_status = payload.status
+    require_payment_request_edit(db, current_user, request)
 
-    request.status = new_status
+    allowed = {"new", "to_pay", "paid", "cash_received", "rejected", "tax_check_needed"}
+    if payload.status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="status должен быть new, to_pay, paid, cash_received, rejected или tax_check_needed",
+        )
+
+    request.status = payload.status
     request.updated_at = datetime.utcnow()
 
-    if new_status == "paid" and old_status != "paid":
+    if payload.status == "paid":
         request.paid_at = datetime.utcnow()
 
         item = db.get(EventItem, request.event_item_id)
@@ -325,13 +355,14 @@ def update_payment_request_status(
             item.updated_at = datetime.utcnow()
             db.add(item)
 
-    if new_status == "cash_received":
+    if payload.status == "cash_received":
         request.cash_received_at = datetime.utcnow()
 
-    if new_status == "rejected":
+    if payload.status == "rejected":
         request.rejected_at = datetime.utcnow()
 
     db.add(request)
     db.commit()
     db.refresh(request)
+
     return enrich_payment_request_read(request)
