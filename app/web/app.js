@@ -140,6 +140,8 @@ function adminRequestActions(request) {
   } else if (status === "paid") {
     buttons.push(`<button class="small secondary" data-set-request-status="${request.id}:cash_received">Деньги в кассе</button>`);
     buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Возврат</button>`);
+  } else if (status === "cash_received") {
+    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Возврат</button>`);
   }
 
   return buttons.join("");
