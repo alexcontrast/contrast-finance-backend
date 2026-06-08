@@ -29,3 +29,11 @@ def web_app_js():
 @router.get("/web/styles.css")
 def web_styles_css():
     return Response(read_web_file("styles.css"), media_type="text/css; charset=utf-8")
+
+
+@router.get("/web/contrast-logo.jpg")
+def web_logo():
+    path = WEB_DIR / "contrast-logo.jpg"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return Response(path.read_bytes(), media_type="image/jpeg")

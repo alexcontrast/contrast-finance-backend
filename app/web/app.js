@@ -87,6 +87,7 @@ function showLogin() {
   $("userBadge").classList.add("hidden");
   $("adminTabs").classList.add("hidden");
   $("pageTitle").textContent = "Вход";
+  $("pageSubtitle").textContent = "Финансовая панель мероприятий";
 }
 
 function showDashboardShell() {
@@ -126,6 +127,17 @@ function managerNameById(id) {
 
 function departmentNameById(id) {
   return getDepartmentsMap().get(Number(id)) || "";
+}
+
+function departmentClassByName(name) {
+  const value = String(name || "").toLowerCase();
+  if (value.includes("санжар")) return "department-sanzhar";
+  if (value.includes("рауф")) return "department-raufal";
+  return "";
+}
+
+function departmentClassById(id) {
+  return departmentClassByName(departmentNameById(id));
 }
 
 function filteredEvents(events) {
@@ -206,7 +218,7 @@ function renderEventsTable(events, allowClick = false) {
         </thead>
         <tbody>
           ${events.map((event) => `
-            <tr class="${allowClick ? "clickable-row" : ""}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
+            <tr class="${allowClick ? "clickable-row" : ""} ${departmentClassById(event.department_id)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
               <td class="nowrap">${event.event_date || ""}</td>
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
@@ -511,11 +523,11 @@ async function openEventModal(eventId) {
       <div class="divider"></div>
 
       <h3>Смета</h3>
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap estimate-table-wrap">
+        <table class="estimate-table">
           <thead>
             <tr>
-              <th>Позиция</th><th>Тип</th><th>Сумма</th><th>Факт</th><th>Оплачено</th><th>Способ</th><th>НДС</th><th>Вычеты</th>
+              <th>Позиция</th><th>Тип</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>Способ</th><th>НДС</th><th>Вычеты</th>
             </tr>
           </thead>
           <tbody>
@@ -578,7 +590,7 @@ function renderAdminOverview(data) {
           </thead>
           <tbody>
             ${(data.departments || []).map((dep) => `
-              <tr>
+              <tr class="${departmentClassByName(dep.department_name)}">
                 <td><strong>${dep.department_name}</strong></td>
                 <td>${formatMoney(dep.plan_amount)}</td>
                 <td>${formatMoney(dep.fact_income_amount)}</td>
@@ -600,7 +612,7 @@ function renderAdminOverview(data) {
           </thead>
           <tbody>
             ${managerRows.map((row) => `
-              <tr>
+              <tr class="${departmentClassById(row.manager.department_id)}">
                 <td><strong>${row.manager.name}</strong></td>
                 <td>${departmentNameById(row.manager.department_id)}</td>
                 <td>${formatMoney(row.plan)}</td>
@@ -857,6 +869,9 @@ async function boot() {
 
     const user = state.bootstrap.user;
     $("pageTitle").textContent = roleLabel(user.role);
+    $("pageSubtitle").textContent = user.role === "admin"
+      ? "Проверка мероприятий, заявки, планы и закрытие месяца"
+      : "Финансовая панель мероприятий";
     $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
     $("monthInput").value = state.month;
 
