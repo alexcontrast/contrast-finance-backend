@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Contrast Finance 2.0</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Contrast Finance 2.0</div>
+        <h1 id="pageTitle">Вход</h1>
+      </div>
+      <div class="topbar-actions">
+        <span id="userBadge" class="badge hidden"></span>
+        <button id="logoutBtn" class="ghost hidden">Выйти</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="loginScreen" class="card narrow">
+        <h2>Войти</h2>
+        <p class="muted">Используй логин и PIN. Админ входит своим PIN.</p>
+
+        <label>Имя
+          <input id="loginName" autocomplete="username" placeholder="Admin, Санжар, Vadim" />
+        </label>
+
+        <label>PIN
+          <input id="loginPin" autocomplete="current-password" type="password" placeholder="PIN" />
+        </label>
+
+        <button id="loginBtn">Войти</button>
+        <div id="loginError" class="error hidden"></div>
+      </section>
+
+      <section id="dashboardScreen" class="hidden">
+        <div class="toolbar">
+          <label class="month-control">Месяц
+            <input id="monthInput" type="month" />
+          </label>
+          <button id="reloadBtn" class="secondary">Обновить</button>
+          <button id="changePinOpenBtn" class="ghost">Сменить PIN</button>
+        </div>
+
+        <section id="summaryCards" class="grid cards"></section>
+
+        <section class="card">
+          <div class="section-head">
+            <h2 id="dashboardTitle">Кабинет</h2>
+            <span id="dashboardHint" class="muted"></span>
+          </div>
+          <div id="dashboardContent"></div>
+        </section>
+
+        <section id="changePinCard" class="card narrow hidden">
+          <h2>Смена PIN</h2>
+          <label>Старый PIN
+            <input id="oldPin" type="password" />
+          </label>
+          <label>Новый PIN
+            <input id="newPin" type="password" />
+          </label>
+          <button id="changePinBtn">Сменить PIN</button>
+          <div id="changePinMessage" class="muted"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="/web/app.js"></script>
+</body>
+</html>

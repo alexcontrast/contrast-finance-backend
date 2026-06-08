@@ -18,6 +18,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.security import router as security_router
 from app.api.routes.app_bootstrap import router as app_bootstrap_router
 from app.api.routes.manager_dashboard import router as manager_dashboard_router
+from app.api.routes.web import router as web_router
 from app.api.routes.users_import import router as users_import_router
 from app.api.routes.users_manage import router as users_manage_router
 from app.api.routes.health import router as health_router
@@ -61,3 +62,5 @@ def root():
         "service": settings.SERVICE_NAME,
         "message": "Contrast Finance API is running",
     }
+
+app.include_router(web_router)
