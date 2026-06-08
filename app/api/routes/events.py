@@ -72,7 +72,7 @@ def create_event(
         event_date=payload.event_date,
         department_id=department_id,
         manager_id=manager_id,
-        status=payload.status,
+        status="draft",
         client_calc_type=payload.client_calc_type,
         manager_percent=payload.manager_percent,
         agency_commission_amount=payload.agency_commission_amount,

@@ -1383,3 +1383,19 @@ select:focus {
 .toolbar #changePinOpenBtn {
   display: none;
 }
+
+
+/* v0.35.2 manager create modal fixes */
+.manager-create-modal #plansModalTitle,
+.manager-create-modal .modal-title,
+.manager-create-modal-title {
+  display: none !important;
+}
+
+#managerCreateError {
+  margin-top: 14px;
+}
+
+#managerCreateError.hidden {
+  display: none;
+}

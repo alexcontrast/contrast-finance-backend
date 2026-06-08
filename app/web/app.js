@@ -1451,6 +1451,7 @@ function renderManagerCreateModal() {
       </label>
     </div>
 
+    <div id="managerCreateError" class="error hidden"></div>
     <div class="divider"></div>
     <button id="createManagerEventBtn">Создать мероприятие</button>
   `;
@@ -1458,15 +1459,26 @@ function renderManagerCreateModal() {
 
 function openManagerCreateModal() {
   const title = document.getElementById("plansModalTitle");
-  if (title) title.textContent = "Создать мероприятие";
+  if (title) {
+    title.textContent = "Создать мероприятие";
+    title.classList.add("manager-create-modal-title");
+  }
 
-  $("plansModalBackdrop").classList.remove("hidden");
+  const modal = $("plansModalBackdrop");
+  modal.classList.add("manager-create-modal");
+  modal.classList.remove("hidden");
+
   $("plansModalContent").innerHTML = renderManagerCreateModal();
   attachManagerCreateForm();
   attachManagerCalcTypeToggle();
 
   const close = document.getElementById("managerCreateModalCloseBtn");
-  if (close) close.addEventListener("click", () => $("plansModalBackdrop").classList.add("hidden"));
+  if (close) {
+    close.addEventListener("click", () => {
+      $("plansModalBackdrop").classList.add("hidden");
+      $("plansModalBackdrop").classList.remove("manager-create-modal");
+    });
+  }
 }
 
 function renderManagerDashboardLayout(data) {
@@ -1590,6 +1602,12 @@ function attachManagerCreateForm() {
   if (!createBtn) return;
 
   createBtn.addEventListener("click", async () => {
+    const errorBox = document.getElementById("managerCreateError");
+    if (errorBox) {
+      errorBox.classList.add("hidden");
+      errorBox.textContent = "";
+    }
+
     const clientName = document.getElementById("newEventClientName").value.trim();
     const title = document.getElementById("newEventTitle").value.trim();
     const eventDate = document.getElementById("newEventDate").value;
@@ -1598,40 +1616,60 @@ function attachManagerCreateForm() {
     const simplifiedPercent = normalizeNumberInput(document.getElementById("newEventSimplifiedPercent").value);
 
     if (!clientName || !title || !eventDate) {
-      alert("Заполни заказчика, название и дату");
+      if (errorBox) {
+        errorBox.textContent = "Заполни заказчика, название и дату.";
+        errorBox.classList.remove("hidden");
+      } else {
+        alert("Заполни заказчика, название и дату");
+      }
       return;
     }
 
-    await withLoading(async () => {
-      const user = state.bootstrap.user;
-      const event = await api("/events", {
-        method: "POST",
-        body: JSON.stringify({
-          client_name: clientName,
-          title,
-          event_date: eventDate,
-          department_id: user.department_id,
-          manager_id: user.id,
-          client_calc_type: calcType,
-          manager_percent: 21,
-          agency_commission_amount: agencyCommission,
-          agency_commission_spread_enabled: false,
-          simplified_bank_tax_percent: calcType === "simplified" ? simplifiedPercent : 0,
-          status: "draft",
-        }),
-      });
+    createBtn.disabled = true;
 
-      state.selectedManagerEventId = event.id;
-      if (eventDate && eventDate.length >= 7) {
-        state.month = eventDate.slice(0, 7);
-        const globalMonth = document.getElementById("monthSelect");
-        const globalYear = document.getElementById("yearSelect");
-        if (globalMonth) globalMonth.value = state.month.slice(5, 7);
-        if (globalYear) globalYear.value = state.month.slice(0, 4);
+    try {
+      await withLoading(async () => {
+        const user = state.bootstrap.user;
+
+        const event = await api("/events", {
+          method: "POST",
+          body: JSON.stringify({
+            client_name: clientName,
+            title,
+            event_date: eventDate,
+            department_id: user.department_id,
+            manager_id: user.id,
+            client_calc_type: calcType,
+            manager_percent: 21,
+            agency_commission_amount: agencyCommission,
+            agency_commission_spread_enabled: false,
+            simplified_bank_tax_percent: calcType === "simplified" ? simplifiedPercent : 0,
+          }),
+        });
+
+        state.selectedManagerEventId = event.id;
+        if (eventDate && eventDate.length >= 7) {
+          state.month = eventDate.slice(0, 7);
+          const globalMonth = document.getElementById("monthSelect");
+          const globalYear = document.getElementById("yearSelect");
+          if (globalMonth) globalMonth.value = state.month.slice(5, 7);
+          if (globalYear) globalYear.value = state.month.slice(0, 4);
+        }
+
+        $("plansModalBackdrop").classList.add("hidden");
+        $("plansModalBackdrop").classList.remove("manager-create-modal");
+        await loadDashboard();
+      }, "Создаём мероприятие…");
+    } catch (error) {
+      if (errorBox) {
+        errorBox.textContent = error.message || "Не удалось создать мероприятие.";
+        errorBox.classList.remove("hidden");
+      } else {
+        alert(error.message || "Не удалось создать мероприятие.");
       }
-      $("plansModalBackdrop").classList.add("hidden");
-      await loadDashboard();
-    }, "Создаём мероприятие…");
+    } finally {
+      createBtn.disabled = false;
+    }
   });
 }
 
