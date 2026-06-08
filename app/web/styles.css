@@ -77,3 +77,45 @@ th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spa
   .toolbar { display: grid; }
   button { width: 100%; }
 }
+
+
+.inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button.small {
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+.block-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 12px;
+}
+
+.empty-state {
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.35);
+  color: var(--muted);
+}
+
+.request-main-amount {
+  font-weight: 900;
+  font-size: 17px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}

@@ -31,8 +31,22 @@ function statusLabel(status) {
     to_pay: "На оплату",
     paid: "Оплачено",
     cash_received: "Деньги в кассе",
-    rejected: "Отклонено",
+    rejected: "Отменено",
+    tax_check_needed: "Нужна проверка",
   }[status] || status;
+}
+
+function paymentMethodLabel(method) {
+  return {
+    invoice: "По счету",
+    card: "На карту",
+    cash: "Налик",
+    self_employed: "Самозанятый",
+    "По счету": "По счету",
+    "На карту": "На карту",
+    "Налик": "Налик",
+    "Самозанятый": "Самозанятый",
+  }[method] || method || "";
 }
 
 async function api(path, options = {}) {
@@ -77,7 +91,7 @@ function renderSummary(cards) {
 }
 
 function renderEventsTable(events) {
-  if (!events || !events.length) return `<p class="muted">Нет мероприятий за выбранный месяц.</p>`;
+  if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
 
   return `
     <div class="table-wrap">
@@ -91,7 +105,7 @@ function renderEventsTable(events) {
         <tbody>
           ${events.map((event) => `
             <tr>
-              <td>${event.event_date || ""}</td>
+              <td class="nowrap">${event.event_date || ""}</td>
               <td><strong>${event.title || ""}</strong></td>
               <td>${event.client_name || ""}</td>
               <td><span class="status ${event.status}">${statusLabel(event.status)}</span></td>
@@ -107,7 +121,82 @@ function renderEventsTable(events) {
   `;
 }
 
-function renderDepartmentDashboard(data) {
+function canManagerCancelRequest(request) {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "manager") return false;
+  return !["paid", "cash_received", "rejected"].includes(request.status);
+}
+
+function renderPaymentRequestsTable(requests, title = "Заявки на оплату") {
+  if (!requests || !requests.length) {
+    return `
+      <div class="block-title"><h3>${title}</h3></div>
+      <div class="empty-state">Заявок пока нет.</div>
+    `;
+  }
+
+  return `
+    <div class="block-title">
+      <h3>${title}</h3>
+      <span class="muted">${requests.length} шт.</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Заявка</th>
+            <th>Мероприятие</th>
+            <th>Позиция</th>
+            <th>Сумма заявки</th>
+            <th>Способ</th>
+            <th>Налоговый статус</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${requests.map((request) => `
+            <tr>
+              <td>#${request.id}</td>
+              <td>${request.event_title || request.event_id || ""}</td>
+              <td>${request.position || request.item_name_snapshot || ""}</td>
+              <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
+              <td>${paymentMethodLabel(request.payment_method)}</td>
+              <td>${request.tax_status || request.tax_status_label || ""}</td>
+              <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
+              <td>
+                <div class="inline-actions">
+                  ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
+                </div>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function attachPaymentRequestActions() {
+  document.querySelectorAll("[data-cancel-request]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-cancel-request");
+      if (!confirm(`Отменить заявку #${id}?`)) return;
+
+      try {
+        await api(`/payment-requests/${id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "rejected" }),
+        });
+        await loadDashboard();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
+}
+
+function renderDepartmentDashboard(data, paymentRequests = []) {
   renderSummary([
     ["План отдела", formatMoney(data.plan_amount)],
     ["Факт", formatMoney(data.fact_income_amount)],
@@ -118,18 +207,24 @@ function renderDepartmentDashboard(data) {
   $("dashboardTitle").textContent = `Кабинет отдела: ${data.department_name}`;
   $("dashboardHint").textContent = data.include_drafts ? "С черновиками" : "Без черновиков";
 
+  const requests = data.payment_requests || paymentRequests || [];
+
   $("dashboardContent").innerHTML = `
     <div class="grid cards">
       ${metric("Остаток до плана", formatMoney(data.remaining_to_plan))}
       ${metric("Мероприятий", data.events_count)}
       ${metric("Черновиков", data.drafts_count)}
-      ${metric("Менеджеров", data.managers?.length || 0)}
+      ${metric("Менеджеров", data.managers?.length || data.managers_count || 0)}
     </div>
+    <div class="block-title"><h3>Мероприятия</h3></div>
     ${renderEventsTable(data.events || [])}
+    ${renderPaymentRequestsTable(requests, "Заявки отдела")}
   `;
+
+  attachPaymentRequestActions();
 }
 
-function renderManagerDashboard(data) {
+function renderManagerDashboard(data, paymentRequests = []) {
   renderSummary([
     ["Личный план", formatMoney(data.personal_plan_amount)],
     ["Факт", formatMoney(data.fact_income_amount)],
@@ -147,8 +242,12 @@ function renderManagerDashboard(data) {
       ${metric("Заявок", data.payment_requests_count)}
       ${metric("Активных заявок", data.active_payment_requests_count)}
     </div>
+    <div class="block-title"><h3>Мероприятия</h3></div>
     ${renderEventsTable(data.events || [])}
+    ${renderPaymentRequestsTable(paymentRequests, "Мои заявки")}
   `;
+
+  attachPaymentRequestActions();
 }
 
 function renderAdminDashboard(data) {
@@ -184,9 +283,12 @@ function renderAdminDashboard(data) {
       </table>
     </div>
 
-    <h3 style="margin-top:24px;">Мероприятия</h3>
+    <div class="block-title"><h3>Мероприятия</h3></div>
     ${renderEventsTable(data.events || [])}
+    ${renderPaymentRequestsTable(data.payment_requests || [], "Все заявки")}
   `;
+
+  attachPaymentRequestActions();
 }
 
 async function loadDashboard() {
@@ -200,11 +302,19 @@ async function loadDashboard() {
   }
 
   if (user.role === "department_head") {
-    renderDepartmentDashboard(await api(`/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true`));
+    const [dashboard, requests] = await Promise.all([
+      api(`/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true`),
+      api("/payment-requests"),
+    ]);
+    renderDepartmentDashboard(dashboard, requests);
     return;
   }
 
-  renderManagerDashboard(await api(`/manager-dashboard?month=${month}&include_drafts=true`));
+  const [dashboard, requests] = await Promise.all([
+    api(`/manager-dashboard?month=${month}&include_drafts=true`),
+    api("/payment-requests"),
+  ]);
+  renderManagerDashboard(dashboard, requests);
 }
 
 async function boot() {
