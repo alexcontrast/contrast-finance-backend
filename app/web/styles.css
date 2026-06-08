@@ -1411,3 +1411,103 @@ select:focus {
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
+
+
+/* v0.35.5 external/internal estimate switch */
+.estimate-tabs button {
+  cursor: pointer;
+}
+
+.external-estimate-table input,
+.internal-estimate-table input,
+.internal-estimate-table select {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.75);
+  font-weight: 800;
+  padding: 7px 9px;
+}
+
+.external-estimate-table th,
+.internal-estimate-table th {
+  font-size: 12px;
+  letter-spacing: .14em;
+}
+
+.external-estimate-table td,
+.internal-estimate-table td {
+  vertical-align: middle;
+}
+
+.external-estimate-table th:nth-child(1),
+.external-estimate-table td:nth-child(1),
+.internal-estimate-table th:nth-child(1),
+.internal-estimate-table td:nth-child(1) {
+  background: #f5f8f0;
+}
+
+.external-estimate-table th:nth-child(2),
+.external-estimate-table td:nth-child(2),
+.external-estimate-table th:nth-child(3),
+.external-estimate-table td:nth-child(3),
+.external-estimate-table th:nth-child(4),
+.external-estimate-table td:nth-child(4),
+.external-estimate-table th:nth-child(5),
+.external-estimate-table td:nth-child(5),
+.internal-estimate-table th:nth-child(2),
+.internal-estimate-table td:nth-child(2),
+.internal-estimate-table th:nth-child(3),
+.internal-estimate-table td:nth-child(3) {
+  background: #f1f4f0;
+}
+
+.internal-estimate-table th:nth-child(4),
+.internal-estimate-table td:nth-child(4),
+.internal-estimate-table th:nth-child(5),
+.internal-estimate-table td:nth-child(5),
+.internal-estimate-table th:nth-child(6),
+.internal-estimate-table td:nth-child(6) {
+  background: #f4f7ec;
+}
+
+.internal-estimate-table th:nth-child(7),
+.internal-estimate-table td:nth-child(7) {
+  background: #eaf8fb;
+}
+
+.internal-estimate-table th:nth-child(8),
+.internal-estimate-table td:nth-child(8) {
+  background: #f3effb;
+}
+
+.internal-estimate-table th:nth-child(9),
+.internal-estimate-table td:nth-child(9) {
+  background: #eef3fb;
+}
+
+.internal-estimate-table th:nth-child(10),
+.internal-estimate-table td:nth-child(10) {
+  background: #ecffd8;
+}
+
+.external-estimate-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.icon-btn {
+  border-radius: 10px;
+  min-width: 36px;
+  min-height: 34px;
+  padding: 4px 8px;
+}
+
+@media (max-width: 900px) {
+  .external-estimate-totals {
+    grid-template-columns: 1fr;
+  }
+}

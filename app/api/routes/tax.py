@@ -162,9 +162,6 @@ def check_event_item_tax(
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
 
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admin can set manual tax mode")
-
     require_item_event_edit(db, current_user, item)
 
     try:

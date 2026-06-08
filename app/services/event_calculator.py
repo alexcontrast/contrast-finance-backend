@@ -5,8 +5,6 @@ from app.models.event import Event
 from app.models.event_item import EventItem
 
 
-VAT_RATE = Decimal("0.12")
-VAT_DIVISOR = Decimal("1.12")
 
 
 def money(value) -> Decimal:
@@ -59,15 +57,15 @@ def item_deduction(item: EventItem) -> Decimal:
     return Decimal("0.00")
 
 
-def client_vat_amount(event: Event, turnover_with_vat: Decimal) -> Decimal:
+def client_vat_amount(event: Event, client_base_amount: Decimal) -> Decimal:
     """
     НДС с клиентской сметы.
 
-    ip_contrast_event: считаем, что внешняя сумма уже с НДС, поэтому НДС = сумма * 12 / 112.
+    ip_contrast_event: внешняя смета хранится без НДС, клиентский НДС добавляется сверху.
     our_no_vat / simplified / cash: НДС клиенту не добавляется.
     """
     if event.client_calc_type == "ip_contrast_event":
-        return q(turnover_with_vat / VAT_DIVISOR * VAT_RATE)
+        return q(client_base_amount * get_settings().VAT_RATE)
     return Decimal("0.00")
 
 
@@ -89,7 +87,7 @@ def tax_base_amount(event: Event, regular_turnover_with_vat: Decimal) -> Decimal
     cash: 0.
     """
     if event.client_calc_type == "ip_contrast_event":
-        return q(regular_turnover_with_vat / VAT_DIVISOR)
+        return q(regular_turnover_with_vat)
 
     if event.client_calc_type in {"our_no_vat", "simplified"}:
         return q(regular_turnover_with_vat)
@@ -138,13 +136,10 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     regular_items = [item for item in business_items if item.item_type != "coordinator"]
     coordinator_items = [item for item in business_items if item.item_type == "coordinator"]
 
-    # Оборот — внешняя смета клиента. Для ip_contrast_event считаем, что она уже с НДС.
-    turnover_with_vat = sum((money(item.external_amount) for item in business_items), Decimal("0.00"))
-    external_total = turnover_with_vat
-
-    fact_total = sum((item_fact_or_plan(item) for item in business_items), Decimal("0.00"))
-    paid_total = sum((money(item.paid_amount) for item in items), Decimal("0.00"))
-    manager_salary_paid = sum((money(item.paid_amount) for item in manager_salary_items), Decimal("0.00"))
+    # Внешняя смета хранится без клиентского НДС.
+    # Оборот для клиента = внешняя смета + агентская комиссия + клиентский НДС/упрощённый markup.
+    items_external_total = sum((money(item.external_amount) for item in business_items), Decimal("0.00"))
+    agency_commission_amount = money(event.agency_commission_amount)
 
     regular_external_total = sum((money(item.external_amount) for item in regular_items), Decimal("0.00"))
     regular_fact_total = sum((item_fact_or_plan(item) for item in regular_items), Decimal("0.00"))
@@ -153,21 +148,31 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     coordinator_fact_amount = q(coordinator_external_total * Decimal("0.50"))
     coordinator_company_share = q(coordinator_external_total * Decimal("0.50"))
 
-    client_vat = client_vat_amount(event, turnover_with_vat)
+    client_base_amount = q(items_external_total + agency_commission_amount)
+    simplified_markup_amount = calculate_simplified_bank_tax(event, client_base_amount)
+    client_vat = client_vat_amount(event, client_base_amount)
+    turnover_with_vat = q(client_base_amount + client_vat + simplified_markup_amount)
+    external_total = turnover_with_vat
+
+    fact_total = sum((item_fact_or_plan(item) for item in business_items), Decimal("0.00"))
+    paid_total = sum((money(item.paid_amount) for item in items), Decimal("0.00"))
+    manager_salary_paid = sum((money(item.paid_amount) for item in manager_salary_items), Decimal("0.00"))
+
     contractor_vat_credit = sum((item_vat_credit(item) for item in regular_items), Decimal("0.00"))
     vat_to_pay = q(client_vat - contractor_vat_credit)
+    if vat_to_pay < 0:
+        vat_to_pay = Decimal("0.00")
 
     deductions_total = sum((item_deduction(item) for item in regular_items), Decimal("0.00"))
 
     internal_tax_amount = calculate_internal_tax(event, regular_external_total)
-    simplified_bank_tax_amount = calculate_simplified_bank_tax(event, regular_external_total)
+    simplified_bank_tax_amount = simplified_markup_amount
 
     # Координатор исключён из базы менеджерских 21%.
     company_income_before_manager_salary = (
         regular_external_total
         - regular_fact_total
         - internal_tax_amount
-        - simplified_bank_tax_amount
         - vat_to_pay
         + deductions_total
     )
@@ -212,5 +217,5 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "vat_to_pay": q(vat_to_pay),
         "tax_rate_percent": q(tax_rate_percent(event)),
         "tax_base_amount": q(tax_base_amount(event, regular_external_total)),
-        "taxes_total": q(internal_tax_amount + simplified_bank_tax_amount),
+        "taxes_total": q(internal_tax_amount),
     }

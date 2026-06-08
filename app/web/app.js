@@ -11,6 +11,7 @@ const state = {
   activeAdminTab: "overview",
   activeManagerTab: "events",
   selectedManagerEventId: null,
+  managerEstimateTab: "external",
   adminData: null,
   users: [],
 };
@@ -1271,6 +1272,7 @@ async function renderManagerEventDetail(eventId) {
       api(`/events/${eventId}/summary`),
     ]);
 
+    state.currentManagerItems = items || [];
     holder.innerHTML = renderManagerEventCard(event, items, summary);
     attachManagerCreateWorkspaceActions();
   } catch (error) {
@@ -1278,9 +1280,142 @@ async function renderManagerEventDetail(eventId) {
   }
 }
 
-function renderManagerEventCard(event, items = [], summary = null) {
-  const eventId = event.id;
+
+function externalRowAmount(item) {
+  return asNumber(item.external_price) * asNumber(item.external_quantity || 1) * asNumber(item.external_days || 1);
+}
+
+function internalCommissionValue(item) {
+  const fact = item.amount_fact === null || item.amount_fact === undefined ? 0 : asNumber(item.amount_fact);
+  return externalRowAmount(item) - fact;
+}
+
+function internalDeductionValue(item) {
+  if (item.payment_method === "self_employed") {
+    const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
+    return Math.round(base * 0.10 * 100) / 100;
+  }
+  if (item.payment_method === "invoice") return asNumber(item.deduction_amount);
+  return 0;
+}
+
+function internalVatValue(item) {
+  if (item.payment_method === "invoice") return asNumber(item.vat_amount);
+  return 0;
+}
+
+function rowInput(value, attrs = "") {
+  return `<input ${attrs} value="${value ?? ""}" />`;
+}
+
+function renderExternalEstimate(items) {
   const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
+  const total = shownItems.reduce((sum, item) => sum + externalRowAmount(item), 0);
+
+  return `
+    <div class="manager-add-position-row">
+      <button class="secondary" id="addExternalPositionBtn">+ Добавить позицию</button>
+    </div>
+
+    <div class="table-wrap estimate-table-wrap">
+      <table class="estimate-table external-estimate-table">
+        <thead>
+          <tr>
+            <th>Позиция</th>
+            <th>Цена</th>
+            <th>Кол-во</th>
+            <th>Дни</th>
+            <th>Сумма</th>
+            <th>Примечание</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${shownItems.map((item) => `
+            <tr data-event-item-row="${item.id}">
+              <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(formatMoney(item.external_price), `data-item-field="external_price" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(item.external_quantity || 1, `data-item-field="external_quantity" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(item.external_days || 1, `data-item-field="external_days" data-item-id="${item.id}"`)}</td>
+              <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
+              <td>${rowInput(item.external_note || "", `placeholder="Примечание для клиента" data-item-field="external_note" data-item-id="${item.id}"`)}</td>
+              <td>${item.item_type === "coordinator" ? "" : `<button class="icon-btn danger" data-delete-item="${item.id}">×</button>`}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="external-estimate-totals">
+      ${metric("Итого по позициям", formatMoney(total))}
+      ${metric("Комиссия агентства", "0")}
+      ${metric("НДС 16%", "—")}
+      <div class="card metric income-metric">
+        <div class="label">Итого к оплате</div>
+        <div class="value">${formatMoney(total)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInternalEstimate(items, event) {
+  const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
+
+  return `
+    <div class="table-wrap estimate-table-wrap">
+      <table class="estimate-table internal-estimate-table">
+        <thead>
+          <tr>
+            <th>Позиция</th>
+            <th>Смета</th>
+            <th>Факт</th>
+            <th>Оплата</th>
+            <th>БИН/ИИН</th>
+            <th>КГД</th>
+            <th>НДС</th>
+            <th>Вычеты</th>
+            <th>Комиссия</th>
+            <th>Оплачено</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${shownItems.map((item) => `
+            <tr data-event-item-row="${item.id}">
+              <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
+              <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
+              <td>${rowInput(item.amount_fact ?? "", `data-item-field="amount_fact" data-item-id="${item.id}"`)}</td>
+              <td>
+                <select data-item-field="payment_method" data-item-id="${item.id}">
+                  <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
+                  <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
+                  <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
+                  <option value="self_employed" ${item.payment_method === "self_employed" ? "selected" : ""}>Самозанятый</option>
+                  <option value="invoice" ${item.payment_method === "invoice" ? "selected" : ""}>По счету</option>
+                </select>
+              </td>
+              <td>${rowInput(item.iin_bin || "", `placeholder="12 цифр" data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`)}</td>
+              <td>
+                ${item.payment_method === "invoice" ? `
+                  <button class="icon-btn" data-check-tax-item="${item.id}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
+                    ${item.iin_bin_locked ? "✎" : "✓"}
+                  </button>
+                ` : "—"}
+              </td>
+              <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
+              <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
+              <td><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
+              <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+
+function renderManagerEventCard(event, items = [], summary = null) {
+  const activeTab = state.managerEstimateTab || "external";
 
   return `
     <section class="manager-event-card">
@@ -1310,7 +1445,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
         <label>Название мероприятия
           <input value="${event.title || ""}" disabled />
         </label>
-        <label>Комиссия агентства
+        <label>Комиссия агентства, %
           <input value="${formatMoney(event.agency_commission_amount || 0)}" disabled />
         </label>
         ${event.client_calc_type === "simplified" ? `
@@ -1321,51 +1456,12 @@ function renderManagerEventCard(event, items = [], summary = null) {
       </div>
 
       <div class="estimate-tabs">
-        <button class="ghost" disabled>Внешняя смета</button>
-        <button class="tab-btn active" disabled>Внутренняя смета</button>
+        <button class="${activeTab === "external" ? "tab-btn active" : "ghost"}" data-estimate-tab="external">Внешняя смета</button>
+        <button class="${activeTab === "internal" ? "tab-btn active" : "ghost"}" data-estimate-tab="internal">Внутренняя смета</button>
       </div>
 
-      <div class="manager-add-position-row">
-        <button class="secondary" id="toggleManagerAddItemBtn">+ Добавить позицию</button>
-      </div>
-
-      <div id="managerAddItemBox" class="card manager-create-card hidden">
-        <h3>Добавить позицию</h3>
-        <div class="form-grid">
-          <label>Позиция
-            <input id="newItemName" placeholder="Например: Ведущий" />
-          </label>
-          <label>Сумма по смете
-            <input id="newItemExternalAmount" value="0" />
-          </label>
-        </div>
-        <button id="addManagerEventItemBtn" data-event-id="${eventId}">Добавить позицию</button>
-      </div>
-
-      <h3>Внутренняя смета</h3>
-      <div class="table-wrap estimate-table-wrap">
-        <table class="estimate-table">
-          <thead>
-            <tr>
-              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>БИН/ИИН</th><th>КГД</th><th>НДС</th><th>Вычеты</th><th>Оплачено</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${shownItems.map((item) => `
-              <tr>
-                <td><strong>${item.external_name}</strong></td>
-                <td>${formatMoney(item.external_amount)}</td>
-                <td>${formatMoney(item.amount_fact)}</td>
-                <td>${paymentMethodLabel(item.payment_method)}</td>
-                <td>${item.iin_bin || "—"}</td>
-                <td>${item.tax_check_status ? "✓" : "—"}</td>
-                <td>${formatMoney(itemVatVisible(item))}</td>
-                <td>${formatMoney(itemDeductionVisible(item))}</td>
-                <td>${formatMoney(item.paid_amount)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
+      <div id="managerEstimatePanel">
+        ${activeTab === "external" ? renderExternalEstimate(items || []) : renderInternalEstimate(items || [], event)}
       </div>
 
       ${summary ? `
@@ -1501,58 +1597,171 @@ function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount)
   return { vat_amount: 0, deduction_amount: 0 };
 }
 
-function attachManagerCreateWorkspaceActions() {
-  const toggleBtn = document.getElementById("toggleManagerAddItemBtn");
-  const addBox = document.getElementById("managerAddItemBox");
-  if (toggleBtn && addBox) {
-    toggleBtn.addEventListener("click", () => addBox.classList.toggle("hidden"));
+function collectItemPayloadFromRow(row) {
+  const itemId = row.getAttribute("data-event-item-row");
+  const fields = {};
+  row.querySelectorAll("[data-item-field]").forEach((input) => {
+    const key = input.getAttribute("data-item-field");
+    if (input.type === "checkbox") {
+      fields[key] = input.checked;
+    } else {
+      fields[key] = input.value;
+    }
+  });
+
+  const item = state.currentManagerItems?.find((candidate) => Number(candidate.id) === Number(itemId));
+  if (!item) return null;
+
+  const paymentMethod = fields.payment_method ?? item.payment_method ?? null;
+  const factValue = fields.amount_fact !== undefined && fields.amount_fact !== "" ? normalizeNumberInput(fields.amount_fact) : item.amount_fact;
+
+  let vatAmount = item.vat_amount || 0;
+  let deductionAmount = item.deduction_amount || 0;
+
+  if (paymentMethod === "self_employed") {
+    const base = asNumber(factValue) > 0 ? asNumber(factValue) : externalRowAmount(item);
+    vatAmount = 0;
+    deductionAmount = Math.round(base * 0.10 * 100) / 100;
   }
 
-  const addBtn = document.getElementById("addManagerEventItemBtn");
-  if (!addBtn) return;
+  if (paymentMethod === "cash" || paymentMethod === "card" || !paymentMethod) {
+    vatAmount = 0;
+    deductionAmount = 0;
+  }
 
-  addBtn.addEventListener("click", async () => {
-    const eventId = addBtn.getAttribute("data-event-id");
-    const name = document.getElementById("newItemName").value.trim();
-    const itemType = "regular";
-    const externalAmount = normalizeNumberInput(document.getElementById("newItemExternalAmount").value);
-    const factAmount = null;
-    const paymentMethod = null;
-    const taxStatus = null;
+  return {
+    item_type: item.item_type || "regular",
+    external_name: fields.external_name ?? item.external_name,
+    external_price: fields.external_price !== undefined ? normalizeNumberInput(fields.external_price) : item.external_price,
+    external_quantity: fields.external_quantity !== undefined ? normalizeNumberInput(fields.external_quantity) : item.external_quantity,
+    external_days: fields.external_days !== undefined ? normalizeNumberInput(fields.external_days) : item.external_days,
+    external_note: fields.external_note ?? item.external_note,
+    amount_fact: factValue === "" ? null : factValue,
+    paid_amount: item.paid_amount || 0,
+    payment_method: paymentMethod || null,
+    iin_bin: fields.iin_bin ?? item.iin_bin,
+    iin_bin_locked: item.iin_bin_locked || false,
+    tax_check_status: item.tax_check_status,
+    vat_amount: vatAmount,
+    deduction_amount: deductionAmount,
+    internal_note: item.internal_note,
+    sort_order: item.sort_order || 0,
+  };
+}
 
-    if (!name) {
-      alert("Укажи название позиции");
-      return;
-    }
+async function saveVisibleEstimateRows() {
+  const rows = Array.from(document.querySelectorAll("[data-event-item-row]"));
+  for (const row of rows) {
+    const itemId = row.getAttribute("data-event-item-row");
+    const payload = collectItemPayloadFromRow(row);
+    if (!payload) continue;
 
-    const taxFields = { vat_amount: 0, deduction_amount: 0 };
+    await api(`/event-items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+}
 
-    await withLoading(async () => {
-      await api(`/events/${eventId}/items`, {
-        method: "POST",
-        body: JSON.stringify({
-          item_type: itemType,
-          external_name: name,
-          external_price: externalAmount,
-          external_quantity: 1,
-          external_days: 1,
-          external_note: null,
-          amount_fact: factAmount,
-          paid_amount: 0,
-          payment_method: paymentMethod,
-          iin_bin: null,
-          iin_bin_locked: false,
-          tax_check_status: null,
-          vat_amount: taxFields.vat_amount,
-          deduction_amount: taxFields.deduction_amount,
-          internal_note: null,
-          sort_order: itemType === "coordinator" ? -100 : 0,
-        }),
-      });
+async function addExternalPosition(eventId) {
+  await api(`/events/${eventId}/items`, {
+    method: "POST",
+    body: JSON.stringify({
+      item_type: "regular",
+      external_name: "Новая позиция",
+      external_price: 0,
+      external_quantity: 1,
+      external_days: 1,
+      external_note: null,
+      amount_fact: null,
+      paid_amount: 0,
+      payment_method: null,
+      iin_bin: null,
+      iin_bin_locked: false,
+      tax_check_status: null,
+      vat_amount: 0,
+      deduction_amount: 0,
+      internal_note: null,
+      sort_order: 0,
+    }),
+  });
+}
 
-      await renderManagerEventDetail(eventId);
-      await loadDashboard();
-    }, "Добавляем позицию…");
+async function deleteEventItem(itemId) {
+  await api(`/event-items/${itemId}`, { method: "DELETE" });
+}
+
+async function checkTaxForItem(itemId) {
+  const input = document.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
+  const iinBin = input?.value?.trim();
+
+  if (!iinBin) {
+    alert("Сначала укажи БИН/ИИН");
+    return;
+  }
+
+  await api(`/event-items/${itemId}/tax/check`, {
+    method: "POST",
+    body: JSON.stringify({ iin_bin: iinBin }),
+  });
+}
+
+function attachManagerCreateWorkspaceActions() {
+  document.querySelectorAll("[data-estimate-tab]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      state.managerEstimateTab = button.getAttribute("data-estimate-tab");
+      await renderManagerEventDetail(state.selectedManagerEventId);
+    });
+  });
+
+  const addExternalBtn = document.getElementById("addExternalPositionBtn");
+  if (addExternalBtn) {
+    addExternalBtn.addEventListener("click", async () => {
+      await withLoading(async () => {
+        await addExternalPosition(state.selectedManagerEventId);
+        await renderManagerEventDetail(state.selectedManagerEventId);
+        await loadDashboard();
+      }, "Добавляем позицию…");
+    });
+  }
+
+  document.querySelectorAll("[data-delete-item]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Удалить позицию?")) return;
+      const itemId = button.getAttribute("data-delete-item");
+      await withLoading(async () => {
+        await deleteEventItem(itemId);
+        await renderManagerEventDetail(state.selectedManagerEventId);
+        await loadDashboard();
+      }, "Удаляем позицию…");
+    });
+  });
+
+  document.querySelectorAll("[data-check-tax-item]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const itemId = button.getAttribute("data-check-tax-item");
+      await withLoading(async () => {
+        await saveVisibleEstimateRows();
+        await checkTaxForItem(itemId);
+        await renderManagerEventDetail(state.selectedManagerEventId);
+        await loadDashboard();
+      }, "Проверяем КГД…");
+    });
+  });
+
+  document.querySelectorAll('[data-item-field="payment_method"]').forEach((select) => {
+    select.addEventListener("change", () => {
+      const row = select.closest("[data-event-item-row]");
+      if (!row) return;
+      if (select.value === "self_employed") {
+        const deductionCell = row.querySelector(".deduction-col strong");
+        const itemId = select.getAttribute("data-item-id");
+        const item = state.currentManagerItems?.find((candidate) => Number(candidate.id) === Number(itemId));
+        const factInput = row.querySelector('[data-item-field="amount_fact"]');
+        const base = normalizeNumberInput(factInput?.value) || externalRowAmount(item || {});
+        if (deductionCell) deductionCell.textContent = formatMoney(base * 0.10);
+      }
+    });
   });
 }
 
@@ -1696,7 +1905,9 @@ function attachManagerDashboardActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-save-draft");
       await withLoading(async () => {
+        await saveVisibleEstimateRows();
         await updateManagerEventStatus(eventId, "draft");
+        await renderManagerEventDetail(eventId);
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -1708,7 +1919,9 @@ function attachManagerDashboardActions() {
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
 
       await withLoading(async () => {
+        await saveVisibleEstimateRows();
         await updateManagerEventStatus(eventId, "review");
+        await renderManagerEventDetail(eventId);
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
