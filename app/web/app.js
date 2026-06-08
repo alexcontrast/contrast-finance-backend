@@ -127,6 +127,27 @@ function canManagerCancelRequest(request) {
   return !["paid", "cash_received", "rejected"].includes(request.status);
 }
 
+function adminRequestActions(request) {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "admin") return "";
+
+  const status = request.status;
+  const buttons = [];
+
+  if (status === "new" || status === "tax_check_needed") {
+    buttons.push(`<button class="small secondary" data-set-request-status="${request.id}:to_pay">На оплату</button>`);
+    buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
+    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Отменить</button>`);
+  } else if (status === "to_pay") {
+    buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
+    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Отменить</button>`);
+  } else if (status === "paid") {
+    buttons.push(`<button class="small secondary" data-set-request-status="${request.id}:cash_received">Деньги в кассе</button>`);
+  }
+
+  return buttons.join("");
+}
+
 function renderPaymentRequestsTable(requests, title = "Заявки на оплату") {
   if (!requests || !requests.length) {
     return `
@@ -166,6 +187,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
               <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
               <td>
                 <div class="inline-actions">
+                  ${adminRequestActions(request)}
                   ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
                 </div>
               </td>
@@ -187,6 +209,32 @@ function attachPaymentRequestActions() {
         await api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected" }),
+        });
+        await loadDashboard();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-set-request-status]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const raw = button.getAttribute("data-set-request-status");
+      const [id, status] = raw.split(":");
+
+      const labels = {
+        to_pay: "перевести на оплату",
+        paid: "отметить оплаченной",
+        cash_received: "отметить деньги в кассе",
+        rejected: "отменить",
+      };
+
+      if (!confirm(`Заявку #${id} ${labels[status] || "изменить"}?`)) return;
+
+      try {
+        await api(`/payment-requests/${id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status }),
         });
         await loadDashboard();
       } catch (error) {

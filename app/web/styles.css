@@ -119,3 +119,12 @@ button.danger {
 .nowrap {
   white-space: nowrap;
 }
+
+
+td .inline-actions {
+  min-width: 220px;
+}
+
+.inline-actions button {
+  white-space: nowrap;
+}
