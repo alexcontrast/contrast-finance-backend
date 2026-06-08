@@ -824,3 +824,23 @@ select:focus {
     display: grid;
   }
 }
+
+
+/* v0.31.2 cleaner admin top: no duplicate summary cards */
+#summaryCards:empty {
+  display: none;
+  margin: 0;
+}
+
+.year-control {
+  max-width: 150px;
+}
+
+.toolbar {
+  align-items: end;
+}
+
+.toolbar select {
+  min-height: 48px;
+  font-weight: 850;
+}

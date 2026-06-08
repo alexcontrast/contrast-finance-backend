@@ -15,6 +15,71 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+
+const MONTHS_RU = [
+  ["01", "Январь"],
+  ["02", "Февраль"],
+  ["03", "Март"],
+  ["04", "Апрель"],
+  ["05", "Май"],
+  ["06", "Июнь"],
+  ["07", "Июль"],
+  ["08", "Август"],
+  ["09", "Сентябрь"],
+  ["10", "Октябрь"],
+  ["11", "Ноябрь"],
+  ["12", "Декабрь"],
+];
+
+function setupMonthYearSelectors() {
+  const monthSelect = $("monthSelect");
+  const yearSelect = $("yearSelect");
+  if (!monthSelect || !yearSelect) return;
+
+  const [currentYear, currentMonth] = state.month.split("-");
+
+  monthSelect.innerHTML = MONTHS_RU.map(([value, label]) => `
+    <option value="${value}" ${value === currentMonth ? "selected" : ""}>${label}</option>
+  `).join("");
+
+  const thisYear = new Date().getFullYear();
+  const years = [];
+  for (let year = thisYear - 1; year <= thisYear + 2; year += 1) years.push(year);
+
+  if (!years.includes(Number(currentYear))) years.push(Number(currentYear));
+  years.sort();
+
+  yearSelect.innerHTML = years.map((year) => `
+    <option value="${year}" ${String(year) === String(currentYear) ? "selected" : ""}>${year}</option>
+  `).join("");
+}
+
+function selectedMonthValue() {
+  const monthSelect = $("monthSelect");
+  const yearSelect = $("yearSelect");
+
+  if (!monthSelect || !yearSelect) return state.month;
+
+  const month = monthSelect.value || state.month.slice(5, 7);
+  const year = yearSelect.value || state.month.slice(0, 4);
+
+  return `${year}-${month}`;
+}
+
+function attachMonthYearSelectors() {
+  const monthSelect = $("monthSelect");
+  const yearSelect = $("yearSelect");
+
+  [monthSelect, yearSelect].forEach((select) => {
+    if (!select) return;
+    select.addEventListener("change", async () => {
+      state.month = selectedMonthValue();
+      await loadDashboard();
+    });
+  });
+}
+
+
 function formatMoney(value) {
   const n = Number(value || 0);
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
@@ -690,12 +755,7 @@ function renderAdminDashboard(data) {
   state.adminData = data;
   renderAdminTabs();
 
-  renderSummary([
-    ["План компании", formatMoney(data.company_plan_amount)],
-    ["Факт компании", formatMoney(data.company_fact_income_amount)],
-    ["Выполнение", `${data.company_completion_percent}%`],
-    ["Расходы", formatMoney(data.company_expenses_amount)],
-  ]);
+  renderSummary([]);
 
   $("dashboardTitle").textContent = "Админка";
   $("dashboardHint").textContent = "Скелет вкладок v0.30";
@@ -838,7 +898,7 @@ async function loadUsersForAdmin() {
 
 async function loadDashboard() {
   const user = state.bootstrap.user;
-  const month = $("monthInput").value || state.month;
+  const month = selectedMonthValue();
   state.month = month;
 
   if (user.role === "admin") {
@@ -879,7 +939,8 @@ async function boot() {
       ? "Проверка мероприятий, заявки, планы и закрытие месяца"
       : "Финансовая панель мероприятий";
     $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
-    $("monthInput").value = state.month;
+    setupMonthYearSelectors();
+    attachMonthYearSelectors();
 
     await loadDashboard();
   } catch (error) {
