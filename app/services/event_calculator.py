@@ -175,18 +175,19 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     internal_tax_amount = q0(calculate_internal_tax(event, client_base_amount))
     simplified_bank_tax_amount = simplified_markup_amount
 
-    # Координатор исключён из базы менеджерских 21%.
-    # Агентская комиссия — доходная часть мероприятия и участвует в базе менеджера.
-    manager_salary_revenue_base = regular_external_total + agency_commission_amount
-    company_income_before_manager_salary = (
-        manager_salary_revenue_base
-        - regular_fact_total
-        - internal_tax_amount
-        - vat_to_pay
+    # Комиссия обычных позиций = смета обычных позиций - факт обычных позиций.
+    # Клиентский НДС не минусуем из дохода: он не добавлялся в доходную базу, это транзит.
+    # НДС подрядчиков в зачёт и налоговые вычеты добавляют экономию/доход.
+    regular_positions_commission = q0(regular_external_total - regular_fact_total)
+    manager_salary_base = (
+        regular_positions_commission
+        + agency_commission_amount
+        + contractor_vat_credit
         + deductions_total
+        - internal_tax_amount
     )
 
-    manager_salary_base = company_income_before_manager_salary
+    company_income_before_manager_salary = manager_salary_base
     manager_percent = money(event.manager_percent)
 
     if manager_salary_base <= 0:
@@ -204,6 +205,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "paid_total": q(paid_total),
         "regular_external_total": q(regular_external_total),
         "regular_fact_total": q(regular_fact_total),
+        "regular_positions_commission": q0(regular_positions_commission),
         "coordinator_external_total": q(coordinator_external_total),
         "coordinator_fact_amount": q(coordinator_fact_amount),
         "coordinator_company_share": q(coordinator_company_share),

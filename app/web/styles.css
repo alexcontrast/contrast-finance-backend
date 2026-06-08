@@ -1612,3 +1612,12 @@ button[data-manager-event-save-draft]:hover {
   color: #31352d;
   opacity: 1;
 }
+
+
+/* v0.35.10 coordinator inactive fields */
+.internal-estimate-table select:disabled {
+  background: #eef2ea;
+  color: #31352d;
+  opacity: 1;
+  cursor: not-allowed;
+}

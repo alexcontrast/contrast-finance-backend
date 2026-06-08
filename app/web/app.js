@@ -1467,6 +1467,10 @@ function internalVatValue(item) {
   return 0;
 }
 
+function isCoordinatorItem(item) {
+  return item.item_type === "coordinator";
+}
+
 function rowInput(value, attrs = "") {
   return `<input ${attrs} value="${value ?? ""}" />`;
 }
@@ -1565,21 +1569,27 @@ function renderInternalEstimate(items, event) {
               <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
               <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
               <td>
-                <select data-item-field="payment_method" data-item-id="${item.id}">
-                  <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
-                  <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
-                  <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
-                  <option value="self_employed" ${item.payment_method === "self_employed" ? "selected" : ""}>Самозанятый</option>
-                  <option value="invoice" ${item.payment_method === "invoice" ? "selected" : ""}>По счету</option>
-                </select>
+                ${isCoordinatorItem(item) ? `
+                  <select disabled>
+                    <option selected>—</option>
+                  </select>
+                ` : `
+                  <select data-item-field="payment_method" data-item-id="${item.id}">
+                    <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
+                    <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
+                    <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
+                    <option value="self_employed" ${item.payment_method === "self_employed" ? "selected" : ""}>Самозанятый</option>
+                    <option value="invoice" ${item.payment_method === "invoice" ? "selected" : ""}>По счету</option>
+                  </select>
+                `}
               </td>
-              <td>${rowInput(item.iin_bin || "", `placeholder="12 цифр" data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`)}</td>
+              <td>${isCoordinatorItem(item) ? rowInput("", "disabled") : rowInput(item.iin_bin || "", `placeholder="12 цифр" data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`)}</td>
               <td>
-                ${item.payment_method === "invoice" ? `
+                ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
                   <button class="icon-btn" data-check-tax-item="${item.id}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
                     ${item.iin_bin_locked ? "✎" : "✓"}
                   </button>
-                ` : "—"}
+                ` : "—")}
               </td>
               <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
               <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
@@ -1790,7 +1800,7 @@ function itemPayloadForSave(item) {
     external_note: item.external_note || null,
     amount_fact: isCoordinator ? coordinatorFact : (item.amount_fact === "" || item.amount_fact === undefined ? null : item.amount_fact),
     paid_amount: item.paid_amount || 0,
-    payment_method: isCoordinator ? "cash" : (item.payment_method || null),
+    payment_method: isCoordinator ? null : (item.payment_method || null),
     iin_bin: isCoordinator ? null : (item.iin_bin || null),
     iin_bin_locked: isCoordinator ? false : (item.iin_bin_locked || false),
     tax_check_status: isCoordinator ? null : (item.tax_check_status || null),
