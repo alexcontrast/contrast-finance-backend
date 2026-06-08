@@ -44,6 +44,13 @@ class PaymentRequestRead(BaseModel):
     iin_bin_snapshot: str | None
     tax_status_snapshot: str | None
     tax_status_label: str | None = None
+
+    # Frontend convenience fields.
+    client_name: str | None = None
+    event_title: str | None = None
+    manager_name: str | None = None
+    position: str | None = None
+
     vat_status_snapshot: str | None
     vat_amount_snapshot: Decimal
     deduction_amount_snapshot: Decimal

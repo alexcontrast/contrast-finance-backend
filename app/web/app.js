@@ -2,6 +2,9 @@ const state = {
   token: localStorage.getItem("cf_token") || "",
   bootstrap: null,
   month: new Date().toISOString().slice(0, 7),
+  paymentStatusFilter: "active",
+  paymentSearch: "",
+  eventDepartmentFilter: "all",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -90,6 +93,108 @@ function renderSummary(cards) {
   $("summaryCards").innerHTML = cards.map(([label, value]) => metric(label, value)).join("");
 }
 
+
+function filteredEventsForAdmin(events) {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "admin") return events || [];
+
+  if (state.eventDepartmentFilter === "all") return events || [];
+
+  const depId = Number(state.eventDepartmentFilter);
+  return (events || []).filter((event) => Number(event.department_id) === depId);
+}
+
+function filteredPaymentRequests(requests) {
+  let list = [...(requests || [])];
+
+  if (state.paymentStatusFilter === "active") {
+    list = list.filter((request) => !["rejected", "cash_received"].includes(request.status));
+  } else if (state.paymentStatusFilter !== "all") {
+    list = list.filter((request) => request.status === state.paymentStatusFilter);
+  }
+
+  const search = String(state.paymentSearch || "").trim().toLowerCase();
+  if (search) {
+    list = list.filter((request) => {
+      const client = String(request.client_name || "").toLowerCase();
+      return client.includes(search);
+    });
+  }
+
+  return list;
+}
+
+function renderEventDepartmentFilter(events) {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "admin") return "";
+
+  const departments = state.bootstrap?.departments || [];
+
+  return `
+    <div class="filters-row">
+      <label class="compact-label">Отдел по мероприятиям
+        <select id="eventDepartmentFilter">
+          <option value="all">Все отделы</option>
+          ${departments.map((department) => `
+            <option value="${department.id}" ${String(state.eventDepartmentFilter) === String(department.id) ? "selected" : ""}>${department.name}</option>
+          `).join("")}
+        </select>
+      </label>
+    </div>
+  `;
+}
+
+function renderPaymentFilters() {
+  return `
+    <div class="filters-row">
+      <label class="compact-label">Статус оплаты
+        <select id="paymentStatusFilter">
+          <option value="active" ${state.paymentStatusFilter === "active" ? "selected" : ""}>Активные</option>
+          <option value="all" ${state.paymentStatusFilter === "all" ? "selected" : ""}>Все</option>
+          <option value="new" ${state.paymentStatusFilter === "new" ? "selected" : ""}>Новая</option>
+          <option value="paid" ${state.paymentStatusFilter === "paid" ? "selected" : ""}>Оплачено</option>
+          <option value="cash_received" ${state.paymentStatusFilter === "cash_received" ? "selected" : ""}>Деньги в кассе</option>
+          <option value="rejected" ${state.paymentStatusFilter === "rejected" ? "selected" : ""}>Отменено</option>
+        </select>
+      </label>
+
+      <label class="compact-label search-label">Поиск по заказчику
+        <input id="paymentSearch" value="${state.paymentSearch || ""}" placeholder="Название заказчика" />
+      </label>
+    </div>
+  `;
+}
+
+function attachFilters() {
+  const paymentStatus = document.getElementById("paymentStatusFilter");
+  if (paymentStatus) {
+    paymentStatus.addEventListener("change", async (event) => {
+      state.paymentStatusFilter = event.target.value;
+      await loadDashboard();
+    });
+  }
+
+  const paymentSearch = document.getElementById("paymentSearch");
+  if (paymentSearch) {
+    paymentSearch.addEventListener("input", (event) => {
+      state.paymentSearch = event.target.value;
+      clearTimeout(window.__cfPaymentSearchTimer);
+      window.__cfPaymentSearchTimer = setTimeout(() => {
+        loadDashboard().catch((error) => alert(error.message));
+      }, 350);
+    });
+  }
+
+  const eventDepartment = document.getElementById("eventDepartmentFilter");
+  if (eventDepartment) {
+    eventDepartment.addEventListener("change", async (event) => {
+      state.eventDepartmentFilter = event.target.value;
+      await loadDashboard();
+    });
+  }
+}
+
+
 function renderEventsTable(events) {
   if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
 
@@ -148,24 +253,40 @@ function adminRequestActions(request) {
 }
 
 function renderPaymentRequestsTable(requests, title = "Заявки на оплату") {
+  const filteredRequests = filteredPaymentRequests(requests);
+
   if (!requests || !requests.length) {
     return `
       <div class="block-title"><h3>${title}</h3></div>
+      ${renderPaymentFilters()}
       <div class="empty-state">Заявок пока нет.</div>
+    `;
+  }
+
+  if (!filteredRequests.length) {
+    return `
+      <div class="block-title">
+        <h3>${title}</h3>
+        <span class="muted">0 из ${requests.length} шт.</span>
+      </div>
+      ${renderPaymentFilters()}
+      <div class="empty-state">По выбранным фильтрам заявок нет.</div>
     `;
   }
 
   return `
     <div class="block-title">
       <h3>${title}</h3>
-      <span class="muted">${requests.length} шт.</span>
+      <span class="muted">${filteredRequests.length} из ${requests.length} шт.</span>
     </div>
+    ${renderPaymentFilters()}
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
             <th>Заявка</th>
-            <th>Мероприятие</th>
+            <th>Заказчик</th>
+            <th>Менеджер</th>
             <th>Позиция</th>
             <th>Сумма заявки</th>
             <th>Способ</th>
@@ -175,10 +296,11 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
           </tr>
         </thead>
         <tbody>
-          ${requests.map((request) => `
+          ${filteredRequests.map((request) => `
             <tr>
               <td>#${request.id}</td>
-              <td>${request.event_title || request.event_id || ""}</td>
+              <td><strong>${request.client_name || request.event_title || request.event_id || ""}</strong></td>
+              <td>${request.manager_name || ""}</td>
               <td>${request.position || request.item_name_snapshot || ""}</td>
               <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
               <td>${paymentMethodLabel(request.payment_method)}</td>
@@ -268,6 +390,7 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
   `;
 
   attachPaymentRequestActions();
+  attachFilters();
 }
 
 function renderManagerDashboard(data, paymentRequests = []) {
@@ -294,6 +417,7 @@ function renderManagerDashboard(data, paymentRequests = []) {
   `;
 
   attachPaymentRequestActions();
+  attachFilters();
 }
 
 function renderAdminDashboard(data) {
@@ -330,11 +454,13 @@ function renderAdminDashboard(data) {
     </div>
 
     <div class="block-title"><h3>Мероприятия</h3></div>
-    ${renderEventsTable(data.events || [])}
+    ${renderEventDepartmentFilter(data.events || [])}
+    ${renderEventsTable(filteredEventsForAdmin(data.events || []))}
     ${renderPaymentRequestsTable(data.payment_requests || [], "Все заявки")}
   `;
 
   attachPaymentRequestActions();
+  attachFilters();
 }
 
 async function loadDashboard() {

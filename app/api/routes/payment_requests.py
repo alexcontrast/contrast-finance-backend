@@ -161,9 +161,21 @@ def validate_payment_request_rules(item: EventItem, payment_method: str, payload
         )
 
 
-def enrich_payment_request_read(request: PaymentRequest) -> PaymentRequestRead:
+def enrich_payment_request_read(request: PaymentRequest, db: Session | None = None) -> PaymentRequestRead:
     data = PaymentRequestRead.model_validate(request)
     data.tax_status_label = tax_status_label(request.tax_status_snapshot)
+    data.position = request.item_name_snapshot
+
+    if db is not None:
+        event = db.get(Event, request.event_id)
+        if event is not None:
+            data.client_name = event.client_name
+            data.event_title = event.title
+
+            manager = db.get(User, event.manager_id) if event.manager_id else None
+            if manager is not None:
+                data.manager_name = manager.name
+
     return data
 
 
@@ -215,7 +227,7 @@ def list_payment_requests(
     query = event_scope_query_for_user(query, current_user)
 
     result = db.execute(query)
-    return [enrich_payment_request_read(request) for request in result.scalars().all()]
+    return [enrich_payment_request_read(request, db) for request in result.scalars().all()]
 
 
 @router.get("/payment-requests/{request_id}", response_model=PaymentRequestRead)
@@ -226,7 +238,7 @@ def get_payment_request(
 ):
     request = get_request_or_404(db, request_id)
     require_payment_request_view(db, current_user, request)
-    return enrich_payment_request_read(request)
+    return enrich_payment_request_read(request, db)
 
 
 @router.get("/payment-requests/{request_id}/card", response_model=PaymentRequestCardRead)
@@ -254,7 +266,7 @@ def list_event_payment_requests(
         .where(PaymentRequest.event_id == event_id)
         .order_by(PaymentRequest.id.desc())
     )
-    return [enrich_payment_request_read(request) for request in result.scalars().all()]
+    return [enrich_payment_request_read(request, db) for request in result.scalars().all()]
 
 
 @router.post("/event-items/{item_id}/payment-requests", response_model=PaymentRequestRead)
@@ -318,7 +330,7 @@ def create_payment_request(
     db.commit()
     db.refresh(request)
 
-    return enrich_payment_request_read(request)
+    return enrich_payment_request_read(request, db)
 
 
 @router.patch("/payment-requests/{request_id}/status", response_model=PaymentRequestRead)
@@ -394,4 +406,4 @@ def update_payment_request_status(
     db.commit()
     db.refresh(request)
 
-    return enrich_payment_request_read(request)
+    return enrich_payment_request_read(request, db)

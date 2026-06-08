@@ -128,3 +128,36 @@ td .inline-actions {
 .inline-actions button {
   white-space: nowrap;
 }
+
+
+.filters-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+  margin: 10px 0 14px;
+}
+
+.compact-label {
+  margin: 0;
+  min-width: 220px;
+}
+
+.search-label {
+  min-width: min(360px, 100%);
+}
+
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: #fff;
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+}
+
+select:focus {
+  border-color: #111;
+}
