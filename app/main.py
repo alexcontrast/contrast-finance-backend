@@ -55,12 +55,13 @@ app.include_router(users_import_router)
 app.include_router(users_manage_router)
 
 
-@app.get("/")
+@app.get("/api/status")
 def root():
     return {
         "ok": True,
         "service": settings.SERVICE_NAME,
         "message": "Contrast Finance API is running",
+        "version": get_settings().VERSION,
     }
 
 app.include_router(web_router)
