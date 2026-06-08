@@ -970,3 +970,57 @@ select:focus {
 #eventModalRequestsSection .filters-row {
   margin-top: 8px;
 }
+
+
+/* v0.31.8 compact event modal metrics */
+.modal-metric-cards {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.modal-metric-cards .metric {
+  padding: 14px 16px;
+  min-height: 108px;
+}
+
+.modal-metric-cards .metric .label {
+  font-size: 11px;
+}
+
+.modal-metric-cards .metric .value {
+  font-size: clamp(28px, 3vw, 42px);
+}
+
+.income-metric {
+  background: linear-gradient(180deg, #e8ffd1 0%, #f8fff0 100%);
+  border-color: #bff48b;
+}
+
+.manager-salary-row td {
+  background: #f0f8e8 !important;
+  border-top: 2px solid #bff48b;
+  font-weight: 900;
+}
+
+.manager-salary-row td:first-child::before {
+  content: "";
+  display: inline-block;
+  width: 32px;
+  height: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+@media (max-width: 1150px) {
+  .modal-metric-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .modal-metric-cards {
+    grid-template-columns: 1fr;
+  }
+}

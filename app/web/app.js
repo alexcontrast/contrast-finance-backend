@@ -229,6 +229,43 @@ function itemDeductionVisible(item) {
   return 0;
 }
 
+
+function calculationTypeValue(event, summary) {
+  return String(
+    event?.calculation_type ||
+    event?.client_calculation_type ||
+    summary?.calculation_type ||
+    summary?.client_calculation_type ||
+    ""
+  ).toLowerCase();
+}
+
+function taxPercentLabelForEvent(event, summary) {
+  const type = calculationTypeValue(event, summary);
+
+  if (type.includes("упрощ")) return "5%";
+  if (type.includes("нал")) return "0%";
+  if (type.includes("оур") || type.includes("contrast") || type.includes("ип")) return "12%";
+
+  const taxAmount = asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount);
+  const base = asNumber(summary?.external_total);
+  if (base > 0 && taxAmount > 0) {
+    return `${Math.round((taxAmount / base) * 10000) / 100}%`;
+  }
+
+  return "0%";
+}
+
+function managerSalaryPaidValue(summary) {
+  return (
+    summary?.manager_salary_paid ||
+    summary?.manager_paid_amount ||
+    summary?.paid_manager_salary ||
+    summary?.manager_payment_paid ||
+    0
+  );
+}
+
 function sortItemsCoordinatorFirst(items) {
   return [...(items || [])].sort((a, b) => {
     const aCoord = String(a.item_type || "").toLowerCase() === "coordinator" || String(a.external_name || "").toLowerCase().includes("координатор");
@@ -796,13 +833,15 @@ async function openEventModal(eventId) {
     const taxesAmount = asNumber(summary.internal_tax_amount) + asNumber(summary.simplified_bank_tax_amount);
 
     $("eventModalContent").innerHTML = `
-      <div class="grid cards">
+      <div class="grid cards modal-metric-cards">
         ${metric("Оборот", formatMoney(summary.external_total))}
-        ${metric("Налоги", formatMoney(taxesAmount))}
+        ${metric("Налоги", taxPercentLabelForEvent(event, summary))}
         ${metric("НДС", formatMoney(summary.vat_total))}
-        ${metric("Менеджер 21%", formatMoney(summary.manager_salary))}
         ${metric("Оплачено", formatMoney(summary.paid_total))}
-        ${metric("Доход компании", formatMoney(summary.final_company_income))}
+        <div class="card metric income-metric">
+          <div class="label">Доход компании</div>
+          <div class="value">${formatMoney(summary.final_company_income)}</div>
+        </div>
       </div>
 
       <div class="divider"></div>
@@ -827,6 +866,15 @@ async function openEventModal(eventId) {
                 <td>${formatMoney(itemDeductionVisible(item))}</td>
               </tr>
             `).join("")}
+            <tr class="manager-salary-row">
+              <td><strong>Менеджер 21%</strong></td>
+              <td>${formatMoney(summary.manager_salary)}</td>
+              <td>${formatMoney(summary.manager_salary)}</td>
+              <td>${formatMoney(managerSalaryPaidValue(summary))}</td>
+              <td>ЗП менеджера</td>
+              <td>0</td>
+              <td>0</td>
+            </tr>
           </tbody>
         </table>
       </div>
