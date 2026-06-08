@@ -10,6 +10,7 @@ class EventCreate(BaseModel):
     event_date: date
     department_id: int
     manager_id: int
+    status: str = "draft"
 
     # ip_contrast_event / our_no_vat / simplified / cash
     client_calc_type: str

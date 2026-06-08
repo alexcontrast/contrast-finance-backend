@@ -87,6 +87,14 @@ function formatMoney(value) {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
 }
 
+
+function formatDateRu(value) {
+  if (!value) return "";
+  const parts = String(value).slice(0, 10).split("-");
+  if (parts.length !== 3) return value;
+  return `${parts[2]}-${parts[1]}-${parts[0]}`;
+}
+
 function asNumber(value) {
   return Number(value || 0);
 }
@@ -1229,7 +1237,7 @@ function renderManagerEventList(data) {
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
             </div>
             <strong>${event.title || "Без названия"}</strong>
-            <span>${event.client_name || ""} · ${event.event_date || ""}</span>
+            <span>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
             <small>${customerPaymentLabel(event.client_calc_type)}</small>
             <em>${statusLabel(event.status)}</em>
           </button>
@@ -1294,7 +1302,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <select disabled><option>${customerPaymentLabel(event.client_calc_type)}</option></select>
         </label>
         <label>Дата мероприятия
-          <input value="${event.event_date || ""}" disabled />
+          <input value="${formatDateRu(event.event_date)}" disabled />
         </label>
         <label>Название заказчика
           <input value="${event.client_name || ""}" disabled />
@@ -1305,9 +1313,11 @@ function renderManagerEventCard(event, items = [], summary = null) {
         <label>Комиссия агентства
           <input value="${formatMoney(event.agency_commission_amount || 0)}" disabled />
         </label>
-        <label>Налоги, %
-          <input value="${summary?.tax_rate_percent ?? 0}" disabled />
-        </label>
+        ${event.client_calc_type === "simplified" ? `
+          <label>Банк+налоги, %
+            <input value="${event.simplified_bank_tax_percent || 0}" disabled />
+          </label>
+        ` : ""}
       </div>
 
       <div class="estimate-tabs">
@@ -1325,34 +1335,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <label>Позиция
             <input id="newItemName" placeholder="Например: Ведущий" />
           </label>
-          <label>Тип
-            <select id="newItemType">
-              <option value="regular">Обычная</option>
-              <option value="coordinator">Координатор</option>
-            </select>
-          </label>
           <label>Сумма по смете
             <input id="newItemExternalAmount" value="0" />
-          </label>
-          <label>Факт
-            <input id="newItemFactAmount" value="0" />
-          </label>
-          <label>Способ оплаты
-            <select id="newItemPaymentMethod">
-              <option value="cash">Налик</option>
-              <option value="card">На карту</option>
-              <option value="self_employed">Самозанятый</option>
-              <option value="invoice">По счету</option>
-            </select>
-          </label>
-          <label>Налоговый статус для По счету
-            <select id="newItemTaxStatus">
-              <option value="">Не нужно</option>
-              <option value="our_vat">ОУР с НДС</option>
-              <option value="our_no_vat">ОУР без НДС</option>
-              <option value="simplified">Упрощенка / СНР</option>
-              <option value="not_found">Не найден</option>
-            </select>
           </label>
         </div>
         <button id="addManagerEventItemBtn" data-event-id="${eventId}">Добавить позицию</button>
@@ -1380,19 +1364,6 @@ function renderManagerEventCard(event, items = [], summary = null) {
                 <td>${formatMoney(item.paid_amount)}</td>
               </tr>
             `).join("")}
-            ${summary ? `
-              <tr class="manager-salary-row">
-                <td><strong>Менеджер 21%</strong></td>
-                <td>0</td>
-                <td>${formatMoney(summary.manager_salary)}</td>
-                <td>ЗП менеджера</td>
-                <td>—</td>
-                <td>—</td>
-                <td>0</td>
-                <td>0</td>
-                <td>${formatMoney(managerSalaryPaidValue(summary))}</td>
-              </tr>
-            ` : ""}
           </tbody>
         </table>
       </div>
@@ -1402,7 +1373,6 @@ function renderManagerEventCard(event, items = [], summary = null) {
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
           ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(summary.taxes_total ?? 0))}
           ${metric("НДС", formatMoney(summary.vat_to_pay ?? summary.vat_total))}
-          ${metric("Доход 21%", formatMoney(summary.manager_salary))}
           ${metric("Координаторские", formatMoney(summary.coordinator_company_share || 0))}
           ${metric("Итого менеджеру", formatMoney(summary.manager_salary))}
           <div class="card metric income-metric">
@@ -1411,6 +1381,11 @@ function renderManagerEventCard(event, items = [], summary = null) {
           </div>
         </div>
       ` : ""}
+
+      <div class="manager-card-bottom-actions">
+        <button class="secondary" data-manager-event-save-draft="${event.id}">Сохранить черновик</button>
+        <button data-manager-event-send-review="${event.id}">Отправить Саше</button>
+      </div>
     </section>
   `;
 }
@@ -1539,18 +1514,18 @@ function attachManagerCreateWorkspaceActions() {
   addBtn.addEventListener("click", async () => {
     const eventId = addBtn.getAttribute("data-event-id");
     const name = document.getElementById("newItemName").value.trim();
-    const itemType = document.getElementById("newItemType").value;
+    const itemType = "regular";
     const externalAmount = normalizeNumberInput(document.getElementById("newItemExternalAmount").value);
-    const factAmount = normalizeNumberInput(document.getElementById("newItemFactAmount").value);
-    const paymentMethod = document.getElementById("newItemPaymentMethod").value;
-    const taxStatus = document.getElementById("newItemTaxStatus").value;
+    const factAmount = null;
+    const paymentMethod = null;
+    const taxStatus = null;
 
     if (!name) {
       alert("Укажи название позиции");
       return;
     }
 
-    const taxFields = calcItemTaxFields(paymentMethod, taxStatus, factAmount, externalAmount);
+    const taxFields = { vat_amount: 0, deduction_amount: 0 };
 
     await withLoading(async () => {
       await api(`/events/${eventId}/items`, {
@@ -1566,8 +1541,8 @@ function attachManagerCreateWorkspaceActions() {
           paid_amount: 0,
           payment_method: paymentMethod,
           iin_bin: null,
-          iin_bin_locked: paymentMethod === "invoice" && Boolean(taxStatus),
-          tax_check_status: paymentMethod === "invoice" ? taxStatus : null,
+          iin_bin_locked: false,
+          tax_check_status: null,
           vat_amount: taxFields.vat_amount,
           deduction_amount: taxFields.deduction_amount,
           internal_note: null,
@@ -1673,6 +1648,27 @@ function attachManagerCreateForm() {
   });
 }
 
+
+async function updateManagerEventStatus(eventId, status) {
+  const event = await api(`/events/${eventId}`);
+  await api(`/events/${eventId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      client_name: event.client_name,
+      title: event.title,
+      event_date: event.event_date,
+      department_id: event.department_id,
+      manager_id: event.manager_id,
+      status,
+      client_calc_type: event.client_calc_type,
+      manager_percent: event.manager_percent,
+      agency_commission_amount: event.agency_commission_amount,
+      agency_commission_spread_enabled: event.agency_commission_spread_enabled,
+      simplified_bank_tax_percent: event.simplified_bank_tax_percent,
+    }),
+  });
+}
+
 function attachManagerDashboardActions() {
   const createButtons = [
     document.getElementById("managerCreateEventShortcut"),
@@ -1695,8 +1691,30 @@ function attachManagerDashboardActions() {
     });
   });
 
-}
 
+  document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-manager-event-save-draft");
+      await withLoading(async () => {
+        await updateManagerEventStatus(eventId, "draft");
+        await loadDashboard();
+      }, "Сохраняем черновик…");
+    });
+  });
+
+  document.querySelectorAll("[data-manager-event-send-review]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-manager-event-send-review");
+      if (!confirm("Отправить мероприятие Саше на проверку?")) return;
+
+      await withLoading(async () => {
+        await updateManagerEventStatus(eventId, "review");
+        await loadDashboard();
+      }, "Отправляем на проверку…");
+    });
+  });
+
+}
 function renderManagerDashboard(data, paymentRequests = []) {
   state.managerData = data;
   state.managerPaymentRequests = paymentRequests || [];

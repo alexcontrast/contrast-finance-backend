@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -20,6 +21,10 @@ from app.services.authorization import (
 
 
 router = APIRouter(tags=["event_items"])
+
+
+def calculate_external_amount(price, quantity, days):
+    return (price or Decimal("0.00")) * (quantity or Decimal("1.00")) * (days or Decimal("1.00"))
 
 
 @router.get("/events/{event_id}/items", response_model=list[EventItemRead])
@@ -56,7 +61,7 @@ def create_event_item(
         external_price=payload.external_price,
         external_quantity=payload.external_quantity,
         external_days=payload.external_days,
-        external_amount=payload.external_amount,
+        external_amount=calculate_external_amount(payload.external_price, payload.external_quantity, payload.external_days),
         external_note=payload.external_note,
         amount_fact=payload.amount_fact,
         paid_amount=payload.paid_amount,
@@ -105,7 +110,7 @@ def update_event_item(
     item.external_price = payload.external_price
     item.external_quantity = payload.external_quantity
     item.external_days = payload.external_days
-    item.external_amount = payload.external_amount
+    item.external_amount = calculate_external_amount(payload.external_price, payload.external_quantity, payload.external_days)
     item.external_note = payload.external_note
     item.amount_fact = payload.amount_fact
     item.paid_amount = payload.paid_amount

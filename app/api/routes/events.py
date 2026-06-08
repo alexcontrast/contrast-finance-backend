@@ -1,9 +1,13 @@
+from datetime import datetime
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.event import Event
+from app.models.event_item import EventItem
 from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
 from app.services.auth import get_current_user
@@ -72,7 +76,7 @@ def create_event(
         event_date=payload.event_date,
         department_id=department_id,
         manager_id=manager_id,
-        status="draft",
+        status=payload.status or "draft",
         client_calc_type=payload.client_calc_type,
         manager_percent=payload.manager_percent,
         agency_commission_amount=payload.agency_commission_amount,
@@ -81,6 +85,33 @@ def create_event(
     )
 
     db.add(event)
+    db.flush()
+
+    coordinator_item = EventItem(
+        event_id=event.id,
+        item_type="coordinator",
+        external_name="Координатор",
+        external_price=Decimal("0.00"),
+        external_quantity=Decimal("1.00"),
+        external_days=Decimal("1.00"),
+        external_amount=Decimal("0.00"),
+        external_note=None,
+        amount_fact=None,
+        paid_amount=Decimal("0.00"),
+        payment_method=None,
+        iin_bin=None,
+        iin_bin_locked=False,
+        tax_check_status=None,
+        vat_amount=Decimal("0.00"),
+        deduction_amount=Decimal("0.00"),
+        internal_note="Системная позиция координатора",
+        sort_order=-100,
+        is_deleted=False,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(coordinator_item)
+
     db.commit()
     db.refresh(event)
     return event

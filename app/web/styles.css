@@ -1399,3 +1399,15 @@ select:focus {
 #managerCreateError.hidden {
   display: none;
 }
+
+
+/* v0.35.4 manager cabinet logic cleanup */
+.manager-card-bottom-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
