@@ -559,72 +559,78 @@ async function openEventModal(eventId) {
 
 function renderAdminOverview(data) {
   const managers = getManagers();
-  const managerRows = managers.map((manager) => {
+
+  const managerStats = managers.map((manager) => {
     const events = (data.events || []).filter((event) => Number(event.manager_id) === Number(manager.id));
     const income = events.reduce((sum, event) => sum + asNumber(event.final_company_income), 0);
     const plan = asNumber(data.manager_personal_plan_amount);
     const percent = plan > 0 ? Math.round((income / plan) * 10000) / 100 : 0;
-    return { manager, income, plan, percent };
+
+    return {
+      manager,
+      income,
+      plan,
+      percent,
+      departmentId: manager.department_id,
+      departmentName: departmentNameById(manager.department_id),
+    };
   });
 
+  const departments = data.departments || [];
+  const companyPlan = asNumber(data.company_plan_amount);
+  const companyFact = asNumber(data.company_fact_income_amount);
+  const companyPercent = companyPlan > 0 ? Math.round((companyFact / companyPlan) * 10000) / 100 : 0;
+
   return `
-    <div class="grid cards">
-      ${metric("План компании", formatMoney(data.company_plan_amount))}
-      ${metric("Факт", formatMoney(data.company_fact_income_amount))}
-      ${metric("Выполнение", `${data.company_completion_percent}%`)}
-      ${metric("Остаток", formatMoney(asNumber(data.company_plan_amount) - asNumber(data.company_fact_income_amount)))}
-    </div>
-
-    <div class="overview-section card">
-      <h3>Динамика выполнения цели</h3>
-      <p class="muted">Линия показывает текущий факт относительно месячного плана.</p>
-      ${progressLine(data.company_completion_percent)}
-    </div>
-
-    <div class="overview-section">
-      <h3>Планы по отделам</h3>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Отдел</th><th>План</th><th>Факт</th><th>%</th><th>Заполнение</th></tr>
-          </thead>
-          <tbody>
-            ${(data.departments || []).map((dep) => `
-              <tr class="${departmentClassByName(dep.department_name)}">
-                <td><strong>${dep.department_name}</strong></td>
-                <td>${formatMoney(dep.plan_amount)}</td>
-                <td>${formatMoney(dep.fact_income_amount)}</td>
-                <td>${dep.completion_percent}%</td>
-                <td>${progressLine(dep.completion_percent)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
+    <section class="overview-company-card">
+      <div class="overview-card-top">
+        <div>
+          <div class="overview-label">Общий план</div>
+          <div class="overview-big-number">${formatMoney(companyFact)} ₸</div>
+          <div class="overview-subline">Цель: ${formatMoney(companyPlan)} ₸ · ${companyPercent}%</div>
+        </div>
+        <div class="overview-company-title">Компания</div>
       </div>
-    </div>
+      ${progressLine(companyPercent)}
+    </section>
 
-    <div class="overview-section">
-      <h3>Индивидуальные планы менеджеров</h3>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Менеджер</th><th>Отдел</th><th>План</th><th>Факт</th><th>%</th><th>Заполнение</th></tr>
-          </thead>
-          <tbody>
-            ${managerRows.map((row) => `
-              <tr class="${departmentClassById(row.manager.department_id)}">
-                <td><strong>${row.manager.name}</strong></td>
-                <td>${departmentNameById(row.manager.department_id)}</td>
-                <td>${formatMoney(row.plan)}</td>
-                <td>${formatMoney(row.income)}</td>
-                <td>${row.percent}%</td>
-                <td>${progressLine(row.percent)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <section class="overview-departments-grid">
+      ${departments.map((dep) => {
+        const depClass = departmentClassByName(dep.department_name);
+        const depManagers = managerStats.filter((row) => Number(row.departmentId) === Number(dep.department_id));
+
+        return `
+          <article class="department-overview-card ${depClass}">
+            <div class="department-card-head">
+              <div>
+                <div class="overview-label">Отдел</div>
+                <h3>${dep.department_name}</h3>
+              </div>
+              <div class="department-total">
+                <div>${formatMoney(dep.fact_income_amount)} ₸</div>
+                <span>${dep.completion_percent}% · цель ${formatMoney(dep.plan_amount)} ₸</span>
+              </div>
+            </div>
+
+            ${progressLine(dep.completion_percent)}
+
+            <div class="manager-progress-list">
+              ${depManagers.length ? depManagers.map((row) => `
+                <div class="manager-progress-row">
+                  <div class="manager-progress-main">
+                    <strong>${row.manager.name}</strong>
+                    <span>${formatMoney(row.income)} ₸ · ${row.percent}%</span>
+                  </div>
+                  <div class="manager-progress-bar">
+                    ${progressLine(row.percent)}
+                  </div>
+                </div>
+              `).join("") : `<div class="empty-state">Менеджеров в отделе пока нет.</div>`}
+            </div>
+          </article>
+        `;
+      }).join("")}
+    </section>
   `;
 }
 
