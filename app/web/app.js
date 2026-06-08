@@ -1220,22 +1220,6 @@ function renderManagerEventList(data) {
       <h3>Мероприятия</h3>
       <p class="muted">Проекты за выбранный месяц</p>
 
-      <div class="manager-month-row">
-        <label>Месяц
-          <select id="managerMonthSelect">
-            ${MONTHS_RU.map(([value, label]) => `
-              <option value="${value}" ${value === state.month.slice(5, 7) ? "selected" : ""}>${label}</option>
-            `).join("")}
-          </select>
-        </label>
-        <label>Год
-          <select id="managerYearSelect">
-            ${Array.from({ length: 4 }, (_, i) => new Date().getFullYear() - 1 + i).map((year) => `
-              <option value="${year}" ${String(year) === state.month.slice(0, 4) ? "selected" : ""}>${year}</option>
-            `).join("")}
-          </select>
-        </label>
-      </div>
 
       <div class="manager-mini-list">
         ${events.length ? events.map((event) => `
@@ -1463,7 +1447,7 @@ function renderManagerCreateModal() {
         <input id="newEventAgencyCommission" value="0" />
       </label>
       <label>Банк+налоги, % для Упрощенки
-        <input id="newEventSimplifiedPercent" value="0" />
+        <input id="newEventSimplifiedPercent" value="0" disabled />
       </label>
     </div>
 
@@ -1473,9 +1457,13 @@ function renderManagerCreateModal() {
 }
 
 function openManagerCreateModal() {
+  const title = document.getElementById("plansModalTitle");
+  if (title) title.textContent = "Создать мероприятие";
+
   $("plansModalBackdrop").classList.remove("hidden");
   $("plansModalContent").innerHTML = renderManagerCreateModal();
   attachManagerCreateForm();
+  attachManagerCalcTypeToggle();
 
   const close = document.getElementById("managerCreateModalCloseBtn");
   if (close) close.addEventListener("click", () => $("plansModalBackdrop").classList.add("hidden"));
@@ -1581,6 +1569,22 @@ function attachManagerCreateWorkspaceActions() {
   });
 }
 
+
+function attachManagerCalcTypeToggle() {
+  const calcType = document.getElementById("newEventCalcType");
+  const simplifiedInput = document.getElementById("newEventSimplifiedPercent");
+  if (!calcType || !simplifiedInput) return;
+
+  const sync = () => {
+    const isSimplified = calcType.value === "simplified";
+    simplifiedInput.disabled = !isSimplified;
+    if (!isSimplified) simplifiedInput.value = "0";
+  };
+
+  calcType.addEventListener("change", sync);
+  sync();
+}
+
 function attachManagerCreateForm() {
   const createBtn = document.getElementById("createManagerEventBtn");
   if (!createBtn) return;
@@ -1613,10 +1617,18 @@ function attachManagerCreateForm() {
           agency_commission_amount: agencyCommission,
           agency_commission_spread_enabled: false,
           simplified_bank_tax_percent: calcType === "simplified" ? simplifiedPercent : 0,
+          status: "draft",
         }),
       });
 
       state.selectedManagerEventId = event.id;
+      if (eventDate && eventDate.length >= 7) {
+        state.month = eventDate.slice(0, 7);
+        const globalMonth = document.getElementById("monthSelect");
+        const globalYear = document.getElementById("yearSelect");
+        if (globalMonth) globalMonth.value = state.month.slice(5, 7);
+        if (globalYear) globalYear.value = state.month.slice(0, 4);
+      }
       $("plansModalBackdrop").classList.add("hidden");
       await loadDashboard();
     }, "Создаём мероприятие…");
@@ -1645,24 +1657,6 @@ function attachManagerDashboardActions() {
     });
   });
 
-  const monthSelect = document.getElementById("managerMonthSelect");
-  const yearSelect = document.getElementById("managerYearSelect");
-  [monthSelect, yearSelect].forEach((select) => {
-    if (!select) return;
-
-    select.addEventListener("change", async () => {
-      const month = monthSelect?.value || state.month.slice(5, 7);
-      const year = yearSelect?.value || state.month.slice(0, 4);
-      state.month = `${year}-${month}`;
-
-      const globalMonth = document.getElementById("monthSelect");
-      const globalYear = document.getElementById("yearSelect");
-      if (globalMonth) globalMonth.value = month;
-      if (globalYear) globalYear.value = year;
-
-      await withLoading(loadDashboard, "Загружаем месяц…");
-    });
-  });
 }
 
 function renderManagerDashboard(data, paymentRequests = []) {
@@ -1673,7 +1667,7 @@ function renderManagerDashboard(data, paymentRequests = []) {
   renderSummary([]);
 
   $("dashboardTitle").textContent = "Мои мероприятия";
-  $("dashboardHint").textContent = `${data.manager_name} · ${data.department_name || ""}`;
+  $("dashboardHint").textContent = "";
 
   $("dashboardContent").innerHTML = renderManagerDashboardLayout(data);
 
@@ -1787,6 +1781,14 @@ async function boot() {
       ? "Проверка мероприятий, заявки, планы и закрытие месяца"
       : `${user.name} · отдел ${departmentNameById(user.department_id) || ""}`;
     $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
+
+    const pinBtn = document.getElementById("changePinOpenBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (pinBtn && logoutBtn && pinBtn.parentElement !== logoutBtn.parentElement) {
+      pinBtn.classList.remove("ghost");
+      pinBtn.classList.add("ghost");
+      logoutBtn.parentElement.insertBefore(pinBtn, logoutBtn);
+    }
     setupMonthYearSelectors();
     attachMonthYearSelectors();
 

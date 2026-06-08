@@ -1359,3 +1359,27 @@ select:focus {
     flex-direction: column;
   }
 }
+
+
+/* v0.35.1 manager cabinet cleanup */
+.manager-sidebar-card .manager-month-row {
+  display: none;
+}
+
+#dashboardHint:empty {
+  display: none;
+}
+
+#newEventSimplifiedPercent:disabled {
+  background: #f1f3ee;
+  color: #8a9184;
+  cursor: not-allowed;
+}
+
+.topbar-actions #changePinOpenBtn {
+  margin-right: 8px;
+}
+
+.toolbar #changePinOpenBtn {
+  display: none;
+}
