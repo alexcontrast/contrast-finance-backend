@@ -1325,6 +1325,27 @@ function externalTotalToPay(items, event) {
     + externalSimplifiedMarkupAmount(items, event);
 }
 
+
+function summaryNumber(summary, key) {
+  return asNumber(summary?.[key]);
+}
+
+function internalAgencyCommissionAmount(items, event, summary) {
+  return summaryNumber(summary, "agency_commission_amount") || externalAgencyCommissionAmount(items, event);
+}
+
+function internalSimplifiedMarkupAmount(items, event, summary) {
+  return summaryNumber(summary, "simplified_bank_tax_amount") || externalSimplifiedMarkupAmount(items, event);
+}
+
+function internalTaxesNet(summary) {
+  return summaryNumber(summary, "taxes_net") || (summaryNumber(summary, "taxes_total") - summaryNumber(summary, "deductions_total"));
+}
+
+function internalVatNet(summary) {
+  return summaryNumber(summary, "vat_net") || summaryNumber(summary, "vat_to_pay") || summaryNumber(summary, "vat_total");
+}
+
 function draftKeyForEvent(eventId) {
   return String(eventId || state.selectedManagerEventId || "");
 }
@@ -1389,10 +1410,15 @@ function setDraftItemValue(eventId, itemId, field, value) {
   }
 
   if (field === "payment_method") {
+    if (value !== "invoice") {
+      item.iin_bin = null;
+      item.iin_bin_locked = false;
+      item.tax_check_status = null;
+    }
+
     if (value === "cash" || value === "card" || value === "") {
       item.vat_amount = 0;
       item.deduction_amount = 0;
-      if (value !== "invoice") item.iin_bin_locked = false;
     }
 
     if (value === "self_employed") {
@@ -1529,11 +1555,10 @@ function renderExternalEstimate(items, eventId, event = null) {
       </table>
     </div>
 
-    <div class="external-estimate-totals">
+    <div class="external-estimate-totals external-estimate-totals-four">
       ${metric("Итого по позициям", formatMoney(total))}
       ${metric(`Комиссия агентства ${asNumber(event?.agency_commission_amount)}%`, formatMoney(agency))}
-      ${event?.client_calc_type === "ip_contrast_event" ? metric("НДС 16%", formatMoney(vat)) : ""}
-      ${event?.client_calc_type === "simplified" ? metric(`Банк+налоги ${asNumber(event?.simplified_bank_tax_percent)}%`, formatMoney(simplifiedMarkup)) : ""}
+      ${metric(event?.client_calc_type === "ip_contrast_event" ? "НДС 16%" : "НДС", formatMoney(vat))}
       <div class="card metric income-metric">
         <div class="label">Итого к оплате</div>
         <div class="value">${formatMoney(totalToPay)}</div>
@@ -1542,8 +1567,11 @@ function renderExternalEstimate(items, eventId, event = null) {
   `;
 }
 
-function renderInternalEstimate(items, event) {
+function renderInternalEstimate(items, event, summary = null) {
   const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
+  const agency = internalAgencyCommissionAmount(shownItems, event, summary);
+  const simplifiedMarkup = internalSimplifiedMarkupAmount(shownItems, event, summary);
+  const managerSalary = summaryNumber(summary, "manager_salary");
 
   return `
     <div class="table-wrap estimate-table-wrap">
@@ -1563,40 +1591,84 @@ function renderInternalEstimate(items, event) {
           </tr>
         </thead>
         <tbody>
-          ${shownItems.map((item) => `
-            <tr data-event-item-row="${item.id}">
-              <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
-              <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
-              <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
-              <td>
-                ${isCoordinatorItem(item) ? `
-                  <select disabled>
-                    <option selected>—</option>
-                  </select>
-                ` : `
-                  <select data-item-field="payment_method" data-item-id="${item.id}">
-                    <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
-                    <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
-                    <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
-                    <option value="self_employed" ${item.payment_method === "self_employed" ? "selected" : ""}>Самозанятый</option>
-                    <option value="invoice" ${item.payment_method === "invoice" ? "selected" : ""}>По счету</option>
-                  </select>
-                `}
-              </td>
-              <td>${isCoordinatorItem(item) ? rowInput("", "disabled") : rowInput(item.iin_bin || "", `placeholder="12 цифр" data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`)}</td>
-              <td>
-                ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
-                  <button class="icon-btn" data-check-tax-item="${item.id}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
-                    ${item.iin_bin_locked ? "✎" : "✓"}
-                  </button>
-                ` : "—")}
-              </td>
-              <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
-              <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
-              <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
-              <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
+          ${shownItems.map((item) => {
+            const binDisabled = isCoordinatorItem(item) || item.payment_method !== "invoice";
+            return `
+              <tr data-event-item-row="${item.id}">
+                <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
+                <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
+                <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
+                <td>
+                  ${isCoordinatorItem(item) ? `
+                    <select disabled>
+                      <option selected>—</option>
+                    </select>
+                  ` : `
+                    <select data-item-field="payment_method" data-item-id="${item.id}">
+                      <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
+                      <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
+                      <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
+                      <option value="self_employed" ${item.payment_method === "self_employed" ? "selected" : ""}>Самозанятый</option>
+                      <option value="invoice" ${item.payment_method === "invoice" ? "selected" : ""}>По счету</option>
+                    </select>
+                  `}
+                </td>
+                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`}`)}</td>
+                <td>
+                  ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
+                    <button class="icon-btn" data-check-tax-item="${item.id}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
+                      ${item.iin_bin_locked ? "✎" : "✓"}
+                    </button>
+                  ` : "—")}
+                </td>
+                <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
+                <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
+                <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
+                <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
+              </tr>
+            `;
+          }).join("")}
+
+          <tr class="system-row agency-row">
+            <td><strong>Комиссия агентства</strong></td>
+            <td><strong>${formatMoney(agency)}</strong></td>
+            <td>0</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>0</td>
+            <td>0</td>
+            <td><strong>${formatMoney(agency)}</strong></td>
+            <td>0</td>
+          </tr>
+
+          ${event.client_calc_type === "simplified" ? `
+            <tr class="system-row simplified-row">
+              <td><strong>Банковские и налоговые платежи</strong></td>
+              <td><strong>${formatMoney(simplifiedMarkup)}</strong></td>
+              <td>0</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>0</td>
+              <td>0</td>
+              <td><strong>${formatMoney(simplifiedMarkup)}</strong></td>
+              <td>0</td>
             </tr>
-          `).join("")}
+          ` : ""}
+
+          <tr class="system-row manager-percent-row">
+            <td><strong>Менеджер 21%</strong></td>
+            <td>0</td>
+            <td>0</td>
+            <td>ЗП менеджера</td>
+            <td>—</td>
+            <td>—</td>
+            <td>0</td>
+            <td>0</td>
+            <td><strong>-${formatMoney(managerSalary)}</strong></td>
+            <td>${formatMoney(summaryNumber(summary, "manager_salary_paid"))}</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -1650,16 +1722,14 @@ function renderManagerEventCard(event, items = [], summary = null) {
       </div>
 
       <div id="managerEstimatePanel">
-        ${activeTab === "external" ? renderExternalEstimate(items || [], event.id, event) : renderInternalEstimate(items || [], event)}
+        ${activeTab === "external" ? renderExternalEstimate(items || [], event.id, event) : renderInternalEstimate(items || [], event, summary)}
       </div>
 
-      ${summary ? `
-        <div class="manager-summary-grid">
+      ${summary && activeTab === "internal" ? `
+        <div class="manager-summary-grid manager-summary-grid-four">
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
-          ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(summary.taxes_total ?? 0))}
-          ${metric("НДС", formatMoney(summary.vat_to_pay ?? summary.vat_total))}
-          ${metric("Координаторские", formatMoney(summary.coordinator_company_share || 0))}
-          ${metric("Итого менеджеру", formatMoney(summary.manager_salary))}
+          ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
+          ${metric("НДС", formatMoney(internalVatNet(summary)))}
           <div class="card metric income-metric">
             <div class="label">Доход компании</div>
             <div class="value">${formatMoney(summary.final_company_income)}</div>
@@ -1801,9 +1871,9 @@ function itemPayloadForSave(item) {
     amount_fact: isCoordinator ? coordinatorFact : (item.amount_fact === "" || item.amount_fact === undefined ? null : item.amount_fact),
     paid_amount: item.paid_amount || 0,
     payment_method: isCoordinator ? null : (item.payment_method || null),
-    iin_bin: isCoordinator ? null : (item.iin_bin || null),
-    iin_bin_locked: isCoordinator ? false : (item.iin_bin_locked || false),
-    tax_check_status: isCoordinator ? null : (item.tax_check_status || null),
+    iin_bin: isCoordinator || item.payment_method !== "invoice" ? null : (item.iin_bin || null),
+    iin_bin_locked: isCoordinator || item.payment_method !== "invoice" ? false : (item.iin_bin_locked || false),
+    tax_check_status: isCoordinator || item.payment_method !== "invoice" ? null : (item.tax_check_status || null),
     vat_amount: isCoordinator ? 0 : (item.vat_amount || 0),
     deduction_amount: isCoordinator ? 0 : (item.deduction_amount || 0),
     internal_note: item.internal_note || null,

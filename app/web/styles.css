@@ -1621,3 +1621,31 @@ button[data-manager-event-save-draft]:hover {
   opacity: 1;
   cursor: not-allowed;
 }
+
+
+/* v0.35.11 estimate structure cleanup */
+.external-estimate-totals-four,
+.manager-summary-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.internal-estimate-table .system-row td {
+  border-top: 2px solid rgba(110, 245, 0, .35);
+  background: #f7fbf1;
+}
+
+.internal-estimate-table .agency-row td,
+.internal-estimate-table .simplified-row td {
+  background: #f4f8ee;
+}
+
+.internal-estimate-table .manager-percent-row td {
+  background: #f8f8f2;
+}
+
+@media (max-width: 900px) {
+  .external-estimate-totals-four,
+  .manager-summary-grid-four {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}

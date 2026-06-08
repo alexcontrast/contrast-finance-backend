@@ -229,4 +229,8 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "tax_rate_percent": q(tax_rate_percent(event)),
         "tax_base_amount": q0(client_base_amount),
         "taxes_total": q0(internal_tax_amount),
+        "taxes_net": q0(internal_tax_amount - deductions_total),
+        "vat_net": q0(vat_to_pay),
+        "agency_commission_amount": q0(agency_commission_amount),
+        "manager_salary_negative_commission": q0(manager_salary * Decimal("-1")),
     }
