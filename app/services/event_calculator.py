@@ -150,16 +150,16 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     regular_fact_total = sum((item_fact_or_plan(item) for item in regular_items), Decimal("0.00"))
 
     coordinator_external_total = sum((money(item.external_amount) for item in coordinator_items), Decimal("0.00"))
-    coordinator_fact_amount = q(coordinator_external_total * Decimal("0.50"))
-    coordinator_company_share = q(coordinator_external_total * Decimal("0.50"))
+    coordinator_fact_amount = q0(coordinator_external_total * Decimal("0.50"))
+    coordinator_company_share = q0(coordinator_external_total * Decimal("0.50"))
 
-    client_base_amount = q(items_external_total + agency_commission_amount)
+    client_base_amount = q0(items_external_total + agency_commission_amount)
     simplified_markup_amount = calculate_simplified_bank_tax(event, client_base_amount)
     client_vat = client_vat_amount(event, client_base_amount)
-    turnover_with_vat = q(client_base_amount + client_vat + simplified_markup_amount)
+    turnover_with_vat = q0(client_base_amount + client_vat + simplified_markup_amount)
     external_total = turnover_with_vat
 
-    fact_total = sum((item_fact_or_plan(item) for item in business_items), Decimal("0.00"))
+    fact_total = sum((item_fact_or_plan(item) for item in regular_items), Decimal("0.00")) + coordinator_fact_amount
     paid_total = sum((money(item.paid_amount) for item in items), Decimal("0.00"))
     manager_salary_paid = sum((money(item.paid_amount) for item in manager_salary_items), Decimal("0.00"))
 
@@ -170,12 +170,16 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
 
     deductions_total = sum((item_deduction(item) for item in regular_items), Decimal("0.00"))
 
-    internal_tax_amount = calculate_internal_tax(event, regular_external_total)
+    # Внутренний налог считается от клиентской базы без НДС:
+    # позиции + агентская комиссия. Координатор входит в налоговую базу, но не в базу 21%.
+    internal_tax_amount = q0(calculate_internal_tax(event, client_base_amount))
     simplified_bank_tax_amount = simplified_markup_amount
 
     # Координатор исключён из базы менеджерских 21%.
+    # Агентская комиссия — доходная часть мероприятия и участвует в базе менеджера.
+    manager_salary_revenue_base = regular_external_total + agency_commission_amount
     company_income_before_manager_salary = (
-        regular_external_total
+        manager_salary_revenue_base
         - regular_fact_total
         - internal_tax_amount
         - vat_to_pay
@@ -221,6 +225,6 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "contractor_vat_credit": q0(contractor_vat_credit),
         "vat_to_pay": q0(vat_to_pay),
         "tax_rate_percent": q(tax_rate_percent(event)),
-        "tax_base_amount": q(tax_base_amount(event, regular_external_total)),
+        "tax_base_amount": q0(client_base_amount),
         "taxes_total": q0(internal_tax_amount),
     }

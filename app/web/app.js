@@ -1403,6 +1403,10 @@ function setDraftItemValue(eventId, itemId, field, value) {
     }
   }
 
+  if (["external_price", "external_quantity", "external_days"].includes(field) && item.item_type === "coordinator") {
+    item.amount_fact = Math.round(externalRowAmount(item) * 0.5);
+  }
+
   if (field === "amount_fact" && item.payment_method === "self_employed") {
     const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
     item.deduction_amount = Math.round(base * 0.10);
@@ -1465,6 +1469,18 @@ function internalVatValue(item) {
 
 function rowInput(value, attrs = "") {
   return `<input ${attrs} value="${value ?? ""}" />`;
+}
+
+function estimateInputMoney(value) {
+  if (value === null || value === undefined || value === "") return "";
+  return formatMoney(value);
+}
+
+function internalFactDisplayValue(item) {
+  if (item.item_type === "coordinator") {
+    return formatMoney(Math.round(externalRowAmount(item) * 0.5));
+  }
+  return estimateInputMoney(item.amount_fact);
 }
 
 function renderExternalEstimate(items, eventId, event = null) {
@@ -1547,7 +1563,7 @@ function renderInternalEstimate(items, event) {
             <tr data-event-item-row="${item.id}">
               <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
               <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
-              <td>${rowInput(item.amount_fact ?? "", `data-item-field="amount_fact" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
               <td>
                 <select data-item-field="payment_method" data-item-id="${item.id}">
                   <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
@@ -1762,6 +1778,9 @@ function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount)
 
 
 function itemPayloadForSave(item) {
+  const isCoordinator = item.item_type === "coordinator";
+  const coordinatorFact = Math.round(externalRowAmount(item) * 0.5);
+
   return {
     item_type: item.item_type || "regular",
     external_name: item.external_name || "",
@@ -1769,16 +1788,16 @@ function itemPayloadForSave(item) {
     external_quantity: asNumber(item.external_quantity || 1),
     external_days: asNumber(item.external_days || 1),
     external_note: item.external_note || null,
-    amount_fact: item.amount_fact === "" || item.amount_fact === undefined ? null : item.amount_fact,
+    amount_fact: isCoordinator ? coordinatorFact : (item.amount_fact === "" || item.amount_fact === undefined ? null : item.amount_fact),
     paid_amount: item.paid_amount || 0,
-    payment_method: item.payment_method || null,
-    iin_bin: item.iin_bin || null,
-    iin_bin_locked: item.iin_bin_locked || false,
-    tax_check_status: item.tax_check_status || null,
-    vat_amount: item.vat_amount || 0,
-    deduction_amount: item.deduction_amount || 0,
+    payment_method: isCoordinator ? "cash" : (item.payment_method || null),
+    iin_bin: isCoordinator ? null : (item.iin_bin || null),
+    iin_bin_locked: isCoordinator ? false : (item.iin_bin_locked || false),
+    tax_check_status: isCoordinator ? null : (item.tax_check_status || null),
+    vat_amount: isCoordinator ? 0 : (item.vat_amount || 0),
+    deduction_amount: isCoordinator ? 0 : (item.deduction_amount || 0),
     internal_note: item.internal_note || null,
-    sort_order: item.sort_order || 0,
+    sort_order: isCoordinator ? -100 : (item.sort_order || 0),
   };
 }
 

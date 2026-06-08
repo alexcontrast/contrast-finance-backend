@@ -1604,3 +1604,11 @@ button[data-manager-event-save-draft] {
 button[data-manager-event-save-draft]:hover {
   background: #252824 !important;
 }
+
+
+/* v0.35.9 fact input formatting */
+.internal-estimate-table input:disabled {
+  background: #eef2ea;
+  color: #31352d;
+  opacity: 1;
+}
