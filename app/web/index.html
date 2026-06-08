@@ -52,8 +52,35 @@
             <h2 id="dashboardTitle">Кабинет</h2>
             <span id="dashboardHint" class="muted"></span>
           </div>
+          <div id="adminTabs" class="tabs hidden"></div>
           <div id="dashboardContent"></div>
         </section>
+
+        <div id="eventModalBackdrop" class="modal-backdrop hidden">
+          <div class="modal">
+            <div class="modal-head">
+              <div>
+                <div class="eyebrow">Мероприятие</div>
+                <h2 id="eventModalTitle">Детали</h2>
+              </div>
+              <button id="eventModalCloseBtn" class="ghost">Закрыть</button>
+            </div>
+            <div id="eventModalContent"></div>
+          </div>
+        </div>
+
+        <div id="plansModalBackdrop" class="modal-backdrop hidden">
+          <div class="modal">
+            <div class="modal-head">
+              <div>
+                <div class="eyebrow">Планы</div>
+                <h2>Задать планы</h2>
+              </div>
+              <button id="plansModalCloseBtn" class="ghost">Закрыть</button>
+            </div>
+            <div id="plansModalContent"></div>
+          </div>
+        </div>
 
         <section id="changePinCard" class="card narrow hidden">
           <h2>Смена PIN</h2>

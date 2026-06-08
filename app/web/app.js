@@ -5,6 +5,12 @@ const state = {
   paymentStatusFilter: "active",
   paymentSearch: "",
   eventDepartmentFilter: "all",
+  eventManagerFilter: "all",
+  eventStatusFilter: "all",
+  eventSearch: "",
+  activeAdminTab: "overview",
+  adminData: null,
+  users: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -12,6 +18,10 @@ const $ = (id) => document.getElementById(id);
 function formatMoney(value) {
   const n = Number(value || 0);
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n);
+}
+
+function asNumber(value) {
+  return Number(value || 0);
 }
 
 function roleLabel(role) {
@@ -75,6 +85,7 @@ function showLogin() {
   $("dashboardScreen").classList.add("hidden");
   $("logoutBtn").classList.add("hidden");
   $("userBadge").classList.add("hidden");
+  $("adminTabs").classList.add("hidden");
   $("pageTitle").textContent = "Вход";
 }
 
@@ -93,15 +104,51 @@ function renderSummary(cards) {
   $("summaryCards").innerHTML = cards.map(([label, value]) => metric(label, value)).join("");
 }
 
+function progressLine(percent) {
+  const p = Math.max(0, Math.min(100, Number(percent || 0)));
+  return `<div class="progress-line" style="--progress:${p}%"><span></span></div>`;
+}
 
-function filteredEventsForAdmin(events) {
-  const user = state.bootstrap?.user;
-  if (!user || user.role !== "admin") return events || [];
+function getDepartmentsMap() {
+  const map = new Map();
+  (state.bootstrap?.departments || []).forEach((department) => map.set(Number(department.id), department.name));
+  return map;
+}
 
-  if (state.eventDepartmentFilter === "all") return events || [];
+function getManagers() {
+  return (state.users || []).filter((user) => user.role === "manager" && user.is_active);
+}
 
-  const depId = Number(state.eventDepartmentFilter);
-  return (events || []).filter((event) => Number(event.department_id) === depId);
+function managerNameById(id) {
+  const user = (state.users || []).find((item) => Number(item.id) === Number(id));
+  return user?.name || "";
+}
+
+function departmentNameById(id) {
+  return getDepartmentsMap().get(Number(id)) || "";
+}
+
+function filteredEvents(events) {
+  let list = [...(events || [])];
+
+  if (state.eventDepartmentFilter !== "all") {
+    list = list.filter((event) => Number(event.department_id) === Number(state.eventDepartmentFilter));
+  }
+
+  if (state.eventManagerFilter !== "all") {
+    list = list.filter((event) => Number(event.manager_id) === Number(state.eventManagerFilter));
+  }
+
+  if (state.eventStatusFilter !== "all") {
+    list = list.filter((event) => event.status === state.eventStatusFilter);
+  }
+
+  const search = String(state.eventSearch || "").trim().toLowerCase();
+  if (search) {
+    list = list.filter((event) => String(event.client_name || "").toLowerCase().includes(search));
+  }
+
+  return list;
 }
 
 function filteredPaymentRequests(requests) {
@@ -115,30 +162,103 @@ function filteredPaymentRequests(requests) {
 
   const search = String(state.paymentSearch || "").trim().toLowerCase();
   if (search) {
-    list = list.filter((request) => {
-      const client = String(request.client_name || "").toLowerCase();
-      return client.includes(search);
-    });
+    list = list.filter((request) => String(request.client_name || "").toLowerCase().includes(search));
   }
 
   return list;
 }
 
-function renderEventDepartmentFilter(events) {
-  const user = state.bootstrap?.user;
-  if (!user || user.role !== "admin") return "";
+function renderAdminTabs() {
+  const tabs = [
+    ["overview", "Обзор"],
+    ["events", "Мероприятия"],
+    ["requests", "Заявки"],
+    ["plans", "Задать планы"],
+    ["closing", "Закрыть месяц"],
+  ];
 
-  const departments = state.bootstrap?.departments || [];
+  $("adminTabs").classList.remove("hidden");
+  $("adminTabs").innerHTML = tabs.map(([key, label]) => `
+    <button class="tab-btn ${state.activeAdminTab === key ? "active" : ""}" data-admin-tab="${key}">
+      ${label}
+    </button>
+  `).join("");
+
+  document.querySelectorAll("[data-admin-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeAdminTab = button.getAttribute("data-admin-tab");
+      renderAdminDashboard(state.adminData);
+    });
+  });
+}
+
+function renderEventsTable(events, allowClick = false) {
+  if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
+
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Дата</th><th>Заказчик</th><th>Мероприятие</th><th>Менеджер</th><th>Статус</th>
+            <th>Оборот</th><th>Доход</th><th>ЗП менеджера</th><th>Заявки</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${events.map((event) => `
+            <tr class="${allowClick ? "clickable-row" : ""}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
+              <td class="nowrap">${event.event_date || ""}</td>
+              <td><strong>${event.client_name || ""}</strong></td>
+              <td>${event.title || ""}</td>
+              <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
+              <td><span class="status ${event.status}">${statusLabel(event.status)}</span></td>
+              <td>${formatMoney(event.external_total)}</td>
+              <td>${formatMoney(event.final_company_income)}</td>
+              <td>${formatMoney(event.manager_salary || 0)}</td>
+              <td>${event.active_payment_requests_count ?? event.payment_requests_count ?? 0}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderEventFilters(events) {
+  const managers = getManagers();
+  const statuses = [...new Set((events || []).map((event) => event.status).filter(Boolean))];
 
   return `
     <div class="filters-row">
-      <label class="compact-label">Отдел по мероприятиям
+      <label class="compact-label">Отдел
         <select id="eventDepartmentFilter">
           <option value="all">Все отделы</option>
-          ${departments.map((department) => `
+          ${(state.bootstrap?.departments || []).map((department) => `
             <option value="${department.id}" ${String(state.eventDepartmentFilter) === String(department.id) ? "selected" : ""}>${department.name}</option>
           `).join("")}
         </select>
+      </label>
+
+      <label class="compact-label">Менеджер
+        <select id="eventManagerFilter">
+          <option value="all">Все менеджеры</option>
+          ${managers.map((manager) => `
+            <option value="${manager.id}" ${String(state.eventManagerFilter) === String(manager.id) ? "selected" : ""}>${manager.name}</option>
+          `).join("")}
+        </select>
+      </label>
+
+      <label class="compact-label">Статус
+        <select id="eventStatusFilter">
+          <option value="all">Все статусы</option>
+          ${statuses.map((status) => `
+            <option value="${status}" ${state.eventStatusFilter === status ? "selected" : ""}>${statusLabel(status)}</option>
+          `).join("")}
+        </select>
+      </label>
+
+      <label class="compact-label search-label">Поиск по заказчику
+        <input id="eventSearch" value="${state.eventSearch || ""}" placeholder="Название заказчика" />
       </label>
     </div>
   `;
@@ -161,67 +281,6 @@ function renderPaymentFilters() {
       <label class="compact-label search-label">Поиск по заказчику
         <input id="paymentSearch" value="${state.paymentSearch || ""}" placeholder="Название заказчика" />
       </label>
-    </div>
-  `;
-}
-
-function attachFilters() {
-  const paymentStatus = document.getElementById("paymentStatusFilter");
-  if (paymentStatus) {
-    paymentStatus.addEventListener("change", async (event) => {
-      state.paymentStatusFilter = event.target.value;
-      await loadDashboard();
-    });
-  }
-
-  const paymentSearch = document.getElementById("paymentSearch");
-  if (paymentSearch) {
-    paymentSearch.addEventListener("input", (event) => {
-      state.paymentSearch = event.target.value;
-      clearTimeout(window.__cfPaymentSearchTimer);
-      window.__cfPaymentSearchTimer = setTimeout(() => {
-        loadDashboard().catch((error) => alert(error.message));
-      }, 350);
-    });
-  }
-
-  const eventDepartment = document.getElementById("eventDepartmentFilter");
-  if (eventDepartment) {
-    eventDepartment.addEventListener("change", async (event) => {
-      state.eventDepartmentFilter = event.target.value;
-      await loadDashboard();
-    });
-  }
-}
-
-
-function renderEventsTable(events) {
-  if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
-
-  return `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Дата</th><th>Мероприятие</th><th>Заказчик</th><th>Статус</th>
-            <th>Оборот</th><th>Доход</th><th>ЗП менеджера</th><th>Заявки</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${events.map((event) => `
-            <tr>
-              <td class="nowrap">${event.event_date || ""}</td>
-              <td><strong>${event.title || ""}</strong></td>
-              <td>${event.client_name || ""}</td>
-              <td><span class="status ${event.status}">${statusLabel(event.status)}</span></td>
-              <td>${formatMoney(event.external_total)}</td>
-              <td>${formatMoney(event.final_company_income)}</td>
-              <td>${formatMoney(event.manager_salary || 0)}</td>
-              <td>${event.active_payment_requests_count ?? event.payment_requests_count ?? 0}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
     </div>
   `;
 }
@@ -284,9 +343,8 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
       <table>
         <thead>
           <tr>
-            <th>Заявка</th>
-            <th>Заказчик</th>
             <th>Менеджер</th>
+            <th>Заказчик</th>
             <th>Позиция</th>
             <th>Сумма заявки</th>
             <th>Способ</th>
@@ -298,9 +356,8 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
         <tbody>
           ${filteredRequests.map((request) => `
             <tr>
-              <td>#${request.id}</td>
-              <td><strong>${request.client_name || request.event_title || request.event_id || ""}</strong></td>
               <td>${request.manager_name || ""}</td>
+              <td><strong>${request.client_name || request.event_title || request.event_id || ""}</strong></td>
               <td>${request.position || request.item_name_snapshot || ""}</td>
               <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
               <td>${paymentMethodLabel(request.payment_method)}</td>
@@ -318,6 +375,62 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
       </table>
     </div>
   `;
+}
+
+function attachFilters() {
+  const paymentStatus = document.getElementById("paymentStatusFilter");
+  if (paymentStatus) {
+    paymentStatus.addEventListener("change", async (event) => {
+      state.paymentStatusFilter = event.target.value;
+      await loadDashboard();
+    });
+  }
+
+  const paymentSearch = document.getElementById("paymentSearch");
+  if (paymentSearch) {
+    paymentSearch.addEventListener("input", (event) => {
+      state.paymentSearch = event.target.value;
+      clearTimeout(window.__cfPaymentSearchTimer);
+      window.__cfPaymentSearchTimer = setTimeout(() => {
+        loadDashboard().catch((error) => alert(error.message));
+      }, 350);
+    });
+  }
+
+  const eventDepartment = document.getElementById("eventDepartmentFilter");
+  if (eventDepartment) {
+    eventDepartment.addEventListener("change", async (event) => {
+      state.eventDepartmentFilter = event.target.value;
+      await loadDashboard();
+    });
+  }
+
+  const eventManager = document.getElementById("eventManagerFilter");
+  if (eventManager) {
+    eventManager.addEventListener("change", async (event) => {
+      state.eventManagerFilter = event.target.value;
+      await loadDashboard();
+    });
+  }
+
+  const eventStatus = document.getElementById("eventStatusFilter");
+  if (eventStatus) {
+    eventStatus.addEventListener("change", async (event) => {
+      state.eventStatusFilter = event.target.value;
+      await loadDashboard();
+    });
+  }
+
+  const eventSearch = document.getElementById("eventSearch");
+  if (eventSearch) {
+    eventSearch.addEventListener("input", (event) => {
+      state.eventSearch = event.target.value;
+      clearTimeout(window.__cfEventSearchTimer);
+      window.__cfEventSearchTimer = setTimeout(() => {
+        loadDashboard().catch((error) => alert(error.message));
+      }, 350);
+    });
+  }
 }
 
 function attachPaymentRequestActions() {
@@ -364,7 +477,231 @@ function attachPaymentRequestActions() {
   });
 }
 
+function attachEventRows() {
+  document.querySelectorAll("[data-event-id]").forEach((row) => {
+    row.addEventListener("click", async () => {
+      await openEventModal(row.getAttribute("data-event-id"));
+    });
+  });
+}
+
+async function openEventModal(eventId) {
+  $("eventModalBackdrop").classList.remove("hidden");
+  $("eventModalTitle").textContent = `Мероприятие #${eventId}`;
+  $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
+
+  try {
+    const [event, summary, items, requests] = await Promise.all([
+      api(`/events/${eventId}`),
+      api(`/events/${eventId}/summary`),
+      api(`/events/${eventId}/items`),
+      api(`/events/${eventId}/payment-requests`),
+    ]);
+
+    $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
+
+    $("eventModalContent").innerHTML = `
+      <div class="grid cards">
+        ${metric("Оборот", formatMoney(summary.external_total))}
+        ${metric("Факт", formatMoney(summary.fact_total))}
+        ${metric("Оплачено", formatMoney(summary.paid_total))}
+        ${metric("Доход компании", formatMoney(summary.final_company_income))}
+      </div>
+
+      <div class="divider"></div>
+
+      <h3>Смета</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Позиция</th><th>Тип</th><th>Сумма</th><th>Факт</th><th>Оплачено</th><th>Способ</th><th>НДС</th><th>Вычеты</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(items || []).map((item) => `
+              <tr>
+                <td><strong>${item.external_name}</strong></td>
+                <td>${item.item_type}</td>
+                <td>${formatMoney(item.external_amount)}</td>
+                <td>${formatMoney(item.amount_fact)}</td>
+                <td>${formatMoney(item.paid_amount)}</td>
+                <td>${paymentMethodLabel(item.payment_method)}</td>
+                <td>${formatMoney(item.vat_amount)}</td>
+                <td>${formatMoney(item.deduction_amount)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      ${renderPaymentRequestsTable(requests || [], "Заявки мероприятия")}
+    `;
+
+    attachPaymentRequestActions();
+    attachFilters();
+  } catch (error) {
+    $("eventModalContent").innerHTML = `<div class="error">${error.message}</div>`;
+  }
+}
+
+function renderAdminOverview(data) {
+  const managers = getManagers();
+  const managerRows = managers.map((manager) => {
+    const events = (data.events || []).filter((event) => Number(event.manager_id) === Number(manager.id));
+    const income = events.reduce((sum, event) => sum + asNumber(event.final_company_income), 0);
+    const plan = asNumber(data.manager_personal_plan_amount);
+    const percent = plan > 0 ? Math.round((income / plan) * 10000) / 100 : 0;
+    return { manager, income, plan, percent };
+  });
+
+  return `
+    <div class="grid cards">
+      ${metric("План компании", formatMoney(data.company_plan_amount))}
+      ${metric("Факт", formatMoney(data.company_fact_income_amount))}
+      ${metric("Выполнение", `${data.company_completion_percent}%`)}
+      ${metric("Остаток", formatMoney(asNumber(data.company_plan_amount) - asNumber(data.company_fact_income_amount)))}
+    </div>
+
+    <div class="overview-section card">
+      <h3>Динамика выполнения цели</h3>
+      <p class="muted">Линия показывает текущий факт относительно месячного плана.</p>
+      ${progressLine(data.company_completion_percent)}
+    </div>
+
+    <div class="overview-section">
+      <h3>Планы по отделам</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Отдел</th><th>План</th><th>Факт</th><th>%</th><th>Заполнение</th></tr>
+          </thead>
+          <tbody>
+            ${(data.departments || []).map((dep) => `
+              <tr>
+                <td><strong>${dep.department_name}</strong></td>
+                <td>${formatMoney(dep.plan_amount)}</td>
+                <td>${formatMoney(dep.fact_income_amount)}</td>
+                <td>${dep.completion_percent}%</td>
+                <td>${progressLine(dep.completion_percent)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="overview-section">
+      <h3>Индивидуальные планы менеджеров</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Менеджер</th><th>Отдел</th><th>План</th><th>Факт</th><th>%</th><th>Заполнение</th></tr>
+          </thead>
+          <tbody>
+            ${managerRows.map((row) => `
+              <tr>
+                <td><strong>${row.manager.name}</strong></td>
+                <td>${departmentNameById(row.manager.department_id)}</td>
+                <td>${formatMoney(row.plan)}</td>
+                <td>${formatMoney(row.income)}</td>
+                <td>${row.percent}%</td>
+                <td>${progressLine(row.percent)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminEvents(data) {
+  const events = filteredEvents(data.events || []);
+  return `
+    ${renderEventFilters(data.events || [])}
+    ${renderEventsTable(events, true)}
+  `;
+}
+
+function renderPlansSkeleton(data) {
+  return `
+    <div class="block-title">
+      <h3>Планы</h3>
+      <button id="openPlansModalBtn" class="secondary">Задать планы</button>
+    </div>
+    <div class="empty-state">
+      Скелет готов: здесь будет редактирование общего плана, долей отделов и индивидуальных планов менеджеров.
+      Сохранение подключим следующим шагом к backend-ручкам планов.
+    </div>
+    <div class="overview-section">
+      <h3>Текущие значения</h3>
+      <div class="grid cards">
+        ${metric("План компании", formatMoney(data.company_plan_amount))}
+        ${metric("Личный план менеджера", formatMoney(data.manager_personal_plan_amount))}
+        ${metric("Санжар", "2/3")}
+        ${metric("Рауфаль", "1/3")}
+      </div>
+    </div>
+  `;
+}
+
+function renderClosingSkeleton(data) {
+  return `
+    <div class="block-title">
+      <h3>Закрыть месяц</h3>
+    </div>
+    <div class="empty-state">
+      Здесь будет ввод расходов и закрытие месяца. По умолчанию расход делится: Санжар 2/3, Рауфаль 1/3.
+      Для каждой позиции будет выбор: по умолчанию / 100% Санжар / 100% Рауфаль / вручную.
+    </div>
+
+    <div class="overview-section">
+      <h3>Текущее закрытие</h3>
+      <div class="grid cards">
+        ${metric("Расходы компании", formatMoney(data.company_expenses_amount))}
+        ${metric("Санжар расходы", formatMoney((data.departments || [])[0]?.expenses_amount || 0))}
+        ${metric("Рауфаль расходы", formatMoney((data.departments || [])[1]?.expenses_amount || 0))}
+        ${metric("Статус", data.closing?.status || "Не закрыт")}
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminDashboard(data) {
+  state.adminData = data;
+  renderAdminTabs();
+
+  renderSummary([
+    ["План компании", formatMoney(data.company_plan_amount)],
+    ["Факт компании", formatMoney(data.company_fact_income_amount)],
+    ["Выполнение", `${data.company_completion_percent}%`],
+    ["Расходы", formatMoney(data.company_expenses_amount)],
+  ]);
+
+  $("dashboardTitle").textContent = "Админка";
+  $("dashboardHint").textContent = "Скелет вкладок v0.30";
+
+  if (state.activeAdminTab === "overview") {
+    $("dashboardContent").innerHTML = renderAdminOverview(data);
+  } else if (state.activeAdminTab === "events") {
+    $("dashboardContent").innerHTML = renderAdminEvents(data);
+  } else if (state.activeAdminTab === "requests") {
+    $("dashboardContent").innerHTML = renderPaymentRequestsTable(data.payment_requests || [], "Все заявки");
+  } else if (state.activeAdminTab === "plans") {
+    $("dashboardContent").innerHTML = renderPlansSkeleton(data);
+  } else if (state.activeAdminTab === "closing") {
+    $("dashboardContent").innerHTML = renderClosingSkeleton(data);
+  }
+
+  attachPaymentRequestActions();
+  attachFilters();
+  attachEventRows();
+  attachPlansModal();
+}
+
 function renderDepartmentDashboard(data, paymentRequests = []) {
+  $("adminTabs").classList.add("hidden");
   renderSummary([
     ["План отдела", formatMoney(data.plan_amount)],
     ["Факт", formatMoney(data.fact_income_amount)],
@@ -385,15 +722,17 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
       ${metric("Менеджеров", data.managers?.length || data.managers_count || 0)}
     </div>
     <div class="block-title"><h3>Мероприятия</h3></div>
-    ${renderEventsTable(data.events || [])}
+    ${renderEventsTable(data.events || [], true)}
     ${renderPaymentRequestsTable(requests, "Заявки отдела")}
   `;
 
   attachPaymentRequestActions();
   attachFilters();
+  attachEventRows();
 }
 
 function renderManagerDashboard(data, paymentRequests = []) {
+  $("adminTabs").classList.add("hidden");
   renderSummary([
     ["Личный план", formatMoney(data.personal_plan_amount)],
     ["Факт", formatMoney(data.fact_income_amount)],
@@ -412,55 +751,71 @@ function renderManagerDashboard(data, paymentRequests = []) {
       ${metric("Активных заявок", data.active_payment_requests_count)}
     </div>
     <div class="block-title"><h3>Мероприятия</h3></div>
-    ${renderEventsTable(data.events || [])}
+    ${renderEventsTable(data.events || [], true)}
     ${renderPaymentRequestsTable(paymentRequests, "Мои заявки")}
   `;
 
   attachPaymentRequestActions();
   attachFilters();
+  attachEventRows();
 }
 
-function renderAdminDashboard(data) {
-  renderSummary([
-    ["План компании", formatMoney(data.company_plan_amount)],
-    ["Факт компании", formatMoney(data.company_fact_income_amount)],
-    ["Выполнение", `${data.company_completion_percent}%`],
-    ["Расходы", formatMoney(data.company_expenses_amount)],
-  ]);
+function attachPlansModal() {
+  const btn = document.getElementById("openPlansModalBtn");
+  if (!btn) return;
 
-  $("dashboardTitle").textContent = "Админка";
-  $("dashboardHint").textContent = "Общая картина";
+  btn.addEventListener("click", () => {
+    const managers = getManagers();
+    $("plansModalBackdrop").classList.remove("hidden");
+    $("plansModalContent").innerHTML = `
+      <div class="form-grid">
+        <label>Общий план компании
+          <input value="${state.adminData?.company_plan_amount || ""}" />
+        </label>
+        <label>Доля Санжар, %
+          <input value="66.67" />
+        </label>
+        <label>Доля Рауфаль, %
+          <input value="33.33" />
+        </label>
+      </div>
 
-  $("dashboardContent").innerHTML = `
-    <h3>Отделы</h3>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Отдел</th><th>План</th><th>Факт</th><th>%</th><th>Расходы</th><th>Мероприятий</th></tr>
-        </thead>
-        <tbody>
-          ${(data.departments || []).map((dep) => `
-            <tr>
-              <td><strong>${dep.department_name}</strong></td>
-              <td>${formatMoney(dep.plan_amount)}</td>
-              <td>${formatMoney(dep.fact_income_amount)}</td>
-              <td>${dep.completion_percent}%</td>
-              <td>${formatMoney(dep.expenses_amount)}</td>
-              <td>${dep.events_count}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
+      <div class="divider"></div>
 
-    <div class="block-title"><h3>Мероприятия</h3></div>
-    ${renderEventDepartmentFilter(data.events || [])}
-    ${renderEventsTable(filteredEventsForAdmin(data.events || []))}
-    ${renderPaymentRequestsTable(data.payment_requests || [], "Все заявки")}
-  `;
+      <h3>Индивидуальные планы менеджеров</h3>
+      <p class="small-note">По умолчанию каждому менеджеру 1/8 общего плана. Сохранение подключим к backend следующим шагом.</p>
 
-  attachPaymentRequestActions();
-  attachFilters();
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Менеджер</th><th>Отдел</th><th>Процент от общего плана</th></tr></thead>
+          <tbody>
+            ${managers.map((manager) => `
+              <tr>
+                <td>${manager.name}</td>
+                <td>${departmentNameById(manager.department_id)}</td>
+                <td><input value="12.5" /></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="divider"></div>
+      <button class="secondary" disabled>Сохранение подключим следующим шагом</button>
+    `;
+  });
+}
+
+async function loadUsersForAdmin() {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "admin") return;
+
+  try {
+    state.users = await api("/users?include_inactive=false");
+  } catch (error) {
+    console.warn("Не удалось загрузить пользователей", error);
+    state.users = [];
+  }
 }
 
 async function loadDashboard() {
@@ -469,6 +824,7 @@ async function loadDashboard() {
   state.month = month;
 
   if (user.role === "admin") {
+    await loadUsersForAdmin();
     renderAdminDashboard(await api(`/admin-dashboard?month=${month}&include_drafts=true`));
     return;
   }
@@ -577,5 +933,13 @@ $("changePinOpenBtn").addEventListener("click", () => {
 });
 
 $("changePinBtn").addEventListener("click", changePin);
+
+$("eventModalCloseBtn").addEventListener("click", () => {
+  $("eventModalBackdrop").classList.add("hidden");
+});
+
+$("plansModalCloseBtn").addEventListener("click", () => {
+  $("plansModalBackdrop").classList.add("hidden");
+});
 
 boot();
