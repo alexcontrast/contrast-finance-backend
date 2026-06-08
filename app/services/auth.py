@@ -35,6 +35,10 @@ def native_pin_hash(pin: str, user_id: int) -> str:
 def verify_pin(user: User, pin: str) -> bool:
     pin = str(pin or "").strip()
 
+    # Native PIN takes priority after user changes PIN in the new system.
+    if user.auth_source == "native" and user.pin_hash:
+        return native_pin_hash(pin, user.id) == user.pin_hash
+
     if user.legacy_user_id and user.legacy_pin_hash:
         return legacy_apps_script_pin_hash(pin, user.legacy_user_id) == user.legacy_pin_hash
 

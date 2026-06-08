@@ -38,3 +38,14 @@ class AuthPermissionsRead(BaseModel):
     can_manage_users: bool
     can_view_department_dashboard: bool
     can_edit: bool
+
+
+
+class AuthChangePinRequest(BaseModel):
+    old_pin: str
+    new_pin: str
+
+
+class AuthChangePinRead(BaseModel):
+    ok: bool
+    message: str

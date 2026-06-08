@@ -8,6 +8,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
     AuthBootstrapAdminRequest,
+    AuthChangePinRead,
+    AuthChangePinRequest,
     AuthLoginRequest,
     AuthPermissionsRead,
     AuthTokenRead,
@@ -128,4 +130,45 @@ def bootstrap_admin(payload: AuthBootstrapAdminRequest, db: Session = Depends(ge
         access_token=token,
         token_type="bearer",
         user=user_to_auth_read(user),
+    )
+
+
+
+@router.patch("/change-pin", response_model=AuthChangePinRead)
+def change_pin(
+    payload: AuthChangePinRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    User changes own PIN.
+
+    Works for admin / manager / department_head / accountant.
+    Legacy users are switched to native PIN auth after successful change.
+    """
+    old_pin = str(payload.old_pin or "").strip()
+    new_pin = str(payload.new_pin or "").strip()
+
+    if len(new_pin) < 4:
+        raise HTTPException(status_code=400, detail="Новый PIN должен быть минимум 4 символа")
+
+    if old_pin == new_pin:
+        raise HTTPException(status_code=400, detail="Новый PIN должен отличаться от старого")
+
+    if not verify_pin(current_user, old_pin):
+        raise HTTPException(status_code=400, detail="Старый PIN неверный")
+
+    current_user.pin_hash = native_pin_hash(new_pin, current_user.id)
+    current_user.auth_source = "native"
+
+    # Keep legacy_user_id for history/mapping, but stop using old legacy PIN.
+    current_user.legacy_pin_hash = None
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    return AuthChangePinRead(
+        ok=True,
+        message="PIN успешно изменён",
     )
