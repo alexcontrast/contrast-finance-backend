@@ -9,6 +9,8 @@ const state = {
   eventStatusFilter: "all",
   eventSearch: "",
   activeAdminTab: "overview",
+  activeManagerTab: "events",
+  selectedManagerEventId: null,
   adminData: null,
   users: [],
 };
@@ -125,6 +127,43 @@ function paymentMethodLabel(method) {
     "Налик": "Налик",
     "Самозанятый": "Самозанятый",
   }[method] || method || "";
+}
+
+
+function calcTypeLabel(type) {
+  return {
+    ip_contrast_event: "ИП Contrast Event",
+    our_no_vat: "ОУР без НДС",
+    simplified: "Упрощенка",
+    cash: "Нал",
+  }[type] || type || "";
+}
+
+
+function customerPaymentLabel(type) {
+  return calcTypeLabel(type);
+}
+
+function getSelectedManagerEvent(data) {
+  const events = data?.events || [];
+  if (!events.length) return null;
+
+  if (state.selectedManagerEventId) {
+    const selected = events.find((event) => Number(event.id) === Number(state.selectedManagerEventId));
+    if (selected) return selected;
+  }
+
+  return events[0];
+}
+
+function managerCardMetric(label, value) {
+  return `<span class="mini-pill"><strong>${label}:</strong> ${value}</span>`;
+}
+
+function normalizeNumberInput(value) {
+  const cleaned = String(value || "").replace(/\s/g, "").replace(",", ".");
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : 0;
 }
 
 async function api(path, options = {}) {
@@ -1136,35 +1175,517 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
   attachEventRows();
 }
 
-function renderManagerDashboard(data, paymentRequests = []) {
-  $("adminTabs").classList.add("hidden");
-  renderSummary([
-    ["Личный план", formatMoney(data.personal_plan_amount)],
-    ["Факт", formatMoney(data.fact_income_amount)],
-    ["Выполнение", `${data.completion_percent}%`],
-    ["Остаток", formatMoney(data.remaining_to_plan)],
-  ]);
 
-  $("dashboardTitle").textContent = `Кабинет менеджера: ${data.manager_name}`;
-  $("dashboardHint").textContent = data.department_name || "";
 
-  $("dashboardContent").innerHTML = `
-    <div class="grid cards">
-      ${metric("Мероприятий", data.events_count)}
-      ${metric("Черновиков", data.drafts_count)}
-      ${metric("Заявок", data.payment_requests_count)}
-      ${metric("Активных заявок", data.active_payment_requests_count)}
+function renderManagerTopActions(data) {
+  return `
+    <div class="manager-top-actions">
+      <button class="secondary" id="managerCreateEventShortcut">+ Создать мероприятие</button>
     </div>
-    <div class="block-title"><h3>Мероприятия</h3></div>
-    ${renderEventsTable(data.events || [], true)}
-    ${renderPaymentRequestsTable(paymentRequests, "Мои заявки")}
   `;
-
-  attachPaymentRequestActions();
-  attachFilters();
-  attachEventRows();
 }
 
+function renderManagerPlanPanel(data) {
+  const plan = asNumber(data.personal_plan_amount);
+  const fact = asNumber(data.fact_income_amount);
+  const percent = plan > 0 ? Math.round((fact / plan) * 10000) / 100 : 0;
+  const remaining = Math.max(0, plan - fact);
+  const monthLabel = MONTHS_RU.find(([m]) => m === state.month.slice(5, 7))?.[1] || state.month;
+
+  return `
+    <section class="manager-plan-panel">
+      <div>
+        <div class="overview-label">Цель на месяц</div>
+        <h3>${monthLabel} ${state.month.slice(0, 4)}</h3>
+      </div>
+      <div class="manager-plan-main">
+        <div class="manager-plan-row">
+          <strong>Факт: ${formatMoney(fact)} ₸</strong>
+          <strong>Цель: ${formatMoney(plan)} ₸</strong>
+          <strong>${percent}%</strong>
+        </div>
+        ${progressLine(percent)}
+        <div class="muted">Осталось: ${formatMoney(remaining)} ₸ · мероприятий: ${data.events_count || 0}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderManagerEventList(data) {
+  const events = data.events || [];
+  const selected = getSelectedManagerEvent(data);
+
+  return `
+    <aside class="manager-sidebar-card">
+      <h3>Мероприятия</h3>
+      <p class="muted">Проекты за выбранный месяц</p>
+
+      <div class="manager-month-row">
+        <label>Месяц
+          <select id="managerMonthSelect">
+            ${MONTHS_RU.map(([value, label]) => `
+              <option value="${value}" ${value === state.month.slice(5, 7) ? "selected" : ""}>${label}</option>
+            `).join("")}
+          </select>
+        </label>
+        <label>Год
+          <select id="managerYearSelect">
+            ${Array.from({ length: 4 }, (_, i) => new Date().getFullYear() - 1 + i).map((year) => `
+              <option value="${year}" ${String(year) === state.month.slice(0, 4) ? "selected" : ""}>${year}</option>
+            `).join("")}
+          </select>
+        </label>
+      </div>
+
+      <div class="manager-mini-list">
+        ${events.length ? events.map((event) => `
+          <button class="manager-mini-card ${Number(selected?.id) === Number(event.id) ? "active" : ""}" data-manager-event-id="${event.id}">
+            <div class="mini-card-pills">
+              ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
+              ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
+            </div>
+            <strong>${event.title || "Без названия"}</strong>
+            <span>${event.client_name || ""} · ${event.event_date || ""}</span>
+            <small>${customerPaymentLabel(event.client_calc_type)}</small>
+            <em>${statusLabel(event.status)}</em>
+          </button>
+        `).join("") : `<div class="empty-state">Мероприятий пока нет.</div>`}
+      </div>
+    </aside>
+  `;
+}
+
+async function renderManagerEventDetail(eventId) {
+  const holder = document.getElementById("managerEventDetail");
+  if (!holder) return;
+
+  if (!eventId) {
+    holder.innerHTML = `
+      <div class="manager-empty-detail">
+        <div class="empty-icon">▦</div>
+        <h3>Выбери мероприятие</h3>
+        <p class="muted">Создай новое или открой черновик слева.</p>
+      </div>
+    `;
+    return;
+  }
+
+  holder.innerHTML = `<div class="empty-state">Загрузка мероприятия...</div>`;
+
+  try {
+    const [event, items, summary] = await Promise.all([
+      api(`/events/${eventId}`),
+      api(`/events/${eventId}/items`),
+      api(`/events/${eventId}/summary`),
+    ]);
+
+    holder.innerHTML = renderManagerEventCard(event, items, summary);
+    attachManagerCreateWorkspaceActions();
+  } catch (error) {
+    holder.innerHTML = `<div class="error">${error.message}</div>`;
+  }
+}
+
+function renderManagerEventCard(event, items = [], summary = null) {
+  const eventId = event.id;
+  const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
+
+  return `
+    <section class="manager-event-card">
+      <div class="manager-event-head">
+        <div>
+          <div class="overview-label">Карточка мероприятия</div>
+          <h2>${event.title}</h2>
+          <span class="status ${event.status}">${statusLabel(event.status)}</span>
+        </div>
+        <div class="inline-actions">
+          <button class="secondary" disabled>Оплатить</button>
+          <button class="ghost" disabled>Передать</button>
+          <button class="ghost" disabled>Соавтор</button>
+        </div>
+      </div>
+
+      <div class="manager-event-fields">
+        <label>Тип расчёта с заказчиком
+          <select disabled><option>${customerPaymentLabel(event.client_calc_type)}</option></select>
+        </label>
+        <label>Дата мероприятия
+          <input value="${event.event_date || ""}" disabled />
+        </label>
+        <label>Название заказчика
+          <input value="${event.client_name || ""}" disabled />
+        </label>
+        <label>Название мероприятия
+          <input value="${event.title || ""}" disabled />
+        </label>
+        <label>Комиссия агентства
+          <input value="${formatMoney(event.agency_commission_amount || 0)}" disabled />
+        </label>
+        <label>Налоги, %
+          <input value="${summary?.tax_rate_percent ?? 0}" disabled />
+        </label>
+      </div>
+
+      <div class="estimate-tabs">
+        <button class="ghost" disabled>Внешняя смета</button>
+        <button class="tab-btn active" disabled>Внутренняя смета</button>
+      </div>
+
+      <div class="manager-add-position-row">
+        <button class="secondary" id="toggleManagerAddItemBtn">+ Добавить позицию</button>
+      </div>
+
+      <div id="managerAddItemBox" class="card manager-create-card hidden">
+        <h3>Добавить позицию</h3>
+        <div class="form-grid">
+          <label>Позиция
+            <input id="newItemName" placeholder="Например: Ведущий" />
+          </label>
+          <label>Тип
+            <select id="newItemType">
+              <option value="regular">Обычная</option>
+              <option value="coordinator">Координатор</option>
+            </select>
+          </label>
+          <label>Сумма по смете
+            <input id="newItemExternalAmount" value="0" />
+          </label>
+          <label>Факт
+            <input id="newItemFactAmount" value="0" />
+          </label>
+          <label>Способ оплаты
+            <select id="newItemPaymentMethod">
+              <option value="cash">Налик</option>
+              <option value="card">На карту</option>
+              <option value="self_employed">Самозанятый</option>
+              <option value="invoice">По счету</option>
+            </select>
+          </label>
+          <label>Налоговый статус для По счету
+            <select id="newItemTaxStatus">
+              <option value="">Не нужно</option>
+              <option value="our_vat">ОУР с НДС</option>
+              <option value="our_no_vat">ОУР без НДС</option>
+              <option value="simplified">Упрощенка / СНР</option>
+              <option value="not_found">Не найден</option>
+            </select>
+          </label>
+        </div>
+        <button id="addManagerEventItemBtn" data-event-id="${eventId}">Добавить позицию</button>
+      </div>
+
+      <h3>Внутренняя смета</h3>
+      <div class="table-wrap estimate-table-wrap">
+        <table class="estimate-table">
+          <thead>
+            <tr>
+              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>БИН/ИИН</th><th>КГД</th><th>НДС</th><th>Вычеты</th><th>Оплачено</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${shownItems.map((item) => `
+              <tr>
+                <td><strong>${item.external_name}</strong></td>
+                <td>${formatMoney(item.external_amount)}</td>
+                <td>${formatMoney(item.amount_fact)}</td>
+                <td>${paymentMethodLabel(item.payment_method)}</td>
+                <td>${item.iin_bin || "—"}</td>
+                <td>${item.tax_check_status ? "✓" : "—"}</td>
+                <td>${formatMoney(itemVatVisible(item))}</td>
+                <td>${formatMoney(itemDeductionVisible(item))}</td>
+                <td>${formatMoney(item.paid_amount)}</td>
+              </tr>
+            `).join("")}
+            ${summary ? `
+              <tr class="manager-salary-row">
+                <td><strong>Менеджер 21%</strong></td>
+                <td>0</td>
+                <td>${formatMoney(summary.manager_salary)}</td>
+                <td>ЗП менеджера</td>
+                <td>—</td>
+                <td>—</td>
+                <td>0</td>
+                <td>0</td>
+                <td>${formatMoney(managerSalaryPaidValue(summary))}</td>
+              </tr>
+            ` : ""}
+          </tbody>
+        </table>
+      </div>
+
+      ${summary ? `
+        <div class="manager-summary-grid">
+          ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
+          ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(summary.taxes_total ?? 0))}
+          ${metric("НДС", formatMoney(summary.vat_to_pay ?? summary.vat_total))}
+          ${metric("Доход 21%", formatMoney(summary.manager_salary))}
+          ${metric("Координаторские", formatMoney(summary.coordinator_company_share || 0))}
+          ${metric("Итого менеджеру", formatMoney(summary.manager_salary))}
+          <div class="card metric income-metric">
+            <div class="label">Доход компании</div>
+            <div class="value">${formatMoney(summary.final_company_income)}</div>
+          </div>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function renderManagerCreateModal() {
+  return `
+    <div class="modal-head">
+      <div>
+        <div class="overview-label">Новое мероприятие</div>
+        <h2>Создать мероприятие</h2>
+      </div>
+      <button id="managerCreateModalCloseBtn" class="ghost">Закрыть</button>
+    </div>
+
+    <div class="form-grid">
+      <label>Заказчик
+        <input id="newEventClientName" placeholder="Название заказчика" />
+      </label>
+      <label>Название мероприятия
+        <input id="newEventTitle" placeholder="Например: Корпоратив" />
+      </label>
+      <label>Дата мероприятия
+        <input id="newEventDate" type="date" />
+      </label>
+      <label>Тип расчёта с заказчиком
+        <select id="newEventCalcType">
+          <option value="ip_contrast_event">ИП Contrast Event</option>
+          <option value="our_no_vat">ОУР без НДС</option>
+          <option value="simplified">Упрощенка</option>
+          <option value="cash">Нал</option>
+        </select>
+      </label>
+      <label>Комиссия агентства
+        <input id="newEventAgencyCommission" value="0" />
+      </label>
+      <label>Банк+налоги, % для Упрощенки
+        <input id="newEventSimplifiedPercent" value="0" />
+      </label>
+    </div>
+
+    <div class="divider"></div>
+    <button id="createManagerEventBtn">Создать мероприятие</button>
+  `;
+}
+
+function openManagerCreateModal() {
+  $("plansModalBackdrop").classList.remove("hidden");
+  $("plansModalContent").innerHTML = renderManagerCreateModal();
+  attachManagerCreateForm();
+
+  const close = document.getElementById("managerCreateModalCloseBtn");
+  if (close) close.addEventListener("click", () => $("plansModalBackdrop").classList.add("hidden"));
+}
+
+function renderManagerDashboardLayout(data) {
+  return `
+    ${renderManagerTopActions(data)}
+    ${renderManagerPlanPanel(data)}
+    <div class="manager-workspace">
+      ${renderManagerEventList(data)}
+      <main id="managerEventDetail" class="manager-detail-card">
+        <div class="manager-empty-detail">
+          <div class="empty-icon">▦</div>
+          <h3>Выбери мероприятие</h3>
+          <p class="muted">Создай новое или открой черновик слева.</p>
+        </div>
+      </main>
+    </div>
+  `;
+}
+
+function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount) {
+  const base = asNumber(amountFact) > 0 ? asNumber(amountFact) : asNumber(externalAmount);
+
+  if (paymentMethod === "invoice" && taxStatus === "our_vat") {
+    const amountWithoutVat = base / 1.16;
+    return {
+      vat_amount: Math.round((base - amountWithoutVat) * 100) / 100,
+      deduction_amount: Math.round(amountWithoutVat * 0.10 * 100) / 100,
+    };
+  }
+
+  if (paymentMethod === "invoice" && taxStatus === "our_no_vat") {
+    return {
+      vat_amount: 0,
+      deduction_amount: Math.round(base * 0.10 * 100) / 100,
+    };
+  }
+
+  if (paymentMethod === "self_employed") {
+    return {
+      vat_amount: 0,
+      deduction_amount: Math.round(base * 0.10 * 100) / 100,
+    };
+  }
+
+  return { vat_amount: 0, deduction_amount: 0 };
+}
+
+function attachManagerCreateWorkspaceActions() {
+  const toggleBtn = document.getElementById("toggleManagerAddItemBtn");
+  const addBox = document.getElementById("managerAddItemBox");
+  if (toggleBtn && addBox) {
+    toggleBtn.addEventListener("click", () => addBox.classList.toggle("hidden"));
+  }
+
+  const addBtn = document.getElementById("addManagerEventItemBtn");
+  if (!addBtn) return;
+
+  addBtn.addEventListener("click", async () => {
+    const eventId = addBtn.getAttribute("data-event-id");
+    const name = document.getElementById("newItemName").value.trim();
+    const itemType = document.getElementById("newItemType").value;
+    const externalAmount = normalizeNumberInput(document.getElementById("newItemExternalAmount").value);
+    const factAmount = normalizeNumberInput(document.getElementById("newItemFactAmount").value);
+    const paymentMethod = document.getElementById("newItemPaymentMethod").value;
+    const taxStatus = document.getElementById("newItemTaxStatus").value;
+
+    if (!name) {
+      alert("Укажи название позиции");
+      return;
+    }
+
+    const taxFields = calcItemTaxFields(paymentMethod, taxStatus, factAmount, externalAmount);
+
+    await withLoading(async () => {
+      await api(`/events/${eventId}/items`, {
+        method: "POST",
+        body: JSON.stringify({
+          item_type: itemType,
+          external_name: name,
+          external_price: externalAmount,
+          external_quantity: 1,
+          external_days: 1,
+          external_note: null,
+          amount_fact: factAmount,
+          paid_amount: 0,
+          payment_method: paymentMethod,
+          iin_bin: null,
+          iin_bin_locked: paymentMethod === "invoice" && Boolean(taxStatus),
+          tax_check_status: paymentMethod === "invoice" ? taxStatus : null,
+          vat_amount: taxFields.vat_amount,
+          deduction_amount: taxFields.deduction_amount,
+          internal_note: null,
+          sort_order: itemType === "coordinator" ? -100 : 0,
+        }),
+      });
+
+      await renderManagerEventDetail(eventId);
+      await loadDashboard();
+    }, "Добавляем позицию…");
+  });
+}
+
+function attachManagerCreateForm() {
+  const createBtn = document.getElementById("createManagerEventBtn");
+  if (!createBtn) return;
+
+  createBtn.addEventListener("click", async () => {
+    const clientName = document.getElementById("newEventClientName").value.trim();
+    const title = document.getElementById("newEventTitle").value.trim();
+    const eventDate = document.getElementById("newEventDate").value;
+    const calcType = document.getElementById("newEventCalcType").value;
+    const agencyCommission = normalizeNumberInput(document.getElementById("newEventAgencyCommission").value);
+    const simplifiedPercent = normalizeNumberInput(document.getElementById("newEventSimplifiedPercent").value);
+
+    if (!clientName || !title || !eventDate) {
+      alert("Заполни заказчика, название и дату");
+      return;
+    }
+
+    await withLoading(async () => {
+      const user = state.bootstrap.user;
+      const event = await api("/events", {
+        method: "POST",
+        body: JSON.stringify({
+          client_name: clientName,
+          title,
+          event_date: eventDate,
+          department_id: user.department_id,
+          manager_id: user.id,
+          client_calc_type: calcType,
+          manager_percent: 21,
+          agency_commission_amount: agencyCommission,
+          agency_commission_spread_enabled: false,
+          simplified_bank_tax_percent: calcType === "simplified" ? simplifiedPercent : 0,
+        }),
+      });
+
+      state.selectedManagerEventId = event.id;
+      $("plansModalBackdrop").classList.add("hidden");
+      await loadDashboard();
+    }, "Создаём мероприятие…");
+  });
+}
+
+function attachManagerDashboardActions() {
+  const createButtons = [
+    document.getElementById("managerCreateEventShortcut"),
+    document.querySelector(".manager-top-actions button"),
+  ].filter(Boolean);
+
+  createButtons.forEach((button) => {
+    button.addEventListener("click", openManagerCreateModal);
+  });
+
+  document.querySelectorAll("[data-manager-event-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-manager-event-id");
+      state.selectedManagerEventId = Number(eventId);
+
+      document.querySelectorAll("[data-manager-event-id]").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+
+      await withLoading(async () => renderManagerEventDetail(eventId), "Открываем мероприятие…");
+    });
+  });
+
+  const monthSelect = document.getElementById("managerMonthSelect");
+  const yearSelect = document.getElementById("managerYearSelect");
+  [monthSelect, yearSelect].forEach((select) => {
+    if (!select) return;
+
+    select.addEventListener("change", async () => {
+      const month = monthSelect?.value || state.month.slice(5, 7);
+      const year = yearSelect?.value || state.month.slice(0, 4);
+      state.month = `${year}-${month}`;
+
+      const globalMonth = document.getElementById("monthSelect");
+      const globalYear = document.getElementById("yearSelect");
+      if (globalMonth) globalMonth.value = month;
+      if (globalYear) globalYear.value = year;
+
+      await withLoading(loadDashboard, "Загружаем месяц…");
+    });
+  });
+}
+
+function renderManagerDashboard(data, paymentRequests = []) {
+  state.managerData = data;
+  state.managerPaymentRequests = paymentRequests || [];
+
+  $("adminTabs").classList.add("hidden");
+  renderSummary([]);
+
+  $("dashboardTitle").textContent = "Мои мероприятия";
+  $("dashboardHint").textContent = `${data.manager_name} · ${data.department_name || ""}`;
+
+  $("dashboardContent").innerHTML = renderManagerDashboardLayout(data);
+
+  attachPaymentRequestActions();
+  attachManagerDashboardActions();
+
+  const selected = getSelectedManagerEvent(data);
+  if (selected) {
+    state.selectedManagerEventId = selected.id;
+    renderManagerEventDetail(selected.id);
+  }
+}
 function attachPlansModal() {
   const btn = document.getElementById("openPlansModalBtn");
   if (!btn) return;
@@ -1264,7 +1785,7 @@ async function boot() {
     $("pageTitle").textContent = roleLabel(user.role);
     $("pageSubtitle").textContent = user.role === "admin"
       ? "Проверка мероприятий, заявки, планы и закрытие месяца"
-      : "Финансовая панель мероприятий";
+      : `${user.name} · отдел ${departmentNameById(user.department_id) || ""}`;
     $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
     setupMonthYearSelectors();
     attachMonthYearSelectors();

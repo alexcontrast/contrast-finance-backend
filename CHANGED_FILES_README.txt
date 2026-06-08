@@ -1,10 +1,9 @@
-Contrast Finance Backend v0.33.0 — changed files only
+Contrast Finance Backend v0.35.0 — changed files only
 
 Changed/added files:
 - README.md
-- app/api/routes/event_summary.py
 - app/core/config.py
-- app/schemas/event_summary.py
-- app/services/event_calculator.py
 - app/web/app.js
+- app/web/contrast-logo.jpg
 - app/web/index.html
+- app/web/styles.css
