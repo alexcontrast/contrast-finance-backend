@@ -275,6 +275,24 @@ function normalizeNumberInput(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+
+function setButtonLoading(button, isLoading, loadingText = "…") {
+  if (!button) return;
+  if (isLoading) {
+    button.dataset.originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = loadingText;
+    button.classList.add("is-loading");
+    return;
+  }
+
+  button.disabled = false;
+  button.textContent = button.dataset.originalText || button.textContent;
+  button.classList.remove("is-loading");
+  delete button.dataset.originalText;
+}
+
+
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
@@ -2687,7 +2705,6 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2705,7 +2722,6 @@ showDraftSavedHint();
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -2880,7 +2896,6 @@ function attachManagerDashboardActions() {
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2896,7 +2911,6 @@ showDraftSavedHint();
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -3046,7 +3060,9 @@ async function boot() {
 }
 
 async function login() {
+  const loginButton = $("loginBtn");
   $("loginError").classList.add("hidden");
+  setButtonLoading(loginButton, true, "Входим…");
 
   try {
     const data = await api("/auth/login", {
@@ -3064,6 +3080,7 @@ async function login() {
   } catch (error) {
     $("loginError").textContent = error.message;
     $("loginError").classList.remove("hidden");
+    setButtonLoading(loginButton, false);
   }
 }
 
@@ -3088,7 +3105,7 @@ async function changePin() {
   }
 }
 
-$("loginBtn").addEventListener("click", login);
+$("loginBtn").onclick = login;
 $("loginPin").addEventListener("keydown", (event) => {
   if (event.key === "Enter") login();
 });
@@ -3334,33 +3351,6 @@ async function api(path, options = {}) {
   return response.json();
 }
 
-
-let loadingCounter = 0;
-
-function setLoading(isLoading, text = "Обновляем данные…") {
-  const overlay = document.getElementById("loadingOverlay");
-  if (!overlay) return;
-
-  if (isLoading) {
-    loadingCounter += 1;
-    const span = overlay.querySelector("span");
-    if (span) span.textContent = text;
-    overlay.classList.remove("hidden");
-    return;
-  }
-
-  loadingCounter = Math.max(0, loadingCounter - 1);
-  if (loadingCounter === 0) overlay.classList.add("hidden");
-}
-
-async function withLoading(task, text = "Обновляем данные…") {
-  setLoading(true, text);
-  try {
-    return await task();
-  } finally {
-    setLoading(false);
-  }
-}
 
 function eventById(eventId) {
   const data = state.adminData;
@@ -5717,7 +5707,6 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -5735,7 +5724,6 @@ showDraftSavedHint();
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -5899,7 +5887,6 @@ function attachManagerDashboardActions() {
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -5915,7 +5902,6 @@ showDraftSavedHint();
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         showDraftSavedHint();
-showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -6107,7 +6093,7 @@ async function changePin() {
   }
 }
 
-$("loginBtn").addEventListener("click", login);
+$("loginBtn").onclick = login;
 $("loginPin").addEventListener("keydown", (event) => {
   if (event.key === "Enter") login();
 });
