@@ -169,13 +169,18 @@ def update_my_profile(
     if not name:
         raise HTTPException(status_code=400, detail="Имя не может быть пустым")
 
-    if payload.department_id is not None:
-        department = db.get(Department, payload.department_id)
-        if department is None or not department.is_active:
-            raise HTTPException(status_code=400, detail="Отдел не найден")
-        current_user.department_id = department.id
-    else:
-        current_user.department_id = None
+    if payload.department_id is None:
+        raise HTTPException(status_code=400, detail="Выбери отдел")
+
+    department = db.get(Department, payload.department_id)
+    if department is None or not department.is_active:
+        raise HTTPException(status_code=400, detail="Отдел не найден")
+
+    department_name = str(department.name or "").lower()
+    if "санжар" not in department_name and "рауф" not in department_name:
+        raise HTTPException(status_code=400, detail="Можно выбрать только отдел Санжар или Рауфаль")
+
+    current_user.department_id = department.id
 
     current_user.name = name
     current_user.phone = clean_optional_text(payload.phone)

@@ -519,6 +519,40 @@ function injectManagerUxStyles() {
       margin-top: 16px;
       flex-wrap: wrap;
     }
+
+
+    .header-subtitle {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .header-profile-text {
+      color: rgba(30, 35, 25, .72);
+      font-weight: 800;
+    }
+
+    .header-profile-edit {
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      border: 1px solid rgba(80, 210, 40, .34);
+      background: rgba(80, 210, 40, .10);
+      color: #245f18;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .header-profile-edit:hover {
+      border-color: rgba(80, 210, 40, .72);
+      box-shadow: 0 0 0 3px rgba(80, 210, 40, .12);
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1127,6 +1161,46 @@ function attachAuthTabs() {
     button.onclick = () => setAuthMode(button.getAttribute("data-auth-mode"));
   });
 }
+
+
+function managerEditableDepartments() {
+  const departments = managerEditableDepartments();
+  const filtered = departments.filter((department) => {
+    const name = String(department.name || "").toLowerCase();
+    return name.includes("санжар") || name.includes("рауф");
+  });
+  return filtered.length ? filtered : departments.filter((department) => department.is_active !== false);
+}
+
+function renderHeaderProfile(user) {
+  if (!user) return "";
+
+  const departmentName = departmentNameById(user.department_id) || "";
+  const parts = [
+    user.name || "",
+    departmentName ? `отдел ${departmentName}` : "",
+    user.phone || "",
+    user.email || "",
+  ].filter(Boolean);
+
+  return `
+    <span class="header-profile-text">${parts.join(" · ")}</span>
+    ${user.role === "manager" ? `<button class="header-profile-edit" id="headerProfileEditBtn" type="button" title="Редактировать данные">✎</button>` : ""}
+  `;
+}
+
+function updateHeaderUserInfo(user) {
+  if (!user) return;
+  $("pageTitle").textContent = roleLabel(user.role);
+  $("pageSubtitle").innerHTML = user.role === "admin"
+    ? "Проверка мероприятий, заявки, планы и закрытие месяца"
+    : renderHeaderProfile(user);
+  $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
+
+  const editBtn = document.getElementById("headerProfileEditBtn");
+  if (editBtn) editBtn.addEventListener("click", openManagerProfileModal);
+}
+
 
 function showLogin() {
   $("loginScreen").classList.remove("hidden");
@@ -1887,12 +1961,9 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
 
 
 function renderManagerTopActions(data) {
-  const user = state.bootstrap?.user || {};
   return `
     <div class="manager-top-actions">
       <button class="secondary" id="managerCreateEventShortcut">+ Создать мероприятие</button>
-      <button class="ghost" id="managerProfileEditBtn" type="button">✎ Данные менеджера</button>
-      <span class="manager-profile-mini">${user.name || ""}${user.phone ? ` · ${user.phone}` : ""}${user.email ? ` · ${user.email}` : ""}</span>
     </div>
   `;
 }
@@ -3926,9 +3997,8 @@ function renderManagerProfileModal(user) {
         </label>
         <label>Отдел
           <select id="profileDepartmentInput">
-            <option value="">Без отдела</option>
-            ${departments.map((department) => `
-              <option value="${department.id}" ${Number(user.department_id) === Number(department.id) ? "selected" : ""}>${department.name}</option>
+            ${departments.map((department, index) => `
+              <option value="${department.id}" ${Number(user.department_id) === Number(department.id) || (!user.department_id && index === 0) ? "selected" : ""}>${department.name}</option>
             `).join("")}
           </select>
         </label>
@@ -3970,13 +4040,12 @@ function openManagerProfileModal() {
           name: $("profileNameInput").value,
           phone: $("profilePhoneInput").value,
           email: $("profileEmailInput").value,
-          department_id: $("profileDepartmentInput").value ? Number($("profileDepartmentInput").value) : null,
+          department_id: Number($("profileDepartmentInput").value),
         }),
       });
 
       state.bootstrap.user = updatedUser;
-      $("pageSubtitle").textContent = `${updatedUser.name} · отдел ${departmentNameById(updatedUser.department_id) || ""}`;
-      $("userBadge").textContent = `${updatedUser.name} · ${roleLabel(updatedUser.role)}`;
+      updateHeaderUserInfo(updatedUser);
 
       if (message) message.textContent = "Данные сохранены";
       close();
@@ -3999,9 +4068,6 @@ function attachManagerDashboardActions() {
   createButtons.forEach((button) => {
     button.addEventListener("click", openManagerCreateModal);
   });
-
-  const profileButton = document.getElementById("managerProfileEditBtn");
-  if (profileButton) profileButton.addEventListener("click", openManagerProfileModal);
 
   document.querySelectorAll("[data-manager-event-id]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -4163,11 +4229,7 @@ async function boot() {
     showDashboardShell();
 
     const user = state.bootstrap.user;
-    $("pageTitle").textContent = roleLabel(user.role);
-    $("pageSubtitle").textContent = user.role === "admin"
-      ? "Проверка мероприятий, заявки, планы и закрытие месяца"
-      : `${user.name} · отдел ${departmentNameById(user.department_id) || ""}`;
-    $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
+    updateHeaderUserInfo(user);
 
     const pinBtn = document.getElementById("changePinOpenBtn");
     const logoutBtn = document.getElementById("logoutBtn");
@@ -4225,9 +4287,57 @@ async function login() {
   }
 }
 
+
+function openChangePinModal() {
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  backdrop.classList.remove("hidden");
+  title.textContent = "Смена PIN";
+  content.innerHTML = `
+    <div class="profile-modal-content">
+      <h3>Смена PIN</h3>
+      <p class="muted">Укажи старый PIN и новый PIN минимум из 4 цифр.</p>
+
+      <div class="form-grid">
+        <label>Старый PIN
+          <input id="pinOldInput" type="password" inputmode="numeric" autocomplete="current-password" />
+        </label>
+        <label>Новый PIN
+          <input id="pinNewInput" type="password" inputmode="numeric" autocomplete="new-password" />
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button class="secondary" id="pinSaveBtn" type="button">Сменить PIN</button>
+        <button class="ghost" id="pinCancelBtn" type="button">Отмена</button>
+      </div>
+      <div id="pinMessage" class="muted"></div>
+    </div>
+  `;
+
+  $("pinCancelBtn")?.addEventListener("click", () => backdrop.classList.add("hidden"));
+  $("pinSaveBtn")?.addEventListener("click", changePin);
+
+  ["pinOldInput", "pinNewInput"].forEach((id) => {
+    const input = $(id);
+    if (!input) return;
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") changePin();
+    });
+  });
+
+  $("pinOldInput")?.focus();
+}
+
+
 async function changePin() {
-  const msg = $("changePinMessage");
-  const button = $("changePinBtn");
+  const msg = $("pinMessage") || $("changePinMessage");
+  const button = $("pinSaveBtn") || $("changePinBtn");
+  const oldInput = $("pinOldInput") || $("oldPin");
+  const newInput = $("pinNewInput") || $("newPin");
   if (msg) msg.textContent = "";
 
   try {
@@ -4235,14 +4345,18 @@ async function changePin() {
     const data = await api("/auth/change-pin", {
       method: "PATCH",
       body: JSON.stringify({
-        old_pin: $("oldPin").value,
-        new_pin: $("newPin").value,
+        old_pin: oldInput?.value || "",
+        new_pin: newInput?.value || "",
       }),
     });
 
     if (msg) msg.textContent = data.message || "PIN изменён";
-    $("oldPin").value = "";
-    $("newPin").value = "";
+    if (oldInput) oldInput.value = "";
+    if (newInput) newInput.value = "";
+
+    setTimeout(() => {
+      $("eventModalBackdrop")?.classList.add("hidden");
+    }, 450);
   } catch (error) {
     if (msg) msg.textContent = error.message;
   } finally {
@@ -4284,11 +4398,10 @@ $("reloadBtn").addEventListener("click", () => {
   withLoading(loadDashboard, "Обновляем данные…").catch((error) => alert(error.message));
 });
 
-$("changePinOpenBtn").addEventListener("click", () => {
-  $("changePinCard").classList.toggle("hidden");
-});
+$("changePinOpenBtn").addEventListener("click", openChangePinModal);
 
-$("changePinBtn").addEventListener("click", changePin);
+const legacyChangePinBtn = $("changePinBtn");
+if (legacyChangePinBtn) legacyChangePinBtn.addEventListener("click", changePin);
 
 $("eventModalCloseBtn").addEventListener("click", () => {
   $("eventModalBackdrop").classList.add("hidden");
