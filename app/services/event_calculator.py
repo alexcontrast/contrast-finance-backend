@@ -170,9 +170,14 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
 
     deductions_total = sum((item_deduction(item) for item in regular_items), Decimal("0.00"))
 
-    # Внутренний налог считается от клиентской базы без НДС:
-    # позиции + агентская комиссия. Координатор входит в налоговую базу, но не в базу 21%.
-    internal_tax_amount = q0(calculate_internal_tax(event, client_base_amount))
+    # Внутренний налог.
+    # Для ИП Contrast Event / ОУР без НДС: база без клиентского НДС = позиции + агентская комиссия.
+    # Для Упрощенки: 5% считаем от оборота, то есть позиции + агентская комиссия + банк/налоги.
+    if event.client_calc_type == "simplified":
+        internal_tax_amount = q0(calculate_internal_tax(event, turnover_with_vat))
+    else:
+        internal_tax_amount = q0(calculate_internal_tax(event, client_base_amount))
+
     simplified_bank_tax_amount = simplified_markup_amount
 
     # Комиссия обычных позиций = смета обычных позиций - факт обычных позиций.
@@ -230,7 +235,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "contractor_vat_credit": q0(contractor_vat_credit),
         "vat_to_pay": q0(vat_to_pay),
         "tax_rate_percent": q(tax_rate_percent(event)),
-        "tax_base_amount": q0(client_base_amount),
+        "tax_base_amount": q0(turnover_with_vat if event.client_calc_type == "simplified" else client_base_amount),
         "taxes_total": q0(internal_tax_amount),
         "taxes_net": q0(internal_tax_amount - deductions_total),
         "vat_net": q0(vat_to_pay),

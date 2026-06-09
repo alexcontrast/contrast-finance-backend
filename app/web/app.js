@@ -1402,7 +1402,8 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
   const taxRate = event?.client_calc_type === "ip_contrast_event" || event?.client_calc_type === "our_no_vat"
     ? 12
     : (event?.client_calc_type === "simplified" ? 5 : 0);
-  const taxes = Math.round(clientBase * taxRate / 100);
+  const taxBase = event?.client_calc_type === "simplified" ? turnover : clientBase;
+  const taxes = Math.round(taxBase * taxRate / 100);
   const taxesNet = taxes - deductions;
 
   const vatNet = Math.max(0, clientVat - contractorVatCredit);
@@ -1422,6 +1423,7 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
     deductions_total: deductions,
     taxes_total: taxes,
     taxes_net: taxesNet,
+    tax_base_amount: taxBase,
     vat_to_pay: vatNet,
     vat_net: vatNet,
     regular_positions_commission: regularCommission,
