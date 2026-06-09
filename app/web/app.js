@@ -578,9 +578,28 @@ function getDraftEvent(event) {
   if (!event) return null;
   if (!state.managerDraftEventsById) state.managerDraftEventsById = {};
   const key = String(event.id);
+
   if (!state.managerDraftEventsById[key]) {
     state.managerDraftEventsById[key] = JSON.parse(JSON.stringify(event));
+  } else {
+    // Черновик хранит редактируемые поля карточки, но служебные поля соавторства
+    // должны обновляться из свежего manager-dashboard после назначения/удаления соавтора.
+    [
+      "is_coauthored",
+      "coauthor_name",
+      "coauthor_user_id",
+      "owner_manager_id",
+      "owner_manager_name",
+      "share_percent",
+      "active_payment_requests_count",
+      "payment_requests_count",
+    ].forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(event, field)) {
+        state.managerDraftEventsById[key][field] = event[field];
+      }
+    });
   }
+
   return state.managerDraftEventsById[key];
 }
 
@@ -3320,6 +3339,27 @@ async function getActionManagers() {
 }
 
 
+
+function setCoauthorStateForEvent(eventId, managerId, managerName) {
+  const patch = {
+    is_coauthored: true,
+    coauthor_name: managerName || null,
+    coauthor_user_id: Number(managerId),
+    share_percent: 50,
+  };
+
+  const key = String(eventId);
+
+  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+    state.currentManagerEvent = { ...state.currentManagerEvent, ...patch };
+    state.managerDraftEventsById[key] = { ...(state.managerDraftEventsById[key] || state.currentManagerEvent), ...patch };
+  }
+
+  const dashboardEvent = getManagerDashboardEvent(eventId);
+  if (dashboardEvent) Object.assign(dashboardEvent, patch);
+}
+
+
 function clearCoauthorStateForEvent(eventId) {
   const patch = {
     is_coauthored: false,
@@ -3425,11 +3465,19 @@ async function openManagerActionDropdown(button, eventId, action) {
               method: "POST",
               body: JSON.stringify({ manager_id: managerId }),
             });
+            const managerName = choice.querySelector(".manager-action-choice-name")?.textContent?.trim() || "";
+            setCoauthorStateForEvent(selectedEventId, managerId, managerName);
           }
 
           closeManagerActionDropdown();
           state.selectedManagerEventId = Number(selectedEventId);
           await loadDashboard();
+
+          if (selectedAction === "coauthor" && Number(state.selectedManagerEventId) === Number(selectedEventId)) {
+            const managerName = choice.querySelector(".manager-action-choice-name")?.textContent?.trim() || "";
+            setCoauthorStateForEvent(selectedEventId, managerId, managerName);
+            await renderManagerEventDetail(selectedEventId, { useDraft: true, noLoading: true });
+          }
         }, selectedAction === "transfer" ? "Передаём мероприятие…" : "Добавляем соавтора…");
       });
     });
