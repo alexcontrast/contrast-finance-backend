@@ -10,6 +10,18 @@ class AuthLoginRequest(BaseModel):
     auth_mode: str | None = None
 
 
+class AuthChangePinRequest(BaseModel):
+    old_pin: str
+    new_pin: str
+
+
+class AuthProfileUpdateRequest(BaseModel):
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    department_id: int | None = None
+
+
 class AuthPermissionsRead(BaseModel):
     can_view_admin: bool = False
     can_manage_users: bool = False

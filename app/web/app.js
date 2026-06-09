@@ -494,6 +494,31 @@ function injectManagerUxStyles() {
     .manager-mini-card .mini-badge-row .coauthor-badge {
       font-size: 12px;
     }
+
+
+    .manager-profile-mini {
+      display: inline-flex;
+      align-items: center;
+      max-width: 420px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: rgba(30, 35, 25, .62);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .profile-modal-content .form-grid {
+      margin-top: 14px;
+    }
+
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1862,9 +1887,12 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
 
 
 function renderManagerTopActions(data) {
+  const user = state.bootstrap?.user || {};
   return `
     <div class="manager-top-actions">
       <button class="secondary" id="managerCreateEventShortcut">+ Создать мероприятие</button>
+      <button class="ghost" id="managerProfileEditBtn" type="button">✎ Данные менеджера</button>
+      <span class="manager-profile-mini">${user.name || ""}${user.phone ? ` · ${user.phone}` : ""}${user.email ? ` · ${user.email}` : ""}</span>
     </div>
   `;
 }
@@ -3878,6 +3906,90 @@ async function updateManagerEventStatus(eventId, status) {
   });
 }
 
+
+function renderManagerProfileModal(user) {
+  const departments = state.bootstrap?.departments || [];
+  return `
+    <div class="profile-modal-content">
+      <h3>Данные менеджера</h3>
+      <p class="muted">Можно изменить имя, телефон, отдел и email.</p>
+
+      <div class="form-grid">
+        <label>Имя
+          <input id="profileNameInput" value="${user.name || ""}" />
+        </label>
+        <label>Телефон
+          <input id="profilePhoneInput" value="${user.phone || ""}" placeholder="+7..." />
+        </label>
+        <label>Email
+          <input id="profileEmailInput" value="${user.email || ""}" placeholder="name@example.com" />
+        </label>
+        <label>Отдел
+          <select id="profileDepartmentInput">
+            <option value="">Без отдела</option>
+            ${departments.map((department) => `
+              <option value="${department.id}" ${Number(user.department_id) === Number(department.id) ? "selected" : ""}>${department.name}</option>
+            `).join("")}
+          </select>
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button class="secondary" id="profileSaveBtn" type="button">Сохранить</button>
+        <button class="ghost" id="profileCancelBtn" type="button">Отмена</button>
+      </div>
+      <div id="profileMessage" class="muted"></div>
+    </div>
+  `;
+}
+
+function openManagerProfileModal() {
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  const user = state.bootstrap?.user || {};
+  backdrop.classList.remove("hidden");
+  title.textContent = "Данные менеджера";
+  content.innerHTML = renderManagerProfileModal(user);
+
+  const close = () => backdrop.classList.add("hidden");
+  $("profileCancelBtn")?.addEventListener("click", close);
+
+  $("profileSaveBtn")?.addEventListener("click", async () => {
+    const message = $("profileMessage");
+    const saveBtn = $("profileSaveBtn");
+    if (message) message.textContent = "";
+
+    try {
+      setButtonLoading(saveBtn, true, "Сохраняем…");
+      const updatedUser = await api("/auth/me/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: $("profileNameInput").value,
+          phone: $("profilePhoneInput").value,
+          email: $("profileEmailInput").value,
+          department_id: $("profileDepartmentInput").value ? Number($("profileDepartmentInput").value) : null,
+        }),
+      });
+
+      state.bootstrap.user = updatedUser;
+      $("pageSubtitle").textContent = `${updatedUser.name} · отдел ${departmentNameById(updatedUser.department_id) || ""}`;
+      $("userBadge").textContent = `${updatedUser.name} · ${roleLabel(updatedUser.role)}`;
+
+      if (message) message.textContent = "Данные сохранены";
+      close();
+      await loadDashboard();
+    } catch (error) {
+      if (message) message.textContent = error.message || "Не удалось сохранить данные";
+    } finally {
+      setButtonLoading(saveBtn, false);
+    }
+  });
+}
+
+
 function attachManagerDashboardActions() {
   const createButtons = [
     document.getElementById("managerCreateEventShortcut"),
@@ -3887,6 +3999,9 @@ function attachManagerDashboardActions() {
   createButtons.forEach((button) => {
     button.addEventListener("click", openManagerCreateModal);
   });
+
+  const profileButton = document.getElementById("managerProfileEditBtn");
+  if (profileButton) profileButton.addEventListener("click", openManagerProfileModal);
 
   document.querySelectorAll("[data-manager-event-id]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -4112,9 +4227,11 @@ async function login() {
 
 async function changePin() {
   const msg = $("changePinMessage");
-  msg.textContent = "";
+  const button = $("changePinBtn");
+  if (msg) msg.textContent = "";
 
   try {
+    setButtonLoading(button, true, "Сохраняем…");
     const data = await api("/auth/change-pin", {
       method: "PATCH",
       body: JSON.stringify({
@@ -4123,11 +4240,13 @@ async function changePin() {
       }),
     });
 
-    msg.textContent = data.message || "PIN изменён";
+    if (msg) msg.textContent = data.message || "PIN изменён";
     $("oldPin").value = "";
     $("newPin").value = "";
   } catch (error) {
-    msg.textContent = error.message;
+    if (msg) msg.textContent = error.message;
+  } finally {
+    setButtonLoading(button, false);
   }
 }
 

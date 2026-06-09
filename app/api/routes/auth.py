@@ -1,11 +1,14 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models.department import Department
 from app.models.user import User
-from app.schemas.auth import AuthLoginRequest, AuthPermissionsRead, AuthTokenRead, AuthUserRead
-from app.services.auth import create_access_token, find_login_user, get_current_user, verify_pin
+from app.schemas.auth import AuthChangePinRequest, AuthLoginRequest, AuthPermissionsRead, AuthProfileUpdateRequest, AuthTokenRead, AuthUserRead
+from app.services.auth import create_access_token, find_login_user, get_current_user, native_pin_hash, verify_pin
 
 
 def permissions_for_user(user: User) -> AuthPermissionsRead:
@@ -49,6 +52,7 @@ def user_to_auth_read(user: User) -> AuthUserRead:
         id=user.id,
         name=user.name,
         phone=user.phone,
+        email=user.email,
         department_id=user.department_id,
         department_name=user.department.name if user.department else None,
         role=user.role,
@@ -117,3 +121,70 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=AuthUserRead)
 def me(user: User = Depends(get_current_user)):
     return user_to_auth_read(user)
+
+
+@router.patch("/change-pin")
+def change_pin(
+    payload: AuthChangePinRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    old_pin = str(payload.old_pin or "").strip()
+    new_pin = str(payload.new_pin or "").strip()
+
+    if not old_pin:
+        raise HTTPException(status_code=400, detail="Укажи старый PIN")
+
+    if not verify_pin(current_user, old_pin):
+        raise HTTPException(status_code=400, detail="Старый PIN неверный")
+
+    if len(new_pin) < 4:
+        raise HTTPException(status_code=400, detail="Новый PIN должен быть минимум 4 цифры")
+
+    if not new_pin.isdigit():
+        raise HTTPException(status_code=400, detail="PIN должен содержать только цифры")
+
+    current_user.pin_hash = native_pin_hash(new_pin, current_user.id)
+    current_user.auth_source = "native"
+    current_user.updated_at = datetime.utcnow()
+
+    db.add(current_user)
+    db.commit()
+
+    return {"ok": True, "message": "PIN изменён"}
+
+
+def clean_optional_text(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+@router.patch("/me/profile", response_model=AuthUserRead)
+def update_my_profile(
+    payload: AuthProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    name = str(payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Имя не может быть пустым")
+
+    if payload.department_id is not None:
+        department = db.get(Department, payload.department_id)
+        if department is None or not department.is_active:
+            raise HTTPException(status_code=400, detail="Отдел не найден")
+        current_user.department_id = department.id
+    else:
+        current_user.department_id = None
+
+    current_user.name = name
+    current_user.phone = clean_optional_text(payload.phone)
+    current_user.email = clean_optional_text(payload.email)
+    current_user.updated_at = datetime.utcnow()
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    return user_to_auth_read(current_user)
+
