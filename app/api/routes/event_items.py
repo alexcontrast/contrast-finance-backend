@@ -1,5 +1,4 @@
 from datetime import datetime
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -7,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.event_item import EventItem
+from app.models.payment_request import PaymentRequest
 from app.models.user import User
 from app.schemas.event_item import EventItemCreate, EventItemRead
 from app.services.auth import get_current_user
@@ -21,10 +21,6 @@ from app.services.authorization import (
 
 
 router = APIRouter(tags=["event_items"])
-
-
-def calculate_external_amount(price, quantity, days):
-    return (price or Decimal("0.00")) * (quantity or Decimal("1.00")) * (days or Decimal("1.00"))
 
 
 @router.get("/events/{event_id}/items", response_model=list[EventItemRead])
@@ -61,7 +57,7 @@ def create_event_item(
         external_price=payload.external_price,
         external_quantity=payload.external_quantity,
         external_days=payload.external_days,
-        external_amount=calculate_external_amount(payload.external_price, payload.external_quantity, payload.external_days),
+        external_amount=payload.external_amount,
         external_note=payload.external_note,
         amount_fact=payload.amount_fact,
         paid_amount=payload.paid_amount,
@@ -110,7 +106,7 @@ def update_event_item(
     item.external_price = payload.external_price
     item.external_quantity = payload.external_quantity
     item.external_days = payload.external_days
-    item.external_amount = calculate_external_amount(payload.external_price, payload.external_quantity, payload.external_days)
+    item.external_amount = payload.external_amount
     item.external_note = payload.external_note
     item.amount_fact = payload.amount_fact
     item.paid_amount = payload.paid_amount
@@ -138,6 +134,20 @@ def delete_event_item(
 ):
     item = get_item_or_404(db, item_id)
     require_item_event_edit(db, current_user, item)
+
+    active_requests_count = (
+        db.query(PaymentRequest)
+        .filter(
+            PaymentRequest.event_item_id == item.id,
+            PaymentRequest.status.notin_(["cancelled", "rejected"]),
+        )
+        .count()
+    )
+    if active_requests_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить позицию: по ней есть активные заявки на оплату",
+        )
 
     item.is_deleted = True
     item.updated_at = datetime.utcnow()
