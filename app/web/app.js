@@ -264,6 +264,83 @@ function injectManagerUxStyles() {
       font-size: 13px;
       font-weight: 700;
     }
+
+    .inline-actions {
+      position: relative;
+    }
+
+    .manager-action-dropdown {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 72px;
+      z-index: 80;
+      width: min(360px, calc(100vw - 40px));
+      max-height: 420px;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid rgba(80, 210, 40, .32);
+      background: rgba(255, 255, 255, .96);
+      box-shadow: 0 18px 50px rgba(20, 25, 20, .18);
+      backdrop-filter: blur(10px);
+    }
+
+    .manager-action-dropdown-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 4px 10px;
+      color: #171717;
+    }
+
+    .manager-action-dropdown-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .manager-action-choice {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid rgba(80, 90, 70, .16);
+      border-radius: 14px;
+      background: rgba(250, 252, 248, .95);
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+
+    .manager-action-choice:hover {
+      border-color: rgba(80, 210, 40, .55);
+      box-shadow: 0 8px 22px rgba(80, 210, 40, .12);
+      transform: translateY(-1px);
+    }
+
+    .manager-action-choice-name {
+      font-weight: 900;
+    }
+
+    .manager-action-choice-department {
+      color: rgba(30, 35, 25, .58);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .manager-action-empty {
+      padding: 16px;
+      color: rgba(30, 35, 25, .62);
+      font-weight: 800;
+    }
+
+    .inline-actions > button.action-open {
+      border-color: rgba(80, 210, 40, .7) !important;
+      box-shadow: 0 0 0 2px rgba(80, 210, 40, .16) inset;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3130,6 +3207,7 @@ function rerenderCurrentManagerCard() {
 }
 
 
+
 function managerActionEventById(eventId) {
   const draft = state.managerDraftEventsById?.[String(eventId)];
   if (draft) return draft;
@@ -3141,68 +3219,84 @@ async function getActionManagers() {
   try {
     return await api("/events/action-managers");
   } catch (error) {
-    // fallback только для показа меню, если endpoint временно недоступен
+    // fallback только для показа списка, если endpoint временно недоступен
     return (state.users || []).filter((user) => user.role === "manager" && user.is_active);
   }
 }
 
-function closeManagerActionModal() {
-  const backdrop = $("plansModalBackdrop");
-  if (!backdrop) return;
-  backdrop.classList.add("hidden");
-  backdrop.classList.remove("manager-create-modal");
+function closeManagerActionDropdown() {
+  document.querySelectorAll(".manager-action-dropdown").forEach((node) => node.remove());
+  document.querySelectorAll("[data-manager-event-transfer], [data-manager-event-coauthor]").forEach((button) => {
+    button.classList.remove("action-open");
+  });
 }
 
-function renderManagerActionList(eventId, action, managers) {
+function renderManagerActionDropdown(eventId, action, managers) {
   const event = managerActionEventById(eventId);
-  const title = action === "transfer" ? "Передать мероприятие" : "Добавить соавтора";
-  const hint = action === "transfer"
-    ? "Выбери менеджера, которому передать мероприятие. После передачи соавторы будут очищены."
-    : "Выбери менеджера, который станет соавтором 50/50.";
-
+  const title = action === "transfer" ? "Передать" : "Соавтор";
   const filteredManagers = (managers || [])
     .filter((manager) => Number(manager.id) !== Number(event?.manager_id))
     .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru"));
 
   return `
-    <div class="manager-action-modal">
-      <h3>${title}</h3>
-      <p class="muted">${hint}</p>
-      <div class="divider"></div>
+    <div class="manager-action-dropdown" data-manager-action-dropdown>
+      <div class="manager-action-dropdown-head">
+        <strong>${title}</strong>
+        <button type="button" class="icon-btn" data-manager-action-close>×</button>
+      </div>
       ${filteredManagers.length ? `
-        <div class="manager-action-list">
+        <div class="manager-action-dropdown-list">
           ${filteredManagers.map((manager) => `
-            <button class="manager-action-choice" data-manager-action-choice="${manager.id}" data-manager-action="${action}" data-manager-action-event="${eventId}">
-              <strong>${manager.name || "Менеджер"}</strong>
-              <span>${manager.department_name || departmentNameById(manager.department_id) || ""}</span>
+            <button type="button" class="manager-action-choice" data-manager-action-choice="${manager.id}" data-manager-action="${action}" data-manager-action-event="${eventId}">
+              <span class="manager-action-choice-name">${manager.name || "Менеджер"}</span>
+              <span class="manager-action-choice-department">${manager.department_name || departmentNameById(manager.department_id) || ""}</span>
             </button>
           `).join("")}
         </div>
       ` : `
-        <div class="empty-state">Нет доступных менеджеров для выбора.</div>
+        <div class="manager-action-empty">Нет доступных менеджеров</div>
       `}
     </div>
   `;
 }
 
-async function openManagerActionModal(eventId, action) {
-  const backdrop = $("plansModalBackdrop");
-  const content = $("plansModalContent");
-  if (!backdrop || !content) return;
+async function openManagerActionDropdown(button, eventId, action) {
+  const alreadyOpen = button.classList.contains("action-open");
+  closeManagerActionDropdown();
+  if (alreadyOpen) return;
 
-  backdrop.classList.remove("hidden");
-  backdrop.classList.add("manager-create-modal");
-  content.innerHTML = `<div class="empty-state">Загружаем менеджеров…</div>`;
+  button.classList.add("action-open");
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "manager-action-dropdown";
+  wrapper.dataset.managerActionDropdown = "1";
+  wrapper.innerHTML = `<div class="manager-action-empty">Загружаем менеджеров…</div>`;
+
+  const actionsHost = button.closest(".inline-actions") || button.parentElement;
+  actionsHost.style.position = "relative";
+  actionsHost.appendChild(wrapper);
 
   try {
     const managers = await getActionManagers();
-    content.innerHTML = renderManagerActionList(eventId, action, managers);
+    wrapper.outerHTML = renderManagerActionDropdown(eventId, action, managers);
 
-    content.querySelectorAll("[data-manager-action-choice]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const managerId = Number(button.getAttribute("data-manager-action-choice"));
-        const selectedAction = button.getAttribute("data-manager-action");
-        const selectedEventId = button.getAttribute("data-manager-action-event");
+    const dropdown = actionsHost.querySelector("[data-manager-action-dropdown]");
+    if (!dropdown) return;
+
+    dropdown.querySelector("[data-manager-action-close]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeManagerActionDropdown();
+    });
+
+    dropdown.querySelectorAll("[data-manager-action-choice]").forEach((choice) => {
+      choice.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const managerId = Number(choice.getAttribute("data-manager-action-choice"));
+        const selectedAction = choice.getAttribute("data-manager-action");
+        const selectedEventId = choice.getAttribute("data-manager-action-event");
 
         await withLoading(async () => {
           if (selectedAction === "transfer") {
@@ -3217,14 +3311,14 @@ async function openManagerActionModal(eventId, action) {
             });
           }
 
-          closeManagerActionModal();
+          closeManagerActionDropdown();
           state.selectedManagerEventId = Number(selectedEventId);
           await loadDashboard();
         }, selectedAction === "transfer" ? "Передаём мероприятие…" : "Добавляем соавтора…");
       });
     });
   } catch (error) {
-    content.innerHTML = `<div class="error">${error.message || "Не удалось загрузить менеджеров"}</div>`;
+    wrapper.innerHTML = `<div class="error">${error.message || "Не удалось загрузить менеджеров"}</div>`;
   }
 }
 
@@ -3298,7 +3392,7 @@ attachEstimateKeyboardNavigation();
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      openManagerActionModal(button.getAttribute("data-manager-event-transfer"), "transfer");
+      openManagerActionDropdown(button, button.getAttribute("data-manager-event-transfer"), "transfer");
     });
   });
 
@@ -3306,7 +3400,7 @@ attachEstimateKeyboardNavigation();
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      openManagerActionModal(button.getAttribute("data-manager-event-coauthor"), "coauthor");
+      openManagerActionDropdown(button, button.getAttribute("data-manager-event-coauthor"), "coauthor");
     });
   });
 
@@ -3736,6 +3830,12 @@ $("eventModalCloseBtn").addEventListener("click", () => {
 
 $("plansModalCloseBtn").addEventListener("click", () => {
   $("plansModalBackdrop").classList.add("hidden");
+});
+
+document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-manager-action-dropdown]")) return;
+  if (event.target.closest("[data-manager-event-transfer], [data-manager-event-coauthor]")) return;
+  closeManagerActionDropdown();
 });
 
 boot();
