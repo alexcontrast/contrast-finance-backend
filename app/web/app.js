@@ -3000,6 +3000,7 @@ function syncDraftItemFromRowBeforeTax(itemId) {
 }
 
 async function checkTaxForItem(itemId) {
+  const originalItemId = String(itemId);
   let item = syncDraftItemFromRowBeforeTax(itemId);
 
   if (!item || item.payment_method !== "invoice") {
@@ -3007,9 +3008,9 @@ async function checkTaxForItem(itemId) {
     return;
   }
 
-  const row = document.querySelector(`tr[data-event-item-row="${itemId}"]`);
-  const input = row?.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`)
-    || document.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
+  const row = document.querySelector(`tr[data-event-item-row="${originalItemId}"]`);
+  const input = row?.querySelector(`[data-item-field="iin_bin"][data-item-id="${originalItemId}"]`)
+    || document.querySelector(`[data-item-field="iin_bin"][data-item-id="${originalItemId}"]`);
 
   const iinBin = (input?.value || item.iin_bin || "").trim();
 
@@ -3025,22 +3026,21 @@ async function checkTaxForItem(itemId) {
   }
 
   item.iin_bin = normalized;
+  item.payment_method = "invoice";
 
   try {
-    if (String(itemId).startsWith("tmp-")) {
-      await saveDraftEvent(state.selectedManagerEventId);
-      await saveDraftItems(state.selectedManagerEventId);
+    // Ключевой фикс:
+    // КГД должен работать только с настоящим database id.
+    // Поэтому сначала сохраняем текущую смету. Если строка была tmp,
+    // saveDraftItems() меняет id прямо у этой же ссылки item.
+    await saveDraftEvent(state.selectedManagerEventId);
+    await saveDraftItems(state.selectedManagerEventId);
 
-      const itemsAfterSave = getDraftItems(state.selectedManagerEventId);
-      item = itemsAfterSave.find((candidate) => candidate.iin_bin === normalized && candidate.payment_method === "invoice")
-        || itemsAfterSave[itemsAfterSave.length - 1];
-
-      if (!item || String(item.id).startsWith("tmp-")) {
-        throw new Error("Не удалось сохранить позицию перед проверкой КГД");
-      }
-
-      itemId = item.id;
+    if (String(item.id).startsWith("tmp-")) {
+      throw new Error("Не удалось сохранить позицию перед проверкой КГД");
     }
+
+    itemId = item.id;
 
     const result = await api(`/event-items/${itemId}/tax/check`, {
       method: "POST",
@@ -3054,17 +3054,24 @@ async function checkTaxForItem(itemId) {
     item.deduction_amount = Math.round(asNumber(result.deduction_amount));
     item.payment_method = "invoice";
 
-    // Если проверяли tmp-строку, после сохранения id поменялся.
-    // Надёжнее перерисовать карточку, чтобы data-id и кнопка стали настоящими.
+    // После сохранения tmp→real id DOM обязан получить новые data-item-id.
+    // Поэтому не пытаемся точечно обновлять старую tmp-строку, а перерисовываем карточку.
     rerenderCurrentManagerCard();
     updateCurrentManagerMiniCardLive();
+    showDraftSavedHint();
   } catch (error) {
     item.iin_bin = normalized;
     item.iin_bin_locked = false;
     item.tax_check_status = "error";
     item.vat_amount = 0;
     item.deduction_amount = 0;
-    updateTaxUiInPlace(itemId);
+
+    if (String(itemId).startsWith("tmp-")) {
+      rerenderCurrentManagerCard();
+    } else {
+      updateTaxUiInPlace(itemId);
+    }
+
     alert(error.message || "КГД не ответил");
   }
 }
