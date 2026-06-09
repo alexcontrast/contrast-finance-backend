@@ -95,7 +95,22 @@ function formatMoney(value) {
 
 function formatPlainNumber(value) {
   const n = Number(value || 0);
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n).replace(/,00$/, "");
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.round(n));
+}
+
+
+function formatInputNumber(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const n = normalizeNumberInput(value);
+  if (!Number.isFinite(n)) return "";
+  return formatMoney(Math.round(n));
+}
+
+function integerInputValue(value, fallback = "") {
+  if (value === null || value === undefined || value === "") return fallback;
+  const n = normalizeNumberInput(value);
+  if (!Number.isFinite(n)) return fallback;
+  return String(Math.round(n));
 }
 
 
@@ -1516,7 +1531,7 @@ function setDraftItemValue(eventId, itemId, field, value) {
   if (!item) return;
 
   if (["external_price", "external_quantity", "external_days", "amount_fact"].includes(field)) {
-    item[field] = value === "" ? null : normalizeNumberInput(value);
+    item[field] = value === "" ? null : Math.round(normalizeNumberInput(value));
   } else {
     item[field] = value;
   }
@@ -1680,7 +1695,7 @@ function internalFactDisplayValue(item) {
   if (item.item_type === "coordinator") {
     return formatMoney(Math.round(externalRowAmount(item) * 0.5));
   }
-  return estimateInputMoney(item.amount_fact);
+  return formatInputNumber(item.amount_fact);
 }
 
 
@@ -1695,7 +1710,7 @@ function addDraftRegularPosition(eventId) {
     id: `tmp-${state.managerDraftTempSeq++}`,
     is_temp: true,
     item_type: "regular",
-    external_name: "Новая позиция",
+    external_name: "",
     external_price: 0,
     external_quantity: 1,
     external_days: 1,
@@ -1887,10 +1902,10 @@ function renderExternalEstimate(items, eventId, event = null) {
           ${shownItems.map((item) => `
             <tr data-event-item-row="${item.id}">
               <td class="drag-col">${draggableHandle(item)}</td>
-              <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
-              <td>${rowInput(formatMoney(item.external_price), `data-item-field="external_price" data-item-id="${item.id}"`)}</td>
-              <td>${rowInput(item.external_quantity || 1, `data-item-field="external_quantity" data-item-id="${item.id}"`)}</td>
-              <td>${rowInput(item.external_days || 1, `data-item-field="external_days" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(item.external_name || "", `placeholder="Новая позиция" data-item-field="external_name" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(formatInputNumber(item.external_price), `data-item-field="external_price" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(integerInputValue(item.external_quantity, "1"), `data-item-field="external_quantity" data-item-id="${item.id}"`)}</td>
+              <td>${rowInput(integerInputValue(item.external_days, "1"), `data-item-field="external_days" data-item-id="${item.id}"`)}</td>
               <td><strong data-row-sum>${formatMoney(externalRowAmount(item))}</strong></td>
               <td>${rowInput(item.external_note || "", `placeholder="Примечание для клиента" data-item-field="external_note" data-item-id="${item.id}"`)}</td>
               <td>${item.item_type === "coordinator" ? "" : `<button class="icon-btn danger" data-delete-item="${item.id}">×</button>`}</td>
@@ -1949,7 +1964,7 @@ function renderInternalEstimate(items, event, summary = null) {
             return `
               <tr data-event-item-row="${item.id}">
                 <td class="drag-col">${draggableHandle(item)}</td>
-                <td>${rowInput(item.external_name, `data-item-field="external_name" data-item-id="${item.id}"`)}</td>
+                <td>${rowInput(item.external_name || "", `placeholder="Новая позиция" data-item-field="external_name" data-item-id="${item.id}"`)}</td>
                 <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
                 <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
                 <td>
@@ -2026,7 +2041,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <input value="${event.title || ""}" data-event-field="title" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
         </label>
         <label>Комиссия агентства, %
-          <input value="${formatMoney(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+          <input value="${formatPlainNumber(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
         </label>
         ${event.client_calc_type === "simplified" ? `
           <label>Банк+налоги, %
@@ -2185,11 +2200,11 @@ function itemPayloadForSave(item) {
   return {
     item_type: item.item_type || "regular",
     external_name: item.external_name || "",
-    external_price: asNumber(item.external_price),
-    external_quantity: asNumber(item.external_quantity || 1),
-    external_days: asNumber(item.external_days || 1),
+    external_price: Math.round(asNumber(item.external_price)),
+    external_quantity: Math.round(asNumber(item.external_quantity || 1)),
+    external_days: Math.round(asNumber(item.external_days || 1)),
     external_note: item.external_note || null,
-    amount_fact: isCoordinator ? coordinatorFact : (item.amount_fact === "" || item.amount_fact === undefined ? null : item.amount_fact),
+    amount_fact: isCoordinator ? coordinatorFact : (item.amount_fact === "" || item.amount_fact === undefined || item.amount_fact === null ? null : Math.round(asNumber(item.amount_fact))),
     paid_amount: item.paid_amount || 0,
     payment_method: isCoordinator ? null : (item.payment_method || null),
     iin_bin: isCoordinator || item.payment_method !== "invoice" ? null : (item.iin_bin || null),
