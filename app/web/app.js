@@ -785,7 +785,10 @@ function setAuthMode(mode) {
     if (state.authMode === "admin") nameInput.value = "";
   }
 
-  if (pinInput) pinInput.placeholder = "••••";
+  if (pinInput) {
+    pinInput.placeholder = "••••";
+    if (state.authMode === "admin") pinInput.focus();
+  }
 
   const error = $("loginError");
   if (error) {
@@ -800,15 +803,12 @@ function getLoginAttempts() {
   const pin = $("loginPin").value;
   const name = ($("loginName")?.value || "").trim();
 
-  if (state.authMode === "admin") {
-    return [
-      { name: "Admin", phone: null, pin },
-      { name: "Админ", phone: null, pin },
-      { name: "admin", phone: null, pin },
-    ];
-  }
-
-  return [{ name: name || null, phone: null, pin }];
+  return [{
+    name: state.authMode === "admin" ? null : (name || null),
+    phone: null,
+    pin,
+    auth_mode: state.authMode || "manager",
+  }];
 }
 
 function attachAuthTabs() {
@@ -825,7 +825,7 @@ function showLogin() {
   $("adminTabs").classList.add("hidden");
   $("pageTitle").textContent = "Вход";
   $("pageSubtitle").textContent = "Финансовая панель мероприятий";
-  attachAuthTabs();
+  attachLoginHandlers();
   setAuthMode(state.authMode || "manager");
   resetLoginButton();
 }
@@ -3533,18 +3533,26 @@ async function changePin() {
   }
 }
 
-$("loginBtn").onclick = login;
-attachAuthTabs();
-["loginName", "loginPin"].forEach((id) => {
-  const input = $(id);
-  if (!input) return;
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      login();
-    }
+function attachLoginHandlers() {
+  const loginButton = $("loginBtn");
+  if (loginButton) loginButton.onclick = login;
+
+  attachAuthTabs();
+
+  ["loginName", "loginPin"].forEach((id) => {
+    const input = $(id);
+    if (!input || input.dataset.enterAttached === "1") return;
+    input.dataset.enterAttached = "1";
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        login();
+      }
+    });
   });
-});
+}
+
+attachLoginHandlers();
 
 $("logoutBtn").addEventListener("click", () => {
   localStorage.removeItem("cf_token");
