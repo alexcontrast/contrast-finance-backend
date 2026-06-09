@@ -469,6 +469,31 @@ function injectManagerUxStyles() {
       max-width: 100%;
       justify-self: start;
     }
+
+    /* Mini-card badge fitting without ellipsis */
+    .manager-mini-card .mini-pill,
+    .manager-mini-card .mini-badge-row .status-badge,
+    .manager-mini-card .mini-badge-row .coauthor-badge {
+      text-overflow: clip !important;
+      overflow: hidden !important;
+      white-space: nowrap !important;
+      transform-origin: left center;
+      will-change: transform, font-size;
+    }
+
+    .manager-mini-card .mini-card-pills,
+    .manager-mini-card .mini-badge-row {
+      overflow: visible;
+    }
+
+    .manager-mini-card .mini-pill {
+      font-size: 12px;
+    }
+
+    .manager-mini-card .mini-badge-row .status-badge,
+    .manager-mini-card .mini-badge-row .coauthor-badge {
+      font-size: 12px;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1883,6 +1908,45 @@ function refreshManagerMiniCardSelection() {
   });
 }
 
+
+function fitMiniBadgeText(el, minFont = 7.5, maxFont = 12) {
+  if (!el) return;
+
+  el.style.fontSize = `${maxFont}px`;
+  el.style.letterSpacing = "";
+  el.style.transform = "";
+  el.style.transformOrigin = "left center";
+  el.style.width = "";
+  el.style.textOverflow = "clip";
+
+  const available = el.clientWidth;
+  if (!available || available <= 0) return;
+
+  let size = maxFont;
+  while (size > minFont && el.scrollWidth > available + 1) {
+    size -= 0.5;
+    el.style.fontSize = `${size}px`;
+  }
+
+  if (el.scrollWidth > available + 1) {
+    const scale = Math.max(0.72, Math.min(1, available / el.scrollWidth));
+    el.style.transform = `scaleX(${scale})`;
+    el.style.width = `${100 / scale}%`;
+  }
+}
+
+function fitMiniCardBadges(card = null) {
+  const scope = card || document;
+  scope.querySelectorAll(".manager-mini-card .mini-pill").forEach((el) => fitMiniBadgeText(el, 7, 12));
+  scope.querySelectorAll(".manager-mini-card .mini-badge-row .status-badge").forEach((el) => fitMiniBadgeText(el, 7, 12));
+  scope.querySelectorAll(".manager-mini-card .mini-badge-row .coauthor-badge").forEach((el) => fitMiniBadgeText(el, 6.8, 12));
+}
+
+function scheduleMiniBadgeFit(card = null) {
+  requestAnimationFrame(() => fitMiniCardBadges(card));
+}
+
+
 function updateCurrentManagerMiniCardLive() {
   try {
     if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
@@ -1931,6 +1995,8 @@ function updateCurrentManagerMiniCardLive() {
     card.setAttribute("data-event-status", state.currentManagerEvent.status || "");
     card.classList.remove("status-tone-draft", "status-tone-review", "status-tone-accepted");
     card.classList.add(eventStatusToneClass(state.currentManagerEvent.status));
+
+    scheduleMiniBadgeFit(card);
 
     const dashboardEvent = getManagerDashboardEvent(state.selectedManagerEventId);
     if (dashboardEvent) {
@@ -3878,6 +3944,7 @@ function renderManagerDashboard(data, paymentRequests = []) {
 
   attachPaymentRequestActions();
   attachManagerDashboardActions();
+  scheduleMiniBadgeFit();
 
   const selected = getSelectedManagerEvent(data);
   if (selected) {
@@ -4117,5 +4184,7 @@ document.addEventListener("click", (event) => {
   if (event.target.closest("[data-manager-event-transfer], [data-manager-event-coauthor]")) return;
   closeManagerActionDropdown();
 });
+
+window.addEventListener("resize", () => scheduleMiniBadgeFit());
 
 boot();
