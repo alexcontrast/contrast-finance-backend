@@ -376,6 +376,99 @@ function injectManagerUxStyles() {
       font-size: 12px;
       padding: 5px 8px;
     }
+
+    /* Mini-card fixed badge layout */
+    .manager-mini-card {
+      display: grid !important;
+      grid-template-rows: auto auto auto auto;
+      align-content: start;
+      gap: 7px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .manager-mini-card .mini-card-pills {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 6px;
+      width: 100%;
+      min-width: 0;
+      align-items: center;
+    }
+
+    .manager-mini-card .mini-pill {
+      min-width: 0;
+      max-width: 100%;
+      width: 100%;
+      display: inline-block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: clamp(10px, 1.05vw, 12px);
+      line-height: 1.05;
+      padding: 6px 8px;
+    }
+
+    .manager-mini-card .mini-pill strong {
+      white-space: nowrap;
+    }
+
+    .manager-mini-card [data-mini-title],
+    .manager-mini-card [data-mini-meta],
+    .manager-mini-card [data-mini-calc] {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .manager-mini-card [data-mini-title],
+    .manager-mini-card [data-mini-meta],
+    .manager-mini-card [data-mini-calc],
+    .manager-mini-card .mini-badge-row {
+      width: 100%;
+    }
+
+    .manager-mini-card [data-mini-title] {
+      white-space: nowrap;
+    }
+
+    .manager-mini-card [data-mini-meta],
+    .manager-mini-card [data-mini-calc] {
+      white-space: nowrap;
+    }
+
+    .manager-mini-card .mini-badge-row {
+      display: grid !important;
+      grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      margin-top: 2px;
+    }
+
+    .manager-mini-card .mini-badge-row .status-badge,
+    .manager-mini-card .mini-badge-row .coauthor-badge {
+      min-width: 0;
+      max-width: 100%;
+      width: 100%;
+      display: inline-block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+      font-size: clamp(9px, 1vw, 12px);
+      line-height: 1.05;
+      padding: 5px 7px;
+    }
+
+    .manager-mini-card .mini-badge-row .coauthor-badge:only-child,
+    .manager-mini-card .mini-badge-row .status-badge:only-child {
+      grid-column: 1 / -1;
+      width: fit-content;
+      max-width: 100%;
+      justify-self: start;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1999,7 +2092,7 @@ function applyEventShareToSummaryValues(summary, event) {
 function coauthorBadgeHtml(event, attrs = "") {
   if (!eventIsCoauthored(event)) return "";
   const name = event?.coauthor_name || event?.owner_manager_name || "менеджер";
-  return `<span class="coauthor-badge" ${attrs}>Соавтор: ${name}</span>`;
+  return `<span class="coauthor-badge" title="Соавтор: ${name}" ${attrs}>Соавтор: ${name}</span>`;
 }
 
 
