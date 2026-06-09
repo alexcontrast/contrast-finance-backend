@@ -353,14 +353,20 @@ function setDraftEventValue(eventId, field, value) {
   if (!state.managerDraftEventsById[key] && state.currentManagerEvent) {
     state.managerDraftEventsById[key] = JSON.parse(JSON.stringify(state.currentManagerEvent));
   }
+
   const event = state.managerDraftEventsById[key];
   if (!event) return;
+
   if (["agency_commission_amount", "simplified_bank_tax_percent"].includes(field)) {
     event[field] = normalizeNumberInput(value);
   } else {
     event[field] = value;
   }
-  updateCurrentManagerMiniCardLive();
+
+  if (String(state.selectedManagerEventId) === key) {
+    state.currentManagerEvent = { ...(state.currentManagerEvent || {}), ...event };
+    updateCurrentManagerMiniCardLive();
+  }
 }
 
 function getSelectedManagerEvent(data) {
@@ -1465,16 +1471,38 @@ function updateCurrentManagerMiniCardLive() {
 
   const items = getDraftItems(state.selectedManagerEventId);
   const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+  state.currentManagerSummary = summary;
 
+  const titleEl = card.querySelector("[data-mini-title]");
+  const metaEl = card.querySelector("[data-mini-meta]");
+  const calcEl = card.querySelector("[data-mini-calc]");
+  const statusEl = card.querySelector("[data-mini-status]");
   const pills = card.querySelectorAll(".mini-pill");
   const budgetPill = pills[0];
   const incomePill = pills[1];
 
+  if (titleEl) titleEl.textContent = state.currentManagerEvent.title || "Без названия";
+  if (metaEl) metaEl.textContent = `${state.currentManagerEvent.client_name || ""} · ${formatDateRu(state.currentManagerEvent.event_date)}`;
+  if (calcEl) calcEl.textContent = customerPaymentLabel(state.currentManagerEvent.client_calc_type);
+  if (statusEl) {
+    statusEl.textContent = statusLabel(state.currentManagerEvent.status);
+    statusEl.className = `status-badge ${eventStatusToneClass(state.currentManagerEvent.status)}`;
+  }
+
   if (budgetPill) budgetPill.innerHTML = `<strong>Бюджет:</strong> ${formatMoney(summary.external_total || 0)}`;
   if (incomePill) incomePill.innerHTML = `<strong>Доход:</strong> ${formatMoney(summary.final_company_income || 0)}`;
 
+  card.setAttribute("data-event-status", state.currentManagerEvent.status || "");
+  card.classList.remove("status-tone-draft", "status-tone-review", "status-tone-accepted");
+  card.classList.add(eventStatusToneClass(state.currentManagerEvent.status));
+
   const dashboardEvent = getManagerDashboardEvent(state.selectedManagerEventId);
   if (dashboardEvent) {
+    dashboardEvent.title = state.currentManagerEvent.title;
+    dashboardEvent.client_name = state.currentManagerEvent.client_name;
+    dashboardEvent.event_date = state.currentManagerEvent.event_date;
+    dashboardEvent.client_calc_type = state.currentManagerEvent.client_calc_type;
+    dashboardEvent.status = state.currentManagerEvent.status;
     dashboardEvent.external_total = summary.external_total || 0;
     dashboardEvent.final_company_income = summary.final_company_income || 0;
   }
@@ -1497,10 +1525,10 @@ function renderManagerEventList(data) {
               ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
             </div>
-            <strong>${event.title || "Без названия"}</strong>
-            <span>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
-            <small>${customerPaymentLabel(event.client_calc_type)}</small>
-            <em class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
+            <strong data-mini-title>${event.title || "Без названия"}</strong>
+            <span data-mini-meta>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
+            <small data-mini-calc>${customerPaymentLabel(event.client_calc_type)}</small>
+            <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
           </button>
         `).join("") : `<div class="empty-state">Мероприятий пока нет.</div>`}
       </div>
@@ -1782,6 +1810,7 @@ function attachDraftEventInputs(eventId) {
     input.addEventListener("input", () => {
       setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
       refreshDraftVisibleCalculations(eventId);
+      updateCurrentManagerMiniCardLive();
     });
 
     input.addEventListener("change", () => {
@@ -2023,6 +2052,7 @@ function refreshDraftVisibleCalculations(eventId) {
     const commissionCell = row.querySelector(".commission-col strong");
     if (commissionCell) commissionCell.textContent = formatMoney(internalCommissionValue(item));
   });
+  updateCurrentManagerMiniCardLive();
 }
 
 function internalCommissionValue(item) {
