@@ -20,6 +20,13 @@ class ManagerDashboardEventRead(BaseModel):
     payment_requests_count: int
     active_payment_requests_count: int
 
+    share_percent: Decimal = Decimal("100.00")
+    is_coauthored: bool = False
+    coauthor_name: str | None = None
+    coauthor_user_id: int | None = None
+    owner_manager_id: int | None = None
+    owner_manager_name: str | None = None
+
 
 class ManagerDashboardRead(BaseModel):
     month: date

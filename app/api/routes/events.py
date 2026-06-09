@@ -1,17 +1,88 @@
+from datetime import datetime
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.event import Event
+from app.models.event_share import EventShare
 from app.models.payment_request import PaymentRequest
 from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
 from app.services.auth import get_current_user
-from app.services.authorization import require_event_edit, require_event_view
+from app.services.authorization import get_event_or_404, require_event_edit, require_event_view
 
 
 router = APIRouter(tags=["events"])
+
+INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
+
+
+class EventManagerActionPayload(BaseModel):
+    manager_id: int
+
+
+class EventActionManagerRead(BaseModel):
+    id: int
+    name: str
+    department_id: int | None = None
+    department_name: str | None = None
+
+
+def active_payment_requests_count(db: Session, event_id: int) -> int:
+    return (
+        db.query(PaymentRequest)
+        .filter(
+            PaymentRequest.event_id == event_id,
+            PaymentRequest.status.notin_(list(INACTIVE_PAYMENT_STATUSES)),
+        )
+        .count()
+    )
+
+
+def get_active_manager_or_404(db: Session, manager_id: int) -> User:
+    manager = db.get(User, manager_id)
+    if manager is None or manager.role != "manager" or not manager.is_active:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    return manager
+
+
+def clear_event_shares(db: Session, event_id: int) -> None:
+    shares = db.execute(select(EventShare).where(EventShare.event_id == event_id)).scalars().all()
+    for share in shares:
+        db.delete(share)
+
+
+@router.get("/events/action-managers", response_model=list[EventActionManagerRead])
+def list_action_managers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in {"admin", "manager"}:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    managers = (
+        db.execute(
+            select(User)
+            .where(User.role == "manager", User.is_active == True)  # noqa: E712
+            .order_by(User.name, User.id)
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        EventActionManagerRead(
+            id=manager.id,
+            name=manager.name,
+            department_id=manager.department_id,
+            department_name=manager.department.name if manager.department else None,
+        )
+        for manager in managers
+    ]
 
 
 @router.get("/events", response_model=list[EventRead])
@@ -34,11 +105,10 @@ def list_events(
             query = query.where(Event.manager_id == manager_id)
 
     elif current_user.role == "manager":
-        # Manager can see only own events, regardless of incoming manager_id.
-        query = query.where(Event.manager_id == current_user.id)
+        shared_event_ids = select(EventShare.event_id).where(EventShare.user_id == current_user.id)
+        query = query.where(or_(Event.manager_id == current_user.id, Event.id.in_(shared_event_ids)))
 
     elif current_user.role == "department_head":
-        # Department head is read-only and sees only own department.
         query = query.where(Event.department_id == current_user.department_id)
         if manager_id is not None:
             query = query.where(Event.manager_id == manager_id)
@@ -63,7 +133,6 @@ def create_event(
     department_id = payload.department_id
 
     if current_user.role == "manager":
-        # Manager creates only own events.
         manager_id = current_user.id
         department_id = current_user.department_id
 
@@ -93,10 +162,7 @@ def get_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
-
+    event = get_event_or_404(db, event_id)
     require_event_view(current_user, event)
     return event
 
@@ -108,10 +174,7 @@ def update_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
-
+    event = get_event_or_404(db, event_id)
     require_event_edit(current_user, event)
 
     event.client_name = payload.client_name
@@ -128,11 +191,13 @@ def update_event(
     event.agency_commission_amount = payload.agency_commission_amount
     event.agency_commission_spread_enabled = payload.agency_commission_spread_enabled
     event.simplified_bank_tax_percent = payload.simplified_bank_tax_percent
+    event.updated_at = datetime.utcnow()
 
     db.add(event)
     db.commit()
     db.refresh(event)
     return event
+
 
 @router.delete("/events/{event_id}")
 def delete_event(
@@ -149,25 +214,104 @@ def delete_event(
             detail="Удалять можно только черновики или мероприятия на доработке",
         )
 
-    active_requests_count = (
-        db.query(PaymentRequest)
-        .filter(
-            PaymentRequest.event_id == event.id,
-            PaymentRequest.status.notin_(["cancelled", "rejected"]),
-        )
-        .count()
-    )
-    if active_requests_count > 0:
+    if active_payment_requests_count(db, event.id) > 0:
         raise HTTPException(
             status_code=400,
             detail="Нельзя удалить мероприятие: по нему есть активные заявки на оплату",
         )
 
-    event.is_deleted = True
+    # В системе пока нет поля is_deleted у events, поэтому удаление делаем безопасно:
+    # переводим в cancelled. Дашборды уже исключают cancelled из статистики и списков.
+    event.status = "cancelled"
+    event.cancelled_at = datetime.utcnow()
     event.updated_at = datetime.utcnow()
+    clear_event_shares(db, event.id)
 
     db.add(event)
     db.commit()
 
     return {"ok": True, "event_id": event.id}
 
+
+@router.post("/events/{event_id}/transfer", response_model=EventRead)
+def transfer_event(
+    event_id: int,
+    payload: EventManagerActionPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+    require_event_edit(current_user, event)
+
+    target_manager = get_active_manager_or_404(db, payload.manager_id)
+
+    event.manager_id = target_manager.id
+    event.department_id = target_manager.department_id
+    event.updated_at = datetime.utcnow()
+    clear_event_shares(db, event.id)
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.post("/events/{event_id}/coauthor", response_model=EventRead)
+def add_event_coauthor(
+    event_id: int,
+    payload: EventManagerActionPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+    require_event_edit(current_user, event)
+
+    coauthor = get_active_manager_or_404(db, payload.manager_id)
+    if coauthor.id == event.manager_id:
+        raise HTTPException(status_code=400, detail="Этот менеджер уже основной менеджер мероприятия")
+
+    clear_event_shares(db, event.id)
+    db.flush()
+
+    db.add(
+        EventShare(
+            event_id=event.id,
+            user_id=event.manager_id,
+            share_percent=Decimal("50.00"),
+        )
+    )
+    db.add(
+        EventShare(
+            event_id=event.id,
+            user_id=coauthor.id,
+            share_percent=Decimal("50.00"),
+        )
+    )
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.post("/events/{event_id}/coauthor/remove", response_model=EventRead)
+def remove_event_coauthor(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    event = get_event_or_404(db, event_id)
+    require_event_edit(current_user, event)
+
+    if current_user.role == "manager":
+        event.manager_id = current_user.id
+        event.department_id = current_user.department_id
+
+    clear_event_shares(db, event.id)
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event

@@ -7,12 +7,19 @@ from app.models.payment_request import PaymentRequest
 from app.models.user import User
 
 
+def event_share_user_ids(event: Event) -> set[int]:
+    try:
+        return {share.user_id for share in (event.shares or [])}
+    except Exception:
+        return set()
+
+
 def can_view_event(user: User, event: Event) -> bool:
     if user.role == "admin":
         return True
 
     if user.role == "manager":
-        return event.manager_id == user.id
+        return event.manager_id == user.id or user.id in event_share_user_ids(event)
 
     if user.role == "department_head":
         return event.department_id == user.department_id
@@ -25,7 +32,7 @@ def can_edit_event(user: User, event: Event) -> bool:
         return True
 
     if user.role == "manager":
-        return event.manager_id == user.id
+        return event.manager_id == user.id or user.id in event_share_user_ids(event)
 
     return False
 
@@ -85,7 +92,7 @@ def require_payment_request_edit(db: Session, user: User, request: PaymentReques
     if user.role == "admin":
         return event
 
-    if user.role == "manager" and event.manager_id == user.id:
+    if user.role == "manager" and (event.manager_id == user.id or user.id in event_share_user_ids(event)):
         return event
 
     raise HTTPException(status_code=403, detail="No permission for this payment request")
