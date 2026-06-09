@@ -17,9 +17,9 @@ function injectManagerUxStyles() {
       transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
     }
 
-    /* Открытая миникарточка: зелёная обводка + свечение, без цветной заливки */
+    /* Открытая миникарточка: только зелёная обводка + свечение.
+       Фон не трогаем, чтобы цвет статуса оставался прежним. */
     .manager-mini-card.is-open {
-      background: rgba(115, 120, 130, .10) !important;
       border-color: rgba(80, 210, 40, .90) !important;
       box-shadow:
         0 0 0 2px rgba(80, 210, 40, .30) inset,
