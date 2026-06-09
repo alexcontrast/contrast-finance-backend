@@ -2918,6 +2918,9 @@ function bindTaxButtons() {
       event.preventDefault();
       event.stopPropagation();
 
+      if (button.dataset.kgdLoading === "1") return;
+      button.dataset.kgdLoading = "1";
+
       const previousText = button.textContent;
       button.disabled = true;
       button.textContent = "…";
@@ -2930,6 +2933,7 @@ function bindTaxButtons() {
           button.disabled = false;
           button.textContent = previousText || "✓";
           button.classList.remove("is-loading");
+          delete button.dataset.kgdLoading;
         }
       }
     };
@@ -3143,13 +3147,6 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
   });
 
 
-  document.querySelectorAll("[data-check-tax-item]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      checkTaxForItem(button.getAttribute("data-check-tax-item"));
-    });
-  });
 attachEstimateKeyboardNavigation();
   attachEstimateDragAndDrop();
   document.querySelectorAll("[data-manager-event-delete]").forEach((button) => {
