@@ -1564,6 +1564,10 @@ function setDraftItemValue(eventId, itemId, field, value) {
     const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
     item.deduction_amount = Math.round(base * 0.10);
   }
+
+  if (["amount_fact", "external_price", "external_quantity", "external_days"].includes(field)) {
+    recalculateCheckedItemTax(item);
+  }
 }
 
 
@@ -1608,16 +1612,150 @@ async function saveDraftEvent(eventId) {
   }
 }
 
+
+function taxBaseForItem(item) {
+  const fact = asNumber(item.amount_fact);
+  return fact > 0 ? fact : externalRowAmount(item);
+}
+
+function recalculateCheckedItemTax(item) {
+  if (!item || item.payment_method !== "invoice" || !item.tax_check_status || ["not_found", "error"].includes(item.tax_check_status)) {
+    return;
+  }
+
+  const base = taxBaseForItem(item);
+
+  if (item.tax_check_status === "our_vat") {
+    const withoutVat = Math.round(base / 1.16);
+    item.vat_amount = Math.round(base - withoutVat);
+    item.deduction_amount = Math.round(withoutVat * 0.10);
+    return;
+  }
+
+  if (item.tax_check_status === "our_no_vat") {
+    item.vat_amount = 0;
+    item.deduction_amount = Math.round(base * 0.10);
+    return;
+  }
+
+  item.vat_amount = 0;
+  item.deduction_amount = 0;
+}
+
+function updateInternalRowCells(itemId) {
+  const items = getDraftItems(state.selectedManagerEventId);
+  const item = items.find((candidate) => String(candidate.id) === String(itemId));
+  const row = document.querySelector(`tr[data-event-item-row="${itemId}"]`);
+  if (!item || !row) return;
+
+  const vatCell = row.querySelector(".vat-col strong");
+  const deductionCell = row.querySelector(".deduction-col strong");
+  const commissionCell = row.querySelector(".commission-col strong");
+  const paidCell = row.querySelector(".paid-col strong");
+
+  if (vatCell) vatCell.textContent = formatMoney(internalVatValue(item));
+  if (deductionCell) deductionCell.textContent = formatMoney(internalDeductionValue(item));
+  if (commissionCell) commissionCell.textContent = formatMoney(internalCommissionValue(item));
+  if (paidCell) paidCell.textContent = formatMoney(item.paid_amount);
+
+  const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
+  if (paymentSelect) paymentSelect.disabled = Boolean(item.iin_bin_locked);
+
+  const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
+  if (binInput) {
+    binInput.value = item.iin_bin || "";
+    binInput.disabled = Boolean(item.iin_bin_locked);
+  }
+
+  const kgdButton = row.querySelector(`[data-check-tax-item="${itemId}"]`);
+  if (kgdButton) {
+    kgdButton.textContent = item.iin_bin_locked ? "✎" : "✓";
+    kgdButton.title = item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД";
+    kgdButton.classList.toggle("danger", isTaxProblem(item));
+  }
+
+  row.classList.toggle("tax-problem-row", isTaxProblem(item));
+}
+
+function updateInternalSummaryCards() {
+  const items = getDraftItems(state.selectedManagerEventId);
+  const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+  state.currentManagerSummary = summary;
+
+  const grid = document.querySelector(".manager-summary-grid-six");
+  if (!grid) return;
+
+  const values = [
+    ["Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total)],
+    ["Комиссия", formatMoney(summary.agency_commission_amount ?? 0)],
+    ["Менеджер", formatMoney(summary.manager_salary)],
+    [`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary))],
+    ["НДС", formatMoney(internalVatNet(summary))],
+    ["Доход компании", formatMoney(summary.final_company_income)],
+  ];
+
+  const cards = Array.from(grid.querySelectorAll(".metric"));
+  values.forEach(([label, value], index) => {
+    const card = cards[index];
+    if (!card) return;
+    const labelEl = card.querySelector(".label");
+    const valueEl = card.querySelector(".value");
+    if (labelEl) labelEl.textContent = label;
+    if (valueEl) valueEl.textContent = value;
+  });
+}
+
+function updateTaxUiInPlace(itemId) {
+  updateInternalRowCells(itemId);
+  updateInternalSummaryCards();
+}
+
+
+
+function showDraftSavedHint() {
+  let hint = document.getElementById("draftSavedHint");
+  const head = document.querySelector(".manager-event-actions");
+  if (!head) return;
+
+  if (!hint) {
+    hint = document.createElement("span");
+    hint.id = "draftSavedHint";
+    hint.style.marginLeft = "10px";
+    hint.style.fontSize = "13px";
+    hint.style.fontWeight = "700";
+    hint.style.color = "#3d7f00";
+    head.appendChild(hint);
+  }
+
+  hint.textContent = "Сохранено";
+  window.clearTimeout(showDraftSavedHint._timer);
+  showDraftSavedHint._timer = window.setTimeout(() => {
+    hint.textContent = "";
+  }, 1500);
+}
+
+
 function attachDraftInputs(eventId) {
   document.querySelectorAll("[data-item-field]").forEach((input) => {
     input.addEventListener("input", () => {
-      setDraftItemValue(eventId, input.getAttribute("data-item-id"), input.getAttribute("data-item-field"), input.value);
+      const itemId = input.getAttribute("data-item-id");
+      const field = input.getAttribute("data-item-field");
+      setDraftItemValue(eventId, itemId, field, input.value);
       refreshDraftVisibleCalculations(eventId);
+      updateTaxUiInPlace(itemId);
     });
 
     input.addEventListener("change", () => {
-      setDraftItemValue(eventId, input.getAttribute("data-item-id"), input.getAttribute("data-item-field"), input.value);
-      renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+      const itemId = input.getAttribute("data-item-id");
+      const field = input.getAttribute("data-item-field");
+      setDraftItemValue(eventId, itemId, field, input.value);
+
+      if (field === "payment_method") {
+        rerenderCurrentManagerCard();
+      } else {
+        refreshDraftVisibleCalculations(eventId);
+        updateTaxUiInPlace(itemId);
+      }
     });
   });
 }
@@ -2011,7 +2149,6 @@ function renderInternalEstimate(items, event, summary = null) {
                     <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="${taxStatusLabel(item.tax_check_status) || (item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД")}">
                       ${item.iin_bin_locked ? "✎" : "✓"}
                     </button>
-                    ${item.tax_check_status ? `<div class="tiny-tax-status ${isTaxProblem(item) ? "danger-text" : ""}">${taxStatusLabel(item.tax_check_status)}</div>` : ""}
                   ` : "—")}
                 </td>
                 <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
@@ -2308,7 +2445,7 @@ async function checkTaxForItem(itemId) {
     item.tax_check_status = null;
     item.vat_amount = 0;
     item.deduction_amount = 0;
-    rerenderCurrentManagerCard();
+    updateTaxUiInPlace(itemId);
     return;
   }
 
@@ -2331,7 +2468,7 @@ async function checkTaxForItem(itemId) {
       item.iin_bin = normalized;
       await saveDraftEvent(state.selectedManagerEventId);
       await saveDraftItems(state.selectedManagerEventId);
-      await renderManagerEventDetail(state.selectedManagerEventId);
+      showDraftSavedHint();
       return;
     }
 
@@ -2346,16 +2483,14 @@ async function checkTaxForItem(itemId) {
     item.vat_amount = Math.round(asNumber(result.vat_amount));
     item.deduction_amount = Math.round(asNumber(result.deduction_amount));
 
-    refreshDraftVisibleCalculations(state.selectedManagerEventId);
-    rerenderCurrentManagerCard();
+    updateTaxUiInPlace(itemId);
   } catch (error) {
     item.iin_bin = normalized;
     item.iin_bin_locked = false;
     item.tax_check_status = "error";
     item.vat_amount = 0;
     item.deduction_amount = 0;
-    refreshDraftVisibleCalculations(state.selectedManagerEventId);
-    rerenderCurrentManagerCard();
+    updateTaxUiInPlace(itemId);
     alert(error.message || "КГД не ответил");
   }
 }
@@ -2422,7 +2557,7 @@ function attachManagerCreateWorkspaceActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
-        rerenderCurrentManagerCard();
+        showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2438,7 +2573,7 @@ function attachManagerCreateWorkspaceActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
-        rerenderCurrentManagerCard();
+        showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -2592,7 +2727,7 @@ function attachManagerDashboardActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
-        rerenderCurrentManagerCard();
+        showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2607,7 +2742,7 @@ function attachManagerDashboardActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
-        rerenderCurrentManagerCard();
+        showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
