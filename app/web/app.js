@@ -364,8 +364,15 @@ function injectManagerUxStyles() {
       border: 1px solid rgba(33, 118, 255, .28);
     }
 
-    .manager-mini-card .coauthor-badge {
+    .mini-badge-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
       margin-top: 6px;
+    }
+
+    .manager-mini-card .coauthor-badge {
       font-size: 12px;
       padding: 5px 8px;
     }
@@ -1794,7 +1801,8 @@ function updateCurrentManagerMiniCardLive() {
 
     if (eventIsCoauthored(state.currentManagerEvent)) {
       if (!coauthorEl) {
-        card.insertAdjacentHTML("beforeend", coauthorBadgeHtml(state.currentManagerEvent, "data-mini-coauthor"));
+        const badgeRow = card.querySelector(".mini-badge-row") || card;
+        badgeRow.insertAdjacentHTML("beforeend", coauthorBadgeHtml(state.currentManagerEvent, "data-mini-coauthor"));
         coauthorEl = card.querySelector("[data-mini-coauthor]");
       } else {
         const name = state.currentManagerEvent.coauthor_name || state.currentManagerEvent.owner_manager_name || "менеджер";
@@ -1851,8 +1859,10 @@ function renderManagerEventList(data) {
             <strong data-mini-title>${event.title || "Без названия"}</strong>
             <span data-mini-meta>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
             <small data-mini-calc>${customerPaymentLabel(event.client_calc_type)}</small>
-            <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
-            ${coauthorBadgeHtml(event, 'data-mini-coauthor')}
+            <div class="mini-badge-row">
+              <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
+              ${coauthorBadgeHtml(event, 'data-mini-coauthor')}
+            </div>
           </button>
         `).join("") : `<div class="empty-state">Мероприятий пока нет.</div>`}
       </div>
@@ -3309,6 +3319,27 @@ async function getActionManagers() {
   }
 }
 
+
+function clearCoauthorStateForEvent(eventId) {
+  const patch = {
+    is_coauthored: false,
+    coauthor_name: null,
+    coauthor_user_id: null,
+    share_percent: 100,
+  };
+
+  const key = String(eventId);
+
+  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+    state.currentManagerEvent = { ...state.currentManagerEvent, ...patch };
+    state.managerDraftEventsById[key] = { ...(state.managerDraftEventsById[key] || state.currentManagerEvent), ...patch };
+  }
+
+  const dashboardEvent = getManagerDashboardEvent(eventId);
+  if (dashboardEvent) Object.assign(dashboardEvent, patch);
+}
+
+
 function closeManagerActionDropdown() {
   document.querySelectorAll(".manager-action-dropdown").forEach((node) => node.remove());
   document.querySelectorAll("[data-manager-event-transfer], [data-manager-event-coauthor]").forEach((button) => {
@@ -3499,8 +3530,14 @@ attachEstimateKeyboardNavigation();
       await withLoading(async () => {
         await api(`/events/${eventId}/coauthor/remove`, { method: "POST" });
         closeManagerActionDropdown();
+        clearCoauthorStateForEvent(eventId);
         state.selectedManagerEventId = Number(eventId);
         await loadDashboard();
+
+        if (Number(state.selectedManagerEventId) === Number(eventId)) {
+          clearCoauthorStateForEvent(eventId);
+          await renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+        }
       }, "Удаляем соавтора…");
     });
   });
