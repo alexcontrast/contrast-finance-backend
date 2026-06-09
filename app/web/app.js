@@ -1399,7 +1399,7 @@ function renderManagerEventList(data) {
 
       <div class="manager-mini-list">
         ${events.length ? events.map((event) => `
-          <button class="manager-mini-card status-${event.status} ${Number(selected?.id) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}">
+          <button class="manager-mini-card status-${event.status} ${Number(selected?.id) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}" style="${event.status === "review" ? "background: rgba(50,168,82,.14); border-color: rgba(50,168,82,.45);" : ""}${Number(selected?.id) === Number(event.id) ? " background: rgba(35,83,160,.12); border-color: rgba(35,83,160,.75); box-shadow: 0 0 0 2px rgba(35,83,160,.18) inset;" : ""}">
             <div class="mini-card-pills">
               ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
@@ -2312,14 +2312,16 @@ function renderInternalEstimate(items, event, summary = null) {
 }
 
 function renderManagerEventCard(event, items = [], summary = null) {
-  const isReadonlyReview = isReviewManagerEvent(event);
-
   const canEdit = canEditManagerEvent(event);
+  const canDelete = canDeleteManagerEvent(event);
+  const isReadonlyReview = event?.status === "review";
+  const readonlyAttrs = canEdit ? "" : "disabled";
+
 
   const activeTab = state.managerEstimateTab || "external";
 
   return `
-    <section class="manager-event-card ${isReadonlyReview ? "is-readonly" : ""}">
+    <section class="manager-event-card ${isReadonlyReview ? "is-readonly" : ""}" style="${isReadonlyReview ? "background: rgba(115,120,130,.045);" : ""}">
       <div class="manager-event-head">
         <div>
           <div class="overview-label">Карточка мероприятия</div>
@@ -2330,14 +2332,15 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <button class="secondary">Оплатить</button>
           <button class="ghost">Передать</button>
           <button class="ghost">Соавтор</button>
-          ${canShowDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}" ${canDeleteManagerEvent(event) ? "" : "disabled"}>Удалить</button>` : ""}
+          <button class="danger-btn" data-manager-event-delete="${event.id}" ${canDelete ? "" : "disabled"} style="margin-left:auto;">Удалить</button>
         </div>
       </div>
-      ${isReadonlyReview ? `<div class="readonly-banner">Мероприятие на проверке — смета и поля недоступны для редактирования. Можно делать оплаты, передавать мероприятие и добавлять соавтора.</div>` : ""}
 
-      <div class="manager-event-fields">
+      ${isReadonlyReview ? `<div class="readonly-banner" style="margin: 12px 0 0; padding: 10px 12px; border: 1px solid rgba(50,168,82,.35); background: rgba(50,168,82,.10); color:#256b31; border-radius:12px; font-size:13px; font-weight:700;">Мероприятие на проверке — смета и поля недоступны для редактирования. Можно делать оплаты, передавать мероприятие и добавлять соавтора.</div>` : ""}
+
+      <div class="manager-event-fields" style="${isReadonlyReview ? "filter: grayscale(.35); opacity:.72;" : ""}">
         <label>Тип расчёта с заказчиком
-          <select data-event-field="client_calc_type" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"}>
+          <select data-event-field="client_calc_type" data-event-id="${event.id}" ${readonlyAttrs}>
             <option value="ip_contrast_event" ${event.client_calc_type === "ip_contrast_event" ? "selected" : ""}>ИП Contrast Event</option>
             <option value="our_no_vat" ${event.client_calc_type === "our_no_vat" ? "selected" : ""}>ОУР без НДС</option>
             <option value="simplified" ${event.client_calc_type === "simplified" ? "selected" : ""}>Упрощенка</option>
@@ -2345,20 +2348,20 @@ function renderManagerEventCard(event, items = [], summary = null) {
           </select>
         </label>
         <label>Дата мероприятия
-          <input type="date" value="${eventDateForInput(event.event_date)}" data-event-field="event_date" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+          <input type="date" value="${eventDateForInput(event.event_date)}" data-event-field="event_date" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
         <label>Название заказчика
-          <input value="${event.client_name || ""}" data-event-field="client_name" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+          <input value="${event.client_name || ""}" data-event-field="client_name" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
         <label>Название мероприятия
-          <input value="${event.title || ""}" data-event-field="title" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+          <input value="${event.title || ""}" data-event-field="title" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
         <label>Комиссия агентства, %
-          <input value="${formatPlainNumber(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+          <input value="${formatPlainNumber(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
         ${event.client_calc_type === "simplified" ? `
           <label>Банк+налоги, %
-            <input value="${formatPlainNumber(event.simplified_bank_tax_percent || 0)}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${isDraftEvent(event) ? "" : "disabled"} />
+            <input value="${formatPlainNumber(event.simplified_bank_tax_percent || 0)}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${readonlyAttrs} />
           </label>
         ` : ""}
       </div>
@@ -2387,9 +2390,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
       ` : ""}
 
       <div class="manager-card-bottom-actions">
-        ${canShowDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}" ${canDeleteManagerEvent(event) ? "" : "disabled"}>Удалить</button>` : ""}
-          <button class="save-draft-btn" data-manager-event-save-draft="${event.id}" ${canEdit ? "" : "disabled"}>Сохранить черновик</button>
-        <button data-manager-event-send-review="${event.id}" ${canEdit ? "" : "disabled"}>Отправить Саше</button>
+        <button class="save-draft-btn" data-manager-event-save-draft="${event.id}" ${canEdit ? "" : "disabled"} ${readonlyAttrs}>Сохранить черновик</button>
+        <button data-manager-event-send-review="${event.id}" ${canEdit ? "" : "disabled"} ${readonlyAttrs}>Отправить Саше</button>
       </div>
     </section>
   `;
