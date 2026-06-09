@@ -1968,8 +1968,8 @@ function updateCurrentManagerMiniCardLive() {
     const budgetPill = pills[0];
     const incomePill = pills[1];
 
-    if (titleEl) titleEl.textContent = state.currentManagerEvent.title || "Без названия";
-    if (metaEl) metaEl.textContent = `${state.currentManagerEvent.client_name || ""} · ${formatDateRu(state.currentManagerEvent.event_date)}`;
+    if (titleEl) titleEl.textContent = state.currentManagerEvent.client_name || "Без заказчика";
+    if (metaEl) metaEl.textContent = `${state.currentManagerEvent.title || "Без названия"} · ${formatDateRu(state.currentManagerEvent.event_date)}`;
     if (calcEl) calcEl.textContent = customerPaymentLabel(state.currentManagerEvent.client_calc_type);
     if (statusEl) {
       statusEl.textContent = statusLabel(state.currentManagerEvent.status);
@@ -2035,8 +2035,8 @@ function renderManagerEventList(data) {
               ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
             </div>
-            <strong data-mini-title>${event.title || "Без названия"}</strong>
-            <span data-mini-meta>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
+            <strong data-mini-title>${event.client_name || "Без заказчика"}</strong>
+            <span data-mini-meta>${event.title || "Без названия"} · ${formatDateRu(event.event_date)}</span>
             <small data-mini-calc>${customerPaymentLabel(event.client_calc_type)}</small>
             <div class="mini-badge-row">
               <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
