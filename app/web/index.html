@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Contrast Finance 2.0</title>
-  <link rel="stylesheet" href="/web/styles.css?v=0.35.35" />
+  <link rel="stylesheet" href="/web/styles.css?v=0.35.38" />
 </head>
 <body>
   <div class="app-shell">
@@ -24,19 +24,27 @@
     </header>
 
     <main>
-      <section id="loginScreen" class="card narrow">
-        <h2>Войти</h2>
-        <p class="muted">Используй логин и PIN. Админ входит своим PIN.</p>
+      <section id="loginScreen" class="card narrow auth-card">
+        <img class="auth-logo" src="/web/contrast-logo.jpg" alt="Contrast" />
+        <div class="auth-eyebrow">Экономика мероприятий</div>
+        <h2 class="auth-title">Делаем больше, чем просто сметы</h2>
+        <h3 class="auth-subtitle">Вход в систему</h3>
 
-        <label>Имя
-          <input id="loginName" autocomplete="username" placeholder="Admin, Санжар, Vadim" />
+        <div class="auth-tabs" role="tablist" aria-label="Тип входа">
+          <button class="auth-tab active" type="button" data-auth-mode="manager">Вход</button>
+          <button class="auth-tab" type="button" data-auth-mode="admin">Админ</button>
+          <button class="auth-tab" type="button" data-auth-mode="department_head">Глав Деп</button>
+        </div>
+
+        <label id="loginNameLabel">Имя менеджера
+          <input id="loginName" autocomplete="username" placeholder="Имя" />
         </label>
 
-        <label>PIN
-          <input id="loginPin" autocomplete="current-password" type="password" placeholder="PIN" />
+        <label>PIN-код
+          <input id="loginPin" autocomplete="current-password" type="password" placeholder="••••" />
         </label>
 
-        <button id="loginBtn">Войти</button>
+        <button id="loginBtn" type="button">Войти</button>
         <div id="loginError" class="error hidden"></div>
       </section>
 
@@ -114,6 +122,6 @@
     </div>
   </div>
 
-  <script src="/web/app.js?v=0.35.35"></script>
+  <script src="/web/app.js?v=0.35.38"></script>
 </body>
 </html>

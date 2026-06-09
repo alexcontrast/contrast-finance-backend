@@ -140,6 +140,93 @@ function injectManagerUxStyles() {
       color: #1f7a35 !important;
       border-color: rgba(50, 168, 82, .30) !important;
     }
+
+    .auth-card {
+      width: min(560px, calc(100vw - 32px));
+      margin: 12vh auto 0;
+      padding: 34px 34px 40px;
+      border-radius: 24px;
+      text-align: center;
+      box-shadow: 0 30px 90px rgba(20, 25, 18, .14);
+    }
+
+    .auth-logo {
+      width: 230px;
+      max-width: 70%;
+      height: auto;
+      display: block;
+      margin: 0 auto 18px;
+      object-fit: contain;
+    }
+
+    .auth-eyebrow {
+      color: #39c600;
+      text-transform: uppercase;
+      letter-spacing: .34em;
+      font-size: 13px;
+      font-weight: 900;
+      margin-bottom: 12px;
+    }
+
+    .auth-title {
+      font-size: 28px;
+      line-height: 1.12;
+      margin: 0 0 24px;
+      font-weight: 900;
+      letter-spacing: -.04em;
+    }
+
+    .auth-subtitle {
+      font-size: 28px;
+      line-height: 1.12;
+      margin: 0 0 22px;
+      font-weight: 900;
+      letter-spacing: -.04em;
+    }
+
+    .auth-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      background: rgba(115, 120, 105, .11);
+      border: 1px solid rgba(115, 120, 105, .18);
+      border-radius: 16px;
+      padding: 6px;
+      margin: 0 0 20px;
+    }
+
+    .auth-tab {
+      border: 0;
+      background: transparent;
+      border-radius: 12px;
+      padding: 12px 10px;
+      font-weight: 900;
+      cursor: pointer;
+      color: rgba(25, 30, 24, .72);
+    }
+
+    .auth-tab.active {
+      background: #5cff00;
+      color: #101510;
+    }
+
+    #loginScreen label {
+      text-align: left;
+      display: block;
+      font-weight: 900;
+      margin-top: 14px;
+    }
+
+    #loginScreen input {
+      margin-top: 8px;
+      width: 100%;
+    }
+
+    #loginBtn.is-loading,
+    #loginBtn:disabled {
+      opacity: .75;
+      cursor: progress;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -167,6 +254,7 @@ const state = {
   managerDraftTempSeq: 1,
   adminData: null,
   users: [],
+  authMode: "manager",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -666,6 +754,69 @@ function archivedPaymentRequests(requests) {
 }
 
 
+
+function resetLoginButton() {
+  const button = $("loginBtn");
+  if (!button) return;
+  button.disabled = false;
+  button.textContent = "Войти";
+  button.classList.remove("is-loading");
+  delete button.dataset.originalText;
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode || "manager";
+
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.classList.toggle("active", button.getAttribute("data-auth-mode") === state.authMode);
+  });
+
+  const nameLabel = $("loginNameLabel");
+  const nameInput = $("loginName");
+  const pinInput = $("loginPin");
+
+  if (nameLabel) {
+    nameLabel.style.display = state.authMode === "admin" ? "none" : "block";
+    nameLabel.childNodes[0].nodeValue = state.authMode === "department_head" ? "Имя руководителя" : "Имя менеджера";
+  }
+
+  if (nameInput) {
+    nameInput.placeholder = state.authMode === "department_head" ? "Санжар или Рауфаль" : "Имя";
+    if (state.authMode === "admin") nameInput.value = "";
+  }
+
+  if (pinInput) pinInput.placeholder = "••••";
+
+  const error = $("loginError");
+  if (error) {
+    error.textContent = "";
+    error.classList.add("hidden");
+  }
+
+  resetLoginButton();
+}
+
+function getLoginAttempts() {
+  const pin = $("loginPin").value;
+  const name = ($("loginName")?.value || "").trim();
+
+  if (state.authMode === "admin") {
+    return [
+      { name: "Admin", phone: null, pin },
+      { name: "Админ", phone: null, pin },
+      { name: "admin", phone: null, pin },
+    ];
+  }
+
+  return [{ name: name || null, phone: null, pin }];
+}
+
+function attachAuthTabs() {
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.onclick = () => setAuthMode(button.getAttribute("data-auth-mode"));
+  });
+}
+
 function showLogin() {
   $("loginScreen").classList.remove("hidden");
   $("dashboardScreen").classList.add("hidden");
@@ -674,6 +825,9 @@ function showLogin() {
   $("adminTabs").classList.add("hidden");
   $("pageTitle").textContent = "Вход";
   $("pageSubtitle").textContent = "Финансовая панель мероприятий";
+  attachAuthTabs();
+  setAuthMode(state.authMode || "manager");
+  resetLoginButton();
 }
 
 function showDashboardShell() {
@@ -3277,26 +3431,38 @@ async function boot() {
 
 async function login() {
   const loginButton = $("loginBtn");
-  $("loginError").classList.add("hidden");
+  const errorEl = $("loginError");
+  if (errorEl) errorEl.classList.add("hidden");
+
   setButtonLoading(loginButton, true, "Входим…");
 
   try {
-    const data = await api("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        name: $("loginName").value || null,
-        phone: null,
-        pin: $("loginPin").value,
-      }),
-    });
+    let lastError = null;
+    const attempts = getLoginAttempts();
 
-    state.token = data.access_token;
-    localStorage.setItem("cf_token", state.token);
-    await boot();
+    for (const payload of attempts) {
+      try {
+        const data = await api("/auth/login", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+
+        state.token = data.access_token;
+        localStorage.setItem("cf_token", state.token);
+        await boot();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error("Не удалось войти");
   } catch (error) {
-    $("loginError").textContent = error.message;
-    $("loginError").classList.remove("hidden");
-    setButtonLoading(loginButton, false);
+    if (errorEl) {
+      errorEl.textContent = error.message;
+      errorEl.classList.remove("hidden");
+    }
+    resetLoginButton();
   }
 }
 
@@ -3322,14 +3488,24 @@ async function changePin() {
 }
 
 $("loginBtn").onclick = login;
-$("loginPin").addEventListener("keydown", (event) => {
-  if (event.key === "Enter") login();
+attachAuthTabs();
+["loginName", "loginPin"].forEach((id) => {
+  const input = $(id);
+  if (!input) return;
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
 });
 
 $("logoutBtn").addEventListener("click", () => {
   localStorage.removeItem("cf_token");
   state.token = "";
   state.bootstrap = null;
+  const pinInput = $("loginPin");
+  if (pinInput) pinInput.value = "";
   showLogin();
 });
 
