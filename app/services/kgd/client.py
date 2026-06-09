@@ -358,7 +358,9 @@ def check_taxpayer(iin_bin_raw: str) -> KgdTaxpayerResult:
     iin_bin = normalize_iin_bin(iin_bin_raw)
     validate_iin_bin(iin_bin)
 
-    if settings.KGD_MODE == "live":
-        return check_taxpayer_live(iin_bin)
+    # Рабочий режим по умолчанию — реальный КГД.
+    # Заглушка остаётся только как явный dev-режим, если специально поставить KGD_MODE=stub.
+    if settings.KGD_MODE == "stub":
+        return check_taxpayer_stub(iin_bin)
 
-    return check_taxpayer_stub(iin_bin)
+    return check_taxpayer_live(iin_bin)
