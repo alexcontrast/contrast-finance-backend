@@ -1456,6 +1456,11 @@ function renderManagerPlanPanel(data) {
 }
 
 
+
+function getManagerDashboardEvent(eventId) {
+  return (state.managerData?.events || []).find((event) => Number(event.id) === Number(eventId)) || null;
+}
+
 function refreshManagerMiniCardSelection() {
   document.querySelectorAll("[data-manager-event-id]").forEach((card) => {
     const isOpen = Number(card.getAttribute("data-manager-event-id")) === Number(state.selectedManagerEventId);
@@ -1464,47 +1469,51 @@ function refreshManagerMiniCardSelection() {
 }
 
 function updateCurrentManagerMiniCardLive() {
-  if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
+  try {
+    if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
 
-  const card = document.querySelector(`[data-manager-event-id="${state.selectedManagerEventId}"]`);
-  if (!card) return;
+    const card = document.querySelector(`[data-manager-event-id="${state.selectedManagerEventId}"]`);
+    if (!card) return;
 
-  const items = getDraftItems(state.selectedManagerEventId);
-  const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
-  state.currentManagerSummary = summary;
+    const items = getDraftItems(state.selectedManagerEventId);
+    const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+    state.currentManagerSummary = summary;
 
-  const titleEl = card.querySelector("[data-mini-title]");
-  const metaEl = card.querySelector("[data-mini-meta]");
-  const calcEl = card.querySelector("[data-mini-calc]");
-  const statusEl = card.querySelector("[data-mini-status]");
-  const pills = card.querySelectorAll(".mini-pill");
-  const budgetPill = pills[0];
-  const incomePill = pills[1];
+    const titleEl = card.querySelector("[data-mini-title]");
+    const metaEl = card.querySelector("[data-mini-meta]");
+    const calcEl = card.querySelector("[data-mini-calc]");
+    const statusEl = card.querySelector("[data-mini-status]");
+    const pills = card.querySelectorAll(".mini-pill");
+    const budgetPill = pills[0];
+    const incomePill = pills[1];
 
-  if (titleEl) titleEl.textContent = state.currentManagerEvent.title || "Без названия";
-  if (metaEl) metaEl.textContent = `${state.currentManagerEvent.client_name || ""} · ${formatDateRu(state.currentManagerEvent.event_date)}`;
-  if (calcEl) calcEl.textContent = customerPaymentLabel(state.currentManagerEvent.client_calc_type);
-  if (statusEl) {
-    statusEl.textContent = statusLabel(state.currentManagerEvent.status);
-    statusEl.className = `status-badge ${eventStatusToneClass(state.currentManagerEvent.status)}`;
-  }
+    if (titleEl) titleEl.textContent = state.currentManagerEvent.title || "Без названия";
+    if (metaEl) metaEl.textContent = `${state.currentManagerEvent.client_name || ""} · ${formatDateRu(state.currentManagerEvent.event_date)}`;
+    if (calcEl) calcEl.textContent = customerPaymentLabel(state.currentManagerEvent.client_calc_type);
+    if (statusEl) {
+      statusEl.textContent = statusLabel(state.currentManagerEvent.status);
+      statusEl.className = `status-badge ${eventStatusToneClass(state.currentManagerEvent.status)}`;
+    }
 
-  if (budgetPill) budgetPill.innerHTML = `<strong>Бюджет:</strong> ${formatMoney(summary.external_total || 0)}`;
-  if (incomePill) incomePill.innerHTML = `<strong>Доход:</strong> ${formatMoney(summary.final_company_income || 0)}`;
+    if (budgetPill) budgetPill.innerHTML = `<strong>Бюджет:</strong> ${formatMoney(summary.external_total || 0)}`;
+    if (incomePill) incomePill.innerHTML = `<strong>Доход:</strong> ${formatMoney(summary.final_company_income || 0)}`;
 
-  card.setAttribute("data-event-status", state.currentManagerEvent.status || "");
-  card.classList.remove("status-tone-draft", "status-tone-review", "status-tone-accepted");
-  card.classList.add(eventStatusToneClass(state.currentManagerEvent.status));
+    card.setAttribute("data-event-status", state.currentManagerEvent.status || "");
+    card.classList.remove("status-tone-draft", "status-tone-review", "status-tone-accepted");
+    card.classList.add(eventStatusToneClass(state.currentManagerEvent.status));
 
-  const dashboardEvent = getManagerDashboardEvent(state.selectedManagerEventId);
-  if (dashboardEvent) {
-    dashboardEvent.title = state.currentManagerEvent.title;
-    dashboardEvent.client_name = state.currentManagerEvent.client_name;
-    dashboardEvent.event_date = state.currentManagerEvent.event_date;
-    dashboardEvent.client_calc_type = state.currentManagerEvent.client_calc_type;
-    dashboardEvent.status = state.currentManagerEvent.status;
-    dashboardEvent.external_total = summary.external_total || 0;
-    dashboardEvent.final_company_income = summary.final_company_income || 0;
+    const dashboardEvent = getManagerDashboardEvent(state.selectedManagerEventId);
+    if (dashboardEvent) {
+      dashboardEvent.title = state.currentManagerEvent.title;
+      dashboardEvent.client_name = state.currentManagerEvent.client_name;
+      dashboardEvent.event_date = state.currentManagerEvent.event_date;
+      dashboardEvent.client_calc_type = state.currentManagerEvent.client_calc_type;
+      dashboardEvent.status = state.currentManagerEvent.status;
+      dashboardEvent.external_total = summary.external_total || 0;
+      dashboardEvent.final_company_income = summary.final_company_income || 0;
+    }
+  } catch (error) {
+    console.warn("Mini card live update skipped:", error);
   }
 }
 

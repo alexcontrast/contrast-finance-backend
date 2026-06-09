@@ -1,25 +1,19 @@
-Contrast Finance Backend v0.35.34 — changed files only
+Contrast Finance Backend v0.35.35 — changed files only
 
-Миникарточка теперь живая мини-сводка основной карточки.
+Аварийный фикс работы сметы после v0.35.34.
 
-Frontend:
-- миникарточка получила отдельные элементы:
-  - `data-mini-title`
-  - `data-mini-meta`
-  - `data-mini-calc`
-  - `data-mini-status`
-- при изменении основной карточки в прямом эфире обновляются:
-  - название мероприятия
-  - заказчик
-  - дата
-  - тип расчёта
-  - статус
-  - бюджет
-  - доход
-- `setDraftEventValue()` теперь синхронизирует `state.currentManagerEvent`
-- `updateCurrentManagerMiniCardLive()` обновляет не только бюджет/доход, а всю миникарточку текущего мероприятия
+Причина:
+- live-обновление миникарточки вызывало `getManagerDashboardEvent(...)`
+- этой функции в текущем app.js не было
+- из-за ReferenceError ломалась цепочка:
+  выбор способа оплаты → пересчёт → КГД → обновление НДС/Вычетов
+
+Исправлено:
+- добавлена функция `getManagerDashboardEvent(eventId)`
+- `updateCurrentManagerMiniCardLive()` обёрнута в try/catch
+- теперь ошибка миникарточки не может сломать работу сметы, выбора способа оплаты или КГД
 - app.js проверен через `node --check`
 
-index.html подключает app.js/styles.css с ?v=0.35.34
+index.html подключает app.js/styles.css с ?v=0.35.35
 
 Миграций нет.
