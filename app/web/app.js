@@ -2057,7 +2057,10 @@ function updateInternalRowCells(itemId) {
   if (paidCell) paidCell.textContent = formatMoney(item.paid_amount);
 
   const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
-  if (paymentSelect) paymentSelect.disabled = Boolean(item.iin_bin_locked);
+  if (paymentSelect) {
+    paymentSelect.value = item.payment_method || "";
+    paymentSelect.disabled = Boolean(item.iin_bin_locked);
+  }
 
   const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
   if (binInput) {
@@ -2166,6 +2169,7 @@ function attachDraftInputs(eventId) {
       }
 
       if (field === "payment_method") {
+        syncDraftItemFromRowBeforeTax(itemId);
         rerenderCurrentManagerCard();
       } else {
         refreshDraftVisibleCalculations(eventId);
@@ -2964,17 +2968,47 @@ async function deleteManagerEvent(eventId) {
   if (holder) holder.innerHTML = `<div class="empty-state">Мероприятие удалено</div>`;
 }
 
-async function checkTaxForItem(itemId) {
+async 
+function syncDraftItemFromRowBeforeTax(itemId) {
   const items = getDraftItems(state.selectedManagerEventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
+  const row = document.querySelector(`tr[data-event-item-row="${itemId}"]`);
+
+  if (!item || !row) return item || null;
+
+  const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
+  const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
+  const factInput = row.querySelector(`[data-item-field="amount_fact"][data-item-id="${itemId}"]`);
+
+  if (paymentSelect) item.payment_method = paymentSelect.value || null;
+  if (binInput) item.iin_bin = binInput.value ? binInput.value.replace(/\D/g, "") : null;
+  if (factInput && factInput.value !== "") item.amount_fact = Math.round(normalizeNumberInput(factInput.value));
+
+  if (item.payment_method !== "invoice") {
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = item.payment_method === "self_employed"
+      ? Math.round((asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item)) * 0.10)
+      : 0;
+  }
+
+  return item;
+}
+
+async function checkTaxForItem(itemId) {
+  let item = syncDraftItemFromRowBeforeTax(itemId);
 
   if (!item || item.payment_method !== "invoice") {
     alert("КГД проверка доступна только для способа оплаты “По счету”");
     return;
   }
 
-  const input = document.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
-  const iinBin = input?.value?.trim();
+  const row = document.querySelector(`tr[data-event-item-row="${itemId}"]`);
+  const input = row?.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`)
+    || document.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
+
+  const iinBin = (input?.value || item.iin_bin || "").trim();
 
   if (!iinBin) {
     alert("Сначала укажи БИН/ИИН");
@@ -2987,13 +3021,22 @@ async function checkTaxForItem(itemId) {
     return;
   }
 
+  item.iin_bin = normalized;
+
   try {
     if (String(itemId).startsWith("tmp-")) {
-      item.iin_bin = normalized;
       await saveDraftEvent(state.selectedManagerEventId);
       await saveDraftItems(state.selectedManagerEventId);
-      showDraftSavedHint();
-      return;
+
+      const itemsAfterSave = getDraftItems(state.selectedManagerEventId);
+      item = itemsAfterSave.find((candidate) => candidate.iin_bin === normalized && candidate.payment_method === "invoice")
+        || itemsAfterSave[itemsAfterSave.length - 1];
+
+      if (!item || String(item.id).startsWith("tmp-")) {
+        throw new Error("Не удалось сохранить позицию перед проверкой КГД");
+      }
+
+      itemId = item.id;
     }
 
     const result = await api(`/event-items/${itemId}/tax/check`, {
@@ -3006,8 +3049,12 @@ async function checkTaxForItem(itemId) {
     item.tax_check_status = result.tax_status || result.tax_check_status || null;
     item.vat_amount = Math.round(asNumber(result.vat_amount));
     item.deduction_amount = Math.round(asNumber(result.deduction_amount));
+    item.payment_method = "invoice";
 
-    updateTaxUiInPlace(itemId);
+    // Если проверяли tmp-строку, после сохранения id поменялся.
+    // Надёжнее перерисовать карточку, чтобы data-id и кнопка стали настоящими.
+    rerenderCurrentManagerCard();
+    updateCurrentManagerMiniCardLive();
   } catch (error) {
     item.iin_bin = normalized;
     item.iin_bin_locked = false;
@@ -3018,7 +3065,6 @@ async function checkTaxForItem(itemId) {
     alert(error.message || "КГД не ответил");
   }
 }
-
 
 function rerenderCurrentManagerCard() {
   if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
