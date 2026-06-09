@@ -1892,6 +1892,7 @@ function updateCurrentManagerMiniCardLive() {
 
     const items = getDraftItems(state.selectedManagerEventId);
     const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+    const miniSummary = applyEventShareToSummaryValues(summary, state.currentManagerEvent);
     state.currentManagerSummary = summary;
 
     const titleEl = card.querySelector("[data-mini-title]");
@@ -1925,7 +1926,7 @@ function updateCurrentManagerMiniCardLive() {
     }
 
     if (budgetPill) budgetPill.innerHTML = `<strong>Бюджет:</strong> ${formatMoney(summary.external_total || 0)}`;
-    if (incomePill) incomePill.innerHTML = `<strong>Доход:</strong> ${formatMoney(summary.final_company_income || 0)}`;
+    if (incomePill) incomePill.innerHTML = `<strong>Доход:</strong> ${formatMoney(miniSummary.final_company_income || 0)}`;
 
     card.setAttribute("data-event-status", state.currentManagerEvent.status || "");
     card.classList.remove("status-tone-draft", "status-tone-review", "status-tone-accepted");
@@ -1939,8 +1940,8 @@ function updateCurrentManagerMiniCardLive() {
       dashboardEvent.client_calc_type = state.currentManagerEvent.client_calc_type;
       dashboardEvent.status = state.currentManagerEvent.status;
       dashboardEvent.external_total = summary.external_total || 0;
-      dashboardEvent.final_company_income = summary.final_company_income || 0;
-      dashboardEvent.manager_salary = summary.manager_salary || 0;
+      dashboardEvent.final_company_income = miniSummary.final_company_income || 0;
+      dashboardEvent.manager_salary = miniSummary.manager_salary || 0;
       dashboardEvent.is_coauthored = state.currentManagerEvent.is_coauthored;
       dashboardEvent.coauthor_name = state.currentManagerEvent.coauthor_name;
       dashboardEvent.coauthor_user_id = state.currentManagerEvent.coauthor_user_id;
@@ -2160,7 +2161,7 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
     simplified_bank_tax_amount: simplifiedMarkup,
   };
 
-  return applyEventShareToSummaryValues(preview, event);
+  return preview;
 }
 
 
