@@ -134,6 +134,12 @@ function injectManagerUxStyles() {
       box-shadow: none !important;
       opacity: .85 !important;
     }
+
+    .mini-pill-green {
+      background: rgba(50, 168, 82, .14) !important;
+      color: #1f7a35 !important;
+      border-color: rgba(50, 168, 82, .30) !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -354,6 +360,7 @@ function setDraftEventValue(eventId, field, value) {
   } else {
     event[field] = value;
   }
+  updateCurrentManagerMiniCardLive();
 }
 
 function getSelectedManagerEvent(data) {
@@ -369,7 +376,8 @@ function getSelectedManagerEvent(data) {
 }
 
 function managerCardMetric(label, value) {
-  return `<span class="mini-pill"><strong>${label}:</strong> ${value}</span>`;
+  const toneClass = ["Бюджет", "Доход"].includes(label) ? "mini-pill-green" : "";
+  return `<span class="mini-pill ${toneClass}"><strong>${label}:</strong> ${value}</span>`;
 }
 
 function normalizeNumberInput(value) {
@@ -1441,6 +1449,37 @@ function renderManagerPlanPanel(data) {
   `;
 }
 
+
+function refreshManagerMiniCardSelection() {
+  document.querySelectorAll("[data-manager-event-id]").forEach((card) => {
+    const isOpen = Number(card.getAttribute("data-manager-event-id")) === Number(state.selectedManagerEventId);
+    card.classList.toggle("is-open", isOpen);
+  });
+}
+
+function updateCurrentManagerMiniCardLive() {
+  if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
+
+  const card = document.querySelector(`[data-manager-event-id="${state.selectedManagerEventId}"]`);
+  if (!card) return;
+
+  const items = getDraftItems(state.selectedManagerEventId);
+  const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+
+  const pills = card.querySelectorAll(".mini-pill");
+  const budgetPill = pills[0];
+  const incomePill = pills[1];
+
+  if (budgetPill) budgetPill.innerHTML = `<strong>Бюджет:</strong> ${formatMoney(summary.external_total || 0)}`;
+  if (incomePill) incomePill.innerHTML = `<strong>Доход:</strong> ${formatMoney(summary.final_company_income || 0)}`;
+
+  const dashboardEvent = getManagerDashboardEvent(state.selectedManagerEventId);
+  if (dashboardEvent) {
+    dashboardEvent.external_total = summary.external_total || 0;
+    dashboardEvent.final_company_income = summary.final_company_income || 0;
+  }
+}
+
 function renderManagerEventList(data) {
   const events = data.events || [];
   const selected = getSelectedManagerEvent(data);
@@ -1453,7 +1492,7 @@ function renderManagerEventList(data) {
 
       <div class="manager-mini-list">
         ${events.length ? events.map((event) => `
-          <button class="manager-mini-card ${eventStatusToneClass(event.status)} ${Number(selected?.id) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}">
+          <button class="manager-mini-card ${eventStatusToneClass(event.status)} ${Number(state.selectedManagerEventId) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}">
             <div class="mini-card-pills">
               ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
@@ -1472,6 +1511,11 @@ function renderManagerEventList(data) {
 async function renderManagerEventDetail(eventId, options = {}) {
   const holder = document.getElementById("managerEventDetail");
   if (!holder) return;
+
+  if (eventId) {
+    state.selectedManagerEventId = Number(eventId);
+    refreshManagerMiniCardSelection();
+  }
 
   if (!eventId) {
     holder.innerHTML = `
@@ -1729,6 +1773,7 @@ function setDraftItemValue(eventId, itemId, field, value) {
   if (["amount_fact", "external_price", "external_quantity", "external_days"].includes(field)) {
     recalculateCheckedItemTax(item);
   }
+  updateCurrentManagerMiniCardLive();
 }
 
 
@@ -1845,6 +1890,7 @@ function updateInternalSummaryCards() {
   const items = getDraftItems(state.selectedManagerEventId);
   const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
   state.currentManagerSummary = summary;
+  updateCurrentManagerMiniCardLive();
 
   const grid = document.querySelector(".manager-summary-grid-six");
   if (!grid) return;
@@ -1872,6 +1918,7 @@ function updateInternalSummaryCards() {
 function updateTaxUiInPlace(itemId) {
   updateInternalRowCells(itemId);
   updateInternalSummaryCards();
+  updateCurrentManagerMiniCardLive();
 }
 
 
