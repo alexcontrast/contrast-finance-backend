@@ -1585,7 +1585,7 @@ async function saveDraftEvent(eventId) {
   const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
   if (!draftEvent) return;
 
-  await api(`/events/${eventId}`, {
+  const savedEvent = await api(`/events/${eventId}`, {
     method: "PATCH",
     body: JSON.stringify({
       client_name: draftEvent.client_name,
@@ -1601,6 +1601,11 @@ async function saveDraftEvent(eventId) {
       simplified_bank_tax_percent: draftEvent.client_calc_type === "simplified" ? draftEvent.simplified_bank_tax_percent : 0,
     }),
   });
+
+  if (savedEvent) {
+    state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
+    state.managerDraftEventsById[String(eventId)] = { ...state.currentManagerEvent };
+  }
 }
 
 function attachDraftInputs(eventId) {
@@ -1681,6 +1686,24 @@ function internalVatValue(item) {
 function isCoordinatorItem(item) {
   return item.item_type === "coordinator";
 }
+function taxStatusLabel(status) {
+  const map = {
+    our_vat: "ОУР с НДС",
+    our_no_vat: "ОУР без НДС",
+    simplified: "Упрощенка",
+    snr: "СНР",
+    self_employed: "Самозанятый",
+    not_found: "Не найдено",
+    error: "Ошибка",
+  };
+  return map[status] || status || "";
+}
+
+function isTaxProblem(item) {
+  return item.payment_method === "invoice" && ["not_found", "error"].includes(item.tax_check_status);
+}
+
+
 
 function rowInput(value, attrs = "") {
   return `<input ${attrs} value="${value ?? ""}" />`;
@@ -1900,7 +1923,7 @@ function renderExternalEstimate(items, eventId, event = null) {
         </thead>
         <tbody>
           ${shownItems.map((item) => `
-            <tr data-event-item-row="${item.id}">
+            <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
               <td class="drag-col">${draggableHandle(item)}</td>
               <td>${rowInput(item.external_name || "", `placeholder="Новая позиция" data-item-field="external_name" data-item-id="${item.id}"`)}</td>
               <td>${rowInput(formatInputNumber(item.external_price), `data-item-field="external_price" data-item-id="${item.id}"`)}</td>
@@ -1962,7 +1985,7 @@ function renderInternalEstimate(items, event, summary = null) {
           ${shownItems.map((item) => {
             const binDisabled = isCoordinatorItem(item) || item.payment_method !== "invoice";
             return `
-              <tr data-event-item-row="${item.id}">
+              <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
                 <td class="drag-col">${draggableHandle(item)}</td>
                 <td>${rowInput(item.external_name || "", `placeholder="Новая позиция" data-item-field="external_name" data-item-id="${item.id}"`)}</td>
                 <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
@@ -1973,7 +1996,7 @@ function renderInternalEstimate(items, event, summary = null) {
                       <option selected>—</option>
                     </select>
                   ` : `
-                    <select data-item-field="payment_method" data-item-id="${item.id}">
+                    <select data-item-field="payment_method" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}>
                       <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
                       <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
                       <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
@@ -1982,12 +2005,13 @@ function renderInternalEstimate(items, event, summary = null) {
                     </select>
                   `}
                 </td>
-                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`}`)}</td>
+                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`}`)}</td>
                 <td>
                   ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
-                    <button class="icon-btn" data-check-tax-item="${item.id}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
+                    <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="${taxStatusLabel(item.tax_check_status) || (item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД")}">
                       ${item.iin_bin_locked ? "✎" : "✓"}
                     </button>
+                    ${item.tax_check_status ? `<div class="tiny-tax-status ${isTaxProblem(item) ? "danger-text" : ""}">${taxStatusLabel(item.tax_check_status)}</div>` : ""}
                   ` : "—")}
                 </td>
                 <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
@@ -2233,10 +2257,12 @@ async function saveDraftItems(eventId) {
   for (const item of items) {
     const payload = itemPayloadForSave(item);
     if (String(item.id).startsWith("tmp-")) {
-      await api(`/events/${eventId}/items`, {
+      const created = await api(`/events/${eventId}/items`, {
         method: "POST",
         body: JSON.stringify(payload),
       });
+      item.id = created.id;
+      item.is_temp = false;
     } else {
       await api(`/event-items/${item.id}`, {
         method: "PATCH",
@@ -2245,9 +2271,9 @@ async function saveDraftItems(eventId) {
     }
   }
 
-  delete state.managerDraftItemsByEventId[draftKeyForEvent(eventId)];
-  delete state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)];
-  if (state.managerDraftEventsById) delete state.managerDraftEventsById[String(eventId)];
+  // Не очищаем локальный черновик сразу после сохранения, чтобы карточка не мигала.
+  // Полная синхронизация с backend произойдёт при следующем открытии карточки.
+  state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = [];
 }
 
 async function addExternalPosition(eventId) {
@@ -2269,6 +2295,23 @@ function deleteDraftItem(eventId, itemId) {
 }
 
 async function checkTaxForItem(itemId) {
+  const items = getDraftItems(state.selectedManagerEventId);
+  const item = items.find((candidate) => String(candidate.id) === String(itemId));
+
+  if (!item || item.payment_method !== "invoice") {
+    alert("КГД проверка доступна только для способа оплаты “По счету”");
+    return;
+  }
+
+  if (item.iin_bin_locked) {
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
+    rerenderCurrentManagerCard();
+    return;
+  }
+
   const input = document.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
   const iinBin = input?.value?.trim();
 
@@ -2277,17 +2320,61 @@ async function checkTaxForItem(itemId) {
     return;
   }
 
-  if (String(itemId).startsWith("tmp-")) {
-    alert("Сначала нажми “Сохранить черновик”, потом проверяй КГД по новой позиции");
+  const normalized = iinBin.replace(/\D/g, "");
+  if (normalized.length !== 12) {
+    alert("БИН/ИИН должен содержать 12 цифр");
     return;
   }
 
-  await api(`/event-items/${itemId}/tax/check`, {
-    method: "POST",
-    body: JSON.stringify({ iin_bin: iinBin }),
-  });
+  try {
+    if (String(itemId).startsWith("tmp-")) {
+      item.iin_bin = normalized;
+      await saveDraftEvent(state.selectedManagerEventId);
+      await saveDraftItems(state.selectedManagerEventId);
+      await renderManagerEventDetail(state.selectedManagerEventId);
+      return;
+    }
 
-  delete state.managerDraftItemsByEventId[draftKeyForEvent(state.selectedManagerEventId)];
+    const result = await api(`/event-items/${itemId}/tax/check`, {
+      method: "POST",
+      body: JSON.stringify({ iin_bin: normalized }),
+    });
+
+    item.iin_bin = result.iin_bin || normalized;
+    item.iin_bin_locked = Boolean(result.iin_bin_locked);
+    item.tax_check_status = result.tax_status || result.tax_check_status || null;
+    item.vat_amount = Math.round(asNumber(result.vat_amount));
+    item.deduction_amount = Math.round(asNumber(result.deduction_amount));
+
+    refreshDraftVisibleCalculations(state.selectedManagerEventId);
+    rerenderCurrentManagerCard();
+  } catch (error) {
+    item.iin_bin = normalized;
+    item.iin_bin_locked = false;
+    item.tax_check_status = "error";
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
+    refreshDraftVisibleCalculations(state.selectedManagerEventId);
+    rerenderCurrentManagerCard();
+    alert(error.message || "КГД не ответил");
+  }
+}
+
+
+function rerenderCurrentManagerCard() {
+  if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
+  const holder = $("managerEventDetail");
+  if (!holder) return;
+
+  const items = getDraftItems(state.selectedManagerEventId);
+  const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+  state.currentManagerSummary = summary;
+  state.currentManagerItems = items;
+
+  holder.innerHTML = renderManagerEventCard(state.currentManagerEvent, items, summary);
+  attachManagerCreateWorkspaceActions();
+  attachDraftEventInputs(state.selectedManagerEventId);
+  attachDraftInputs(state.selectedManagerEventId);
 }
 
 function attachManagerCreateWorkspaceActions() {
@@ -2335,7 +2422,7 @@ function attachManagerCreateWorkspaceActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
-        await renderManagerEventDetail(eventId);
+        rerenderCurrentManagerCard();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2351,7 +2438,7 @@ function attachManagerCreateWorkspaceActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
-        await renderManagerEventDetail(eventId);
+        rerenderCurrentManagerCard();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -2505,7 +2592,7 @@ function attachManagerDashboardActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
-        await renderManagerEventDetail(eventId);
+        rerenderCurrentManagerCard();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2520,7 +2607,7 @@ function attachManagerDashboardActions() {
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
-        await renderManagerEventDetail(eventId);
+        rerenderCurrentManagerCard();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
