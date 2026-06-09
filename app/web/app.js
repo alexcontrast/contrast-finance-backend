@@ -1667,12 +1667,13 @@ function updateInternalRowCells(itemId) {
     binInput.disabled = Boolean(item.iin_bin_locked);
   }
 
-  const kgdButton = row.querySelector(`[data-check-tax-item="${itemId}"]`);
-  if (kgdButton) {
-    kgdButton.textContent = item.iin_bin_locked ? "✎" : "✓";
-    kgdButton.title = item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД";
-    kgdButton.setAttribute("data-tax-action", item.iin_bin_locked ? "unlock" : "check");
-    kgdButton.classList.toggle("danger", isTaxProblem(item));
+  const oldCheckButton = row.querySelector(`[data-check-tax-item="${itemId}"]`);
+  const oldUnlockButton = row.querySelector(`[data-unlock-tax-item="${itemId}"]`);
+  const oldButton = oldCheckButton || oldUnlockButton;
+  if (oldButton) {
+    oldButton.outerHTML = item.iin_bin_locked
+      ? `<button class="icon-btn" data-unlock-tax-item="${itemId}" title="Изменить BIN">✎</button>`
+      : `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД">✓</button>`;
   }
 
   row.classList.toggle("tax-problem-row", isTaxProblem(item));
@@ -2159,9 +2160,11 @@ function renderInternalEstimate(items, event, summary = null) {
                 <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`}`)}</td>
                 <td>
                   ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
-                    <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" data-tax-action="${item.iin_bin_locked ? "unlock" : "check"}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
-                      ${item.iin_bin_locked ? "✎" : "✓"}
-                    </button>
+                    ${item.iin_bin_locked ? `
+                      <button class="icon-btn" data-unlock-tax-item="${item.id}" title="Изменить BIN">✎</button>
+                    ` : `
+                      <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="Проверить КГД">✓</button>
+                    `}
                   ` : "—")}
                 </td>
                 <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
@@ -2444,21 +2447,26 @@ function deleteDraftItem(eventId, itemId) {
   }
 }
 
-async function checkTaxForItem(itemId, action = "check") {
+
+function unlockTaxForItem(itemId) {
+  const items = getDraftItems(state.selectedManagerEventId);
+  const item = items.find((candidate) => String(candidate.id) === String(itemId));
+  if (!item) return;
+
+  item.iin_bin_locked = false;
+  item.tax_check_status = null;
+  item.vat_amount = 0;
+  item.deduction_amount = 0;
+
+  updateTaxUiInPlace(itemId);
+}
+
+async function checkTaxForItem(itemId) {
   const items = getDraftItems(state.selectedManagerEventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
 
   if (!item || item.payment_method !== "invoice") {
     alert("КГД проверка доступна только для способа оплаты “По счету”");
-    return;
-  }
-
-  if (action === "unlock" || item.iin_bin_locked) {
-    item.iin_bin_locked = false;
-    item.tax_check_status = null;
-    item.vat_amount = 0;
-    item.deduction_amount = 0;
-    updateTaxUiInPlace(itemId);
     return;
   }
 
@@ -2594,6 +2602,22 @@ showDraftSavedHint();
     });
   });
 
+
+  document.querySelectorAll("[data-check-tax-item]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      checkTaxForItem(button.getAttribute("data-check-tax-item"));
+    });
+  });
+
+  document.querySelectorAll("[data-unlock-tax-item]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      unlockTaxForItem(button.getAttribute("data-unlock-tax-item"));
+    });
+  });
 
   attachEstimateKeyboardNavigation();
   attachEstimateDragAndDrop();
