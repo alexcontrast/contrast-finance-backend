@@ -8,28 +8,39 @@ function injectManagerUxStyles() {
       opacity: .75;
       cursor: progress;
     }
+
+    .manager-mini-card.status-draft,
+    .manager-mini-card[data-event-status="draft"] {
+      background: rgba(115, 120, 130, .10) !important;
+      border-color: rgba(115, 120, 130, .28) !important;
+    }
+
     .manager-mini-card.status-review,
-    .event-mini-card.status-review {
+    .manager-mini-card[data-event-status="review"] {
       background: rgba(50, 168, 82, .14) !important;
       border-color: rgba(50, 168, 82, .45) !important;
     }
-    .manager-mini-card.is-open,
-    .event-mini-card.is-open {
+
+    .manager-mini-card.is-open {
       background: rgba(35, 83, 160, .12) !important;
       border-color: rgba(35, 83, 160, .75) !important;
       box-shadow: 0 0 0 2px rgba(35, 83, 160, .18) inset !important;
     }
-    .danger-btn {
-      border: 1px solid rgba(180, 35, 24, .45);
-      background: rgba(180, 35, 24, .10);
-      color: #b42318;
+
+    .danger-btn,
+    button.danger-btn {
+      border: 1px solid rgba(180, 35, 24, .55) !important;
+      background: rgba(180, 35, 24, .10) !important;
+      color: #b42318 !important;
       border-radius: 10px;
       padding: 9px 12px;
       font-weight: 800;
       cursor: pointer;
     }
-    .danger-btn:hover {
-      background: rgba(180, 35, 24, .16);
+
+    .danger-btn:hover,
+    button.danger-btn:hover {
+      background: rgba(180, 35, 24, .18) !important;
     }
   `;
   document.head.appendChild(style);
@@ -1350,7 +1361,7 @@ function renderManagerEventList(data) {
 
       <div class="manager-mini-list">
         ${events.length ? events.map((event) => `
-          <button class="manager-mini-card ${Number(selected?.id) === Number(event.id) ? "active" : ""}" data-manager-event-id="${event.id}">
+          <button class="manager-mini-card status-${event.status} ${Number(selected?.id) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}">
             <div class="mini-card-pills">
               ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
@@ -2271,6 +2282,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <button class="secondary" disabled>Оплатить</button>
           <button class="ghost" disabled>Передать</button>
           <button class="ghost" disabled>Соавтор</button>
+          ${canDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}">Удалить</button>` : ""}
         </div>
       </div>
 
