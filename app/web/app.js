@@ -1677,6 +1677,7 @@ function updateInternalRowCells(itemId) {
   }
 
   row.classList.toggle("tax-problem-row", isTaxProblem(item));
+  bindTaxButtons();
 }
 
 function updateInternalSummaryCards() {
@@ -2448,6 +2449,26 @@ function deleteDraftItem(eventId, itemId) {
 }
 
 
+
+function bindTaxButtons() {
+  document.querySelectorAll("[data-check-tax-item]").forEach((button) => {
+    button.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await checkTaxForItem(button.dataset.checkTaxItem);
+    };
+  });
+
+  document.querySelectorAll("[data-unlock-tax-item]").forEach((button) => {
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      unlockTaxForItem(button.dataset.unlockTaxItem);
+    };
+  });
+}
+
+
 function unlockTaxForItem(itemId) {
   const items = getDraftItems(state.selectedManagerEventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
@@ -2557,20 +2578,7 @@ function attachManagerCreateWorkspaceActions() {
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   });
-
-  document.querySelectorAll("[data-check-tax-item]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const itemId = button.getAttribute("data-check-tax-item");
-      await withLoading(async () => {
-        await saveDraftItems(state.selectedManagerEventId);
-        await checkTaxForItem(itemId);
-        await renderManagerEventDetail(state.selectedManagerEventId);
-        await loadDashboard();
-      }, "Проверяем КГД…");
-    });
-  });
-
-  document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
+document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-save-draft");
       await withLoading(async () => {
@@ -2610,17 +2618,10 @@ showDraftSavedHint();
       checkTaxForItem(button.getAttribute("data-check-tax-item"));
     });
   });
-
-  document.querySelectorAll("[data-unlock-tax-item]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      unlockTaxForItem(button.getAttribute("data-unlock-tax-item"));
-    });
-  });
-
-  attachEstimateKeyboardNavigation();
+attachEstimateKeyboardNavigation();
   attachEstimateDragAndDrop();
+  bindTaxButtons();
+
 }
 
 
