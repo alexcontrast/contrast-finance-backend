@@ -9,40 +9,68 @@ function injectManagerUxStyles() {
       cursor: progress;
     }
 
-    .manager-mini-card.status-draft,
-    .manager-mini-card[data-event-status="draft"] {
+    /* Миникарточки: базово все серые */
+    .manager-mini-card {
       background: rgba(115, 120, 130, .10) !important;
-      border-color: rgba(115, 120, 130, .28) !important;
+      border-color: rgba(115, 120, 130, .26) !important;
+      box-shadow: none !important;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
     }
 
-    .manager-mini-card.status-review,
-    .manager-mini-card[data-event-status="review"] {
-      background: rgba(50, 168, 82, .14) !important;
-      border-color: rgba(50, 168, 82, .45) !important;
-    }
-
+    /* Открытая миникарточка: зелёная обводка + свечение, без цветной заливки */
     .manager-mini-card.is-open {
-      background: rgba(35, 83, 160, .12) !important;
-      border-color: rgba(35, 83, 160, .75) !important;
-      box-shadow: 0 0 0 2px rgba(35, 83, 160, .18) inset !important;
+      background: rgba(115, 120, 130, .10) !important;
+      border-color: rgba(80, 210, 40, .90) !important;
+      box-shadow:
+        0 0 0 2px rgba(80, 210, 40, .30) inset,
+        0 8px 28px rgba(80, 210, 40, .18) !important;
     }
 
-    .danger-btn,
-    button.danger-btn {
-      border: 1px solid rgba(180, 35, 24, .55) !important;
-      background: rgba(180, 35, 24, .10) !important;
-      color: #b42318 !important;
-      border-radius: 10px;
-      padding: 9px 12px;
+    /* Статусы на миникарточках и в карточке */
+    .status,
+    .status-badge,
+    .manager-mini-card em {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-style: normal;
       font-weight: 800;
-      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      border: 1px solid transparent;
     }
 
-    .danger-btn:hover,
-    button.danger-btn:hover {
-      background: rgba(180, 35, 24, .18) !important;
+    .status-tone-draft,
+    .status.draft,
+    .status.revision,
+    .status-badge.status-tone-draft {
+      background: rgba(115, 120, 130, .14) !important;
+      border-color: rgba(115, 120, 130, .28) !important;
+      color: #6b7280 !important;
     }
-  
+
+    .status-tone-review,
+    .status.review,
+    .status-badge.status-tone-review {
+      background: rgba(255, 193, 7, .22) !important;
+      border-color: rgba(255, 193, 7, .48) !important;
+      color: #8a5a00 !important;
+    }
+
+    .status-tone-accepted,
+    .status.accepted,
+    .status.approved,
+    .status.completed,
+    .status.done,
+    .status.archive,
+    .status.archived,
+    .status-badge.status-tone-accepted {
+      background: rgba(50, 168, 82, .16) !important;
+      border-color: rgba(50, 168, 82, .42) !important;
+      color: #1f7a35 !important;
+    }
 
     .manager-event-card.is-readonly {
       background: rgba(115, 120, 130, .045);
@@ -75,10 +103,36 @@ function injectManagerUxStyles() {
       font-weight: 700;
     }
 
+    .danger-btn,
+    button.danger-btn {
+      border: 1px solid rgba(180, 35, 24, .55) !important;
+      background: rgba(180, 35, 24, .10) !important;
+      color: #b42318 !important;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .danger-btn:hover,
+    button.danger-btn:hover {
+      background: rgba(180, 35, 24, .18) !important;
+    }
+
     .danger-btn:disabled,
     button.danger-btn:disabled {
       opacity: .45 !important;
       cursor: not-allowed !important;
+    }
+
+    .manager-card-bottom-actions button:disabled,
+    .manager-card-bottom-actions .disabled-action {
+      background: rgba(115, 120, 130, .22) !important;
+      border-color: rgba(115, 120, 130, .28) !important;
+      color: rgba(30, 35, 42, .45) !important;
+      cursor: not-allowed !important;
+      box-shadow: none !important;
+      opacity: .85 !important;
     }
 `;
   document.head.appendChild(style);
@@ -758,7 +812,7 @@ function renderEventsTable(events, allowClick = false) {
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
               <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
-              <td><span class="status ${event.status}">${statusLabel(event.status)}</span></td>
+              <td><span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span></td>
               <td>${formatMoney(event.external_total)}</td>
               <td>${formatMoney(event.final_company_income)}</td>
               <td>${formatMoney(event.manager_salary || 0)}</td>
@@ -1399,7 +1453,7 @@ function renderManagerEventList(data) {
 
       <div class="manager-mini-list">
         ${events.length ? events.map((event) => `
-          <button class="manager-mini-card status-${event.status} ${Number(selected?.id) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}" style="${event.status === "review" ? "background: rgba(50,168,82,.14); border-color: rgba(50,168,82,.45);" : ""}${Number(selected?.id) === Number(event.id) ? " background: rgba(35,83,160,.12); border-color: rgba(35,83,160,.75); box-shadow: 0 0 0 2px rgba(35,83,160,.18) inset;" : ""}">
+          <button class="manager-mini-card ${eventStatusToneClass(event.status)} ${Number(selected?.id) === Number(event.id) ? "is-open" : ""}" data-manager-event-id="${event.id}" data-event-status="${event.status}">
             <div class="mini-card-pills">
               ${managerCardMetric("Бюджет", formatMoney(event.external_total || 0))}
               ${managerCardMetric("Доход", formatMoney(event.final_company_income || 0))}
@@ -1407,7 +1461,7 @@ function renderManagerEventList(data) {
             <strong>${event.title || "Без названия"}</strong>
             <span>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
             <small>${customerPaymentLabel(event.client_calc_type)}</small>
-            <em>${statusLabel(event.status)}</em>
+            <em class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
           </button>
         `).join("") : `<div class="empty-state">Мероприятий пока нет.</div>`}
       </div>
@@ -1948,6 +2002,16 @@ function isReviewManagerEvent(event) {
   return event?.status === "review";
 }
 
+
+function eventStatusToneClass(status) {
+  const normalized = String(status || "").toLowerCase();
+
+  if (["review", "on_review", "pending", "pending_review"].includes(normalized)) return "status-tone-review";
+  if (["accepted", "approved", "completed", "done", "archive", "archived"].includes(normalized)) return "status-tone-accepted";
+  if (["revision", "needs_revision", "rework"].includes(normalized)) return "status-tone-draft";
+  return "status-tone-draft";
+}
+
 function canEditManagerEvent(event) {
   return ["draft", "revision"].includes(event?.status);
 }
@@ -2326,7 +2390,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
         <div>
           <div class="overview-label">Карточка мероприятия</div>
           <h2>${event.title}</h2>
-          <span class="status ${event.status}">${statusLabel(event.status)}</span>
+          <span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span>
         </div>
         <div class="inline-actions">
           <button class="secondary">Оплатить</button>
@@ -2390,8 +2454,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
       ` : ""}
 
       <div class="manager-card-bottom-actions">
-        <button class="save-draft-btn" data-manager-event-save-draft="${event.id}" ${canEdit ? "" : "disabled"} ${readonlyAttrs}>Сохранить черновик</button>
-        <button data-manager-event-send-review="${event.id}" ${canEdit ? "" : "disabled"} ${readonlyAttrs}>Отправить Саше</button>
+        <button class="save-draft-btn ${canEdit ? "" : "disabled-action"}" data-manager-event-save-draft="${event.id}" ${readonlyAttrs}>Сохранить черновик</button>
+        <button class="${canEdit ? "" : "disabled-action"}" data-manager-event-send-review="${event.id}" ${readonlyAttrs}>Отправить Саше</button>
       </div>
     </section>
   `;
