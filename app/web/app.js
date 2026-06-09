@@ -42,7 +42,45 @@ function injectManagerUxStyles() {
     button.danger-btn:hover {
       background: rgba(180, 35, 24, .18) !important;
     }
-  `;
+  
+
+    .manager-event-card.is-readonly {
+      background: rgba(115, 120, 130, .045);
+    }
+
+    .manager-event-card.is-readonly .manager-event-fields,
+    .manager-event-card.is-readonly .estimate-table,
+    .manager-event-card.is-readonly .manager-summary-grid-six {
+      filter: grayscale(.35);
+      opacity: .72;
+    }
+
+    .manager-event-card.is-readonly input,
+    .manager-event-card.is-readonly select,
+    .manager-event-card.is-readonly textarea {
+      background: rgba(115, 120, 130, .10) !important;
+      color: rgba(30, 35, 42, .62) !important;
+      border-color: rgba(115, 120, 130, .25) !important;
+      cursor: not-allowed !important;
+    }
+
+    .readonly-banner {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border: 1px solid rgba(50, 168, 82, .35);
+      background: rgba(50, 168, 82, .10);
+      color: #256b31;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .danger-btn:disabled,
+    button.danger-btn:disabled {
+      opacity: .45 !important;
+      cursor: not-allowed !important;
+    }
+`;
   document.head.appendChild(style);
 }
 
@@ -1906,8 +1944,16 @@ function internalVatValue(item) {
 }
 
 
+function isReviewManagerEvent(event) {
+  return event?.status === "review";
+}
+
 function canEditManagerEvent(event) {
   return ["draft", "revision"].includes(event?.status);
+}
+
+function canShowDeleteManagerEvent(event) {
+  return ["draft", "revision", "review"].includes(event?.status);
 }
 
 function canDeleteManagerEvent(event) {
@@ -2266,12 +2312,14 @@ function renderInternalEstimate(items, event, summary = null) {
 }
 
 function renderManagerEventCard(event, items = [], summary = null) {
+  const isReadonlyReview = isReviewManagerEvent(event);
+
   const canEdit = canEditManagerEvent(event);
 
   const activeTab = state.managerEstimateTab || "external";
 
   return `
-    <section class="manager-event-card">
+    <section class="manager-event-card ${isReadonlyReview ? "is-readonly" : ""}">
       <div class="manager-event-head">
         <div>
           <div class="overview-label">Карточка мероприятия</div>
@@ -2279,12 +2327,13 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <span class="status ${event.status}">${statusLabel(event.status)}</span>
         </div>
         <div class="inline-actions">
-          <button class="secondary" disabled>Оплатить</button>
-          <button class="ghost" disabled>Передать</button>
-          <button class="ghost" disabled>Соавтор</button>
-          ${canDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}">Удалить</button>` : ""}
+          <button class="secondary">Оплатить</button>
+          <button class="ghost">Передать</button>
+          <button class="ghost">Соавтор</button>
+          ${canShowDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}" ${canDeleteManagerEvent(event) ? "" : "disabled"}>Удалить</button>` : ""}
         </div>
       </div>
+      ${isReadonlyReview ? `<div class="readonly-banner">Мероприятие на проверке — смета и поля недоступны для редактирования. Можно делать оплаты, передавать мероприятие и добавлять соавтора.</div>` : ""}
 
       <div class="manager-event-fields">
         <label>Тип расчёта с заказчиком
@@ -2338,9 +2387,9 @@ function renderManagerEventCard(event, items = [], summary = null) {
       ` : ""}
 
       <div class="manager-card-bottom-actions">
-        ${canDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}">Удалить</button>` : ""}
-          <button class="save-draft-btn" data-manager-event-save-draft="${event.id}">Сохранить черновик</button>
-        <button data-manager-event-send-review="${event.id}">Отправить Саше</button>
+        ${canShowDeleteManagerEvent(event) ? `<button class="danger-btn" data-manager-event-delete="${event.id}" ${canDeleteManagerEvent(event) ? "" : "disabled"}>Удалить</button>` : ""}
+          <button class="save-draft-btn" data-manager-event-save-draft="${event.id}" ${canEdit ? "" : "disabled"}>Сохранить черновик</button>
+        <button data-manager-event-send-review="${event.id}" ${canEdit ? "" : "disabled"}>Отправить Саше</button>
       </div>
     </section>
   `;
@@ -2544,11 +2593,14 @@ function applyManagerCardReadOnly() {
   const holder = $("managerEventDetail");
   if (!holder) return;
 
-  holder.querySelectorAll("input, select, textarea, button[data-check-tax-item], button[data-unlock-tax-item], button[data-delete-item], #addExternalPositionBtn, #addInternalPositionBtn, [data-manager-event-save-draft], [data-manager-event-send-review]").forEach((element) => {
+  holder.querySelectorAll(".manager-event-fields input, .manager-event-fields select, .manager-event-fields textarea, .estimate-table input, .estimate-table select, .estimate-table textarea, button[data-check-tax-item], button[data-unlock-tax-item], button[data-delete-item], #addExternalPositionBtn, #addInternalPositionBtn, [data-manager-event-save-draft], [data-manager-event-send-review]").forEach((element) => {
+    element.disabled = true;
+  });
+
+  holder.querySelectorAll("[data-manager-event-delete]").forEach((element) => {
     element.disabled = true;
   });
 }
-
 
 function bindTaxButtons() {
   document.querySelectorAll("[data-check-tax-item]").forEach((button) => {
