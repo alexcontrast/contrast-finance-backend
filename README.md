@@ -1,23 +1,23 @@
-Contrast Finance Backend v0.35.41 — changed files only
+Contrast Finance Backend v0.35.42 — changed files only
 
-Аварийный фикс запуска после v0.35.40.
+Фикс окна входа после патча КГД.
 
-Причина падения:
-- в v0.35.40 был заменён `app/schemas/auth.py`
-- из него пропал класс `AuthPermissionsRead`
-- `app/schemas/app_bootstrap.py` импортирует `AuthPermissionsRead`
-- из-за этого backend падал при старте:
-  ImportError: cannot import name 'AuthPermissionsRead'
+Причина:
+- в app.js после патча КГД появился лишний standalone `async` перед helper-функцией:
+  async
+  function syncDraftItemFromRowBeforeTax(...)
+- браузер останавливал выполнение app.js до навешивания обработчиков входа
+- поэтому не работали:
+  - кнопка `Войти`
+  - вкладки `Вход / Админ / Глав Деп`
 
 Исправлено:
-- возвращён `AuthPermissionsRead`
-- сохранён `auth_mode` в `AuthLoginRequest`
-- `AuthUserRead` снова совместим с bootstrap-схемами
-- auth route дополнен `permissions_for_user(user)`
-- index.html cache-bust до ?v=0.35.41
+- удалён лишний standalone `async`
+- `checkTaxForItem` оставлен как `async function`, потому что внутри используется await
+- index.html cache-bust до ?v=0.35.42
 
 Проверено:
-- Python-файлы компилируются
 - app.js прошёл node --check
+- Python-файлы компилируются
 
 Миграций нет.

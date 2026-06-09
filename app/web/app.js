@@ -2968,7 +2968,6 @@ async function deleteManagerEvent(eventId) {
   if (holder) holder.innerHTML = `<div class="empty-state">Мероприятие удалено</div>`;
 }
 
-async 
 function syncDraftItemFromRowBeforeTax(itemId) {
   const items = getDraftItems(state.selectedManagerEventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
