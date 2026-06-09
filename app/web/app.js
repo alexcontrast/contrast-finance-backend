@@ -341,6 +341,34 @@ function injectManagerUxStyles() {
       border-color: rgba(80, 210, 40, .7) !important;
       box-shadow: 0 0 0 2px rgba(80, 210, 40, .16) inset;
     }
+
+    .event-badge-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .coauthor-badge {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 13px;
+      line-height: 1;
+      font-weight: 900;
+      color: #1557c0;
+      background: rgba(33, 118, 255, .12);
+      border: 1px solid rgba(33, 118, 255, .28);
+    }
+
+    .manager-mini-card .coauthor-badge {
+      margin-top: 6px;
+      font-size: 12px;
+      padding: 5px 8px;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1751,6 +1779,7 @@ function updateCurrentManagerMiniCardLive() {
     const metaEl = card.querySelector("[data-mini-meta]");
     const calcEl = card.querySelector("[data-mini-calc]");
     const statusEl = card.querySelector("[data-mini-status]");
+    let coauthorEl = card.querySelector("[data-mini-coauthor]");
     const pills = card.querySelectorAll(".mini-pill");
     const budgetPill = pills[0];
     const incomePill = pills[1];
@@ -1761,6 +1790,18 @@ function updateCurrentManagerMiniCardLive() {
     if (statusEl) {
       statusEl.textContent = statusLabel(state.currentManagerEvent.status);
       statusEl.className = `status-badge ${eventStatusToneClass(state.currentManagerEvent.status)}`;
+    }
+
+    if (eventIsCoauthored(state.currentManagerEvent)) {
+      if (!coauthorEl) {
+        card.insertAdjacentHTML("beforeend", coauthorBadgeHtml(state.currentManagerEvent, "data-mini-coauthor"));
+        coauthorEl = card.querySelector("[data-mini-coauthor]");
+      } else {
+        const name = state.currentManagerEvent.coauthor_name || state.currentManagerEvent.owner_manager_name || "менеджер";
+        coauthorEl.textContent = `Соавтор: ${name}`;
+      }
+    } else if (coauthorEl) {
+      coauthorEl.remove();
     }
 
     if (budgetPill) budgetPill.innerHTML = `<strong>Бюджет:</strong> ${formatMoney(summary.external_total || 0)}`;
@@ -1779,6 +1820,11 @@ function updateCurrentManagerMiniCardLive() {
       dashboardEvent.status = state.currentManagerEvent.status;
       dashboardEvent.external_total = summary.external_total || 0;
       dashboardEvent.final_company_income = summary.final_company_income || 0;
+      dashboardEvent.manager_salary = summary.manager_salary || 0;
+      dashboardEvent.is_coauthored = state.currentManagerEvent.is_coauthored;
+      dashboardEvent.coauthor_name = state.currentManagerEvent.coauthor_name;
+      dashboardEvent.coauthor_user_id = state.currentManagerEvent.coauthor_user_id;
+      dashboardEvent.share_percent = state.currentManagerEvent.share_percent;
     }
   } catch (error) {
     console.warn("Mini card live update skipped:", error);
@@ -1806,6 +1852,7 @@ function renderManagerEventList(data) {
             <span data-mini-meta>${event.client_name || ""} · ${formatDateRu(event.event_date)}</span>
             <small data-mini-calc>${customerPaymentLabel(event.client_calc_type)}</small>
             <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
+            ${coauthorBadgeHtml(event, 'data-mini-coauthor')}
           </button>
         `).join("") : `<div class="empty-state">Мероприятий пока нет.</div>`}
       </div>
@@ -1846,7 +1893,8 @@ async function renderManagerEventDetail(eventId, options = {}) {
           api(`/events/${eventId}/summary`),
         ]);
 
-    const draftEvent = getDraftEvent(event);
+    const dashboardEvent = getManagerDashboardEvent(eventId);
+    const draftEvent = getDraftEvent({ ...(event || {}), ...(dashboardEvent || {}) });
     state.currentManagerEvent = draftEvent;
     const draftItems = getDraftItems(eventId, items || []);
     const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
@@ -1896,6 +1944,36 @@ function externalTotalToPay(items, event) {
 }
 
 
+
+function eventSharePercent(event) {
+  const value = asNumber(event?.share_percent || 100);
+  if (!Number.isFinite(value) || value <= 0) return 100;
+  return Math.min(100, value);
+}
+
+function eventIsCoauthored(event) {
+  return Boolean(event?.is_coauthored) || eventSharePercent(event) < 100 || Boolean(event?.coauthor_name);
+}
+
+function applyEventShareToSummaryValues(summary, event) {
+  const share = eventSharePercent(event);
+  if (!eventIsCoauthored(event) || share >= 100) return summary;
+
+  return {
+    ...summary,
+    manager_salary: Math.round(asNumber(summary.manager_salary) * share / 100),
+    final_company_income: Math.round(asNumber(summary.final_company_income) * share / 100),
+    share_percent: share,
+  };
+}
+
+function coauthorBadgeHtml(event, attrs = "") {
+  if (!eventIsCoauthored(event)) return "";
+  const name = event?.coauthor_name || event?.owner_manager_name || "менеджер";
+  return `<span class="coauthor-badge" ${attrs}>Соавтор: ${name}</span>`;
+}
+
+
 function calculateDraftSummaryPreview(items, event, backendSummary = null) {
   const shown = (items || []).filter((item) => item.item_type !== "manager_salary");
   const regular = shown.filter((item) => item.item_type !== "coordinator");
@@ -1938,7 +2016,7 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
   const managerSalary = managerBase > 0 ? Math.round(managerBase * asNumber(event?.manager_percent || 21) / 100) : 0;
   const companyIncome = managerBase - managerSalary + coordinatorCompanyShare;
 
-  return {
+  const preview = {
     ...(backendSummary || {}),
     turnover_with_vat: turnover,
     external_total: turnover,
@@ -1959,6 +2037,8 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
     tax_rate_percent: taxRate,
     simplified_bank_tax_amount: simplifiedMarkup,
   };
+
+  return applyEventShareToSummaryValues(preview, event);
 }
 
 
@@ -2748,12 +2828,17 @@ function renderManagerEventCard(event, items = [], summary = null) {
         <div>
           <div class="overview-label">Карточка мероприятия</div>
           <h2>${event.title}</h2>
-          <span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span>
+          <div class="event-badge-row">
+            <span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span>
+            ${coauthorBadgeHtml(event)}
+          </div>
         </div>
         <div class="inline-actions">
           <button class="secondary">Оплатить</button>
           <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
-          <button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>
+          ${eventIsCoauthored(event)
+            ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
+            : `<button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>`}
           <button class="danger-btn" data-manager-event-delete="${event.id}" ${canDelete ? "" : "disabled"} style="margin-left:auto;">Удалить</button>
         </div>
       </div>
@@ -3401,6 +3486,22 @@ attachEstimateKeyboardNavigation();
       event.preventDefault();
       event.stopPropagation();
       openManagerActionDropdown(button, button.getAttribute("data-manager-event-coauthor"), "coauthor");
+    });
+  });
+
+  document.querySelectorAll("[data-manager-event-remove-coauthor]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const eventId = button.getAttribute("data-manager-event-remove-coauthor");
+      if (!confirm("Удалить соавтора? Мероприятие полностью перейдёт тебе.")) return;
+
+      await withLoading(async () => {
+        await api(`/events/${eventId}/coauthor/remove`, { method: "POST" });
+        closeManagerActionDropdown();
+        state.selectedManagerEventId = Number(eventId);
+        await loadDashboard();
+      }, "Удаляем соавтора…");
     });
   });
 
