@@ -1671,6 +1671,7 @@ function updateInternalRowCells(itemId) {
   if (kgdButton) {
     kgdButton.textContent = item.iin_bin_locked ? "✎" : "✓";
     kgdButton.title = item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД";
+    kgdButton.setAttribute("data-tax-action", item.iin_bin_locked ? "unlock" : "check");
     kgdButton.classList.toggle("danger", isTaxProblem(item));
   }
 
@@ -1749,6 +1750,18 @@ function attachDraftInputs(eventId) {
       const itemId = input.getAttribute("data-item-id");
       const field = input.getAttribute("data-item-field");
       setDraftItemValue(eventId, itemId, field, input.value);
+
+      if (["external_price", "amount_fact"].includes(field)) {
+        const items = getDraftItems(eventId);
+        const item = items.find((candidate) => String(candidate.id) === String(itemId));
+        input.value = field === "amount_fact" ? internalFactDisplayValue(item) : formatInputNumber(item?.external_price);
+      }
+
+      if (["external_quantity", "external_days"].includes(field)) {
+        const items = getDraftItems(eventId);
+        const item = items.find((candidate) => String(candidate.id) === String(itemId));
+        input.value = integerInputValue(item?.[field], "1");
+      }
 
       if (field === "payment_method") {
         rerenderCurrentManagerCard();
@@ -2146,7 +2159,7 @@ function renderInternalEstimate(items, event, summary = null) {
                 <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`}`)}</td>
                 <td>
                   ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
-                    <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="${taxStatusLabel(item.tax_check_status) || (item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД")}">
+                    <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" data-tax-action="${item.iin_bin_locked ? "unlock" : "check"}" title="${item.iin_bin_locked ? "Изменить BIN" : "Проверить КГД"}">
                       ${item.iin_bin_locked ? "✎" : "✓"}
                     </button>
                   ` : "—")}
@@ -2431,7 +2444,7 @@ function deleteDraftItem(eventId, itemId) {
   }
 }
 
-async function checkTaxForItem(itemId) {
+async function checkTaxForItem(itemId, action = "check") {
   const items = getDraftItems(state.selectedManagerEventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
 
@@ -2440,7 +2453,7 @@ async function checkTaxForItem(itemId) {
     return;
   }
 
-  if (item.iin_bin_locked) {
+  if (action === "unlock" || item.iin_bin_locked) {
     item.iin_bin_locked = false;
     item.tax_check_status = null;
     item.vat_amount = 0;
@@ -2558,6 +2571,7 @@ function attachManagerCreateWorkspaceActions() {
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         showDraftSavedHint();
+showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2574,6 +2588,7 @@ function attachManagerCreateWorkspaceActions() {
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         showDraftSavedHint();
+showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
@@ -2728,6 +2743,7 @@ function attachManagerDashboardActions() {
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
         showDraftSavedHint();
+showDraftSavedHint();
         await loadDashboard();
       }, "Сохраняем черновик…");
     });
@@ -2743,6 +2759,7 @@ function attachManagerDashboardActions() {
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
         showDraftSavedHint();
+showDraftSavedHint();
         await loadDashboard();
       }, "Отправляем на проверку…");
     });
