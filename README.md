@@ -1,16 +1,27 @@
-Contrast Finance Backend v0.35.45 — changed files only
+Contrast Finance Backend v0.35.46 — changed files only
 
-Визуальная правка миникарточек.
+Фикс кнопок `Передать` и `Соавтор`.
 
-Причина:
-- `.manager-mini-card.is-open` принудительно задавал серый background через `!important`
-- из-за большей специфичности `.manager-mini-card.is-open` перебивал цвет статуса карточки
-- поэтому выбранная карточка `На проверке` теряла жёлтый фон и становилась серой
+Точная причина:
+- кнопки в карточке мероприятия были обычными пустыми кнопками:
+  `<button class="ghost">Передать</button>`
+  `<button class="ghost">Соавтор</button>`
+- у них не было data-атрибутов
+- в текущем frontend не было обработчиков открытия меню менеджеров
+- поэтому меню не могло всплыть вообще
 
 Исправлено:
-- у `.manager-mini-card.is-open` убран принудительный background
-- выбранная миникарточка теперь сохраняет свой статусный цвет
-- зелёная обводка/свечение просто добавляется поверх
-- app.js проверен через node --check
+- добавлены data-атрибуты:
+  - `data-manager-event-transfer`
+  - `data-manager-event-coauthor`
+- добавлено меню выбора менеджера через существующую модалку
+- frontend вызывает существующие backend endpoints:
+  - `GET /events/action-managers`
+  - `POST /events/{event_id}/transfer`
+  - `POST /events/{event_id}/coauthor`
+- добавлены обработчики кликов в `attachManagerCreateWorkspaceActions`
+- добавлены минимальные стили списка менеджеров
+- app.js прошёл node --check
 
+Backend не трогался.
 Миграций нет.

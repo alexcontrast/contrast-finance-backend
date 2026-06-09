@@ -227,6 +227,43 @@ function injectManagerUxStyles() {
       opacity: .75;
       cursor: progress;
     }
+
+    .manager-action-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .manager-action-choice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid rgba(80, 90, 70, .18);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .78);
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .manager-action-choice:hover {
+      border-color: rgba(80, 210, 40, .55);
+      box-shadow: 0 8px 22px rgba(80, 210, 40, .12);
+      transform: translateY(-1px);
+    }
+
+    .manager-action-choice strong {
+      font-weight: 900;
+    }
+
+    .manager-action-choice span {
+      color: rgba(30, 35, 25, .58);
+      font-size: 13px;
+      font-weight: 700;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2638,8 +2675,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
         </div>
         <div class="inline-actions">
           <button class="secondary">Оплатить</button>
-          <button class="ghost">Передать</button>
-          <button class="ghost">Соавтор</button>
+          <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
+          <button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>
           <button class="danger-btn" data-manager-event-delete="${event.id}" ${canDelete ? "" : "disabled"} style="margin-left:auto;">Удалить</button>
         </div>
       </div>
@@ -3092,6 +3129,106 @@ function rerenderCurrentManagerCard() {
   attachDraftInputs(state.selectedManagerEventId);
 }
 
+
+function managerActionEventById(eventId) {
+  const draft = state.managerDraftEventsById?.[String(eventId)];
+  if (draft) return draft;
+  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) return state.currentManagerEvent;
+  return (state.managerData?.events || []).find((event) => Number(event.id) === Number(eventId)) || null;
+}
+
+async function getActionManagers() {
+  try {
+    return await api("/events/action-managers");
+  } catch (error) {
+    // fallback только для показа меню, если endpoint временно недоступен
+    return (state.users || []).filter((user) => user.role === "manager" && user.is_active);
+  }
+}
+
+function closeManagerActionModal() {
+  const backdrop = $("plansModalBackdrop");
+  if (!backdrop) return;
+  backdrop.classList.add("hidden");
+  backdrop.classList.remove("manager-create-modal");
+}
+
+function renderManagerActionList(eventId, action, managers) {
+  const event = managerActionEventById(eventId);
+  const title = action === "transfer" ? "Передать мероприятие" : "Добавить соавтора";
+  const hint = action === "transfer"
+    ? "Выбери менеджера, которому передать мероприятие. После передачи соавторы будут очищены."
+    : "Выбери менеджера, который станет соавтором 50/50.";
+
+  const filteredManagers = (managers || [])
+    .filter((manager) => Number(manager.id) !== Number(event?.manager_id))
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru"));
+
+  return `
+    <div class="manager-action-modal">
+      <h3>${title}</h3>
+      <p class="muted">${hint}</p>
+      <div class="divider"></div>
+      ${filteredManagers.length ? `
+        <div class="manager-action-list">
+          ${filteredManagers.map((manager) => `
+            <button class="manager-action-choice" data-manager-action-choice="${manager.id}" data-manager-action="${action}" data-manager-action-event="${eventId}">
+              <strong>${manager.name || "Менеджер"}</strong>
+              <span>${manager.department_name || departmentNameById(manager.department_id) || ""}</span>
+            </button>
+          `).join("")}
+        </div>
+      ` : `
+        <div class="empty-state">Нет доступных менеджеров для выбора.</div>
+      `}
+    </div>
+  `;
+}
+
+async function openManagerActionModal(eventId, action) {
+  const backdrop = $("plansModalBackdrop");
+  const content = $("plansModalContent");
+  if (!backdrop || !content) return;
+
+  backdrop.classList.remove("hidden");
+  backdrop.classList.add("manager-create-modal");
+  content.innerHTML = `<div class="empty-state">Загружаем менеджеров…</div>`;
+
+  try {
+    const managers = await getActionManagers();
+    content.innerHTML = renderManagerActionList(eventId, action, managers);
+
+    content.querySelectorAll("[data-manager-action-choice]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const managerId = Number(button.getAttribute("data-manager-action-choice"));
+        const selectedAction = button.getAttribute("data-manager-action");
+        const selectedEventId = button.getAttribute("data-manager-action-event");
+
+        await withLoading(async () => {
+          if (selectedAction === "transfer") {
+            await api(`/events/${selectedEventId}/transfer`, {
+              method: "POST",
+              body: JSON.stringify({ manager_id: managerId }),
+            });
+          } else {
+            await api(`/events/${selectedEventId}/coauthor`, {
+              method: "POST",
+              body: JSON.stringify({ manager_id: managerId }),
+            });
+          }
+
+          closeManagerActionModal();
+          state.selectedManagerEventId = Number(selectedEventId);
+          await loadDashboard();
+        }, selectedAction === "transfer" ? "Передаём мероприятие…" : "Добавляем соавтора…");
+      });
+    });
+  } catch (error) {
+    content.innerHTML = `<div class="error">${error.message || "Не удалось загрузить менеджеров"}</div>`;
+  }
+}
+
+
 function attachManagerCreateWorkspaceActions() {
   applyManagerCardReadOnly();
   const managerCardCanEdit = canEditManagerEvent(state.currentManagerEvent);
@@ -3156,6 +3293,23 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
 
 attachEstimateKeyboardNavigation();
   attachEstimateDragAndDrop();
+
+  document.querySelectorAll("[data-manager-event-transfer]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openManagerActionModal(button.getAttribute("data-manager-event-transfer"), "transfer");
+    });
+  });
+
+  document.querySelectorAll("[data-manager-event-coauthor]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openManagerActionModal(button.getAttribute("data-manager-event-coauthor"), "coauthor");
+    });
+  });
+
   document.querySelectorAll("[data-manager-event-delete]").forEach((button) => {
     button.addEventListener("click", async () => {
       if (!managerCardCanEdit) return;
