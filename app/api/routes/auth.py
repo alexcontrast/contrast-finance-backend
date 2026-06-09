@@ -4,8 +4,41 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import AuthLoginRequest, AuthTokenRead, AuthUserRead
+from app.schemas.auth import AuthLoginRequest, AuthPermissionsRead, AuthTokenRead, AuthUserRead
 from app.services.auth import create_access_token, find_login_user, get_current_user, verify_pin
+
+
+def permissions_for_user(user: User) -> AuthPermissionsRead:
+    role = user.role
+
+    if role == "admin":
+        return AuthPermissionsRead(
+            can_view_admin=True,
+            can_manage_users=True,
+            can_manage_settings=True,
+            can_manage_monthly_plans=True,
+            can_manage_monthly_expenses=True,
+            can_view_department_dashboard=True,
+            can_create_events=True,
+            can_edit_events=True,
+            can_create_payment_requests=True,
+            can_manage_payment_requests=True,
+        )
+
+    if role == "department_head":
+        return AuthPermissionsRead(
+            can_view_department_dashboard=True,
+        )
+
+    if role == "manager":
+        return AuthPermissionsRead(
+            can_create_events=True,
+            can_edit_events=True,
+            can_create_payment_requests=True,
+        )
+
+    return AuthPermissionsRead()
+
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -22,6 +55,7 @@ def user_to_auth_read(user: User) -> AuthUserRead:
         is_active=user.is_active,
         legacy_user_id=user.legacy_user_id,
         auth_source=user.auth_source or "legacy_apps_script",
+        permissions=permissions_for_user(user),
     )
 
 

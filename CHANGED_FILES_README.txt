@@ -1,4 +1,4 @@
-Contrast Finance Backend v0.35.40 — changed files only
+Contrast Finance Backend v0.35.41 — changed files only
 
 Changed/added files:
 - README.md
