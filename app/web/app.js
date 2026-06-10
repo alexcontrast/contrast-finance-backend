@@ -553,6 +553,47 @@ function injectManagerUxStyles() {
       border-color: rgba(80, 210, 40, .72);
       box-shadow: 0 0 0 3px rgba(80, 210, 40, .12);
     }
+
+
+    .modal-backdrop.pin-modal-mode .modal {
+      width: min(430px, calc(100vw - 36px));
+      max-width: 430px;
+      padding: 22px;
+      border-radius: 22px;
+    }
+
+    .modal-backdrop.pin-modal-mode .modal-head {
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .modal-backdrop.pin-modal-mode .modal-head .eyebrow {
+      font-size: 11px;
+    }
+
+    .modal-backdrop.pin-modal-mode .modal-head h2 {
+      font-size: 22px;
+      margin: 2px 0 0;
+    }
+
+    .pin-modal-content {
+      max-width: 100%;
+    }
+
+    .pin-form-vertical {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .pin-form-vertical input {
+      width: 100%;
+    }
+
+    .pin-actions {
+      margin-top: 14px;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1686,6 +1727,7 @@ async function createManagerSalaryRequest(eventId, defaultAmount) {
 }
 
 async function openEventModal(eventId) {
+  $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("hidden");
   $("eventModalTitle").textContent = `Мероприятие #${eventId}`;
   $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
@@ -4020,6 +4062,7 @@ function openManagerProfileModal() {
   if (!backdrop || !title || !content) return;
 
   const user = state.bootstrap?.user || {};
+  backdrop.classList.remove("pin-modal-mode");
   backdrop.classList.remove("hidden");
   title.textContent = "Данные менеджера";
   content.innerHTML = renderManagerProfileModal(user);
@@ -4044,8 +4087,16 @@ function openManagerProfileModal() {
         }),
       });
 
-      state.bootstrap.user = updatedUser;
-      updateHeaderUserInfo(updatedUser);
+      const mergedUser = {
+        ...(state.bootstrap.user || {}),
+        ...updatedUser,
+        email: updatedUser.email || $("profileEmailInput").value.trim(),
+        phone: updatedUser.phone || $("profilePhoneInput").value.trim(),
+        name: updatedUser.name || $("profileNameInput").value.trim(),
+        department_id: updatedUser.department_id || Number($("profileDepartmentInput").value),
+      };
+      state.bootstrap.user = mergedUser;
+      updateHeaderUserInfo(mergedUser);
 
       if (message) message.textContent = "Данные сохранены";
       close();
@@ -4294,14 +4345,14 @@ function openChangePinModal() {
   const content = $("eventModalContent");
   if (!backdrop || !title || !content) return;
 
+  backdrop.classList.add("pin-modal-mode");
   backdrop.classList.remove("hidden");
   title.textContent = "Смена PIN";
   content.innerHTML = `
-    <div class="profile-modal-content">
-      <h3>Смена PIN</h3>
-      <p class="muted">Укажи старый PIN и новый PIN минимум из 4 цифр.</p>
+    <div class="pin-modal-content">
+      <p class="muted">Новый PIN минимум из 4 цифр.</p>
 
-      <div class="form-grid">
+      <div class="pin-form-vertical">
         <label>Старый PIN
           <input id="pinOldInput" type="password" inputmode="numeric" autocomplete="current-password" />
         </label>
@@ -4310,7 +4361,7 @@ function openChangePinModal() {
         </label>
       </div>
 
-      <div class="modal-actions">
+      <div class="modal-actions pin-actions">
         <button class="secondary" id="pinSaveBtn" type="button">Сменить PIN</button>
         <button class="ghost" id="pinCancelBtn" type="button">Отмена</button>
       </div>
@@ -4318,7 +4369,7 @@ function openChangePinModal() {
     </div>
   `;
 
-  $("pinCancelBtn")?.addEventListener("click", () => backdrop.classList.add("hidden"));
+  $("pinCancelBtn")?.addEventListener("click", () => { backdrop.classList.add("hidden"); backdrop.classList.remove("pin-modal-mode"); });
   $("pinSaveBtn")?.addEventListener("click", changePin);
 
   ["pinOldInput", "pinNewInput"].forEach((id) => {
@@ -4356,6 +4407,7 @@ async function changePin() {
 
     setTimeout(() => {
       $("eventModalBackdrop")?.classList.add("hidden");
+      $("eventModalBackdrop")?.classList.remove("pin-modal-mode");
     }, 450);
   } catch (error) {
     if (msg) msg.textContent = error.message;
@@ -4405,6 +4457,7 @@ if (legacyChangePinBtn) legacyChangePinBtn.addEventListener("click", changePin);
 
 $("eventModalCloseBtn").addEventListener("click", () => {
   $("eventModalBackdrop").classList.add("hidden");
+  $("eventModalBackdrop").classList.remove("pin-modal-mode");
 });
 
 $("plansModalCloseBtn").addEventListener("click", () => {

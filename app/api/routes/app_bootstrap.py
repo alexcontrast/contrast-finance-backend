@@ -30,6 +30,7 @@ def user_to_read(user: User) -> AuthUserRead:
         id=user.id,
         name=user.name,
         phone=user.phone,
+        email=user.email,
         department_id=user.department_id,
         department_name=user.department.name if user.department else None,
         role=user.role,

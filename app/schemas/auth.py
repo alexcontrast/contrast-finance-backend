@@ -41,6 +41,7 @@ class AuthUserRead(BaseModel):
     id: int
     name: str
     phone: str | None = None
+    email: str | None = None
     department_id: int | None = None
     department_name: str | None = None
     role: str
