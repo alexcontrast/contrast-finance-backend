@@ -875,6 +875,13 @@ function injectManagerUxStyles() {
       opacity: 1;
       cursor: not-allowed;
     }
+
+
+    .icon-btn.danger:disabled {
+      opacity: .35;
+      cursor: not-allowed;
+      filter: grayscale(1);
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3391,7 +3398,7 @@ function renderExternalEstimate(items, eventId, event = null) {
               <td>${rowInput(integerInputValue(item.external_days, "1"), `data-item-field="external_days" data-item-id="${item.id}"`)}</td>
               <td><strong data-row-sum>${formatMoney(externalRowAmount(item))}</strong></td>
               <td>${rowInput(item.external_note || "", `placeholder="Примечание для клиента" data-item-field="external_note" data-item-id="${item.id}"`)}</td>
-              <td>${item.item_type === "coordinator" ? "" : `<button class="icon-btn danger" data-delete-item="${item.id}">×</button>`}</td>
+              <td>${deleteButtonHtmlForItem(item)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -3484,7 +3491,7 @@ function renderInternalEstimate(items, event, summary = null) {
                 <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
                 <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
                 <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
-                <td>${item.item_type === "coordinator" ? "" : `<button class="icon-btn danger" data-delete-item="${item.id}">×</button>`}</td>
+                <td>${deleteButtonHtmlForItem(item)}</td>
               </tr>
             `;
           }).join("")}
@@ -3768,6 +3775,11 @@ function deleteDraftItem(eventId, itemId) {
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
   if (item?.item_type === "coordinator") {
     alert("Координатора нельзя удалить");
+    return;
+  }
+
+  if (itemDeleteLockedByPaymentRequest(item)) {
+    alert("Нельзя удалить позицию, пока по ней есть активная заявка на оплату. Сначала отмени все заявки по этой позиции.");
     return;
   }
 
@@ -4245,6 +4257,24 @@ function activePaymentRequestMethodForItem(item) {
 function itemHasActivePaymentRequest(item) {
   return activePaymentRequestsForItem(item).length > 0;
 }
+
+function itemDeleteLockedByPaymentRequest(item) {
+  return itemHasActivePaymentRequest(item);
+}
+
+function deleteLockTitleForItem(item) {
+  return itemDeleteLockedByPaymentRequest(item)
+    ? "Нельзя удалить позицию, пока по ней есть активная заявка на оплату"
+    : "Удалить позицию";
+}
+
+function deleteButtonHtmlForItem(item) {
+  if (item.item_type === "coordinator") return "";
+
+  const locked = itemDeleteLockedByPaymentRequest(item);
+  return `<button class="icon-btn danger" data-delete-item="${item.id}" title="${deleteLockTitleForItem(item)}" ${locked ? "disabled" : ""}>×</button>`;
+}
+
 
 function itemHasActiveInvoicePaymentRequest(item) {
   return activePaymentRequestsForItem(item).some((request) => request.payment_method === "invoice");
@@ -4954,6 +4984,7 @@ function attachManagerCreateWorkspaceActions() {
 
   document.querySelectorAll("[data-delete-item]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.disabled) return;
       if (!managerCardCanEdit) return;
       if (!confirm("Удалить позицию?")) return;
       deleteDraftItem(state.selectedManagerEventId, button.getAttribute("data-delete-item"));
