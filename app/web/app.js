@@ -2788,6 +2788,14 @@ function setDraftItemValue(eventId, itemId, field, value) {
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
   if (!item) return;
 
+  if (field === "payment_method" && itemPaymentMethodLocked(item)) {
+    return;
+  }
+
+  if (field === "iin_bin" && itemHasActiveInvoicePaymentRequest(item)) {
+    return;
+  }
+
   if (["external_price", "external_quantity", "external_days", "amount_fact"].includes(field)) {
     item[field] = value === "" ? null : Math.round(normalizeNumberInput(value));
   } else {
@@ -2919,23 +2927,25 @@ function updateInternalRowCells(itemId) {
   if (paidCell) paidCell.textContent = formatMoney(item.paid_amount);
 
   const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
+  const activeMethod = paymentMethodFromActiveRequest(item);
   if (paymentSelect) {
-    paymentSelect.value = item.payment_method || "";
-    paymentSelect.disabled = Boolean(item.iin_bin_locked);
+    paymentSelect.value = activeMethod || item.payment_method || "";
+    paymentSelect.disabled = itemPaymentMethodLocked(item);
   }
 
   const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
   if (binInput) {
     binInput.value = item.iin_bin || "";
-    binInput.disabled = Boolean(item.iin_bin_locked);
+    binInput.disabled = Boolean(item.iin_bin_locked || itemHasActiveInvoicePaymentRequest(item));
   }
 
   const oldCheckButton = row.querySelector(`[data-check-tax-item="${itemId}"]`);
   const oldUnlockButton = row.querySelector(`[data-unlock-tax-item="${itemId}"]`);
   const oldButton = oldCheckButton || oldUnlockButton;
   if (oldButton) {
+    const lockedByRequest = itemHasActiveInvoicePaymentRequest(item);
     oldButton.outerHTML = item.iin_bin_locked
-      ? `<button class="icon-btn" data-unlock-tax-item="${itemId}" title="Изменить BIN">✎</button>`
+      ? `<button class="icon-btn" data-unlock-tax-item="${itemId}" title="${lockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${lockedByRequest ? "disabled" : ""}>✎</button>`
       : `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД">✓</button>`;
   }
 
@@ -3435,7 +3445,11 @@ function renderInternalEstimate(items, event, summary = null) {
         </thead>
         <tbody>
           ${shownItems.map((item) => {
-            const binDisabled = isCoordinatorItem(item) || item.payment_method !== "invoice";
+            const activeMethod = paymentMethodFromActiveRequest(item);
+            const effectivePaymentMethod = activeMethod || item.payment_method;
+            const paymentLocked = itemPaymentMethodLocked(item);
+            const invoiceLockedByRequest = itemHasActiveInvoicePaymentRequest(item);
+            const binDisabled = isCoordinatorItem(item) || effectivePaymentMethod !== "invoice";
             return `
               <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
                 <td class="drag-col">${draggableHandle(item)}</td>
@@ -3448,20 +3462,20 @@ function renderInternalEstimate(items, event, summary = null) {
                       <option selected>—</option>
                     </select>
                   ` : `
-                    <select data-item-field="payment_method" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}>
-                      <option value="" ${!item.payment_method ? "selected" : ""}>—</option>
-                      <option value="cash" ${item.payment_method === "cash" ? "selected" : ""}>Налик</option>
-                      <option value="card" ${item.payment_method === "card" ? "selected" : ""}>На карту</option>
-                      <option value="self_employed" ${item.payment_method === "self_employed" ? "selected" : ""}>Самозанятый</option>
-                      <option value="invoice" ${item.payment_method === "invoice" ? "selected" : ""}>По счету</option>
+                    <select data-item-field="payment_method" data-item-id="${item.id}" ${paymentLocked ? "disabled" : ""}>
+                      <option value="" ${!effectivePaymentMethod ? "selected" : ""}>—</option>
+                      <option value="cash" ${effectivePaymentMethod === "cash" ? "selected" : ""}>Налик</option>
+                      <option value="card" ${effectivePaymentMethod === "card" ? "selected" : ""}>На карту</option>
+                      <option value="self_employed" ${effectivePaymentMethod === "self_employed" ? "selected" : ""}>Самозанятый</option>
+                      <option value="invoice" ${effectivePaymentMethod === "invoice" ? "selected" : ""}>По счету</option>
                     </select>
                   `}
                 </td>
-                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${item.iin_bin_locked ? "disabled" : ""}`}`)}</td>
+                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${(item.iin_bin_locked || invoiceLockedByRequest) ? "disabled" : ""}`}`)}</td>
                 <td>
-                  ${isCoordinatorItem(item) ? "—" : (item.payment_method === "invoice" ? `
+                  ${isCoordinatorItem(item) ? "—" : (effectivePaymentMethod === "invoice" ? `
                     ${item.iin_bin_locked ? `
-                      <button class="icon-btn" data-unlock-tax-item="${item.id}" title="Изменить BIN">✎</button>
+                      <button class="icon-btn" data-unlock-tax-item="${item.id}" title="${invoiceLockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${invoiceLockedByRequest ? "disabled" : ""}>✎</button>
                     ` : `
                       <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="Проверить КГД">✓</button>
                     `}
@@ -3700,7 +3714,9 @@ function itemPayloadForSave(item) {
     payment_method: isCoordinator ? null : (item.payment_method || null),
     iin_bin: isCoordinator || item.payment_method !== "invoice" ? null : (item.iin_bin || null),
     iin_bin_locked: isCoordinator || item.payment_method !== "invoice" ? false : (item.iin_bin_locked || false),
-    tax_check_status: isCoordinator || item.payment_method !== "invoice" ? null : (item.tax_check_status || null),
+    tax_check_status: isCoordinator
+      ? null
+      : (item.payment_method === "self_employed" ? "self_employed" : (item.payment_method === "invoice" ? (item.tax_check_status || null) : null)),
     vat_amount: isCoordinator ? 0 : (item.vat_amount || 0),
     deduction_amount: isCoordinator ? 0 : (item.deduction_amount || 0),
     internal_note: item.internal_note || null,
@@ -3821,6 +3837,11 @@ function unlockTaxForItem(itemId) {
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
   if (!item) return;
 
+  if (itemHasActiveInvoicePaymentRequest(item)) {
+    alert("БИН нельзя изменить, пока по этой позиции есть активная заявка. Сначала отмени заявку.");
+    return;
+  }
+
   item.iin_bin_locked = false;
   item.tax_check_status = null;
   item.vat_amount = 0;
@@ -3850,8 +3871,8 @@ function syncDraftItemFromRowBeforeTax(itemId) {
   const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
   const factInput = row.querySelector(`[data-item-field="amount_fact"][data-item-id="${itemId}"]`);
 
-  if (paymentSelect) item.payment_method = paymentSelect.value || null;
-  if (binInput) item.iin_bin = binInput.value ? binInput.value.replace(/\D/g, "") : null;
+  if (paymentSelect && !itemPaymentMethodLocked(item)) item.payment_method = paymentSelect.value || null;
+  if (binInput && !itemHasActiveInvoicePaymentRequest(item)) item.iin_bin = binInput.value ? binInput.value.replace(/\D/g, "") : null;
   if (factInput && factInput.value !== "") item.amount_fact = Math.round(normalizeNumberInput(factInput.value));
 
   if (item.payment_method !== "invoice") {
@@ -4162,12 +4183,51 @@ function selfEmployedSurnameFromItem(item) {
 }
 
 
+
+function activePaymentRequestsForItem(item) {
+  if (!item || String(item.id).startsWith("tmp-")) return [];
+  return (state.managerPaymentRequests || []).filter((request) =>
+    Number(request.event_item_id) === Number(item.id) &&
+    request.status !== "rejected"
+  );
+}
+
+function activePaymentRequestMethodForItem(item) {
+  const request = activePaymentRequestsForItem(item)[0];
+  return request?.payment_method || null;
+}
+
+function itemHasActivePaymentRequest(item) {
+  return activePaymentRequestsForItem(item).length > 0;
+}
+
+function itemHasActiveInvoicePaymentRequest(item) {
+  return activePaymentRequestsForItem(item).some((request) => request.payment_method === "invoice");
+}
+
+function itemHasActiveSelfEmployedPaymentRequest(item) {
+  return activePaymentRequestsForItem(item).some((request) => request.payment_method === "self_employed");
+}
+
+function itemPaymentMethodLocked(item) {
+  if (!item) return false;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
+  return itemHasActivePaymentRequest(item);
+}
+
+function paymentMethodFromActiveRequest(item) {
+  const method = activePaymentRequestMethodForItem(item);
+  return method || null;
+}
+
+
 function itemHasLockedInvoicePayment(item) {
   return Boolean(item?.iin_bin_locked && item?.iin_bin && item?.tax_check_status && item.tax_check_status !== "not_found");
 }
 
 function itemHasLockedSelfEmployedPayment(item) {
   return Boolean(
+    itemHasActiveSelfEmployedPaymentRequest(item) ||
     item?.payment_method === "self_employed" ||
     item?.tax_check_status === "self_employed" ||
     selfEmployedSurnameFromItem(item)
@@ -4178,16 +4238,18 @@ function paymentMethodIsFixed(item) {
   if (!item) return false;
   if (item.is_new_payment_position) return false;
   if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
+  if (itemHasActivePaymentRequest(item)) return true;
   if (itemHasLockedInvoicePayment(item)) return true;
-  if (itemHasLockedSelfEmployedPayment(item)) return true;
   return false;
 }
 
 function fixedPaymentMethodForItem(item) {
   if (!item) return null;
   if (item.item_type === "coordinator" || item.item_type === "manager_salary") return "cash";
+  const activeMethod = paymentMethodFromActiveRequest(item);
+  if (activeMethod) return activeMethod;
   if (itemHasLockedInvoicePayment(item)) return "invoice";
-  if (itemHasLockedSelfEmployedPayment(item)) return "self_employed";
+  if (item?.payment_method === "self_employed" || item?.tax_check_status === "self_employed") return "self_employed";
   return null;
 }
 
@@ -4195,7 +4257,11 @@ function fixedPaymentMethodForItem(item) {
 function paymentPositionsForEvent(eventId) {
   const items = getDraftItems(eventId)
     .filter((item) => !item.is_deleted && item.item_type !== "manager_salary")
-    .map((item) => ({ ...item, is_manager_salary_virtual: false, is_new_payment_position: false }));
+    .map((item) => {
+      item.is_manager_salary_virtual = false;
+      item.is_new_payment_position = false;
+      return item;
+    });
 
   const summary = state.currentManagerSummary || {};
   const managerSalary = Math.round(asNumber(summary.manager_salary || 0));
@@ -4634,6 +4700,10 @@ async function prepareSelfEmployedPaymentItem(eventId, item) {
 
   await persistItemBeforePayment(eventId, item);
 
+  updateInternalRowCells(item.id);
+  updateInternalSummaryCards();
+  updateCurrentManagerMiniCardLive();
+
   return surname;
 }
 
@@ -4710,7 +4780,7 @@ async function submitManagerPayment(eventId) {
           throw new Error("Не удалось создать позицию перед заявкой");
         }
 
-        await api(`/event-items/${item.id}/payment-requests`, {
+        const createdRequest = await api(`/event-items/${item.id}/payment-requests`, {
           method: "POST",
           body: JSON.stringify({
             amount_requested: amount,
@@ -4719,6 +4789,10 @@ async function submitManagerPayment(eventId) {
             comment,
           }),
         });
+
+        state.managerPaymentRequests = [createdRequest, ...(state.managerPaymentRequests || [])];
+        updateInternalRowCells(item.id);
+        updateInternalSummaryCards();
       }
 
       $("eventModalBackdrop")?.classList.add("hidden");
