@@ -894,6 +894,58 @@ function injectManagerUxStyles() {
       filter: grayscale(1);
       opacity: .7;
     }
+
+
+    .manager-event-requests-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .manager-payment-request-card {
+      border: 1px solid rgba(20, 36, 18, .10);
+      background: rgba(255, 255, 255, .82);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 24px rgba(20, 36, 18, .06);
+    }
+
+    .manager-payment-request-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .manager-payment-request-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .manager-payment-request-grid span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+
+    .manager-payment-request-grid strong {
+      font-size: 14px;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .manager-payment-request-actions {
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .manager-payment-request-grid {
+        grid-template-columns: 1fr;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1867,6 +1919,106 @@ function adminRequestActions(request) {
 
   return buttons.join("");
 }
+
+
+function requestsForCurrentUser(requests) {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "manager") return requests || [];
+
+  return (requests || []).filter((request) =>
+    !request.manager_id || Number(request.manager_id) === Number(user.id) || String(request.created_by_user_id || "") === String(user.id)
+  );
+}
+
+function eventPaymentRequestsForManager(eventId) {
+  return requestsForCurrentUser(state.managerPaymentRequests || [])
+    .filter((request) => Number(request.event_id) === Number(eventId))
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+}
+
+function canManagerCancelEventRequest(request) {
+  return canManagerCancelRequest(request);
+}
+
+function renderManagerPaymentRequestsModal(eventId) {
+  const requests = eventPaymentRequestsForManager(eventId);
+
+  if (!requests.length) {
+    return `
+      <div class="manager-event-requests-modal">
+        <div class="empty-state">По этому мероприятию заявок пока нет.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="manager-event-requests-modal">
+      <div class="manager-event-requests-list">
+        ${requests.map((request) => `
+          <div class="manager-payment-request-card">
+            <div class="manager-payment-request-top">
+              <strong>${request.position || request.item_name_snapshot || "Позиция"}</strong>
+              <span class="status ${request.status}">${statusLabel(request.status)}</span>
+            </div>
+            <div class="manager-payment-request-grid">
+              <div><span>Сумма</span><strong>${formatMoney(request.amount_requested)}</strong></div>
+              <div><span>Способ</span><strong>${paymentMethodLabel(request.payment_method)}</strong></div>
+              <div><span>Налоговый статус</span><strong>${request.tax_status || request.tax_status_label || "—"}</strong></div>
+              <div><span>Комментарий</span><strong>${request.comment || "—"}</strong></div>
+            </div>
+            <div class="modal-actions manager-payment-request-actions">
+              ${canManagerCancelEventRequest(request)
+                ? `<button class="danger-btn small" data-manager-event-request-cancel="${request.id}">Отменить заявку</button>`
+                : `<button class="ghost small" disabled>Отменить нельзя</button>`}
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+async function openManagerPaymentRequestsModal(eventId) {
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  await refreshManagerPaymentRequestsForEvent(eventId);
+
+  backdrop.classList.remove("pin-modal-mode");
+  backdrop.classList.remove("profile-modal-mode");
+  backdrop.classList.remove("payment-modal-mode");
+  backdrop.classList.add("manager-requests-modal-mode");
+  backdrop.classList.remove("hidden");
+
+  title.textContent = "Мои оплаты";
+  content.innerHTML = renderManagerPaymentRequestsModal(eventId);
+
+  content.querySelectorAll("[data-manager-event-request-cancel]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const requestId = button.getAttribute("data-manager-event-request-cancel");
+      if (!confirm(`Отменить заявку #${requestId}?`)) return;
+
+      try {
+        setButtonLoading(button, true, "Отменяем…");
+        await api(`/payment-requests/${requestId}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "rejected" }),
+        });
+        showToast("Заявка отменена");
+        await refreshManagerPaymentRequestsForEvent(eventId);
+        content.innerHTML = renderManagerPaymentRequestsModal(eventId);
+        await renderManagerEventDetail(eventId, { noLoading: true });
+      } catch (error) {
+        alert(error.message || "Не удалось отменить заявку");
+      } finally {
+        if (button.isConnected) setButtonLoading(button, false);
+      }
+    });
+  });
+}
+
 
 function renderPaymentRequestsTable(requests, title = "Заявки на оплату", mode = "regular") {
   const baseRequests = mode === "archive" ? archivedPaymentRequests(requests) : activePaymentRequests(requests);
@@ -3540,6 +3692,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
         </div>
         <div class="inline-actions">
           <button class="secondary" data-manager-event-pay="${event.id}">Оплатить</button>
+          <button class="ghost" data-manager-event-payments="${event.id}">Мои оплаты</button>
           <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
           ${eventIsCoauthored(event)
             ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
@@ -5086,6 +5239,14 @@ attachEstimateKeyboardNavigation();
       event.preventDefault();
       event.stopPropagation();
       openManagerPaymentModal(button.getAttribute("data-manager-event-pay"));
+    });
+  });
+
+  document.querySelectorAll("[data-manager-event-payments]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await openManagerPaymentRequestsModal(button.getAttribute("data-manager-event-payments"));
     });
   });
 
