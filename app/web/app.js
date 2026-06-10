@@ -1302,12 +1302,10 @@ function formatPhoneDisplay(value) {
 
 function renderUserBadgeContent(user) {
   const name = user?.name || "";
-  const phone = formatPhoneDisplay(user?.phone);
-  const firstLine = [name, phone].filter(Boolean).join(" · ");
 
   return `
     <span class="user-badge-main">
-      <span class="user-badge-line">${firstLine}</span>
+      <span class="user-badge-line">${name}</span>
       <span class="user-badge-role">${roleLabel(user?.role)}</span>
     </span>
     ${user?.role === "manager" ? `<button class="user-badge-edit" id="headerProfileEditBtn" type="button" title="Редактировать данные">✎</button>` : ""}
