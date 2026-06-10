@@ -5310,6 +5310,26 @@ function paymentItemHasCheckedBin(item) {
 
 function updatePaymentInvoiceUiAfterCheck(eventId, item) {
   renderPaymentPositionState(eventId);
+
+  const methodSelect = $("paymentMethodSelect");
+  if (methodSelect) {
+    methodSelect.value = "invoice";
+    methodSelect.disabled = true;
+  }
+
+  const binInput = $("paymentBinInput");
+  if (binInput) {
+    binInput.value = item.iin_bin || "";
+    binInput.disabled = true;
+  }
+
+  const checkBtn = $("paymentCheckBinBtn");
+  if (checkBtn) {
+    checkBtn.disabled = true;
+    checkBtn.setAttribute("aria-disabled", "true");
+    checkBtn.classList.add("is-disabled");
+  }
+
   const message = $("paymentMessage");
   if (message) message.textContent = "БИН проверен и зафиксирован в смете";
 }
@@ -5339,24 +5359,28 @@ async function checkPaymentInvoiceBin(eventId) {
     body: JSON.stringify({ iin_bin: bin }),
   });
 
-  if (!taxResult || !taxResult.tax_status || taxResult.tax_status === "not_found") {
+  const checkedStatus = taxResult?.tax_check_status || taxResult?.tax_status;
+
+  if (!taxResult || !checkedStatus || checkedStatus === "not_found") {
     throw new Error(taxResult?.message || "КГД не подтвердил БИН/ИИН");
   }
 
   item.iin_bin = taxResult.iin_bin || bin;
-  item.iin_bin_locked = Boolean(taxResult.iin_bin_locked);
-  item.tax_check_status = taxResult.tax_check_status || taxResult.tax_status;
+  item.iin_bin_locked = taxResult.iin_bin_locked === undefined ? true : Boolean(taxResult.iin_bin_locked);
+  item.tax_check_status = checkedStatus;
   item.vat_amount = taxResult.vat_amount || 0;
   item.deduction_amount = taxResult.deduction_amount || 0;
   item.payment_method = "invoice";
-  item.contractor_name = taxResult.contractor_name || null;
+  item.contractor_name = taxResult.contractor_name || taxResult.name || null;
+
+  await persistItemBeforePayment(eventId, item);
 
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
   updateCurrentManagerMiniCardLive();
   updatePaymentInvoiceUiAfterCheck(eventId, item);
 
-  return taxResult.contractor_name || `БИН ${bin}`;
+  return item.contractor_name || `БИН ${bin}`;
 }
 
 
