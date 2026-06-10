@@ -623,6 +623,44 @@ function injectManagerUxStyles() {
       border-color: rgba(80, 210, 40, .72);
       box-shadow: 0 0 0 3px rgba(80, 210, 40, .12);
     }
+
+
+    .modal-backdrop.profile-modal-mode .modal {
+      width: min(460px, calc(100vw - 36px));
+      max-width: 460px;
+      padding: 22px;
+      border-radius: 22px;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-head {
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-head .eyebrow {
+      font-size: 11px;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-head h2 {
+      font-size: 22px;
+      margin: 2px 0 0;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content .form-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content input,
+    .modal-backdrop.profile-modal-mode .profile-modal-content select {
+      width: 100%;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-actions {
+      margin-top: 14px;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1774,6 +1812,7 @@ async function createManagerSalaryRequest(eventId, defaultAmount) {
 
 async function openEventModal(eventId) {
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
+  $("eventModalBackdrop").classList.remove("profile-modal-mode");
   $("eventModalBackdrop").classList.remove("hidden");
   $("eventModalTitle").textContent = `Мероприятие #${eventId}`;
   $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
@@ -4078,7 +4117,7 @@ function renderManagerProfileModal(user) {
           <input id="profileNameInput" value="${user.name || ""}" />
         </label>
         <label>Телефон
-          <input id="profilePhoneInput" value="${user.phone || ""}" placeholder="+7..." />
+          <input id="profilePhoneInput" value="${formatPhoneDisplay(user.phone)}" placeholder="+7..." />
         </label>
         <label>Email
           <input id="profileEmailInput" value="${user.email || ""}" placeholder="name@example.com" />
@@ -4109,11 +4148,15 @@ function openManagerProfileModal() {
 
   const user = state.bootstrap?.user || {};
   backdrop.classList.remove("pin-modal-mode");
+  backdrop.classList.add("profile-modal-mode");
   backdrop.classList.remove("hidden");
   title.textContent = "Данные менеджера";
   content.innerHTML = renderManagerProfileModal(user);
 
-  const close = () => backdrop.classList.add("hidden");
+  const close = () => {
+    backdrop.classList.add("hidden");
+    backdrop.classList.remove("profile-modal-mode");
+  };
   $("profileCancelBtn")?.addEventListener("click", close);
 
   $("profileSaveBtn")?.addEventListener("click", async () => {
@@ -4391,6 +4434,7 @@ function openChangePinModal() {
   const content = $("eventModalContent");
   if (!backdrop || !title || !content) return;
 
+  backdrop.classList.remove("profile-modal-mode");
   backdrop.classList.add("pin-modal-mode");
   backdrop.classList.remove("hidden");
   title.textContent = "Смена PIN";
@@ -4454,6 +4498,7 @@ async function changePin() {
     setTimeout(() => {
       $("eventModalBackdrop")?.classList.add("hidden");
       $("eventModalBackdrop")?.classList.remove("pin-modal-mode");
+      $("eventModalBackdrop")?.classList.remove("profile-modal-mode");
     }, 450);
   } catch (error) {
     if (msg) msg.textContent = error.message;
@@ -4504,6 +4549,7 @@ if (legacyChangePinBtn) legacyChangePinBtn.addEventListener("click", changePin);
 $("eventModalCloseBtn").addEventListener("click", () => {
   $("eventModalBackdrop").classList.add("hidden");
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
+  $("eventModalBackdrop").classList.remove("profile-modal-mode");
 });
 
 $("plansModalCloseBtn").addEventListener("click", () => {
