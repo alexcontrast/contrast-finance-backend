@@ -2580,6 +2580,8 @@ async function renderManagerEventDetail(eventId, options = {}) {
           api(`/events/${eventId}/summary`),
         ]);
 
+    await refreshManagerPaymentRequestsForEvent(eventId);
+
     const dashboardEvent = getManagerDashboardEvent(eventId);
     const draftEvent = getDraftEvent({ ...(event || {}), ...(dashboardEvent || {}) });
     state.currentManagerEvent = draftEvent;
@@ -4226,11 +4228,25 @@ function selfEmployedSurnameFromItem(item) {
 
 
 
+
+async function refreshManagerPaymentRequestsForEvent(eventId) {
+  if (!eventId) return;
+
+  try {
+    const requests = await api(`/events/${eventId}/payment-requests`);
+    const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
+    state.managerPaymentRequests = [...(requests || []), ...otherRequests];
+  } catch (error) {
+    console.warn("Не удалось обновить заявки мероприятия", error);
+  }
+}
+
+
 function activePaymentRequestsForItem(item) {
   if (!item || String(item.id).startsWith("tmp-")) return [];
   return (state.managerPaymentRequests || []).filter((request) =>
     Number(request.event_item_id) === Number(item.id) &&
-    request.status !== "rejected"
+    !["cancelled", "rejected"].includes(request.status)
   );
 }
 
@@ -4297,7 +4313,7 @@ function deleteButtonHtmlForItem(item) {
 function activePaymentRequestsForEvent(eventId) {
   return (state.managerPaymentRequests || []).filter((request) =>
     Number(request.event_id) === Number(eventId) &&
-    request.status !== "rejected"
+    !["cancelled", "rejected"].includes(request.status)
   );
 }
 
