@@ -637,21 +637,6 @@ function injectManagerUxStyles() {
       margin-bottom: 10px;
     }
 
-    .modal-backdrop.profile-modal-mode .modal-head .eyebrow {
-      font-size: 11px;
-    }
-
-    .modal-backdrop.profile-modal-mode .modal-head h2 {
-      font-size: 22px;
-      margin: 2px 0 0;
-    }
-
-    .modal-backdrop.profile-modal-mode .profile-modal-content .form-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-      margin-top: 12px;
-    }
 
     .modal-backdrop.profile-modal-mode .profile-modal-content input,
     .modal-backdrop.profile-modal-mode .profile-modal-content select {
@@ -660,6 +645,28 @@ function injectManagerUxStyles() {
 
     .modal-backdrop.profile-modal-mode .modal-actions {
       margin-top: 14px;
+    }
+
+
+    .modal-backdrop.profile-modal-mode .modal-head .eyebrow {
+      display: none;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-head h2 {
+      font-size: 24px;
+      line-height: 1.05;
+      margin: 0;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content .form-grid {
+      margin-top: 0;
     }
 `;
   document.head.appendChild(style);
@@ -1298,6 +1305,46 @@ function formatPhoneDisplay(value) {
   }
 
   return `+${digits}`;
+}
+
+function phoneDigitsForKz(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+
+  if (digits.startsWith("8")) {
+    digits = `7${digits.slice(1)}`;
+  }
+
+  if (!digits.startsWith("7")) {
+    digits = `7${digits}`;
+  }
+
+  return digits.slice(0, 11);
+}
+
+function formatPhoneKzPretty(value) {
+  const digits = phoneDigitsForKz(value);
+  const rest = digits.startsWith("7") ? digits.slice(1) : digits;
+
+  if (!rest) return "+7";
+
+  const p1 = rest.slice(0, 3);
+  const p2 = rest.slice(3, 6);
+  const p3 = rest.slice(6, 8);
+  const p4 = rest.slice(8, 10);
+
+  let result = "+7";
+  if (p1) result += ` (${p1}`;
+  if (p1.length === 3) result += ")";
+  if (p2) result += ` ${p2}`;
+  if (p3) result += ` ${p3}`;
+  if (p4) result += ` ${p4}`;
+
+  return result;
+}
+
+function formatPhoneInputLive(input) {
+  if (!input) return;
+  input.value = formatPhoneKzPretty(input.value);
 }
 
 function renderUserBadgeContent(user) {
@@ -4107,15 +4154,12 @@ function renderManagerProfileModal(user) {
   const departments = state.bootstrap?.departments || [];
   return `
     <div class="profile-modal-content">
-      <h3>Данные менеджера</h3>
-      <p class="muted">Можно изменить имя, телефон, отдел и email.</p>
-
       <div class="form-grid">
         <label>Имя
           <input id="profileNameInput" value="${user.name || ""}" />
         </label>
         <label>Телефон
-          <input id="profilePhoneInput" value="${formatPhoneDisplay(user.phone)}" placeholder="+7..." />
+          <input id="profilePhoneInput" value="${formatPhoneKzPretty(user.phone)}" placeholder="+7 (___) ___ __ __" inputmode="tel" />
         </label>
         <label>Email
           <input id="profileEmailInput" value="${user.email || ""}" placeholder="name@example.com" />
@@ -4150,6 +4194,12 @@ function openManagerProfileModal() {
   backdrop.classList.remove("hidden");
   title.textContent = "Данные менеджера";
   content.innerHTML = renderManagerProfileModal(user);
+
+  const phoneInput = $("profilePhoneInput");
+  if (phoneInput) {
+    phoneInput.addEventListener("input", () => formatPhoneInputLive(phoneInput));
+    phoneInput.addEventListener("blur", () => formatPhoneInputLive(phoneInput));
+  }
 
   const close = () => {
     backdrop.classList.add("hidden");
