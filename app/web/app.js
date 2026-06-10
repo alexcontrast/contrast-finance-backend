@@ -1461,6 +1461,54 @@ function injectManagerUxStyles() {
     .admin-events-table .admin-event-status-badge {
       color: #171a16 !important;
     }
+
+
+    /* v0.35.93: полноценная заливка бейджа статуса мероприятия */
+    .admin-events-table .admin-event-status-badge {
+      box-shadow: none !important;
+      border-width: 1px !important;
+      font-weight: 950 !important;
+    }
+
+    .admin-events-table .admin-event-status-badge.draft,
+    .admin-events-table .admin-event-status-badge.revision {
+      background: rgba(244, 247, 241, .98) !important;
+      border-color: rgba(125, 133, 118, .28) !important;
+      color: #52594f !important;
+    }
+
+    .admin-events-table .admin-event-status-badge.review {
+      background: rgba(255, 239, 196, .98) !important;
+      border-color: rgba(199, 151, 40, .34) !important;
+      color: #8a6207 !important;
+    }
+
+    .admin-events-table .admin-event-status-badge.completed,
+    .admin-events-table .admin-event-status-badge.archive,
+    .admin-events-table .admin-event-status-badge.archived {
+      background: rgba(216, 244, 210, .98) !important;
+      border-color: rgba(53, 150, 57, .28) !important;
+      color: #1f7a35 !important;
+    }
+
+    .admin-events-table .admin-event-status-badge.cancelled {
+      background: rgba(255, 228, 222, .98) !important;
+      border-color: rgba(205, 86, 67, .28) !important;
+      color: #b84835 !important;
+    }
+
+    /* v0.35.93: градиент отделов для соавторства из разных отделов */
+    .admin-events-table tbody tr.admin-event-row.department-mixed-sanzhar-raufal td {
+      background: linear-gradient(90deg, rgba(225, 246, 218, .90) 0%, rgba(225, 246, 218, .74) 45%, rgba(226, 241, 255, .74) 55%, rgba(226, 241, 255, .90) 100%) !important;
+      border-color: rgba(68, 145, 120, .14) !important;
+      color: #171a16 !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.department-mixed td {
+      background: linear-gradient(90deg, rgba(225, 246, 218, .82), rgba(244, 247, 241, .86), rgba(226, 241, 255, .82)) !important;
+      border-color: rgba(120, 140, 110, .13) !important;
+      color: #171a16 !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2391,6 +2439,22 @@ function renderAdminTabs() {
   });
 }
 
+
+function adminEventDepartmentToneClass(event) {
+  const ids = [...new Set((event.department_ids || [event.department_id]).map((id) => Number(id)).filter(Boolean))];
+
+  if (ids.length > 1) {
+    const classes = ids.map((id) => departmentClassById(id));
+    if (classes.includes("department-sanzhar") && classes.includes("department-raufal")) {
+      return "department-mixed-sanzhar-raufal";
+    }
+    return "department-mixed";
+  }
+
+  return departmentClassById(ids[0] || event.department_id);
+}
+
+
 function renderEventsTable(events, allowClick = false) {
   if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
 
@@ -2418,7 +2482,7 @@ function renderEventsTable(events, allowClick = false) {
         </thead>
         <tbody>
           ${sortedEvents.map((event) => `
-            <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${departmentClassById(event.department_id)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
+            <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${adminEventDepartmentToneClass(event)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
               <td class="nowrap">${formatDateRu(event.event_date) || event.event_date || ""}</td>
               <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
               <td><strong>${event.client_name || ""}</strong></td>
