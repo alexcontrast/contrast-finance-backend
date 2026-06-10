@@ -946,6 +946,119 @@ function injectManagerUxStyles() {
         grid-template-columns: 1fr;
       }
     }
+
+
+    .compact-payments-modal {
+      width: min(100%, 980px);
+    }
+
+    .manager-payments-table-head {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.4fr) 140px 130px 130px 130px;
+      gap: 12px;
+      align-items: center;
+      padding: 0 12px 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .manager-event-requests-list.compact {
+      display: grid;
+      gap: 8px;
+    }
+
+    .manager-payment-request-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.4fr) 140px 130px 130px 130px;
+      gap: 12px;
+      align-items: center;
+      min-height: 58px;
+      padding: 10px 12px;
+      border: 1px solid rgba(20, 36, 18, .10);
+      background: rgba(255, 255, 255, .9);
+      border-radius: 14px;
+      box-shadow: 0 8px 20px rgba(20, 36, 18, .045);
+    }
+
+    .manager-payment-request-position {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+      font-weight: 900;
+      color: var(--text);
+    }
+
+    .manager-payment-request-amount {
+      font-size: 18px;
+      line-height: 1;
+      font-weight: 1000;
+      color: #111;
+      white-space: nowrap;
+    }
+
+    .manager-payment-request-method {
+      font-size: 14px;
+      font-weight: 850;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .manager-payment-request-status .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      white-space: nowrap;
+    }
+
+    .manager-payment-request-action {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .manager-request-cancel-btn {
+      min-height: 34px;
+      padding: 7px 12px;
+      border-radius: 12px;
+      white-space: nowrap;
+    }
+
+    .manager-request-cancel-btn:disabled {
+      opacity: .42;
+      cursor: not-allowed;
+      filter: grayscale(1);
+      box-shadow: none !important;
+    }
+
+    @media (max-width: 760px) {
+      .manager-payments-table-head {
+        display: none;
+      }
+
+      .manager-payment-request-row {
+        grid-template-columns: 1fr auto;
+        gap: 8px 12px;
+        min-height: auto;
+      }
+
+      .manager-payment-request-position {
+        grid-column: 1 / -1;
+      }
+
+      .manager-payment-request-amount {
+        font-size: 17px;
+      }
+
+      .manager-payment-request-action {
+        justify-content: flex-start;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1936,6 +2049,13 @@ function eventPaymentRequestsForManager(eventId) {
     .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
 }
 
+
+function managerRequestCancelButtonHtml(request) {
+  const canCancel = canManagerCancelEventRequest(request);
+  return `<button class="small danger manager-request-cancel-btn" data-manager-event-request-cancel="${request.id}" ${canCancel ? "" : "disabled"}>Отменить</button>`;
+}
+
+
 function canManagerCancelEventRequest(request) {
   return canManagerCancelRequest(request);
 }
@@ -1952,24 +2072,32 @@ function renderManagerPaymentRequestsModal(eventId) {
   }
 
   return `
-    <div class="manager-event-requests-modal">
-      <div class="manager-event-requests-list">
+    <div class="manager-event-requests-modal compact-payments-modal">
+      <div class="manager-payments-table-head">
+        <div>Позиция</div>
+        <div>Сумма заявки</div>
+        <div>Способ</div>
+        <div>Статус заявки</div>
+        <div>Действие</div>
+      </div>
+
+      <div class="manager-event-requests-list compact">
         ${requests.map((request) => `
-          <div class="manager-payment-request-card">
-            <div class="manager-payment-request-top">
-              <strong>${request.position || request.item_name_snapshot || "Позиция"}</strong>
+          <div class="manager-payment-request-row">
+            <div class="manager-payment-request-position" title="${request.position || request.item_name_snapshot || "Позиция"}">
+              ${request.position || request.item_name_snapshot || "Позиция"}
+            </div>
+            <div class="manager-payment-request-amount">
+              ${formatMoney(request.amount_requested)}
+            </div>
+            <div class="manager-payment-request-method">
+              ${paymentMethodLabel(request.payment_method)}
+            </div>
+            <div class="manager-payment-request-status">
               <span class="status ${request.status}">${statusLabel(request.status)}</span>
             </div>
-            <div class="manager-payment-request-grid">
-              <div><span>Сумма</span><strong>${formatMoney(request.amount_requested)}</strong></div>
-              <div><span>Способ</span><strong>${paymentMethodLabel(request.payment_method)}</strong></div>
-              <div><span>Налоговый статус</span><strong>${request.tax_status || request.tax_status_label || "—"}</strong></div>
-              <div><span>Комментарий</span><strong>${request.comment || "—"}</strong></div>
-            </div>
-            <div class="modal-actions manager-payment-request-actions">
-              ${canManagerCancelEventRequest(request)
-                ? `<button class="danger-btn small" data-manager-event-request-cancel="${request.id}">Отменить заявку</button>`
-                : `<button class="ghost small" disabled>Отменить нельзя</button>`}
+            <div class="manager-payment-request-action">
+              ${managerRequestCancelButtonHtml(request)}
             </div>
           </div>
         `).join("")}
@@ -1997,6 +2125,8 @@ async function openManagerPaymentRequestsModal(eventId) {
 
   content.querySelectorAll("[data-manager-event-request-cancel]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (button.disabled) return;
+
       const requestId = button.getAttribute("data-manager-event-request-cancel");
       if (!confirm(`Отменить заявку #${requestId}?`)) return;
 
