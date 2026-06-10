@@ -882,6 +882,18 @@ function injectManagerUxStyles() {
       cursor: not-allowed;
       filter: grayscale(1);
     }
+
+
+    .payment-check-bin-btn:disabled,
+    .payment-check-bin-btn.is-disabled {
+      background: rgba(120, 126, 136, .16) !important;
+      color: rgba(60, 66, 76, .55) !important;
+      border-color: rgba(120, 126, 136, .25) !important;
+      box-shadow: none !important;
+      cursor: not-allowed !important;
+      filter: grayscale(1);
+      opacity: .7;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -4322,7 +4334,7 @@ function paymentMethodFromActiveRequest(item) {
 
 
 function itemHasLockedInvoicePayment(item) {
-  return Boolean(item?.iin_bin_locked && item?.iin_bin && item?.tax_check_status && item.tax_check_status !== "not_found");
+  return Boolean(item?.iin_bin_locked && item?.iin_bin);
 }
 
 function itemHasLockedSelfEmployedPayment(item) {
@@ -4651,7 +4663,7 @@ function renderPaymentExtraFields(eventId) {
       <label>БИН / ИИН
         <div class="payment-bin-row">
           <input id="paymentBinInput" inputmode="numeric" value="${item.iin_bin || ""}" placeholder="12 цифр" ${isLocked ? "disabled" : ""} />
-          <button class="ghost" id="paymentCheckBinBtn" type="button" ${isLocked ? "disabled" : ""}>Проверить</button>
+          <button class="ghost payment-check-bin-btn ${isLocked ? "is-disabled" : ""}" id="paymentCheckBinBtn" type="button" ${isLocked ? "disabled aria-disabled=\"true\"" : ""}>Проверить</button>
         </div>
       </label>
       <div class="payment-extra-hint" id="paymentBinHint">${
@@ -4663,6 +4675,8 @@ function renderPaymentExtraFields(eventId) {
 
     $("paymentCheckBinBtn")?.addEventListener("click", async () => {
       const checkBtn = $("paymentCheckBinBtn");
+      if (checkBtn?.disabled) return;
+
       const message = $("paymentMessage");
       if (message) message.textContent = "";
 
