@@ -119,8 +119,17 @@ def get_manager_dashboard(
     manager = resolve_manager(db, current_user, manager_id)
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    # Кабинет менеджера не должен падать, если на выбранный месяц ещё не задан план.
+    # В этом случае показываем пустой/нулевой план и всё равно отдаём список мероприятий.
     if plan is None:
-        raise HTTPException(status_code=404, detail="Monthly plan not found")
+        plan = MonthlyPlan(
+            month=month_date,
+            company_plan_amount=Decimal("0.00"),
+            sanjar_department_plan_amount=Decimal("0.00"),
+            raufal_department_plan_amount=Decimal("0.00"),
+            created_at=None,
+            updated_at=None,
+        )
 
     department = db.get(Department, manager.department_id) if manager.department_id else None
 

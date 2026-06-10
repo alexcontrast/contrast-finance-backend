@@ -1389,6 +1389,8 @@ function attachMonthYearSelectors() {
     if (!select) return;
     select.addEventListener("change", async () => {
       state.month = selectedMonthValue();
+      state.selectedManagerEventId = null;
+      state.currentManagerEvent = null;
       await withLoading(loadDashboard, "Загружаем кабинет…");
     });
   });
@@ -3074,13 +3076,13 @@ function updateCurrentManagerMiniCardLive() {
 
 function renderManagerEventList(data) {
   const events = data.events || [];
-  const selected = getSelectedManagerEvent(data);
+  const monthLabel = MONTHS_RU.find(([m]) => m === state.month.slice(5, 7))?.[1] || state.month.slice(5, 7);
+  const periodLabel = `${monthLabel} ${state.month.slice(0, 4)}`;
 
   return `
     <aside class="manager-sidebar-card">
       <h3>Мероприятия</h3>
-      <p class="muted">Проекты за выбранный месяц</p>
-
+      <p class="muted">Проекты за ${periodLabel}</p>
 
       <div class="manager-mini-list">
         ${events.length ? events.map((event) => `
@@ -3097,7 +3099,7 @@ function renderManagerEventList(data) {
               ${coauthorBadgeHtml(event, 'data-mini-coauthor')}
             </div>
           </button>
-        `).join("") : `<div class="empty-state">Мероприятий пока нет.</div>`}
+        `).join("") : `<div class="empty-state">Мероприятий за ${periodLabel} нет.</div>`}
       </div>
     </aside>
   `;
@@ -5995,9 +5997,26 @@ function renderManagerDashboard(data, paymentRequests = []) {
   scheduleMiniBadgeFit();
 
   const selected = getSelectedManagerEvent(data);
+  const holder = $("managerEventDetail");
+
   if (selected) {
     state.selectedManagerEventId = selected.id;
     renderManagerEventDetail(selected.id);
+  } else {
+    state.selectedManagerEventId = null;
+    state.currentManagerEvent = null;
+    state.currentManagerItems = [];
+    state.currentManagerSummary = null;
+
+    if (holder) {
+      holder.innerHTML = `
+        <div class="manager-empty-detail">
+          <div class="empty-icon">▦</div>
+          <h3>Мероприятий за выбранный период нет</h3>
+          <p class="muted">Выбери другой месяц или создай новое мероприятие.</p>
+        </div>
+      `;
+    }
   }
 }
 function attachPlansModal() {
