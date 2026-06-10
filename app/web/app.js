@@ -1509,6 +1509,42 @@ function injectManagerUxStyles() {
       border-color: rgba(120, 140, 110, .13) !important;
       color: #171a16 !important;
     }
+
+
+    /* v0.35.94: правильные цвета отделов в строках мероприятий */
+    .admin-events-table tbody tr.admin-event-row.department-sanzhar td {
+      background: rgba(226, 241, 255, .92) !important;
+      border-color: rgba(46, 126, 190, .16) !important;
+      color: #171a16 !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.department-raufal td {
+      background: rgba(255, 232, 210, .92) !important;
+      border-color: rgba(218, 139, 78, .18) !important;
+      color: #171a16 !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.department-mixed-sanzhar-raufal td {
+      background: linear-gradient(90deg,
+        rgba(226, 241, 255, .94) 0%,
+        rgba(226, 241, 255, .94) 50%,
+        rgba(255, 232, 210, .94) 50%,
+        rgba(255, 232, 210, .94) 100%
+      ) !important;
+      border-color: rgba(150, 136, 118, .18) !important;
+      color: #171a16 !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.department-mixed td {
+      background: linear-gradient(90deg,
+        rgba(226, 241, 255, .94) 0%,
+        rgba(226, 241, 255, .94) 50%,
+        rgba(255, 232, 210, .94) 50%,
+        rgba(255, 232, 210, .94) 100%
+      ) !important;
+      border-color: rgba(150, 136, 118, .18) !important;
+      color: #171a16 !important;
+    }
 `;
   document.head.appendChild(style);
 }
