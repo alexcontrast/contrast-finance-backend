@@ -4546,6 +4546,45 @@ function renderPaymentPositionState(eventId) {
   renderPaymentExtraFields(eventId);
 }
 
+
+function formatCardNumberInputValue(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 16);
+  return digits.replace(/(.{4})/g, "$1 ").trim();
+}
+
+function attachPaymentCardFormatting() {
+  const input = $("paymentCardInput");
+  if (!input) return;
+
+  input.addEventListener("input", () => {
+    input.value = formatCardNumberInputValue(input.value);
+  });
+
+  input.addEventListener("blur", () => {
+    input.value = formatCardNumberInputValue(input.value);
+  });
+}
+
+function paymentCardDigits() {
+  return String($("paymentCardInput")?.value || "").replace(/\D/g, "");
+}
+
+function validatePaymentCardBeforeSubmit() {
+  const digits = paymentCardDigits();
+  if (digits.length !== 16) {
+    throw new Error("Для оплаты на карту укажи номер карты из 16 цифр");
+  }
+  return digits;
+}
+
+function invoiceBinAlreadyFixedForPayment(item) {
+  return Boolean(
+    itemHasLockedInvoicePayment(item) ||
+    itemHasActiveInvoicePaymentRequest(item)
+  );
+}
+
+
 function renderPaymentExtraFields(eventId) {
   const item = selectedPaymentItem(eventId);
   const method = fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash";
@@ -4553,7 +4592,7 @@ function renderPaymentExtraFields(eventId) {
   if (!extra || !item) return;
 
   if (method === "invoice") {
-    const isLocked = Boolean(item.iin_bin_locked && item.iin_bin && item.tax_check_status && item.tax_check_status !== "not_found");
+    const isLocked = invoiceBinAlreadyFixedForPayment(item);
     extra.innerHTML = `
       <label>БИН / ИИН
         <div class="payment-bin-row">
@@ -4563,7 +4602,7 @@ function renderPaymentExtraFields(eventId) {
       </label>
       <div class="payment-extra-hint" id="paymentBinHint">${
         isLocked
-          ? `БИН проверен и зафиксирован за позицией: ${taxStatusLabel(item.tax_check_status)}`
+          ? `БИН уже проверен и закреплён за позицией${item.tax_check_status ? `: ${taxStatusLabel(item.tax_check_status)}` : ""}`
           : "Сначала проверь БИН. После успешной проверки можно создать заявку."
       }</div>
     `;
@@ -4588,9 +4627,10 @@ function renderPaymentExtraFields(eventId) {
   if (method === "card") {
     extra.innerHTML = `
       <label>Номер карты
-        <input id="paymentCardInput" inputmode="numeric" placeholder="16 цифр" />
+        <input id="paymentCardInput" inputmode="numeric" placeholder="0000 0000 0000 0000" maxlength="19" />
       </label>
     `;
+    attachPaymentCardFormatting();
     return;
   }
 
@@ -4783,6 +4823,10 @@ async function submitManagerPayment(eventId) {
     throw new Error("Сумма заявки должна быть больше 0");
   }
 
+  if (method === "card") {
+    validatePaymentCardBeforeSubmit();
+  }
+
   await withLoading(async () => {
     setButtonLoading(button, true, "Создаём…");
 
@@ -4792,7 +4836,7 @@ async function submitManagerPayment(eventId) {
           throw new Error("ЗП менеджера можно оформить только налом или на карту");
         }
 
-        const card = method === "card" ? (($("paymentCardInput")?.value || "").replace(/\D/g, "")) : null;
+        const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
 
         await api(`/events/${eventId}/manager-salary/payment-requests`, {
           method: "POST",
@@ -4815,7 +4859,7 @@ async function submitManagerPayment(eventId) {
           item = await prepareSimplePaymentItem(eventId, item, method);
         }
 
-        const card = method === "card" ? (($("paymentCardInput")?.value || "").replace(/\D/g, "")) : null;
+        const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
 
         if (item?.is_new_payment_position || String(item.id).startsWith("tmp-")) {
           throw new Error("Не удалось создать позицию перед заявкой");
