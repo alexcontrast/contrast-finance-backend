@@ -1587,6 +1587,23 @@ function injectManagerUxStyles() {
       letter-spacing: .04em;
       text-transform: uppercase;
     }
+
+
+    /* v0.35.97: надбавки заказчику в смете без лишнего выделения */
+    .estimate-table tr.estimate-top-charge-row td {
+      background: rgba(242, 250, 236, .92) !important;
+      border-top: 1px solid rgba(80, 210, 40, .18) !important;
+      color: #171a16 !important;
+    }
+
+    .estimate-table tr.estimate-top-charge-row td:first-child {
+      border-left: none !important;
+    }
+
+    .estimate-top-charge-row td strong {
+      display: inline !important;
+      color: #171a16 !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3099,7 +3116,8 @@ function customerVatTopAmount(summary) {
 }
 
 function customerTaxesTopAmount(summary) {
-  return asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
+  // Только банковские/налоговые платежи по Упрощенке, которые выставляются сверху заказчику.
+  return asNumber(summary?.simplified_bank_tax_amount ?? summary?.customer_bank_tax_amount ?? 0);
 }
 
 function customerTurnoverAmount(summary) {
@@ -3111,8 +3129,20 @@ function estimateExternalSubtotal(items) {
 }
 
 function customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, vatAmount) {
-  const explicit = asNumber(summary?.agency_commission_amount ?? event?.agency_commission_amount ?? 0);
-  if (explicit > 0) return explicit;
+  const explicitAmount = asNumber(
+    summary?.agency_commission_amount ??
+    summary?.agency_commission_total ??
+    summary?.customer_agency_commission_amount ??
+    event?.agency_commission_amount_value ??
+    0
+  );
+  if (explicitAmount > 0) return explicitAmount;
+
+  const percent = asNumber(event?.agency_commission_amount ?? event?.agency_commission_percent ?? summary?.agency_commission_percent ?? 0);
+  if (percent > 0 && percent <= 100) {
+    const subtotal = estimateExternalSubtotal(items);
+    return Math.round(subtotal * percent / 100);
+  }
 
   const turnover = customerTurnoverAmount(summary);
   const subtotal = estimateExternalSubtotal(items);
@@ -3124,36 +3154,24 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
   const rows = [];
 
   if (agencyAmount > 0) {
-    rows.push({
-      name: "Агентская комиссия",
-      amount: agencyAmount,
-      note: "Сверху для заказчика",
-    });
+    rows.push({ name: "Комиссия", amount: agencyAmount });
   }
 
   if (asNumber(taxesAmount) > 0) {
-    rows.push({
-      name: `Налоги ${taxPercentLabelForEvent(event, summary)}`,
-      amount: taxesAmount,
-      note: "Сверху для заказчика",
-    });
+    rows.push({ name: "Налоги", amount: taxesAmount });
   }
 
   if (asNumber(vatAmount) > 0) {
-    rows.push({
-      name: "НДС",
-      amount: vatAmount,
-      note: "Сверху для заказчика",
-    });
+    rows.push({ name: "НДС", amount: vatAmount });
   }
 
   return rows.map((row) => `
     <tr class="estimate-top-charge-row">
-      <td><strong>${row.name}</strong><span>${row.note}</span></td>
+      <td><strong>${row.name}</strong></td>
       <td>${formatMoney(row.amount)}</td>
       <td>0</td>
       <td>0</td>
-      <td>Заказчику</td>
+      <td>—</td>
       <td>0</td>
       <td>0</td>
     </tr>
