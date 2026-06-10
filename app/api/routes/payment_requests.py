@@ -126,10 +126,16 @@ def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary:
 
 
 def validate_manager_salary_payment_rules(payment_method: str, payload: PaymentRequestCreate):
-    if payment_method != "cash":
+    if payment_method not in {"card", "cash"}:
         raise HTTPException(
             status_code=400,
-            detail="ЗП менеджера всегда оформляется как Налик",
+            detail="ЗП менеджера можно оформить только На карту или Налик",
+        )
+
+    if payment_method == "card" and not looks_like_card_number(payload.card_number):
+        raise HTTPException(
+            status_code=400,
+            detail="Для ЗП менеджера На карту нужен номер карты из 16 цифр",
         )
 
 
@@ -379,13 +385,17 @@ def create_payment_request(
         item_remaining_snapshot=remaining,
 
         contractor_id=None,
-        contractor_name_snapshot=None,
+        contractor_name_snapshot=payload.comment if payment_method == "self_employed" else None,
         iin_bin_snapshot=item.iin_bin if payment_method == "invoice" else None,
-        tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else None,
-        vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else ("no_vat" if payment_method == "invoice" else None),
+        tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
+            "self_employed" if payment_method == "self_employed" else None
+        ),
+        vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else (
+            "no_vat" if payment_method in {"invoice", "self_employed"} else None
+        ),
         vat_amount_snapshot=item.vat_amount if payment_method == "invoice" else Decimal("0.00"),
-        deduction_amount_snapshot=item.deduction_amount if payment_method == "invoice" else Decimal("0.00"),
-        tax_source_snapshot="event_item" if payment_method == "invoice" else None,
+        deduction_amount_snapshot=item.deduction_amount if payment_method in {"invoice", "self_employed"} else Decimal("0.00"),
+        tax_source_snapshot="event_item" if payment_method in {"invoice", "self_employed"} else None,
 
         card_number=payload.card_number if payment_method == "card" else None,
         manual_tax_mode=False,
@@ -422,8 +432,12 @@ def create_manager_salary_payment_request(
     if current_user.role not in {"admin", "manager"}:
         raise HTTPException(status_code=403, detail="Only admin or manager can create manager salary request")
 
-    # ЗП менеджера всегда оформляется как Налик. Способ оплаты не выбирается.
-    payment_method = "cash"
+    payment_method = normalize_payment_method(payload.payment_method)
+    if not payment_method:
+        raise HTTPException(
+            status_code=400,
+            detail="Для заявки на ЗП менеджера нужно выбрать способ оплаты: card или cash",
+        )
 
     validate_manager_salary_payment_rules(payment_method, payload)
 
@@ -462,7 +476,7 @@ def create_manager_salary_payment_request(
         deduction_amount_snapshot=Decimal("0.00"),
         tax_source_snapshot=None,
 
-        card_number=None,
+        card_number=payload.card_number if payment_method == "card" else None,
         manual_tax_mode=False,
         warning_over_remaining=warning_over_remaining,
 

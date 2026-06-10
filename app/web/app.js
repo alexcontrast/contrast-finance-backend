@@ -731,6 +731,87 @@ function injectManagerUxStyles() {
       font-size: 16px !important;
       padding: 13px 18px !important;
     }
+
+
+    .modal-backdrop.payment-modal-mode .modal {
+      width: min(520px, calc(100vw - 32px));
+      max-width: 520px;
+      padding: 24px;
+      border-radius: 22px;
+    }
+
+    .modal-backdrop.payment-modal-mode .modal-head .eyebrow {
+      display: none;
+    }
+
+    .modal-backdrop.payment-modal-mode .modal-head h2 {
+      font-size: 24px;
+      margin: 0;
+    }
+
+    .manager-pay-modal {
+      display: grid;
+      gap: 14px;
+    }
+
+    .manager-pay-modal label {
+      display: grid;
+      gap: 7px;
+      font-size: 14px;
+      font-weight: 800;
+      color: rgba(30, 35, 25, .72);
+    }
+
+    .manager-pay-modal input,
+    .manager-pay-modal select {
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 16px;
+      padding: 13px 15px;
+      min-height: 50px;
+    }
+
+    .payment-info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .payment-info-grid div {
+      border: 1px solid rgba(80, 210, 40, .20);
+      background: rgba(80, 210, 40, .08);
+      border-radius: 14px;
+      padding: 9px 10px;
+      min-width: 0;
+    }
+
+    .payment-info-grid span {
+      display: block;
+      color: rgba(30, 35, 25, .62);
+      font-size: 11px;
+      font-weight: 800;
+      margin-bottom: 3px;
+    }
+
+    .payment-info-grid strong {
+      display: block;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .payment-extra-hint {
+      color: rgba(30, 35, 25, .62);
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: -6px;
+    }
+
+    #paymentMessage {
+      color: #8a2a2a;
+      font-weight: 800;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1921,6 +2002,7 @@ async function createManagerSalaryRequest(eventId, defaultAmount) {
 async function openEventModal(eventId) {
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
+  $("eventModalBackdrop").classList.remove("payment-modal-mode");
   $("eventModalBackdrop").classList.remove("hidden");
   $("eventModalTitle").textContent = `Мероприятие #${eventId}`;
   $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
@@ -3357,7 +3439,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           </div>
         </div>
         <div class="inline-actions">
-          <button class="secondary">Оплатить</button>
+          <button class="secondary" data-manager-event-pay="${event.id}">Оплатить</button>
           <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
           ${eventIsCoauthored(event)
             ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
@@ -3981,6 +4063,374 @@ async function openManagerActionDropdown(button, eventId, action) {
 }
 
 
+
+function paymentBaseAmountForItem(item) {
+  if (!item) return 0;
+  const fact = asNumber(item.amount_fact);
+  if (fact > 0) return fact;
+  return externalRowAmount(item);
+}
+
+function paymentRemainingForItem(item) {
+  return Math.max(0, Math.round(paymentBaseAmountForItem(item) - asNumber(item?.paid_amount)));
+}
+
+function selfEmployedSurnameFromItem(item) {
+  const note = String(item?.internal_note || "");
+  const match = note.match(/Самозанятый:\s*(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function paymentPositionsForEvent(eventId) {
+  const items = getDraftItems(eventId)
+    .filter((item) => !item.is_deleted && item.item_type !== "manager_salary")
+    .map((item) => ({ ...item, is_manager_salary_virtual: false }));
+
+  const summary = state.currentManagerSummary || {};
+  const managerSalary = Math.round(asNumber(summary.manager_salary || 0));
+  const managerPaid = Math.round(asNumber(managerSalaryPaidValue(summary)));
+
+  if (managerSalary > 0) {
+    items.push({
+      id: "manager_salary",
+      event_id: Number(eventId),
+      item_type: "manager_salary",
+      external_name: "ЗП менеджера",
+      external_price: 0,
+      external_quantity: 1,
+      external_days: 1,
+      external_amount: 0,
+      amount_fact: managerSalary,
+      paid_amount: managerPaid,
+      payment_method: "cash",
+      internal_note: "Системная позиция ЗП менеджера",
+      is_manager_salary_virtual: true,
+    });
+  }
+
+  return items;
+}
+
+function paymentPositionLabel(item) {
+  if (!item) return "";
+  const type = item.item_type === "coordinator" ? " · координатор" : (item.item_type === "manager_salary" ? " · ЗП" : "");
+  return `${item.external_name || "Позиция"}${type}`;
+}
+
+function paymentMethodOptionsForItem(item) {
+  if (item?.item_type === "manager_salary") {
+    return [
+      ["cash", "Нал"],
+      ["card", "На карту"],
+    ];
+  }
+
+  return [
+    ["cash", "Нал"],
+    ["card", "На карту"],
+    ["invoice", "По счету"],
+    ["self_employed", "Самозанятый"],
+  ];
+}
+
+function renderPaymentMethodOptions(item, selected) {
+  const options = paymentMethodOptionsForItem(item);
+  const selectedValue = selected || item?.payment_method || "cash";
+  return options.map(([value, label]) => `
+    <option value="${value}" ${selectedValue === value ? "selected" : ""}>${label}</option>
+  `).join("");
+}
+
+function renderManagerPaymentModal(eventId) {
+  const positions = paymentPositionsForEvent(eventId);
+  const selectedId = String(positions[0]?.id || "");
+  const selected = positions[0] || null;
+  const method = selected?.payment_method || "cash";
+
+  return `
+    <div class="manager-pay-modal">
+      <label>Позиция
+        <select id="paymentItemSelect">
+          ${positions.map((item) => `
+            <option value="${item.id}">${paymentPositionLabel(item)}</option>
+          `).join("")}
+        </select>
+      </label>
+
+      <div id="paymentPositionInfo" class="payment-position-info"></div>
+
+      <label>Сумма заявки
+        <input id="paymentAmountInput" inputmode="numeric" value="${formatPlainNumber(paymentRemainingForItem(selected))}" />
+      </label>
+
+      <label>Способ оплаты
+        <select id="paymentMethodSelect">
+          ${renderPaymentMethodOptions(selected, method)}
+        </select>
+      </label>
+
+      <div id="paymentExtraFields"></div>
+
+      <div class="modal-actions">
+        <button class="secondary" id="paymentCreateBtn" type="button">Создать заявку</button>
+        <button class="ghost" id="paymentCancelBtn" type="button">Отмена</button>
+      </div>
+      <div id="paymentMessage" class="muted"></div>
+    </div>
+  `;
+}
+
+function selectedPaymentItem(eventId) {
+  const select = $("paymentItemSelect");
+  const selectedId = select?.value;
+  return paymentPositionsForEvent(eventId).find((item) => String(item.id) === String(selectedId)) || null;
+}
+
+function renderPaymentPositionState(eventId) {
+  const item = selectedPaymentItem(eventId);
+  const info = $("paymentPositionInfo");
+  const amountInput = $("paymentAmountInput");
+  const methodSelect = $("paymentMethodSelect");
+  const extra = $("paymentExtraFields");
+
+  if (!item || !info || !amountInput || !methodSelect || !extra) return;
+
+  const base = paymentBaseAmountForItem(item);
+  const paid = asNumber(item.paid_amount);
+  const remaining = paymentRemainingForItem(item);
+
+  info.innerHTML = `
+    <div class="payment-info-grid">
+      <div><span>Факт/смета</span><strong>${formatMoney(base)}</strong></div>
+      <div><span>Оплачено</span><strong>${formatMoney(paid)}</strong></div>
+      <div><span>Остаток</span><strong>${formatMoney(remaining)}</strong></div>
+    </div>
+  `;
+
+  amountInput.value = formatPlainNumber(remaining);
+
+  const currentMethod = item.payment_method || "cash";
+  methodSelect.innerHTML = renderPaymentMethodOptions(item, currentMethod);
+  renderPaymentExtraFields(eventId);
+}
+
+function renderPaymentExtraFields(eventId) {
+  const item = selectedPaymentItem(eventId);
+  const method = $("paymentMethodSelect")?.value || "cash";
+  const extra = $("paymentExtraFields");
+  if (!extra || !item) return;
+
+  if (method === "invoice") {
+    extra.innerHTML = `
+      <label>БИН / ИИН
+        <input id="paymentBinInput" inputmode="numeric" value="${item.iin_bin || ""}" placeholder="12 цифр" />
+      </label>
+      <div class="payment-extra-hint">При создании заявки БИН проверится через КГД, а НДС/вычеты запишутся в смету.</div>
+    `;
+    return;
+  }
+
+  if (method === "card") {
+    extra.innerHTML = `
+      <label>Номер карты
+        <input id="paymentCardInput" inputmode="numeric" placeholder="16 цифр" />
+      </label>
+    `;
+    return;
+  }
+
+  if (method === "self_employed") {
+    extra.innerHTML = `
+      <label>Фамилия самозанятого
+        <input id="paymentSelfEmployedInput" value="${selfEmployedSurnameFromItem(item)}" placeholder="Фамилия" />
+      </label>
+      <div class="payment-extra-hint">КГД не нужен. Вычеты 10% сразу запишутся в смету.</div>
+    `;
+    return;
+  }
+
+  extra.innerHTML = "";
+}
+
+function paymentPayloadAmount() {
+  return Math.round(normalizeNumberInput($("paymentAmountInput")?.value || ""));
+}
+
+async function persistItemBeforePayment(eventId, item) {
+  await saveDraftEvent(eventId);
+  await saveDraftItems(eventId);
+
+  if (String(item.id).startsWith("tmp-")) {
+    throw new Error("Не удалось сохранить позицию перед заявкой");
+  }
+}
+
+async function prepareInvoicePaymentItem(eventId, item) {
+  const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
+  if (bin.length !== 12) {
+    throw new Error("Для оплаты по счету укажи БИН/ИИН из 12 цифр");
+  }
+
+  item.payment_method = "invoice";
+  item.iin_bin = bin;
+  item.iin_bin_locked = false;
+  item.tax_check_status = null;
+
+  await persistItemBeforePayment(eventId, item);
+
+  const taxResult = await api(`/event-items/${item.id}/tax/check`, {
+    method: "POST",
+    body: JSON.stringify({ iin_bin: bin }),
+  });
+
+  if (!taxResult || !taxResult.tax_status || taxResult.tax_status === "not_found") {
+    throw new Error(taxResult?.message || "КГД не подтвердил БИН/ИИН");
+  }
+
+  item.iin_bin = taxResult.iin_bin || bin;
+  item.iin_bin_locked = Boolean(taxResult.iin_bin_locked);
+  item.tax_check_status = taxResult.tax_check_status || taxResult.tax_status;
+  item.vat_amount = taxResult.vat_amount || 0;
+  item.deduction_amount = taxResult.deduction_amount || 0;
+
+  return taxResult.contractor_name || `БИН ${bin}`;
+}
+
+async function prepareSelfEmployedPaymentItem(eventId, item) {
+  const surname = ($("paymentSelfEmployedInput")?.value || "").trim();
+  if (!surname) {
+    throw new Error("Для самозанятого обязательно укажи фамилию");
+  }
+
+  const base = paymentBaseAmountForItem(item);
+  item.payment_method = "self_employed";
+  item.iin_bin = null;
+  item.iin_bin_locked = false;
+  item.tax_check_status = "self_employed";
+  item.vat_amount = 0;
+  item.deduction_amount = Math.round(base * 0.10);
+  item.internal_note = `Самозанятый: ${surname}`;
+
+  await persistItemBeforePayment(eventId, item);
+
+  return surname;
+}
+
+async function prepareSimplePaymentItem(eventId, item, method) {
+  item.payment_method = method;
+  item.iin_bin = null;
+  item.iin_bin_locked = false;
+  item.tax_check_status = null;
+  item.vat_amount = 0;
+  item.deduction_amount = 0;
+
+  await persistItemBeforePayment(eventId, item);
+}
+
+async function submitManagerPayment(eventId) {
+  const message = $("paymentMessage");
+  const button = $("paymentCreateBtn");
+  if (message) message.textContent = "";
+
+  const item = selectedPaymentItem(eventId);
+  if (!item) throw new Error("Выбери позицию");
+
+  const method = $("paymentMethodSelect")?.value || "cash";
+  const amount = paymentPayloadAmount();
+
+  if (!amount || amount <= 0) {
+    throw new Error("Сумма заявки должна быть больше 0");
+  }
+
+  await withLoading(async () => {
+    setButtonLoading(button, true, "Создаём…");
+
+    try {
+      if (item.item_type === "manager_salary") {
+        if (!["cash", "card"].includes(method)) {
+          throw new Error("ЗП менеджера можно оформить только налом или на карту");
+        }
+
+        const card = method === "card" ? (($("paymentCardInput")?.value || "").replace(/\D/g, "")) : null;
+
+        await api(`/events/${eventId}/manager-salary/payment-requests`, {
+          method: "POST",
+          body: JSON.stringify({
+            amount_requested: amount,
+            payment_method: method,
+            card_number: card,
+            comment: "ЗП менеджера",
+          }),
+        });
+      } else {
+        let comment = null;
+
+        if (method === "invoice") {
+          comment = await prepareInvoicePaymentItem(eventId, item);
+        } else if (method === "self_employed") {
+          comment = await prepareSelfEmployedPaymentItem(eventId, item);
+        } else {
+          await prepareSimplePaymentItem(eventId, item, method);
+        }
+
+        const card = method === "card" ? (($("paymentCardInput")?.value || "").replace(/\D/g, "")) : null;
+
+        await api(`/event-items/${item.id}/payment-requests`, {
+          method: "POST",
+          body: JSON.stringify({
+            amount_requested: amount,
+            payment_method: method,
+            card_number: card,
+            comment,
+          }),
+        });
+      }
+
+      $("eventModalBackdrop")?.classList.add("hidden");
+      $("eventModalBackdrop")?.classList.remove("payment-modal-mode");
+      await loadDashboard();
+      if (Number(state.selectedManagerEventId) === Number(eventId)) {
+        await renderManagerEventDetail(eventId);
+      }
+    } finally {
+      setButtonLoading(button, false);
+    }
+  }, "Создаём заявку…");
+}
+
+function openManagerPaymentModal(eventId) {
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  backdrop.classList.remove("pin-modal-mode");
+  backdrop.classList.remove("profile-modal-mode");
+  backdrop.classList.add("payment-modal-mode");
+  backdrop.classList.remove("hidden");
+
+  title.textContent = "Оплатить";
+  content.innerHTML = renderManagerPaymentModal(eventId);
+
+  renderPaymentPositionState(eventId);
+
+  $("paymentItemSelect")?.addEventListener("change", () => renderPaymentPositionState(eventId));
+  $("paymentMethodSelect")?.addEventListener("change", () => renderPaymentExtraFields(eventId));
+  $("paymentCancelBtn")?.addEventListener("click", () => {
+    backdrop.classList.add("hidden");
+    backdrop.classList.remove("payment-modal-mode");
+  });
+  $("paymentCreateBtn")?.addEventListener("click", async () => {
+    try {
+      await submitManagerPayment(eventId);
+    } catch (error) {
+      const message = $("paymentMessage");
+      if (message) message.textContent = error.message || "Не удалось создать заявку";
+    }
+  });
+}
+
+
 function attachManagerCreateWorkspaceActions() {
   applyManagerCardReadOnly();
   const managerCardCanEdit = canEditManagerEvent(state.currentManagerEvent);
@@ -4045,6 +4495,14 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
 
 attachEstimateKeyboardNavigation();
   attachEstimateDragAndDrop();
+
+  document.querySelectorAll("[data-manager-event-pay]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openManagerPaymentModal(button.getAttribute("data-manager-event-pay"));
+    });
+  });
 
   document.querySelectorAll("[data-manager-event-transfer]").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -4661,6 +5119,7 @@ $("eventModalCloseBtn").addEventListener("click", () => {
   $("eventModalBackdrop").classList.add("hidden");
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
+  $("eventModalBackdrop").classList.remove("payment-modal-mode");
 });
 
 $("plansModalCloseBtn").addEventListener("click", () => {
