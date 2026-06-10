@@ -1560,6 +1560,33 @@ function injectManagerUxStyles() {
       border-radius: 12px;
       font-size: 12px;
     }
+
+
+    /* v0.35.96: строки надбавок заказчику в смете админской модалки */
+    .estimate-table tr.estimate-top-charge-row td {
+      background: rgba(242, 250, 236, .92) !important;
+      border-top: 1px solid rgba(80, 210, 40, .22);
+      color: #171a16;
+    }
+
+    .estimate-table tr.estimate-top-charge-row td:first-child {
+      border-left: 4px solid rgba(80, 210, 40, .86);
+    }
+
+    .estimate-top-charge-row td strong {
+      display: block;
+      color: #171a16;
+    }
+
+    .estimate-top-charge-row td span {
+      display: block;
+      margin-top: 2px;
+      color: rgba(80, 90, 74, .78);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3061,6 +3088,79 @@ async function createManagerSalaryRequest(eventId, defaultAmount) {
   }, "Создаём заявку на ЗП менеджера…");
 }
 
+
+function customerVatTopAmount(summary) {
+  return asNumber(
+    summary?.vat_to_pay ??
+    summary?.customer_vat_amount ??
+    summary?.vat_customer_amount ??
+    0
+  );
+}
+
+function customerTaxesTopAmount(summary) {
+  return asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
+}
+
+function customerTurnoverAmount(summary) {
+  return asNumber(summary?.turnover_with_vat ?? summary?.external_total ?? 0);
+}
+
+function estimateExternalSubtotal(items) {
+  return (items || []).reduce((sum, item) => sum + asNumber(item.external_amount), 0);
+}
+
+function customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, vatAmount) {
+  const explicit = asNumber(summary?.agency_commission_amount ?? event?.agency_commission_amount ?? 0);
+  if (explicit > 0) return explicit;
+
+  const turnover = customerTurnoverAmount(summary);
+  const subtotal = estimateExternalSubtotal(items);
+  return Math.max(0, Math.round(turnover - subtotal - asNumber(taxesAmount) - asNumber(vatAmount)));
+}
+
+function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
+  const agencyAmount = customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, vatAmount);
+  const rows = [];
+
+  if (agencyAmount > 0) {
+    rows.push({
+      name: "Агентская комиссия",
+      amount: agencyAmount,
+      note: "Сверху для заказчика",
+    });
+  }
+
+  if (asNumber(taxesAmount) > 0) {
+    rows.push({
+      name: `Налоги ${taxPercentLabelForEvent(event, summary)}`,
+      amount: taxesAmount,
+      note: "Сверху для заказчика",
+    });
+  }
+
+  if (asNumber(vatAmount) > 0) {
+    rows.push({
+      name: "НДС",
+      amount: vatAmount,
+      note: "Сверху для заказчика",
+    });
+  }
+
+  return rows.map((row) => `
+    <tr class="estimate-top-charge-row">
+      <td><strong>${row.name}</strong><span>${row.note}</span></td>
+      <td>${formatMoney(row.amount)}</td>
+      <td>0</td>
+      <td>0</td>
+      <td>Заказчику</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+  `).join("");
+}
+
+
 async function openEventModal(eventId) {
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
@@ -3080,20 +3180,18 @@ async function openEventModal(eventId) {
     $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
 
     const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
-    const taxesAmount = asNumber(summary.taxes_total ?? (asNumber(summary.internal_tax_amount) + asNumber(summary.simplified_bank_tax_amount)));
+    const taxesAmount = customerTaxesTopAmount(summary);
+    const vatAmount = customerVatTopAmount(summary);
     const managerSalary = asNumber(summary.manager_salary);
-    const managerSalaryPaid = asNumber(managerSalaryPaidValue(summary));
-    const managerSalaryRemaining = Math.max(0, managerSalary - managerSalaryPaid);
 
     $("eventModalContent").innerHTML = `
       <div class="grid cards modal-metric-cards">
-        ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
+        ${metric("Оборот", formatMoney(customerTurnoverAmount(summary)))}
         ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)}`, formatMoney(taxesAmount))}
-        ${metric("НДС", formatMoney(summary.vat_to_pay ?? summary.vat_total))}
+        ${metric("НДС", formatMoney(vatAmount))}
         <div class="card metric manager-salary-metric">
           <div class="label">Менеджер 21%</div>
           <div class="value">${formatMoney(managerSalary)}</div>
-          ${canRequestManagerSalaryForEvent(event) && managerSalaryRemaining > 0 ? `<button class="small secondary salary-request-btn" data-manager-salary-request="${event.id}:${managerSalaryRemaining}">Подать заявку</button>` : ""}
         </div>
         <div class="card metric income-metric">
           <div class="label">Доход компании</div>
@@ -3123,6 +3221,7 @@ async function openEventModal(eventId) {
                 <td>${formatMoney(itemDeductionVisible(item))}</td>
               </tr>
             `).join("")}
+            ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}
           </tbody>
         </table>
       </div>
@@ -3134,7 +3233,6 @@ async function openEventModal(eventId) {
 
     attachPaymentRequestActions();
     attachEventModalRequestFilter(requests || []);
-    attachManagerSalaryRequestButton();
   } catch (error) {
     $("eventModalContent").innerHTML = `<div class="error">${error.message}</div>`;
   }
