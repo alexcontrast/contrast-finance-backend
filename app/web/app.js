@@ -1175,6 +1175,58 @@ function injectManagerUxStyles() {
         font-size: 16px !important;
       }
     }
+
+
+    .modal-backdrop.manager-requests-modal-mode .modal {
+      max-width: 860px !important;
+    }
+
+    .compact-grouped-payments {
+      width: fit-content !important;
+      min-width: 620px !important;
+      max-width: 100% !important;
+      margin: 0 auto !important;
+    }
+
+    .manager-payment-position-group.compact {
+      width: 100% !important;
+    }
+
+    .manager-payment-request-row.compact {
+      grid-template-columns: 110px 150px 112px 104px !important;
+      width: fit-content !important;
+      min-width: 560px !important;
+      max-width: 100% !important;
+      justify-content: start !important;
+    }
+
+    .manager-payment-request-row.compact .manager-payment-request-action {
+      justify-content: flex-end !important;
+    }
+
+    .manager-payment-request-row.compact .manager-payment-request-method {
+      min-width: 0 !important;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 760px) {
+      .modal-backdrop.manager-requests-modal-mode .modal {
+        max-width: calc(100vw - 20px) !important;
+      }
+
+      .compact-grouped-payments {
+        width: 100% !important;
+        min-width: 0 !important;
+        margin: 0 !important;
+      }
+
+      .manager-payment-request-row.compact {
+        width: 100% !important;
+        min-width: 0 !important;
+        grid-template-columns: 1fr auto !important;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
