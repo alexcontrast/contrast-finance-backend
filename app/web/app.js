@@ -668,6 +668,69 @@ function injectManagerUxStyles() {
     .modal-backdrop.profile-modal-mode .profile-modal-content .form-grid {
       margin-top: 0;
     }
+
+    /* Profile modal final compact one-column layout */
+    .modal-backdrop.profile-modal-mode .modal {
+      width: min(520px, calc(100vw - 32px)) !important;
+      max-width: 520px !important;
+      padding: 24px !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content .form-grid {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) !important;
+      gap: 14px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      margin-top: 0 !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content label {
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) !important;
+      gap: 7px !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      font-size: 15px !important;
+      line-height: 1.15 !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content input,
+    .modal-backdrop.profile-modal-mode .profile-modal-content select {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      font-size: 17px !important;
+      line-height: 1.2 !important;
+      padding: 13px 16px !important;
+      height: auto !important;
+      min-height: 52px !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .profile-modal-content #profilePhoneInput {
+      font-size: 16px !important;
+      letter-spacing: -0.2px !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-actions {
+      display: flex !important;
+      gap: 10px !important;
+      margin-top: 16px !important;
+    }
+
+    .modal-backdrop.profile-modal-mode .modal-actions button {
+      font-size: 16px !important;
+      padding: 13px 18px !important;
+    }
 `;
   document.head.appendChild(style);
 }
