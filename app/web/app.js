@@ -1059,6 +1059,51 @@ function injectManagerUxStyles() {
         justify-content: flex-start;
       }
     }
+
+
+    .grouped-payments-modal {
+      display: grid;
+      gap: 14px;
+    }
+
+    .manager-payment-position-group {
+      border: 1px solid rgba(20, 36, 18, .10);
+      background: rgba(246, 250, 242, .72);
+      border-radius: 16px;
+      padding: 10px;
+    }
+
+    .manager-payment-position-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 2px 10px;
+    }
+
+    .manager-payment-position-title span {
+      font-size: 16px;
+      font-weight: 1000;
+      color: var(--text);
+    }
+
+    .manager-payment-position-title em {
+      font-style: normal;
+      font-size: 12px;
+      font-weight: 850;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .manager-payment-position-group .manager-payments-table-head {
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+
+    .manager-payment-position-group .manager-payment-request-row {
+      box-shadow: none;
+      background: rgba(255,255,255,.96);
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2035,18 +2080,52 @@ function adminRequestActions(request) {
 
 
 function requestsForCurrentUser(requests) {
-  const user = state.bootstrap?.user;
-  if (!user || user.role !== "manager") return requests || [];
-
-  return (requests || []).filter((request) =>
-    !request.manager_id || Number(request.manager_id) === Number(user.id) || String(request.created_by_user_id || "") === String(user.id)
-  );
+  return requests || [];
 }
+
+
+function paymentRequestPositionKey(request) {
+  return String(request.event_item_id || request.item_id || request.position || request.item_name_snapshot || "manager_salary");
+}
+
+function paymentRequestPositionName(request) {
+  return request.position || request.item_name_snapshot || "Позиция";
+}
+
+function groupedPaymentRequestsByPosition(requests) {
+  const groups = [];
+  const index = new Map();
+
+  (requests || []).forEach((request) => {
+    const key = paymentRequestPositionKey(request);
+    if (!index.has(key)) {
+      const group = {
+        key,
+        title: paymentRequestPositionName(request),
+        requests: [],
+      };
+      groups.push(group);
+      index.set(key, group);
+    }
+    index.get(key).requests.push(request);
+  });
+
+  groups.forEach((group) => {
+    group.requests.sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+  });
+
+  return groups;
+}
+
 
 function eventPaymentRequestsForManager(eventId) {
   return requestsForCurrentUser(state.managerPaymentRequests || [])
     .filter((request) => Number(request.event_id) === Number(eventId))
-    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+    .sort((a, b) => {
+      const posA = paymentRequestPositionName(a).localeCompare(paymentRequestPositionName(b), "ru");
+      if (posA !== 0) return posA;
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
 }
 
 
@@ -2057,11 +2136,14 @@ function managerRequestCancelButtonHtml(request) {
 
 
 function canManagerCancelEventRequest(request) {
-  return canManagerCancelRequest(request);
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "manager") return false;
+  return !["paid", "cash_received", "rejected"].includes(request.status);
 }
 
 function renderManagerPaymentRequestsModal(eventId) {
   const requests = eventPaymentRequestsForManager(eventId);
+  const groups = groupedPaymentRequestsByPosition(requests);
 
   if (!requests.length) {
     return `
@@ -2072,36 +2154,45 @@ function renderManagerPaymentRequestsModal(eventId) {
   }
 
   return `
-    <div class="manager-event-requests-modal compact-payments-modal">
-      <div class="manager-payments-table-head">
-        <div>Позиция</div>
-        <div>Сумма заявки</div>
-        <div>Способ</div>
-        <div>Статус заявки</div>
-        <div>Действие</div>
-      </div>
-
-      <div class="manager-event-requests-list compact">
-        ${requests.map((request) => `
-          <div class="manager-payment-request-row">
-            <div class="manager-payment-request-position" title="${request.position || request.item_name_snapshot || "Позиция"}">
-              ${request.position || request.item_name_snapshot || "Позиция"}
-            </div>
-            <div class="manager-payment-request-amount">
-              ${formatMoney(request.amount_requested)}
-            </div>
-            <div class="manager-payment-request-method">
-              ${paymentMethodLabel(request.payment_method)}
-            </div>
-            <div class="manager-payment-request-status">
-              <span class="status ${request.status}">${statusLabel(request.status)}</span>
-            </div>
-            <div class="manager-payment-request-action">
-              ${managerRequestCancelButtonHtml(request)}
-            </div>
+    <div class="manager-event-requests-modal compact-payments-modal grouped-payments-modal">
+      ${groups.map((group) => `
+        <div class="manager-payment-position-group">
+          <div class="manager-payment-position-title">
+            <span>${group.title}</span>
+            <em>${group.requests.length} заявк${group.requests.length === 1 ? "а" : "и"}</em>
           </div>
-        `).join("")}
-      </div>
+
+          <div class="manager-payments-table-head">
+            <div>Позиция</div>
+            <div>Сумма заявки</div>
+            <div>Способ</div>
+            <div>Статус заявки</div>
+            <div>Действие</div>
+          </div>
+
+          <div class="manager-event-requests-list compact">
+            ${group.requests.map((request) => `
+              <div class="manager-payment-request-row">
+                <div class="manager-payment-request-position" title="${paymentRequestPositionName(request)}">
+                  ${paymentRequestPositionName(request)}
+                </div>
+                <div class="manager-payment-request-amount">
+                  ${formatMoney(request.amount_requested)}
+                </div>
+                <div class="manager-payment-request-method">
+                  ${paymentMethodLabel(request.payment_method)}
+                </div>
+                <div class="manager-payment-request-status">
+                  <span class="status ${request.status}">${statusLabel(request.status)}</span>
+                </div>
+                <div class="manager-payment-request-action">
+                  ${managerRequestCancelButtonHtml(request)}
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `).join("")}
     </div>
   `;
 }
