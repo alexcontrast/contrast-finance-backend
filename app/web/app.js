@@ -1343,6 +1343,53 @@ function injectManagerUxStyles() {
     #userBadge.admin-hidden {
       display: none !important;
     }
+
+
+    /* v0.35.89: цельная заливка строк мероприятий в админке */
+    .admin-events-table {
+      border-collapse: separate;
+      border-spacing: 0 7px;
+    }
+
+    .admin-events-table tbody tr.admin-event-row {
+      overflow: hidden;
+    }
+
+    .admin-events-table tbody tr.admin-event-row td {
+      border-top: 1px solid transparent;
+      border-bottom: 1px solid transparent;
+      background-clip: padding-box;
+    }
+
+    .admin-events-table tbody tr.admin-event-row td:first-child {
+      border-top-left-radius: 14px;
+      border-bottom-left-radius: 14px;
+    }
+
+    .admin-events-table tbody tr.admin-event-row td:last-child {
+      border-top-right-radius: 14px;
+      border-bottom-right-radius: 14px;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.status-tone-draft td {
+      background: rgba(255, 244, 214, .72) !important;
+      border-color: rgba(199, 151, 40, .14);
+    }
+
+    .admin-events-table tbody tr.admin-event-row.status-tone-review td {
+      background: rgba(226, 241, 255, .76) !important;
+      border-color: rgba(46, 126, 190, .13);
+    }
+
+    .admin-events-table tbody tr.admin-event-row.status-tone-accepted td {
+      background: rgba(227, 247, 221, .78) !important;
+      border-color: rgba(53, 150, 57, .14);
+    }
+
+    .admin-events-table .admin-event-status-badge {
+      box-shadow: none !important;
+      background: rgba(255, 255, 255, .62) !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2296,8 +2343,8 @@ function renderEventsTable(events, allowClick = false) {
   if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
 
   return `
-    <div class="table-wrap">
-      <table>
+    <div class="table-wrap admin-events-table-wrap">
+      <table class="admin-events-table">
         <thead>
           <tr>
             <th>Дата</th><th>Заказчик</th><th>Мероприятие</th><th>Менеджер</th><th>Статус</th>
@@ -2306,12 +2353,12 @@ function renderEventsTable(events, allowClick = false) {
         </thead>
         <tbody>
           ${events.map((event) => `
-            <tr class="${allowClick ? "clickable-row" : ""} ${departmentClassById(event.department_id)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
-              <td class="nowrap">${event.event_date || ""}</td>
+            <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${eventStatusToneClass(event.status)} ${departmentClassById(event.department_id)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
+              <td class="nowrap">${formatDateRu(event.event_date) || event.event_date || ""}</td>
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
               <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
-              <td><span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span></td>
+              <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>
               <td>${formatMoney(event.external_total)}</td>
               <td>${formatMoney(event.final_company_income)}</td>
               <td>${formatMoney(event.manager_salary || 0)}</td>

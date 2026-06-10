@@ -30,6 +30,9 @@ class AdminEventRowRead(BaseModel):
     final_company_income: Decimal
     external_total: Decimal
     paid_total: Decimal
+    manager_salary: Decimal = Decimal("0.00")
+    payment_requests_count: int = 0
+    active_payment_requests_count: int = 0
     items_count: int
 
 

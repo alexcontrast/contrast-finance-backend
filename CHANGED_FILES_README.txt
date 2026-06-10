@@ -1,10 +1,11 @@
-Contrast Finance Backend v0.35.88 — changed files only
+Contrast Finance Backend v0.35.89 — changed files only
 
 Changed/added files:
 - README.md
 - CHANGED_FILES_README.txt
 - app/core/config.py
 - app/api/routes/admin_dashboard.py
+- app/schemas/admin_dashboard.py
 - app/api/routes/events.py
 - app/api/routes/event_items.py
 - app/api/routes/payment_requests.py

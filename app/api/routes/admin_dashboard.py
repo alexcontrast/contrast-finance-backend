@@ -27,6 +27,8 @@ from app.services.auth import require_roles
 
 router = APIRouter(tags=["admin_dashboard"])
 
+INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
+
 
 def money(value) -> Decimal:
     if value is None:
@@ -180,6 +182,10 @@ def get_admin_dashboard(
         department = dept_by_id.get(event.department_id)
         manager = user_by_id.get(event.manager_id)
 
+        event_payment_requests = db.execute(
+            select(PaymentRequest).where(PaymentRequest.event_id == event.id)
+        ).scalars().all()
+
         event_rows.append(
             AdminEventRowRead(
                 id=event.id,
@@ -194,6 +200,12 @@ def get_admin_dashboard(
                 final_company_income=q(money(summary["final_company_income"])),
                 external_total=q(money(summary["external_total"])),
                 paid_total=q(money(summary["paid_total"])),
+                manager_salary=q(money(summary["manager_salary"])),
+                payment_requests_count=len(event_payment_requests),
+                active_payment_requests_count=len([
+                    request for request in event_payment_requests
+                    if request.status not in INACTIVE_PAYMENT_STATUSES
+                ]),
                 items_count=len(items),
             )
         )
