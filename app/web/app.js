@@ -521,39 +521,6 @@ function injectManagerUxStyles() {
     }
 
 
-    .header-subtitle {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .header-profile-text {
-      color: rgba(30, 35, 25, .72);
-      font-weight: 800;
-    }
-
-    .header-profile-edit {
-      width: 26px;
-      height: 26px;
-      border-radius: 999px;
-      border: 1px solid rgba(80, 210, 40, .34);
-      background: rgba(80, 210, 40, .10);
-      color: #245f18;
-      font-size: 13px;
-      line-height: 1;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-    }
-
-    .header-profile-edit:hover {
-      border-color: rgba(80, 210, 40, .72);
-      box-shadow: 0 0 0 3px rgba(80, 210, 40, .12);
-    }
-
 
     .modal-backdrop.pin-modal-mode .modal {
       width: min(430px, calc(100vw - 36px));
@@ -593,6 +560,68 @@ function injectManagerUxStyles() {
 
     .pin-actions {
       margin-top: 14px;
+    }
+
+
+    #userBadge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      padding: 9px 12px 9px 14px;
+    }
+
+    #userBadge.hidden {
+      display: none;
+    }
+
+    .user-badge-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2px;
+      min-width: 0;
+      line-height: 1.05;
+    }
+
+    .user-badge-line,
+    .user-badge-role {
+      display: block;
+      min-width: 0;
+      max-width: 230px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-badge-line {
+      font-weight: 950;
+    }
+
+    .user-badge-role {
+      font-size: 13px;
+      opacity: .88;
+    }
+
+    .user-badge-edit {
+      width: 25px;
+      height: 25px;
+      min-width: 25px;
+      border-radius: 999px;
+      border: 1px solid rgba(80, 210, 40, .34);
+      background: rgba(255, 255, 255, .62);
+      color: #245f18;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .user-badge-edit:hover {
+      border-color: rgba(80, 210, 40, .72);
+      box-shadow: 0 0 0 3px rgba(80, 210, 40, .12);
     }
 `;
   document.head.appendChild(style);
@@ -1213,30 +1242,47 @@ function managerEditableDepartments() {
   return filtered.length ? filtered : departments.filter((department) => department.is_active !== false);
 }
 
-function renderHeaderProfile(user) {
-  if (!user) return "";
+function formatPhoneDisplay(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
 
-  const departmentName = departmentNameById(user.department_id) || "";
-  const parts = [
-    user.name || "",
-    departmentName ? `отдел ${departmentName}` : "",
-    user.phone || "",
-    user.email || "",
-  ].filter(Boolean);
+  if (raw.startsWith("+")) return raw;
+
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return raw;
+
+  if (digits.length === 11 && digits.startsWith("8")) {
+    return `+7${digits.slice(1)}`;
+  }
+
+  if (digits.startsWith("7")) {
+    return `+${digits}`;
+  }
+
+  return `+${digits}`;
+}
+
+function renderUserBadgeContent(user) {
+  const name = user?.name || "";
+  const phone = formatPhoneDisplay(user?.phone);
+  const firstLine = [name, phone].filter(Boolean).join(" · ");
 
   return `
-    <span class="header-profile-text">${parts.join(" · ")}</span>
-    ${user.role === "manager" ? `<button class="header-profile-edit" id="headerProfileEditBtn" type="button" title="Редактировать данные">✎</button>` : ""}
+    <span class="user-badge-main">
+      <span class="user-badge-line">${firstLine}</span>
+      <span class="user-badge-role">${roleLabel(user?.role)}</span>
+    </span>
+    ${user?.role === "manager" ? `<button class="user-badge-edit" id="headerProfileEditBtn" type="button" title="Редактировать данные">✎</button>` : ""}
   `;
 }
 
 function updateHeaderUserInfo(user) {
   if (!user) return;
   $("pageTitle").textContent = roleLabel(user.role);
-  $("pageSubtitle").innerHTML = user.role === "admin"
+  $("pageSubtitle").textContent = user.role === "admin"
     ? "Проверка мероприятий, заявки, планы и закрытие месяца"
-    : renderHeaderProfile(user);
-  $("userBadge").textContent = `${user.name} · ${roleLabel(user.role)}`;
+    : "";
+  $("userBadge").innerHTML = renderUserBadgeContent(user);
 
   const editBtn = document.getElementById("headerProfileEditBtn");
   if (editBtn) editBtn.addEventListener("click", openManagerProfileModal);
