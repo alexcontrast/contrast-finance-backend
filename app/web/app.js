@@ -1389,8 +1389,7 @@ function attachMonthYearSelectors() {
     if (!select) return;
     select.addEventListener("change", async () => {
       state.month = selectedMonthValue();
-      state.selectedManagerEventId = null;
-      state.currentManagerEvent = null;
+      clearManagerSelectedEventUi();
       await withLoading(loadDashboard, "Загружаем кабинет…");
     });
   });
@@ -6026,8 +6025,68 @@ function attachManagerDashboardActions() {
   });
 
 }
+
+function eventMonthKey(event) {
+  return String(event?.event_date || "").slice(0, 7);
+}
+
+function emptyManagerDashboard(month) {
+  const user = state.bootstrap?.user || {};
+  return {
+    month,
+    manager_id: user.id || null,
+    manager_name: user.name || "",
+    department_id: user.department_id || null,
+    department_name: user.department_name || null,
+    include_drafts: true,
+    personal_plan_amount: 0,
+    fact_income_amount: 0,
+    completion_percent: 0,
+    remaining_to_plan: 0,
+    events_count: 0,
+    drafts_count: 0,
+    payment_requests_count: 0,
+    active_payment_requests_count: 0,
+    events: [],
+  };
+}
+
+function normalizeManagerDashboardForMonth(data, month) {
+  const normalized = { ...(data || emptyManagerDashboard(month)) };
+  normalized.month = month;
+
+  const events = Array.isArray(normalized.events) ? normalized.events : [];
+  normalized.events = events.filter((event) => eventMonthKey(event) === month);
+
+  normalized.events_count = normalized.events.length;
+  normalized.drafts_count = normalized.events.filter((event) => event.status === "draft").length;
+
+  return normalized;
+}
+
+function clearManagerSelectedEventUi() {
+  state.selectedManagerEventId = null;
+  state.currentManagerEvent = null;
+  state.currentManagerItems = [];
+  state.currentManagerSummary = null;
+
+  const holder = $("managerEventDetail");
+  if (holder) {
+    holder.innerHTML = `
+      <div class="manager-empty-detail">
+        <div class="empty-icon">▦</div>
+        <h3>Загружаем выбранный период…</h3>
+        <p class="muted">Список мероприятий обновляется.</p>
+      </div>
+    `;
+  }
+}
+
+
 function renderManagerDashboard(data, paymentRequests = []) {
-  state.managerData = data;
+  const normalizedData = normalizeManagerDashboardForMonth(data, state.month);
+
+  state.managerData = normalizedData;
   state.managerPaymentRequests = paymentRequests || [];
 
   $("adminTabs").classList.add("hidden");
@@ -6036,13 +6095,13 @@ function renderManagerDashboard(data, paymentRequests = []) {
   $("dashboardTitle").textContent = "Мои мероприятия";
   $("dashboardHint").textContent = "";
 
-  $("dashboardContent").innerHTML = renderManagerDashboardLayout(data);
+  $("dashboardContent").innerHTML = renderManagerDashboardLayout(normalizedData);
 
   attachPaymentRequestActions();
   attachManagerDashboardActions();
   scheduleMiniBadgeFit();
 
-  const selected = getSelectedManagerEvent(data);
+  const selected = getSelectedManagerEvent(normalizedData);
   const holder = $("managerEventDetail");
 
   if (selected) {
@@ -6143,11 +6202,16 @@ async function loadDashboard() {
     return;
   }
 
-  const [dashboard, requests] = await Promise.all([
-    api(`/manager-dashboard?month=${month}&include_drafts=true`),
-    api("/payment-requests"),
-  ]);
-  renderManagerDashboard(dashboard, requests);
+  try {
+    const [dashboard, requests] = await Promise.all([
+      api(`/manager-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
+      api(`/payment-requests?_=${Date.now()}`),
+    ]);
+    renderManagerDashboard(dashboard, requests);
+  } catch (error) {
+    console.warn("Не удалось загрузить manager-dashboard за период", month, error);
+    renderManagerDashboard(emptyManagerDashboard(month), []);
+  }
 }
 
 async function boot() {
