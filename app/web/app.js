@@ -1545,6 +1545,21 @@ function injectManagerUxStyles() {
       border-color: rgba(150, 136, 118, .18) !important;
       color: #171a16 !important;
     }
+
+
+    /* v0.35.95: ЗП менеджера отдельной карточкой в админской модалке */
+    .manager-salary-metric {
+      background: rgba(244, 247, 241, .96) !important;
+      border-color: rgba(126, 143, 116, .22) !important;
+    }
+
+    .manager-salary-metric .salary-request-btn {
+      margin-top: 10px;
+      min-height: 32px;
+      padding: 6px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3075,7 +3090,11 @@ async function openEventModal(eventId) {
         ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
         ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)}`, formatMoney(taxesAmount))}
         ${metric("НДС", formatMoney(summary.vat_to_pay ?? summary.vat_total))}
-        ${metric("Оплачено", formatMoney(summary.paid_total))}
+        <div class="card metric manager-salary-metric">
+          <div class="label">Менеджер 21%</div>
+          <div class="value">${formatMoney(managerSalary)}</div>
+          ${canRequestManagerSalaryForEvent(event) && managerSalaryRemaining > 0 ? `<button class="small secondary salary-request-btn" data-manager-salary-request="${event.id}:${managerSalaryRemaining}">Подать заявку</button>` : ""}
+        </div>
         <div class="card metric income-metric">
           <div class="label">Доход компании</div>
           <div class="value">${formatMoney(summary.final_company_income)}</div>
@@ -3104,18 +3123,6 @@ async function openEventModal(eventId) {
                 <td>${formatMoney(itemDeductionVisible(item))}</td>
               </tr>
             `).join("")}
-            <tr class="manager-salary-row">
-              <td>
-                <strong>Менеджер 21%</strong>
-                ${canRequestManagerSalaryForEvent(event) && managerSalaryRemaining > 0 ? `<button class="small secondary salary-request-btn" data-manager-salary-request="${event.id}:${managerSalaryRemaining}">Подать заявку</button>` : ""}
-              </td>
-              <td>0</td>
-              <td>${formatMoney(managerSalary)}</td>
-              <td>${formatMoney(managerSalaryPaid)}</td>
-              <td>ЗП менеджера</td>
-              <td>0</td>
-              <td>0</td>
-            </tr>
           </tbody>
         </table>
       </div>
