@@ -1336,6 +1336,13 @@ function injectManagerUxStyles() {
     @keyframes cfSoftSpin {
       to { transform: rotate(360deg); }
     }
+
+
+    /* v0.35.87: no green user badge in admin header */
+    body.admin-mode #userBadge,
+    #userBadge.admin-hidden {
+      display: none !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1427,7 +1434,12 @@ function attachMonthYearSelectors() {
     if (!select) return;
     select.addEventListener("change", async () => {
       state.month = selectedMonthValue();
-      clearManagerSelectedEventUi();
+      const user = state.bootstrap?.user;
+      if (user?.role === "manager") {
+        clearManagerSelectedEventUi();
+      } else {
+        clearDashboardForPeriodLoading();
+      }
       await withLoading(loadDashboard, "Загружаем кабинет…");
     });
   });
@@ -2097,11 +2109,24 @@ function renderUserBadgeContent(user) {
 
 function updateHeaderUserInfo(user) {
   if (!user) return;
+  document.body.classList.toggle("admin-mode", user.role === "admin");
   $("pageTitle").textContent = roleLabel(user.role);
   $("pageSubtitle").textContent = user.role === "admin"
     ? "Проверка мероприятий, заявки, планы и закрытие месяца"
     : "";
-  $("userBadge").innerHTML = renderUserBadgeContent(user);
+
+  const userBadge = $("userBadge");
+  if (userBadge) {
+    if (user.role === "admin") {
+      userBadge.innerHTML = "";
+      userBadge.classList.add("hidden");
+      userBadge.classList.add("admin-hidden");
+    } else {
+      userBadge.innerHTML = renderUserBadgeContent(user);
+      userBadge.classList.remove("hidden");
+      userBadge.classList.remove("admin-hidden");
+    }
+  }
 
   const editBtn = document.getElementById("headerProfileEditBtn");
   if (editBtn) editBtn.addEventListener("click", openManagerProfileModal);
@@ -2125,7 +2150,13 @@ function showDashboardShell() {
   $("loginScreen").classList.add("hidden");
   $("dashboardScreen").classList.remove("hidden");
   $("logoutBtn").classList.remove("hidden");
-  $("userBadge").classList.remove("hidden");
+
+  const user = state.bootstrap?.user;
+  const userBadge = $("userBadge");
+  if (userBadge) {
+    if (user?.role === "admin") userBadge.classList.add("hidden");
+    else userBadge.classList.remove("hidden");
+  }
 }
 
 function metric(label, value) {
@@ -2959,7 +2990,80 @@ function renderClosingSkeleton(data) {
   `;
 }
 
+
+function emptyAdminDashboard(month) {
+  return {
+    month,
+    company_plan_amount: 0,
+    company_fact_income_amount: 0,
+    company_completion_percent: 0,
+    company_remaining_to_plan: 0,
+    company_expenses_amount: 0,
+    departments: [],
+    events: [],
+    payment_requests: [],
+    closing: { is_closed: false },
+  };
+}
+
+function normalizeAdminDashboardForMonth(data, month) {
+  const normalized = { ...(data || emptyAdminDashboard(month)) };
+  normalized.month = month;
+
+  const events = Array.isArray(normalized.events) ? normalized.events : [];
+  normalized.events = events.filter((event) => eventMonthKey(event) === month);
+
+  const allowedEventIds = new Set(normalized.events.map((event) => Number(event.id)));
+  const requests = Array.isArray(normalized.payment_requests) ? normalized.payment_requests : [];
+  normalized.payment_requests = requests.filter((request) => (
+    !request.event_id || allowedEventIds.has(Number(request.event_id))
+  ));
+
+  return normalized;
+}
+
+function renderAdminEmptyDashboard(month, error = null) {
+  const data = emptyAdminDashboard(month);
+  state.adminData = data;
+  renderAdminTabs();
+  renderSummary([]);
+
+  $("dashboardTitle").textContent = "Админка";
+  $("dashboardHint").textContent = error ? `Не удалось загрузить данные за ${month}` : "";
+
+  if (state.activeAdminTab === "requests") {
+    $("dashboardContent").innerHTML = renderPaymentRequestsTable([], "Все заявки", "regular");
+  } else if (state.activeAdminTab === "requests_archive") {
+    $("dashboardContent").innerHTML = renderPaymentRequestsTable([], "Архив заявок", "archive");
+  } else if (state.activeAdminTab === "plans") {
+    $("dashboardContent").innerHTML = renderPlansSkeleton(data);
+  } else if (state.activeAdminTab === "closing") {
+    $("dashboardContent").innerHTML = renderClosingSkeleton(data);
+  } else {
+    $("dashboardContent").innerHTML = `
+      <div class="empty-state">
+        Данных за выбранный период нет.
+      </div>
+    `;
+  }
+
+  attachPaymentRequestActions();
+  attachFilters();
+  attachEventRows();
+  attachPlansModal();
+}
+
+function clearDashboardForPeriodLoading() {
+  if ($("dashboardContent")) {
+    $("dashboardContent").innerHTML = `
+      <div class="empty-state">Загружаем выбранный период…</div>
+    `;
+  }
+}
+
+
 function renderAdminDashboard(data) {
+  data = normalizeAdminDashboardForMonth(data, state.month);
   state.adminData = data;
   renderAdminTabs();
 
@@ -6293,8 +6397,13 @@ async function loadDashboard() {
   state.month = month;
 
   if (user.role === "admin") {
-    await loadUsersForAdmin();
-    renderAdminDashboard(await api(`/admin-dashboard?month=${month}&include_drafts=true`));
+    try {
+      await loadUsersForAdmin();
+      renderAdminDashboard(await api(`/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`));
+    } catch (error) {
+      console.warn("Не удалось загрузить admin-dashboard за период", month, error);
+      renderAdminEmptyDashboard(month, error);
+    }
     return;
   }
 

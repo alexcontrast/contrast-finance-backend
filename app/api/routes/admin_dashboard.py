@@ -131,8 +131,18 @@ def get_admin_dashboard(
     month_date = parse_month(month)
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    # Админка не должна падать, если на выбранный месяц ещё не задан план.
+    # В этом случае показываем месяц с нулевым планом и пустыми/фактическими данными.
     if plan is None:
-        raise HTTPException(status_code=404, detail="Monthly plan not found")
+        plan = MonthlyPlan(
+            month=month_date,
+            company_plan_amount=Decimal("0.00"),
+            sanzhar_share_percent=Decimal("66.67"),
+            raufal_share_percent=Decimal("33.33"),
+            manager_personal_plan_percent=Decimal("12.50"),
+            created_at=None,
+            updated_at=None,
+        )
 
     departments = db.execute(
         select(Department).where(Department.is_active == True).order_by(Department.id)  # noqa: E712
