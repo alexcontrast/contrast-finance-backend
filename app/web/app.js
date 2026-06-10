@@ -1390,6 +1390,45 @@ function injectManagerUxStyles() {
       box-shadow: none !important;
       background: rgba(255, 255, 255, .62) !important;
     }
+
+
+    /* v0.35.91: компактные имена менеджеров в обзоре */
+    .manager-progress-main .manager-progress-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-width: 0;
+      font-size: 13px;
+      line-height: 1.05;
+      white-space: nowrap;
+    }
+
+    .manager-progress-main .manager-progress-name span {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .manager-events-count-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: rgba(38, 98, 35, .11);
+      border: 1px solid rgba(38, 98, 35, .18);
+      color: #27631f;
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 950;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2973,6 +3012,8 @@ function renderAdminOverview(data) {
 
   const managerStats = managers.map((manager) => {
     const events = (data.events || []).filter((event) => Number(event.manager_id) === Number(manager.id));
+    const eventIds = new Set(events.map((event) => Number(event.id)).filter(Boolean));
+    const eventsCount = eventIds.size;
     const income = events.reduce((sum, event) => sum + asNumber(event.final_company_income), 0);
     const plan = asNumber(data.manager_personal_plan_amount);
     const percent = plan > 0 ? Math.round((income / plan) * 10000) / 100 : 0;
@@ -2982,6 +3023,7 @@ function renderAdminOverview(data) {
       income,
       plan,
       percent,
+      eventsCount,
       departmentId: manager.department_id,
       departmentName: departmentNameById(manager.department_id),
     };
@@ -3029,7 +3071,10 @@ function renderAdminOverview(data) {
               ${depManagers.length ? depManagers.map((row) => `
                 <div class="manager-progress-row">
                   <div class="manager-progress-main">
-                    <strong>${row.manager.name}</strong>
+                    <strong class="manager-progress-name">
+                      <span>${row.manager.name}</span>
+                      ${row.eventsCount ? `<em class="manager-events-count-badge">${row.eventsCount}</em>` : ""}
+                    </strong>
                     <span>${formatMoney(row.income)} ₸ · ${row.percent}%</span>
                   </div>
                   <div class="manager-progress-bar">
