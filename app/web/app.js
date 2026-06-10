@@ -4219,7 +4219,7 @@ function renderManagerPaymentModal(eventId) {
       <div id="paymentPositionInfo" class="payment-position-info"></div>
 
       <label>Сумма заявки
-        <input id="paymentAmountInput" inputmode="numeric" value="${formatPlainNumber(paymentRemainingForItem(selected))}" />
+        <input id="paymentAmountInput" inputmode="numeric" value="" placeholder="${formatMoney(paymentRemainingForItem(selected))}" />
       </label>
 
       <label>Способ оплаты
@@ -4266,7 +4266,8 @@ function renderPaymentPositionState(eventId) {
     </div>
   `;
 
-  amountInput.value = formatPlainNumber(remaining);
+  amountInput.value = "";
+  amountInput.placeholder = formatMoney(remaining);
 
   const currentMethod = item.payment_method || "cash";
   methodSelect.innerHTML = renderPaymentMethodOptions(item, currentMethod);
@@ -4296,11 +4297,17 @@ function renderPaymentExtraFields(eventId) {
     `;
 
     $("paymentCheckBinBtn")?.addEventListener("click", async () => {
+      const checkBtn = $("paymentCheckBinBtn");
+      const message = $("paymentMessage");
+      if (message) message.textContent = "";
+
       try {
+        setButtonLoading(checkBtn, true, "Проверяем…");
         await checkPaymentInvoiceBin(eventId);
       } catch (error) {
-        const message = $("paymentMessage");
         if (message) message.textContent = error.message || "Не удалось проверить БИН";
+      } finally {
+        if (checkBtn?.isConnected) setButtonLoading(checkBtn, false);
       }
     });
     return;
@@ -4391,8 +4398,29 @@ async function checkPaymentInvoiceBin(eventId) {
 }
 
 
+
+function formatThousandsInputValue(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("ru-RU").replace(/\u00A0/g, " ");
+}
+
+function attachPaymentAmountFormatting() {
+  const input = $("paymentAmountInput");
+  if (!input) return;
+
+  input.addEventListener("input", () => {
+    input.value = formatThousandsInputValue(input.value);
+  });
+
+  input.addEventListener("blur", () => {
+    input.value = formatThousandsInputValue(input.value);
+  });
+}
+
+
 function paymentPayloadAmount() {
-  return Math.round(normalizeNumberInput($("paymentAmountInput")?.value || ""));
+  return Math.round(normalizeNumberInput(String($("paymentAmountInput")?.value || "").replace(/\s/g, "")));
 }
 
 async function persistItemBeforePayment(eventId, item) {
@@ -4533,8 +4561,12 @@ function openManagerPaymentModal(eventId) {
   content.innerHTML = renderManagerPaymentModal(eventId);
 
   renderPaymentPositionState(eventId);
+  attachPaymentAmountFormatting();
 
-  $("paymentItemSelect")?.addEventListener("change", () => renderPaymentPositionState(eventId));
+  $("paymentItemSelect")?.addEventListener("change", () => {
+    renderPaymentPositionState(eventId);
+    attachPaymentAmountFormatting();
+  });
   $("paymentMethodSelect")?.addEventListener("change", () => renderPaymentExtraFields(eventId));
   $("paymentCancelBtn")?.addEventListener("click", () => {
     backdrop.classList.add("hidden");
