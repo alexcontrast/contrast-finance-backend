@@ -1429,6 +1429,38 @@ function injectManagerUxStyles() {
       line-height: 1;
       flex: 0 0 auto;
     }
+
+
+    /* v0.35.92: мероприятия окрашиваются по отделу, не по статусу */
+    .admin-events-table tbody tr.admin-event-row td,
+    .admin-events-table tbody tr.admin-event-row td strong {
+      color: #171a16 !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.department-sanzhar td {
+      background: rgba(225, 246, 218, .86) !important;
+      border-color: rgba(53, 150, 57, .14) !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.department-raufal td {
+      background: rgba(226, 241, 255, .86) !important;
+      border-color: rgba(46, 126, 190, .13) !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row:not(.department-sanzhar):not(.department-raufal) td {
+      background: rgba(244, 247, 241, .88) !important;
+      border-color: rgba(120, 140, 110, .13) !important;
+    }
+
+    .admin-events-table tbody tr.admin-event-row.status-tone-draft td,
+    .admin-events-table tbody tr.admin-event-row.status-tone-review td,
+    .admin-events-table tbody tr.admin-event-row.status-tone-accepted td {
+      color: #171a16 !important;
+    }
+
+    .admin-events-table .admin-event-status-badge {
+      color: #171a16 !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2293,26 +2325,7 @@ function departmentClassById(id) {
 }
 
 function filteredEvents(events) {
-  let list = [...(events || [])];
-
-  if (state.eventDepartmentFilter !== "all") {
-    list = list.filter((event) => Number(event.department_id) === Number(state.eventDepartmentFilter));
-  }
-
-  if (state.eventManagerFilter !== "all") {
-    list = list.filter((event) => Number(event.manager_id) === Number(state.eventManagerFilter));
-  }
-
-  if (state.eventStatusFilter !== "all") {
-    list = list.filter((event) => event.status === state.eventStatusFilter);
-  }
-
-  const search = String(state.eventSearch || "").trim().toLowerCase();
-  if (search) {
-    list = list.filter((event) => String(event.client_name || "").toLowerCase().includes(search));
-  }
-
-  return list;
+  return groupedAdminEventsForTable(events || []).filter(eventMatchesAdminFilters);
 }
 
 function filteredPaymentRequests(requests, mode = "regular") {
@@ -2381,22 +2394,35 @@ function renderAdminTabs() {
 function renderEventsTable(events, allowClick = false) {
   if (!events || !events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
 
+  const sortedEvents = [...events].sort((a, b) => {
+    const dateCompare = String(a.event_date || "").localeCompare(String(b.event_date || ""));
+    if (dateCompare !== 0) return dateCompare;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+
   return `
     <div class="table-wrap admin-events-table-wrap">
       <table class="admin-events-table">
         <thead>
           <tr>
-            <th>Дата</th><th>Заказчик</th><th>Мероприятие</th><th>Менеджер</th><th>Статус</th>
-            <th>Оборот</th><th>Доход</th><th>ЗП менеджера</th><th>Заявки</th>
+            <th>Дата</th>
+            <th>Менеджер</th>
+            <th>Заказчик</th>
+            <th>Мероприятие</th>
+            <th>Статус</th>
+            <th>Оборот</th>
+            <th>Доход</th>
+            <th>ЗП менеджера</th>
+            <th>Заявки</th>
           </tr>
         </thead>
         <tbody>
-          ${events.map((event) => `
-            <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${eventStatusToneClass(event.status)} ${departmentClassById(event.department_id)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
+          ${sortedEvents.map((event) => `
+            <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${departmentClassById(event.department_id)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
               <td class="nowrap">${formatDateRu(event.event_date) || event.event_date || ""}</td>
+              <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
-              <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
               <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>
               <td>${formatMoney(event.external_total)}</td>
               <td>${formatMoney(event.final_company_income)}</td>
@@ -3090,8 +3116,85 @@ function renderAdminOverview(data) {
   `;
 }
 
+
+function groupedAdminEventsForTable(events) {
+  const groups = new Map();
+
+  [...(events || [])].forEach((event) => {
+    const key = String(event.id);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        ...event,
+        manager_names: [],
+        manager_ids: [],
+        department_ids: [],
+        final_company_income: 0,
+        manager_salary: 0,
+        payment_requests_count: event.payment_requests_count ?? 0,
+        active_payment_requests_count: event.active_payment_requests_count ?? 0,
+      });
+    }
+
+    const group = groups.get(key);
+    const managerName = event.manager_name || managerNameById(event.manager_id) || "";
+    const managerId = Number(event.manager_id || 0);
+    const departmentId = Number(event.department_id || 0);
+
+    if (managerName && !group.manager_names.includes(managerName)) group.manager_names.push(managerName);
+    if (managerId && !group.manager_ids.includes(managerId)) group.manager_ids.push(managerId);
+    if (departmentId && !group.department_ids.includes(departmentId)) group.department_ids.push(departmentId);
+
+    group.final_company_income += asNumber(event.final_company_income);
+    group.manager_salary += asNumber(event.manager_salary);
+    group.payment_requests_count = Math.max(asNumber(group.payment_requests_count), asNumber(event.payment_requests_count));
+    group.active_payment_requests_count = Math.max(asNumber(group.active_payment_requests_count), asNumber(event.active_payment_requests_count));
+  });
+
+  return [...groups.values()].map((group) => {
+    const selectedDepartment = state.eventDepartmentFilter !== "all"
+      ? Number(state.eventDepartmentFilter)
+      : (group.department_ids[0] || group.department_id);
+
+    return {
+      ...group,
+      manager_name: group.manager_names.join(" / "),
+      manager_id: group.manager_ids[0] || group.manager_id,
+      department_id: selectedDepartment,
+    };
+  }).sort((a, b) => {
+    const dateCompare = String(a.event_date || "").localeCompare(String(b.event_date || ""));
+    if (dateCompare !== 0) return dateCompare;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+}
+
+function eventMatchesAdminFilters(event) {
+  if (state.eventDepartmentFilter !== "all") {
+    const departmentIds = event.department_ids || [event.department_id];
+    if (!departmentIds.some((id) => Number(id) === Number(state.eventDepartmentFilter))) return false;
+  }
+
+  if (state.eventManagerFilter !== "all") {
+    const managerIds = event.manager_ids || [event.manager_id];
+    if (!managerIds.some((id) => Number(id) === Number(state.eventManagerFilter))) return false;
+  }
+
+  if (state.eventStatusFilter !== "all" && event.status !== state.eventStatusFilter) {
+    return false;
+  }
+
+  const search = String(state.eventSearch || "").trim().toLowerCase();
+  if (search && !String(event.client_name || "").toLowerCase().includes(search)) {
+    return false;
+  }
+
+  return true;
+}
+
+
 function renderAdminEvents(data) {
-  const events = filteredEvents(data.events || []);
+  const groupedEvents = groupedAdminEventsForTable(data.events || []);
+  const events = groupedEvents.filter(eventMatchesAdminFilters);
   return `
     ${renderEventFilters(data.events || [])}
     ${renderEventsTable(events, true)}
