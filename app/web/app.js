@@ -1298,6 +1298,44 @@ function injectManagerUxStyles() {
         grid-template-columns: 1fr auto !important;
       }
     }
+
+
+    /* v0.35.86: global soft loading feedback for buttons */
+    button.soft-loading:not(.is-loading) {
+      position: relative;
+      opacity: .78;
+      pointer-events: none;
+      transform: translateY(1px);
+      transition: opacity .15s ease, transform .15s ease;
+    }
+
+    button.soft-loading:not(.is-loading)::after {
+      content: "";
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-left: 8px;
+      vertical-align: -2px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: cfSoftSpin .7s linear infinite;
+      opacity: .7;
+    }
+
+    button.soft-loading.icon-btn:not(.is-loading)::after {
+      margin-left: 0;
+      position: absolute;
+      right: 4px;
+      bottom: 4px;
+      width: 8px;
+      height: 8px;
+      border-width: 1.5px;
+    }
+
+    @keyframes cfSoftSpin {
+      to { transform: rotate(360deg); }
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1587,6 +1625,73 @@ function setButtonLoading(button, isLoading, loadingText = "…") {
   button.classList.remove("is-loading");
   delete button.dataset.originalText;
 }
+
+function isButtonSoftLoadingAllowed(button) {
+  if (!button || !(button instanceof HTMLElement)) return false;
+  if (button.tagName !== "BUTTON") return false;
+  if (button.disabled) return false;
+  if (button.dataset.noSoftLoading === "true") return false;
+  if (button.classList.contains("close-btn")) return false;
+  return true;
+}
+
+function setSoftButtonLoading(button, isLoading) {
+  if (!isButtonSoftLoadingAllowed(button)) return;
+
+  if (isLoading) {
+    button.classList.add("soft-loading");
+    button.setAttribute("aria-busy", "true");
+    return;
+  }
+
+  button.classList.remove("soft-loading");
+  button.removeAttribute("aria-busy");
+}
+
+function installGlobalSoftButtonLoading() {
+  if (window.__cfSoftButtonLoadingInstalled) return;
+  window.__cfSoftButtonLoadingInstalled = true;
+
+  const originalAddEventListener = EventTarget.prototype.addEventListener;
+
+  EventTarget.prototype.addEventListener = function patchedAddEventListener(type, listener, options) {
+    if (type !== "click" || typeof listener !== "function") {
+      return originalAddEventListener.call(this, type, listener, options);
+    }
+
+    const wrappedListener = function wrappedSoftButtonClick(event) {
+      const button = event?.target?.closest ? event.target.closest("button") : null;
+      const shouldSoftLoad = isButtonSoftLoadingAllowed(button) && !button.classList.contains("is-loading");
+
+      if (shouldSoftLoad) {
+        setSoftButtonLoading(button, true);
+      }
+
+      let result;
+      try {
+        result = listener.call(this, event);
+      } catch (error) {
+        if (shouldSoftLoad) setSoftButtonLoading(button, false);
+        throw error;
+      }
+
+      if (result && typeof result.finally === "function") {
+        result.finally(() => {
+          if (shouldSoftLoad) setSoftButtonLoading(button, false);
+        });
+      } else if (shouldSoftLoad) {
+        window.setTimeout(() => setSoftButtonLoading(button, false), 450);
+      }
+
+      return result;
+    };
+
+    return originalAddEventListener.call(this, type, wrappedListener, options);
+  };
+}
+
+installGlobalSoftButtonLoading();
+
 
 
 async function api(path, options = {}) {
