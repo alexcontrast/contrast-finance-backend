@@ -5309,7 +5309,15 @@ function paymentItemHasCheckedBin(item) {
 }
 
 function updatePaymentInvoiceUiAfterCheck(eventId, item) {
+  const amountInputBefore = $("paymentAmountInput");
+  const amountValue = amountInputBefore?.value || "";
+
   renderPaymentPositionState(eventId);
+
+  const amountInputAfter = $("paymentAmountInput");
+  if (amountInputAfter && amountValue) {
+    amountInputAfter.value = amountValue;
+  }
 
   const methodSelect = $("paymentMethodSelect");
   if (methodSelect) {
@@ -5340,6 +5348,9 @@ async function checkPaymentInvoiceBin(eventId) {
     throw new Error("Выбери позицию из сметы");
   }
 
+  const amountInput = $("paymentAmountInput");
+  const amountValueBeforeCheck = amountInput?.value || "";
+
   item = await materializePaymentItemIfNeeded(eventId, item, "invoice");
 
   const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
@@ -5352,6 +5363,9 @@ async function checkPaymentInvoiceBin(eventId) {
   item.iin_bin_locked = false;
   item.tax_check_status = null;
 
+  // Перед КГД сохраняем смету один раз:
+  // - для новой позиции это создаёт строку в БД
+  // - для существующей позиции это сохраняет актуальный Факт, чтобы вычеты считались от правильной базы
   await persistItemBeforePayment(eventId, item);
 
   const taxResult = await api(`/event-items/${item.id}/tax/check`, {
@@ -5373,12 +5387,20 @@ async function checkPaymentInvoiceBin(eventId) {
   item.payment_method = "invoice";
   item.contractor_name = taxResult.contractor_name || taxResult.name || null;
 
-  await persistItemBeforePayment(eventId, item);
+  // ВАЖНО:
+  // второй full-save здесь больше не нужен.
+  // /tax/check уже записал iin_bin, iin_bin_locked, tax_check_status, НДС и вычеты в позицию на backend.
+  // Повторное saveDraftItems() делало модалку заметно медленнее.
 
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
   updateCurrentManagerMiniCardLive();
   updatePaymentInvoiceUiAfterCheck(eventId, item);
+
+  const amountInputAfterCheck = $("paymentAmountInput");
+  if (amountInputAfterCheck && amountValueBeforeCheck) {
+    amountInputAfterCheck.value = amountValueBeforeCheck;
+  }
 
   return item.contractor_name || `БИН ${bin}`;
 }
