@@ -1227,6 +1227,77 @@ function injectManagerUxStyles() {
         grid-template-columns: 1fr auto !important;
       }
     }
+
+
+    /* v0.35.81: global grey payment badge for status "new" */
+    .status.new {
+      background: rgba(120, 126, 136, .13) !important;
+      color: #636a61 !important;
+      border-color: rgba(120, 126, 136, .28) !important;
+      box-shadow: none !important;
+    }
+
+    /* v0.35.81: narrower "Мои оплаты" modal */
+    .modal-backdrop.manager-requests-modal-mode .modal {
+      width: fit-content !important;
+      max-width: min(720px, calc(100vw - 32px)) !important;
+      min-width: 0 !important;
+      padding-left: 28px !important;
+      padding-right: 28px !important;
+    }
+
+    .modal-backdrop.manager-requests-modal-mode .modal-head {
+      width: 100% !important;
+      min-width: 0 !important;
+      display: grid !important;
+      grid-template-columns: 1fr auto !important;
+      gap: 18px !important;
+    }
+
+    .modal-backdrop.manager-requests-modal-mode #eventModalContent {
+      width: fit-content !important;
+      max-width: 100% !important;
+      margin: 0 auto !important;
+    }
+
+    .modal-backdrop.manager-requests-modal-mode .compact-grouped-payments {
+      width: fit-content !important;
+      min-width: 560px !important;
+      max-width: 100% !important;
+      margin: 0 auto !important;
+    }
+
+    .modal-backdrop.manager-requests-modal-mode .manager-payment-request-row.compact {
+      grid-template-columns: 100px 135px 104px 100px !important;
+      min-width: 510px !important;
+      width: 510px !important;
+      max-width: 100% !important;
+    }
+
+    .modal-backdrop.manager-requests-modal-mode .manager-payment-position-group.compact {
+      width: fit-content !important;
+      max-width: 100% !important;
+    }
+
+    @media (max-width: 760px) {
+      .modal-backdrop.manager-requests-modal-mode .modal {
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+        padding-left: 18px !important;
+        padding-right: 18px !important;
+      }
+
+      .modal-backdrop.manager-requests-modal-mode .compact-grouped-payments {
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+
+      .modal-backdrop.manager-requests-modal-mode .manager-payment-request-row.compact {
+        width: 100% !important;
+        min-width: 0 !important;
+        grid-template-columns: 1fr auto !important;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
