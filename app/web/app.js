@@ -1356,6 +1356,8 @@ const state = {
   month: new Date().toISOString().slice(0, 7),
   paymentStatusFilter: "active",
   paymentSearch: "",
+  paymentCustomerFilter: "all",
+  paymentManagerFilter: "all",
   eventDepartmentFilter: "all",
   eventManagerFilter: "all",
   eventStatusFilter: "all",
@@ -1434,6 +1436,8 @@ function attachMonthYearSelectors() {
     if (!select) return;
     select.addEventListener("change", async () => {
       state.month = selectedMonthValue();
+      state.paymentCustomerFilter = "all";
+      state.paymentManagerFilter = "all";
       const user = state.bootstrap?.user;
       if (user?.role === "manager") {
         clearManagerSelectedEventUi();
@@ -2242,9 +2246,12 @@ function filteredPaymentRequests(requests, mode = "regular") {
     }
   }
 
-  const search = String(state.paymentSearch || "").trim().toLowerCase();
-  if (search) {
-    list = list.filter((request) => String(clientNameForRequest(request) || "").toLowerCase().includes(search));
+  if (state.paymentCustomerFilter && state.paymentCustomerFilter !== "all") {
+    list = list.filter((request) => String(clientNameForRequest(request) || "") === String(state.paymentCustomerFilter));
+  }
+
+  if (state.paymentManagerFilter && state.paymentManagerFilter !== "all") {
+    list = list.filter((request) => String(managerNameForRequest(request) || "") === String(state.paymentManagerFilter));
   }
 
   return list;
@@ -2271,6 +2278,8 @@ function renderAdminTabs() {
     button.addEventListener("click", () => {
       state.activeAdminTab = button.getAttribute("data-admin-tab");
       state.paymentStatusFilter = state.activeAdminTab === "requests_archive" ? "all" : "active";
+      state.paymentCustomerFilter = "all";
+      state.paymentManagerFilter = "all";
       setLoading(true, "Переключаем вкладку…");
       setTimeout(() => {
         try {
@@ -2355,7 +2364,45 @@ function renderEventFilters(events) {
   `;
 }
 
-function renderPaymentFilters(mode = "regular") {
+
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function uniqueSortedValues(values) {
+  return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ru"));
+}
+
+function paymentCustomerFilterOptions(requests, mode = "regular") {
+  const base = mode === "archive" ? archivedPaymentRequests(requests) : activePaymentRequests(requests);
+  return uniqueSortedValues(base.map((request) => clientNameForRequest(request)));
+}
+
+function paymentManagerFilterOptions(requests, mode = "regular") {
+  const base = mode === "archive" ? archivedPaymentRequests(requests) : activePaymentRequests(requests);
+  return uniqueSortedValues(base.map((request) => managerNameForRequest(request)));
+}
+
+function selectOptions(values, selectedValue, allLabel) {
+  return `
+    <option value="all" ${selectedValue === "all" || !selectedValue ? "selected" : ""}>${allLabel}</option>
+    ${values.map((value) => `
+      <option value="${escapeHtml(value)}" ${String(selectedValue) === String(value) ? "selected" : ""}>${escapeHtml(value)}</option>
+    `).join("")}
+  `;
+}
+
+
+function renderPaymentFilters(requests = [], mode = "regular") {
+  const customerOptions = paymentCustomerFilterOptions(requests, mode);
+  const managerOptions = paymentManagerFilterOptions(requests, mode);
+
   const regularOptions = `
     <option value="active" ${state.paymentStatusFilter === "active" ? "selected" : ""}>Активные</option>
     <option value="new" ${state.paymentStatusFilter === "new" ? "selected" : ""}>Новая</option>
@@ -2376,8 +2423,16 @@ function renderPaymentFilters(mode = "regular") {
         </select>
       </label>
 
-      <label class="compact-label search-label">Поиск по заказчику
-        <input id="paymentSearch" value="${state.paymentSearch || ""}" placeholder="Название заказчика" />
+      <label class="compact-label">Заказчик
+        <select id="paymentCustomerFilter">
+          ${selectOptions(customerOptions, state.paymentCustomerFilter, "Все заказчики")}
+        </select>
+      </label>
+
+      <label class="compact-label">Менеджер
+        <select id="paymentManagerFilter">
+          ${selectOptions(managerOptions, state.paymentManagerFilter, "Все менеджеры")}
+        </select>
       </label>
     </div>
   `;
@@ -2568,7 +2623,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
   if (!baseRequests.length) {
     return `
       <div class="block-title"><h3>${title}</h3></div>
-      ${renderPaymentFilters(mode)}
+      ${renderPaymentFilters(requests, mode)}
       <div class="empty-state">Заявок пока нет.</div>
     `;
   }
@@ -2579,7 +2634,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
         <h3>${title}</h3>
         <span class="muted">0 из ${baseRequests.length} шт.</span>
       </div>
-      ${renderPaymentFilters(mode)}
+      ${renderPaymentFilters(requests, mode)}
       <div class="empty-state">По выбранным фильтрам заявок нет.</div>
     `;
   }
@@ -2589,7 +2644,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
       <h3>${title}</h3>
       <span class="muted">${filteredRequests.length} из ${baseRequests.length} шт.</span>
     </div>
-    ${renderPaymentFilters(mode)}
+    ${renderPaymentFilters(requests, mode)}
     <div class="table-wrap">
       <table>
         <thead>
@@ -2631,20 +2686,25 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
 function attachFilters() {
   const paymentStatus = document.getElementById("paymentStatusFilter");
   if (paymentStatus) {
-    paymentStatus.addEventListener("change", async (event) => {
+    paymentStatus.addEventListener("change", (event) => {
       state.paymentStatusFilter = event.target.value;
-      await withLoading(loadDashboard, "Фильтруем заявки…");
+      renderAdminDashboard(state.adminData);
     });
   }
 
-  const paymentSearch = document.getElementById("paymentSearch");
-  if (paymentSearch) {
-    paymentSearch.addEventListener("input", (event) => {
-      state.paymentSearch = event.target.value;
-      clearTimeout(window.__cfPaymentSearchTimer);
-      window.__cfPaymentSearchTimer = setTimeout(() => {
-        withLoading(loadDashboard, "Ищем…").catch((error) => alert(error.message));
-      }, 350);
+  const paymentCustomer = document.getElementById("paymentCustomerFilter");
+  if (paymentCustomer) {
+    paymentCustomer.addEventListener("change", (event) => {
+      state.paymentCustomerFilter = event.target.value;
+      renderAdminDashboard(state.adminData);
+    });
+  }
+
+  const paymentManager = document.getElementById("paymentManagerFilter");
+  if (paymentManager) {
+    paymentManager.addEventListener("change", (event) => {
+      state.paymentManagerFilter = event.target.value;
+      renderAdminDashboard(state.adminData);
     });
   }
 
@@ -3070,7 +3130,7 @@ function renderAdminDashboard(data) {
   renderSummary([]);
 
   $("dashboardTitle").textContent = "Админка";
-  $("dashboardHint").textContent = "Скелет вкладок v0.30";
+  $("dashboardHint").textContent = "";
 
   if (state.activeAdminTab === "overview") {
     $("dashboardContent").innerHTML = renderAdminOverview(data);
