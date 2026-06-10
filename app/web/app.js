@@ -812,6 +812,48 @@ function injectManagerUxStyles() {
       color: #8a2a2a;
       font-weight: 800;
     }
+
+
+    .payment-bin-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .payment-bin-row button {
+      min-height: 50px;
+      white-space: nowrap;
+    }
+
+    .payment-bin-row input:disabled {
+      background: rgba(80, 210, 40, .08);
+      color: #1b1f18;
+      opacity: 1;
+      cursor: not-allowed;
+    }
+
+    .app-toast {
+      position: fixed;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%) translateY(20px);
+      z-index: 10000;
+      background: rgba(34, 98, 22, .94);
+      color: #fff;
+      border-radius: 999px;
+      padding: 13px 18px;
+      font-weight: 900;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, .22);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .app-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
 `;
   document.head.appendChild(style);
 }
@@ -4064,6 +4106,23 @@ async function openManagerActionDropdown(button, eventId, action) {
 
 
 
+
+function showToast(message) {
+  let toast = document.getElementById("appToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "appToast";
+    toast.className = "app-toast";
+    document.body.appendChild(toast);
+  }
+
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(window.__cfToastTimer);
+  window.__cfToastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+}
+
+
 function paymentBaseAmountForItem(item) {
   if (!item) return 0;
   const fact = asNumber(item.amount_fact);
@@ -4221,12 +4280,29 @@ function renderPaymentExtraFields(eventId) {
   if (!extra || !item) return;
 
   if (method === "invoice") {
+    const isLocked = Boolean(item.iin_bin_locked && item.iin_bin && item.tax_check_status && item.tax_check_status !== "not_found");
     extra.innerHTML = `
       <label>БИН / ИИН
-        <input id="paymentBinInput" inputmode="numeric" value="${item.iin_bin || ""}" placeholder="12 цифр" />
+        <div class="payment-bin-row">
+          <input id="paymentBinInput" inputmode="numeric" value="${item.iin_bin || ""}" placeholder="12 цифр" ${isLocked ? "disabled" : ""} />
+          <button class="ghost" id="paymentCheckBinBtn" type="button" ${isLocked ? "disabled" : ""}>Проверить</button>
+        </div>
       </label>
-      <div class="payment-extra-hint">При создании заявки БИН проверится через КГД, а НДС/вычеты запишутся в смету.</div>
+      <div class="payment-extra-hint" id="paymentBinHint">${
+        isLocked
+          ? `БИН проверен и зафиксирован за позицией: ${taxStatusLabel(item.tax_check_status)}`
+          : "Сначала проверь БИН. После успешной проверки можно создать заявку."
+      }</div>
     `;
+
+    $("paymentCheckBinBtn")?.addEventListener("click", async () => {
+      try {
+        await checkPaymentInvoiceBin(eventId);
+      } catch (error) {
+        const message = $("paymentMessage");
+        if (message) message.textContent = error.message || "Не удалось проверить БИН";
+      }
+    });
     return;
   }
 
@@ -4252,20 +4328,32 @@ function renderPaymentExtraFields(eventId) {
   extra.innerHTML = "";
 }
 
-function paymentPayloadAmount() {
-  return Math.round(normalizeNumberInput($("paymentAmountInput")?.value || ""));
+
+function paymentItemHasCheckedBin(item) {
+  return Boolean(
+    item &&
+    item.payment_method === "invoice" &&
+    item.iin_bin &&
+    item.iin_bin_locked &&
+    item.tax_check_status &&
+    item.tax_check_status !== "not_found"
+  );
 }
 
-async function persistItemBeforePayment(eventId, item) {
-  await saveDraftEvent(eventId);
-  await saveDraftItems(eventId);
+function updatePaymentInvoiceUiAfterCheck(eventId, item) {
+  renderPaymentExtraFields(eventId);
+  const methodSelect = $("paymentMethodSelect");
+  if (methodSelect) methodSelect.value = "invoice";
+  const message = $("paymentMessage");
+  if (message) message.textContent = "БИН проверен и зафиксирован в смете";
+}
 
-  if (String(item.id).startsWith("tmp-")) {
-    throw new Error("Не удалось сохранить позицию перед заявкой");
+async function checkPaymentInvoiceBin(eventId) {
+  const item = selectedPaymentItem(eventId);
+  if (!item || item.item_type === "manager_salary") {
+    throw new Error("Выбери позицию из сметы");
   }
-}
 
-async function prepareInvoicePaymentItem(eventId, item) {
   const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
   if (bin.length !== 12) {
     throw new Error("Для оплаты по счету укажи БИН/ИИН из 12 цифр");
@@ -4292,8 +4380,39 @@ async function prepareInvoicePaymentItem(eventId, item) {
   item.tax_check_status = taxResult.tax_check_status || taxResult.tax_status;
   item.vat_amount = taxResult.vat_amount || 0;
   item.deduction_amount = taxResult.deduction_amount || 0;
+  item.payment_method = "invoice";
+
+  updateInternalRowCells(item.id);
+  updateInternalSummaryCards();
+  updateCurrentManagerMiniCardLive();
+  updatePaymentInvoiceUiAfterCheck(eventId, item);
 
   return taxResult.contractor_name || `БИН ${bin}`;
+}
+
+
+function paymentPayloadAmount() {
+  return Math.round(normalizeNumberInput($("paymentAmountInput")?.value || ""));
+}
+
+async function persistItemBeforePayment(eventId, item) {
+  await saveDraftEvent(eventId);
+  await saveDraftItems(eventId);
+
+  if (String(item.id).startsWith("tmp-")) {
+    throw new Error("Не удалось сохранить позицию перед заявкой");
+  }
+}
+
+async function prepareInvoicePaymentItem(eventId, item) {
+  if (!paymentItemHasCheckedBin(item)) {
+    throw new Error("Сначала проверь БИН. После успешной проверки можно создать заявку.");
+  }
+
+  item.payment_method = "invoice";
+  await persistItemBeforePayment(eventId, item);
+
+  return item.contractor_name || item.contractor_name_snapshot || item.internal_note || `БИН ${item.iin_bin}`;
 }
 
 async function prepareSelfEmployedPaymentItem(eventId, item) {
@@ -4388,6 +4507,7 @@ async function submitManagerPayment(eventId) {
 
       $("eventModalBackdrop")?.classList.add("hidden");
       $("eventModalBackdrop")?.classList.remove("payment-modal-mode");
+      showToast("Заявка отправлена");
       await loadDashboard();
       if (Number(state.selectedManagerEventId) === Number(eventId)) {
         await renderManagerEventDetail(eventId);
