@@ -510,7 +510,7 @@ def update_payment_request_status(
     event = require_payment_request_edit(db, current_user, request)
 
     # Admin can manage all statuses.
-    # Manager can only cancel own request by setting rejected.
+    # Manager/coauthor can only cancel unpaid requests in an event they can edit.
     # Department head remains read-only because require_payment_request_edit rejects it.
     if current_user.role != "admin":
         if current_user.role == "manager" and payload.status == "rejected":
@@ -520,15 +520,13 @@ def update_payment_request_status(
                     detail="Оплаченную заявку нельзя отменить менеджером",
                 )
 
-            if request.created_by_user_id != current_user.id and event.manager_id != current_user.id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Manager can cancel only own payment requests",
-                )
+            # require_payment_request_edit() above already checks that the manager
+            # is either event owner or coauthor. Therefore any coauthor of the event
+            # may cancel an unpaid request, even if it was created by another coauthor.
         else:
             raise HTTPException(
                 status_code=403,
-                detail="Only admin can change payment request status; manager can only cancel own request",
+                detail="Менеджер или соавтор может только отменить неоплаченную заявку",
             )
 
     previous_status = request.status
