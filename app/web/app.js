@@ -4257,6 +4257,7 @@ function itemHasActiveSelfEmployedPaymentRequest(item) {
 function itemPaymentMethodLocked(item) {
   if (!item) return false;
   if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
+  if (itemHasLockedInvoicePayment(item)) return true;
   return itemHasActivePaymentRequest(item);
 }
 
@@ -4273,8 +4274,6 @@ function itemHasLockedInvoicePayment(item) {
 function itemHasLockedSelfEmployedPayment(item) {
   return Boolean(
     itemHasActiveSelfEmployedPaymentRequest(item) ||
-    item?.payment_method === "self_employed" ||
-    item?.tax_check_status === "self_employed" ||
     selfEmployedSurnameFromItem(item)
   );
 }
@@ -4283,8 +4282,9 @@ function paymentMethodIsFixed(item) {
   if (!item) return false;
   if (item.is_new_payment_position) return false;
   if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
-  if (itemHasActivePaymentRequest(item)) return true;
   if (itemHasLockedInvoicePayment(item)) return true;
+  if (itemHasActivePaymentRequest(item)) return true;
+  if (itemHasLockedSelfEmployedPayment(item)) return true;
   return false;
 }
 
@@ -4635,15 +4635,16 @@ function renderPaymentExtraFields(eventId) {
   }
 
   if (method === "self_employed") {
-    const isLocked = itemHasLockedSelfEmployedPayment(item) && !item.is_new_payment_position;
+    const surname = selfEmployedSurnameFromItem(item);
+    const isLocked = Boolean(surname) && !item.is_new_payment_position;
     extra.innerHTML = `
       <label>Фамилия самозанятого
-        <input id="paymentSelfEmployedInput" value="${selfEmployedSurnameFromItem(item)}" placeholder="Фамилия" ${isLocked ? "disabled" : ""} />
+        <input id="paymentSelfEmployedInput" value="${surname}" placeholder="Фамилия" ${isLocked ? "disabled" : ""} />
       </label>
       <div class="payment-extra-hint">${
         isLocked
           ? "Самозанятый уже закреплён за этой позицией."
-          : "КГД не нужен. Вычеты 10% сразу запишутся в смету."
+          : "Укажи фамилию. КГД не нужен, вычеты 10% запишутся в смету."
       }</div>
     `;
     return;
