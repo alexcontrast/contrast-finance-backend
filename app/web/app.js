@@ -2815,10 +2815,7 @@ function setDraftItemValue(eventId, itemId, field, value) {
     }
 
     if (value === "self_employed") {
-      const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
-      item.vat_amount = 0;
-      item.deduction_amount = Math.round(base * 0.10);
-      item.iin_bin_locked = false;
+      ensureSelfEmployedItemTax(item);
     }
   }
 
@@ -2826,9 +2823,8 @@ function setDraftItemValue(eventId, itemId, field, value) {
     item.amount_fact = Math.round(externalRowAmount(item) * 0.5);
   }
 
-  if (field === "amount_fact" && item.payment_method === "self_employed") {
-    const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
-    item.deduction_amount = Math.round(base * 0.10);
+  if (field === "amount_fact" && (item.payment_method === "self_employed" || item.tax_check_status === "self_employed")) {
+    ensureSelfEmployedItemTax(item);
   }
 
   if (["amount_fact", "external_price", "external_quantity", "external_days"].includes(field)) {
@@ -2915,6 +2911,8 @@ function updateInternalRowCells(itemId) {
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
   const row = document.querySelector(`tr[data-event-item-row="${itemId}"]`);
   if (!item || !row) return;
+
+  ensureSelfEmployedItemTax(item);
 
   const vatCell = row.querySelector(".vat-col strong");
   const deductionCell = row.querySelector(".deduction-col strong");
@@ -3445,6 +3443,7 @@ function renderInternalEstimate(items, event, summary = null) {
         </thead>
         <tbody>
           ${shownItems.map((item) => {
+            ensureSelfEmployedItemTax(item);
             const activeMethod = paymentMethodFromActiveRequest(item);
             const effectivePaymentMethod = activeMethod || item.payment_method;
             const paymentLocked = itemPaymentMethodLocked(item);
@@ -3699,6 +3698,7 @@ function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount)
 
 
 function itemPayloadForSave(item) {
+  ensureSelfEmployedItemTax(item);
   const isCoordinator = item.item_type === "coordinator";
   const coordinatorFact = Math.round(externalRowAmount(item) * 0.5);
 
@@ -3879,9 +3879,11 @@ function syncDraftItemFromRowBeforeTax(itemId) {
     item.iin_bin_locked = false;
     item.tax_check_status = null;
     item.vat_amount = 0;
-    item.deduction_amount = item.payment_method === "self_employed"
-      ? Math.round((asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item)) * 0.10)
-      : 0;
+    if (item.payment_method === "self_employed") {
+      ensureSelfEmployedItemTax(item);
+    } else {
+      item.deduction_amount = 0;
+    }
   }
 
   return item;
@@ -4179,7 +4181,16 @@ function paymentRemainingForItem(item) {
 function selfEmployedSurnameFromItem(item) {
   const note = String(item?.internal_note || "");
   const match = note.match(/Самозанятый:\s*(.+)$/i);
-  return match ? match[1].trim() : "";
+  if (match && match[1].trim()) return match[1].trim();
+
+  const request = activeSelfEmployedRequestForItem(item);
+  const fromRequest = String(
+    request?.contractor_name_snapshot ||
+    request?.comment ||
+    ""
+  ).trim();
+
+  return fromRequest;
 }
 
 
@@ -4191,6 +4202,40 @@ function activePaymentRequestsForItem(item) {
     request.status !== "rejected"
   );
 }
+
+
+function activeSelfEmployedRequestForItem(item) {
+  return activePaymentRequestsForItem(item).find((request) => request.payment_method === "self_employed") || null;
+}
+
+function selfEmployedDeductionBase(item) {
+  const fact = asNumber(item?.amount_fact);
+  if (fact > 0) return fact;
+  const external = externalRowAmount(item || {});
+  return external > 0 ? external : asNumber(item?.external_amount);
+}
+
+function ensureSelfEmployedItemTax(item) {
+  if (!item) return item;
+
+  const isSelfEmployed = item.payment_method === "self_employed" || item.tax_check_status === "self_employed" || itemHasActiveSelfEmployedPaymentRequest(item);
+  if (!isSelfEmployed) return item;
+
+  item.payment_method = "self_employed";
+  item.tax_check_status = "self_employed";
+  item.iin_bin = null;
+  item.iin_bin_locked = false;
+  item.vat_amount = 0;
+  item.deduction_amount = Math.round(selfEmployedDeductionBase(item) * 0.10);
+
+  const surname = selfEmployedSurnameFromItem(item);
+  if (surname && !String(item.internal_note || "").match(/Самозанятый:\s*/i)) {
+    item.internal_note = `Самозанятый: ${surname}`;
+  }
+
+  return item;
+}
+
 
 function activePaymentRequestMethodForItem(item) {
   const request = activePaymentRequestsForItem(item)[0];
@@ -4258,6 +4303,7 @@ function paymentPositionsForEvent(eventId) {
   const items = getDraftItems(eventId)
     .filter((item) => !item.is_deleted && item.item_type !== "manager_salary")
     .map((item) => {
+      ensureSelfEmployedItemTax(item);
       item.is_manager_salary_virtual = false;
       item.is_new_payment_position = false;
       return item;
@@ -4414,10 +4460,10 @@ function createDraftItemFromPaymentModal(eventId, method) {
     event_id: Number(eventId),
     item_type: "regular",
     external_name: name,
-    external_price: amount,
+    external_price: 0,
     external_quantity: 1,
     external_days: 1,
-    external_amount: amount,
+    external_amount: 0,
     external_note: null,
     amount_fact: amount,
     paid_amount: 0,
@@ -4685,17 +4731,12 @@ async function prepareSelfEmployedPaymentItem(eventId, item) {
     throw new Error("Для самозанятого обязательно укажи фамилию");
   }
 
-  if (itemHasLockedSelfEmployedPayment(item) && existingSurname) {
-    return existingSurname;
-  }
-
-  const base = paymentBaseAmountForItem(item);
   item.payment_method = "self_employed";
   item.iin_bin = null;
   item.iin_bin_locked = false;
   item.tax_check_status = "self_employed";
   item.vat_amount = 0;
-  item.deduction_amount = Math.round(base * 0.10);
+  item.deduction_amount = Math.round(selfEmployedDeductionBase(item) * 0.10);
   item.internal_note = `Самозанятый: ${surname}`;
 
   await persistItemBeforePayment(eventId, item);
