@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.department import Department
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.event_share import EventShare
 from app.models.monthly_closing import MonthlyClosing
 from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_plan import MonthlyPlan
@@ -123,6 +124,35 @@ def build_closing(closing: MonthlyClosing | None) -> AdminClosingRead:
     )
 
 
+def event_share_allocations(event: Event, user_by_id: dict[int, User]) -> list[tuple[User | None, Decimal]]:
+    """
+    Возвращает доли мероприятия для админки.
+
+    Если соавторства нет:
+    - 100% у владельца мероприятия.
+
+    Если есть event_shares:
+    - используем доли из event_shares;
+    - так админка считает мероприятие так же, как кабинеты менеджеров.
+    """
+    shares = list(event.shares or [])
+
+    if not shares:
+        return [(user_by_id.get(event.manager_id), Decimal("100.00"))]
+
+    allocations: list[tuple[User | None, Decimal]] = []
+    for share in shares:
+        allocations.append((user_by_id.get(share.user_id), money(share.share_percent)))
+
+    return allocations
+
+
+def allocated_amount(value: Decimal, share_percent: Decimal) -> Decimal:
+    return q(money(value) * money(share_percent) / Decimal("100"))
+
+
+
+
 @router.get("/admin-dashboard", response_model=AdminDashboardRead)
 def get_admin_dashboard(
     month: str,
@@ -164,9 +194,10 @@ def get_admin_dashboard(
 
     events = db.execute(event_query.order_by(Event.event_date, Event.id)).scalars().all()
 
-    events_by_department = {department.id: [] for department in departments}
     event_rows = []
-    event_summary_by_id = {}
+    department_fact_by_id = {department.id: Decimal("0.00") for department in departments}
+    department_event_ids_by_id = {department.id: set() for department in departments}
+    department_draft_event_ids_by_id = {department.id: set() for department in departments}
 
     for event in events:
         items = db.execute(
@@ -176,54 +207,66 @@ def get_admin_dashboard(
         ).scalars().all()
 
         summary = calculate_event_summary_values(event, items)
-        event_summary_by_id[event.id] = summary
-        events_by_department.setdefault(event.department_id, []).append(event)
-
-        department = dept_by_id.get(event.department_id)
-        manager = user_by_id.get(event.manager_id)
+        full_final_income = money(summary["final_company_income"])
+        full_manager_salary = money(summary["manager_salary"])
 
         event_payment_requests = db.execute(
             select(PaymentRequest).where(PaymentRequest.event_id == event.id)
         ).scalars().all()
 
-        event_rows.append(
-            AdminEventRowRead(
-                id=event.id,
-                client_name=event.client_name,
-                title=event.title,
-                event_date=event.event_date,
-                status=event.status,
-                department_id=event.department_id,
-                department_name=department.name if department else None,
-                manager_id=event.manager_id,
-                manager_name=manager.name if manager else None,
-                final_company_income=q(money(summary["final_company_income"])),
-                external_total=q(money(summary["external_total"])),
-                paid_total=q(money(summary["paid_total"])),
-                manager_salary=q(money(summary["manager_salary"])),
-                payment_requests_count=len(event_payment_requests),
-                active_payment_requests_count=len([
-                    request for request in event_payment_requests
-                    if request.status not in INACTIVE_PAYMENT_STATUSES
-                ]),
-                items_count=len(items),
+        requests_count = len(event_payment_requests)
+        active_requests_count = len([
+            request for request in event_payment_requests
+            if request.status not in INACTIVE_PAYMENT_STATUSES
+        ])
+
+        allocations = event_share_allocations(event, user_by_id)
+
+        for allocated_manager, share_percent in allocations:
+            allocated_department = dept_by_id.get(allocated_manager.department_id) if allocated_manager and allocated_manager.department_id else None
+            allocated_department_id = allocated_department.id if allocated_department else event.department_id
+            allocated_department_name = allocated_department.name if allocated_department else (dept_by_id.get(event.department_id).name if dept_by_id.get(event.department_id) else None)
+
+            allocated_final_income = allocated_amount(full_final_income, share_percent)
+            allocated_manager_salary = allocated_amount(full_manager_salary, share_percent)
+
+            department_fact_by_id[allocated_department_id] = department_fact_by_id.get(allocated_department_id, Decimal("0.00")) + allocated_final_income
+            department_event_ids_by_id.setdefault(allocated_department_id, set()).add(event.id)
+            if event.status == "draft":
+                department_draft_event_ids_by_id.setdefault(allocated_department_id, set()).add(event.id)
+
+            event_rows.append(
+                AdminEventRowRead(
+                    id=event.id,
+                    client_name=event.client_name,
+                    title=event.title,
+                    event_date=event.event_date,
+                    status=event.status,
+                    department_id=allocated_department_id,
+                    department_name=allocated_department_name,
+                    manager_id=allocated_manager.id if allocated_manager else event.manager_id,
+                    manager_name=allocated_manager.name if allocated_manager else None,
+                    final_company_income=q(allocated_final_income),
+                    external_total=q(money(summary["external_total"])),
+                    paid_total=q(money(summary["paid_total"])),
+                    manager_salary=q(allocated_manager_salary),
+                    payment_requests_count=requests_count,
+                    active_payment_requests_count=active_requests_count,
+                    items_count=len(items),
+                )
             )
-        )
 
     department_rows = []
     company_fact = Decimal("0.00")
     company_expenses = Decimal("0.00")
 
     for department in departments:
-        dept_events = events_by_department.get(department.id, [])
-        dept_fact = sum(
-            (money(event_summary_by_id[event.id]["final_company_income"]) for event in dept_events),
-            Decimal("0.00"),
-        )
+        dept_fact = department_fact_by_id.get(department.id, Decimal("0.00"))
         dept_plan = department_plan_amount(plan, department.name)
         dept_expenses = get_department_expenses(db, department.name, month_date.year, month_date.month)
-        drafts_count = len([event for event in dept_events if event.status == "draft"])
+        drafts_count = len(department_draft_event_ids_by_id.get(department.id, set()))
         managers_count = len([user for user in users if user.department_id == department.id])
+        dept_events_count = len(department_event_ids_by_id.get(department.id, set()))
 
         company_fact += dept_fact
         company_expenses += dept_expenses
@@ -237,7 +280,7 @@ def get_admin_dashboard(
                 completion_percent=completion_percent(dept_fact, dept_plan),
                 remaining_to_plan=q(dept_plan - dept_fact),
                 expenses_amount=q(dept_expenses),
-                events_count=len(dept_events),
+                events_count=dept_events_count,
                 drafts_count=drafts_count,
                 managers_count=managers_count,
             )
