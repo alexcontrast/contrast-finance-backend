@@ -1104,6 +1104,77 @@ function injectManagerUxStyles() {
       box-shadow: none;
       background: rgba(255,255,255,.96);
     }
+
+
+    .compact-grouped-payments {
+      gap: 8px !important;
+    }
+
+    .manager-payment-position-group.compact {
+      padding: 8px 10px !important;
+      border-radius: 14px !important;
+      background: rgba(246, 250, 242, .58) !important;
+    }
+
+    .manager-payment-position-title.compact {
+      padding: 0 2px 6px !important;
+      margin: 0 !important;
+    }
+
+    .manager-payment-position-title.compact span {
+      font-size: 15px !important;
+      line-height: 1.1 !important;
+    }
+
+    .manager-payment-position-title.compact em {
+      font-size: 11px !important;
+    }
+
+    .manager-payment-request-row.compact {
+      grid-template-columns: 120px minmax(110px, .9fr) 120px 110px !important;
+      min-height: 42px !important;
+      padding: 7px 10px !important;
+      border-radius: 12px !important;
+      gap: 10px !important;
+      box-shadow: none !important;
+    }
+
+    .manager-payment-request-row.compact .manager-payment-request-amount {
+      font-size: 17px !important;
+      font-weight: 1000 !important;
+    }
+
+    .manager-payment-request-row.compact .manager-payment-request-method {
+      font-size: 13px !important;
+      font-weight: 850 !important;
+    }
+
+    .manager-payment-request-row.compact .status {
+      min-height: 24px !important;
+      padding: 3px 9px !important;
+      font-size: 12px !important;
+    }
+
+    .manager-payment-request-row.compact .manager-request-cancel-btn {
+      min-height: 30px !important;
+      padding: 5px 10px !important;
+      border-radius: 10px !important;
+      font-size: 12px !important;
+    }
+
+    .manager-payment-position-group.compact .manager-payments-table-head {
+      display: none !important;
+    }
+
+    @media (max-width: 760px) {
+      .manager-payment-request-row.compact {
+        grid-template-columns: 1fr auto !important;
+      }
+
+      .manager-payment-request-row.compact .manager-payment-request-amount {
+        font-size: 16px !important;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2154,28 +2225,17 @@ function renderManagerPaymentRequestsModal(eventId) {
   }
 
   return `
-    <div class="manager-event-requests-modal compact-payments-modal grouped-payments-modal">
+    <div class="manager-event-requests-modal compact-payments-modal grouped-payments-modal compact-grouped-payments">
       ${groups.map((group) => `
-        <div class="manager-payment-position-group">
-          <div class="manager-payment-position-title">
+        <div class="manager-payment-position-group compact">
+          <div class="manager-payment-position-title compact">
             <span>${group.title}</span>
             <em>${group.requests.length} заявк${group.requests.length === 1 ? "а" : "и"}</em>
           </div>
 
-          <div class="manager-payments-table-head">
-            <div>Позиция</div>
-            <div>Сумма заявки</div>
-            <div>Способ</div>
-            <div>Статус заявки</div>
-            <div>Действие</div>
-          </div>
-
           <div class="manager-event-requests-list compact">
             ${group.requests.map((request) => `
-              <div class="manager-payment-request-row">
-                <div class="manager-payment-request-position" title="${paymentRequestPositionName(request)}">
-                  ${paymentRequestPositionName(request)}
-                </div>
+              <div class="manager-payment-request-row compact">
                 <div class="manager-payment-request-amount">
                   ${formatMoney(request.amount_requested)}
                 </div>
