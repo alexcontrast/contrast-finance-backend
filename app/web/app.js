@@ -3504,6 +3504,9 @@ function renderInternalEstimate(items, event, summary = null) {
 function renderManagerEventCard(event, items = [], summary = null) {
   const canEdit = canEditManagerEvent(event);
   const canDelete = canDeleteManagerEvent(event);
+  const eventDeleteLocked = eventHasActivePaymentRequests(event);
+  const eventDeleteAllowed = canDelete && !eventDeleteLocked;
+  const eventDeleteTitle = eventDeleteDisabledReason(event);
   const isReadonlyReview = event?.status === "review";
   const readonlyAttrs = canEdit ? "" : "disabled";
 
@@ -3527,7 +3530,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           ${eventIsCoauthored(event)
             ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
             : `<button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>`}
-          <button class="danger-btn" data-manager-event-delete="${event.id}" ${canDelete ? "" : "disabled"} style="margin-left:auto;">Удалить</button>
+          <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} style="margin-left:auto;">Удалить</button>
         </div>
       </div>
 
@@ -3864,6 +3867,10 @@ function unlockTaxForItem(itemId) {
 
 
 async function deleteManagerEvent(eventId) {
+  if (activePaymentRequestsForEvent(eventId).length > 0) {
+    throw new Error("Нельзя удалить мероприятие: есть активные заявки на оплату.");
+  }
+
   await api(`/events/${eventId}`, { method: "DELETE" });
   state.selectedManagerEventId = null;
   state.currentManagerEvent = null;
@@ -4264,7 +4271,7 @@ function itemDeleteLockedByPaymentRequest(item) {
 
 function deleteLockTitleForItem(item) {
   return itemDeleteLockedByPaymentRequest(item)
-    ? "Нельзя удалить позицию, пока по ней есть активная заявка на оплату"
+    ? "Есть активные заявки на оплату"
     : "Удалить позицию";
 }
 
@@ -4274,6 +4281,23 @@ function deleteButtonHtmlForItem(item) {
   const locked = itemDeleteLockedByPaymentRequest(item);
   return `<button class="icon-btn danger" data-delete-item="${item.id}" title="${deleteLockTitleForItem(item)}" ${locked ? "disabled" : ""}>×</button>`;
 }
+
+function activePaymentRequestsForEvent(eventId) {
+  return (state.managerPaymentRequests || []).filter((request) =>
+    Number(request.event_id) === Number(eventId) &&
+    request.status !== "rejected"
+  );
+}
+
+function eventHasActivePaymentRequests(event) {
+  if (!event) return false;
+  return activePaymentRequestsForEvent(event.id).length > 0;
+}
+
+function eventDeleteDisabledReason(event) {
+  return eventHasActivePaymentRequests(event) ? "Есть активные заявки на оплату" : "Удалить мероприятие";
+}
+
 
 
 function itemHasActiveInvoicePaymentRequest(item) {
@@ -5075,11 +5099,19 @@ attachEstimateKeyboardNavigation();
 
   document.querySelectorAll("[data-manager-event-delete]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (button.disabled) return;
       if (!managerCardCanEdit) return;
+
+      const eventId = button.getAttribute("data-manager-event-delete");
+      if (eventHasActivePaymentRequests({ id: eventId })) {
+        alert("Нельзя удалить мероприятие: есть активные заявки на оплату.");
+        return;
+      }
+
       if (!confirm("Удалить мероприятие?")) return;
 
       await withLoading(async () => {
-        await deleteManagerEvent(button.getAttribute("data-manager-event-delete"));
+        await deleteManagerEvent(eventId);
       }, "Удаляем мероприятие…");
     });
   });
