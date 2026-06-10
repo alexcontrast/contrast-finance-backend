@@ -854,6 +854,27 @@ function injectManagerUxStyles() {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+
+
+    #paymentNewPositionNameLabel {
+      margin-bottom: 4px;
+    }
+
+    .payment-fixed-hint {
+      border: 1px solid rgba(80, 210, 40, .22);
+      background: rgba(80, 210, 40, .08);
+      border-radius: 12px;
+      padding: 9px 10px;
+      margin-top: 8px;
+    }
+
+    #paymentMethodSelect:disabled,
+    #paymentSelfEmployedInput:disabled {
+      background: rgba(80, 210, 40, .08);
+      color: #1b1f18;
+      opacity: 1;
+      cursor: not-allowed;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -4140,10 +4161,41 @@ function selfEmployedSurnameFromItem(item) {
   return match ? match[1].trim() : "";
 }
 
+
+function itemHasLockedInvoicePayment(item) {
+  return Boolean(item?.iin_bin_locked && item?.iin_bin && item?.tax_check_status && item.tax_check_status !== "not_found");
+}
+
+function itemHasLockedSelfEmployedPayment(item) {
+  return Boolean(
+    item?.payment_method === "self_employed" ||
+    item?.tax_check_status === "self_employed" ||
+    selfEmployedSurnameFromItem(item)
+  );
+}
+
+function paymentMethodIsFixed(item) {
+  if (!item) return false;
+  if (item.is_new_payment_position) return false;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
+  if (itemHasLockedInvoicePayment(item)) return true;
+  if (itemHasLockedSelfEmployedPayment(item)) return true;
+  return false;
+}
+
+function fixedPaymentMethodForItem(item) {
+  if (!item) return null;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return "cash";
+  if (itemHasLockedInvoicePayment(item)) return "invoice";
+  if (itemHasLockedSelfEmployedPayment(item)) return "self_employed";
+  return null;
+}
+
+
 function paymentPositionsForEvent(eventId) {
   const items = getDraftItems(eventId)
     .filter((item) => !item.is_deleted && item.item_type !== "manager_salary")
-    .map((item) => ({ ...item, is_manager_salary_virtual: false }));
+    .map((item) => ({ ...item, is_manager_salary_virtual: false, is_new_payment_position: false }));
 
   const summary = state.currentManagerSummary || {};
   const managerSalary = Math.round(asNumber(summary.manager_salary || 0));
@@ -4164,24 +4216,47 @@ function paymentPositionsForEvent(eventId) {
       payment_method: "cash",
       internal_note: "Системная позиция ЗП менеджера",
       is_manager_salary_virtual: true,
+      is_new_payment_position: false,
     });
   }
+
+  items.push({
+    id: "__new_position",
+    event_id: Number(eventId),
+    item_type: "regular",
+    external_name: "+ создать новую позицию",
+    external_price: 0,
+    external_quantity: 1,
+    external_days: 1,
+    external_amount: 0,
+    amount_fact: null,
+    paid_amount: 0,
+    payment_method: "cash",
+    internal_note: null,
+    is_manager_salary_virtual: false,
+    is_new_payment_position: true,
+  });
 
   return items;
 }
 
 function paymentPositionLabel(item) {
   if (!item) return "";
+  if (item.is_new_payment_position) return "+ создать новую позицию";
   const type = item.item_type === "coordinator" ? " · координатор" : (item.item_type === "manager_salary" ? " · ЗП" : "");
   return `${item.external_name || "Позиция"}${type}`;
 }
 
 function paymentMethodOptionsForItem(item) {
-  if (item?.item_type === "manager_salary") {
-    return [
-      ["cash", "Нал"],
-      ["card", "На карту"],
-    ];
+  const fixed = fixedPaymentMethodForItem(item);
+  if (fixed) {
+    const labels = {
+      invoice: "По счету",
+      cash: "Нал",
+      card: "На карту",
+      self_employed: "Самозанятый",
+    };
+    return [[fixed, labels[fixed] || fixed]];
   }
 
   return [
@@ -4194,7 +4269,8 @@ function paymentMethodOptionsForItem(item) {
 
 function renderPaymentMethodOptions(item, selected) {
   const options = paymentMethodOptionsForItem(item);
-  const selectedValue = selected || item?.payment_method || "cash";
+  const fixed = fixedPaymentMethodForItem(item);
+  const selectedValue = fixed || selected || item?.payment_method || "cash";
   return options.map(([value, label]) => `
     <option value="${value}" ${selectedValue === value ? "selected" : ""}>${label}</option>
   `).join("");
@@ -4239,6 +4315,86 @@ function renderManagerPaymentModal(eventId) {
   `;
 }
 
+
+function renderNewPaymentPositionFields(item) {
+  if (!item?.is_new_payment_position) return "";
+  return `
+    <label id="paymentNewPositionNameLabel">Название позиции
+      <input id="paymentNewPositionNameInput" placeholder="Например: Ведущий" />
+    </label>
+  `;
+}
+
+function newPaymentPositionName() {
+  return ($("paymentNewPositionNameInput")?.value || "").trim();
+}
+
+function newPaymentPositionAmount() {
+  return paymentPayloadAmount();
+}
+
+function createDraftItemFromPaymentModal(eventId, method) {
+  const name = newPaymentPositionName();
+  const amount = newPaymentPositionAmount();
+
+  if (!name) throw new Error("Укажи название новой позиции");
+  if (!amount || amount <= 0) throw new Error("Укажи сумму новой позиции");
+
+  const items = getDraftItems(eventId);
+  const tempId = `tmp-pay-${Date.now()}`;
+
+  const item = {
+    id: tempId,
+    event_id: Number(eventId),
+    item_type: "regular",
+    external_name: name,
+    external_price: amount,
+    external_quantity: 1,
+    external_days: 1,
+    external_amount: amount,
+    external_note: null,
+    amount_fact: amount,
+    paid_amount: 0,
+    payment_method: method || "cash",
+    iin_bin: null,
+    iin_bin_locked: false,
+    tax_check_status: null,
+    vat_amount: 0,
+    deduction_amount: 0,
+    internal_note: null,
+    sort_order: items.length + 1,
+    is_deleted: false,
+    is_temp: true,
+  };
+
+  items.push(item);
+  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = items;
+  return item;
+}
+
+async function materializePaymentItemIfNeeded(eventId, item, method) {
+  if (!item?.is_new_payment_position) return item;
+
+  const created = createDraftItemFromPaymentModal(eventId, method);
+  await persistItemBeforePayment(eventId, created);
+
+  const items = getDraftItems(eventId);
+  const materialized = items.find((candidate) => String(candidate.external_name) === String(created.external_name) && !String(candidate.id).startsWith("tmp-")) || created;
+
+  const select = $("paymentItemSelect");
+  if (select && materialized?.id) {
+    const option = document.createElement("option");
+    option.value = String(materialized.id);
+    option.textContent = paymentPositionLabel(materialized);
+    const newOption = [...select.options].find((candidate) => candidate.value === "__new_position");
+    select.insertBefore(option, newOption || null);
+    select.value = String(materialized.id);
+  }
+
+  return materialized;
+}
+
+
 function selectedPaymentItem(eventId) {
   const select = $("paymentItemSelect");
   const selectedId = select?.value;
@@ -4259,24 +4415,28 @@ function renderPaymentPositionState(eventId) {
   const remaining = paymentRemainingForItem(item);
 
   info.innerHTML = `
+    ${renderNewPaymentPositionFields(item)}
     <div class="payment-info-grid">
       <div><span>Факт/смета</span><strong>${formatMoney(base)}</strong></div>
       <div><span>Оплачено</span><strong>${formatMoney(paid)}</strong></div>
       <div><span>Остаток</span><strong>${formatMoney(remaining)}</strong></div>
     </div>
+    ${paymentMethodIsFixed(item) ? `<div class="payment-extra-hint payment-fixed-hint">Способ оплаты уже закреплён за этой позицией.</div>` : ""}
   `;
 
   amountInput.value = "";
-  amountInput.placeholder = formatMoney(remaining);
+  amountInput.placeholder = item.is_new_payment_position ? "Сумма новой позиции" : formatMoney(remaining);
 
-  const currentMethod = item.payment_method || "cash";
+  const currentMethod = fixedPaymentMethodForItem(item) || item.payment_method || "cash";
   methodSelect.innerHTML = renderPaymentMethodOptions(item, currentMethod);
+  methodSelect.value = currentMethod;
+  methodSelect.disabled = paymentMethodIsFixed(item);
   renderPaymentExtraFields(eventId);
 }
 
 function renderPaymentExtraFields(eventId) {
   const item = selectedPaymentItem(eventId);
-  const method = $("paymentMethodSelect")?.value || "cash";
+  const method = fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash";
   const extra = $("paymentExtraFields");
   if (!extra || !item) return;
 
@@ -4323,11 +4483,16 @@ function renderPaymentExtraFields(eventId) {
   }
 
   if (method === "self_employed") {
+    const isLocked = itemHasLockedSelfEmployedPayment(item) && !item.is_new_payment_position;
     extra.innerHTML = `
       <label>Фамилия самозанятого
-        <input id="paymentSelfEmployedInput" value="${selfEmployedSurnameFromItem(item)}" placeholder="Фамилия" />
+        <input id="paymentSelfEmployedInput" value="${selfEmployedSurnameFromItem(item)}" placeholder="Фамилия" ${isLocked ? "disabled" : ""} />
       </label>
-      <div class="payment-extra-hint">КГД не нужен. Вычеты 10% сразу запишутся в смету.</div>
+      <div class="payment-extra-hint">${
+        isLocked
+          ? "Самозанятый уже закреплён за этой позицией."
+          : "КГД не нужен. Вычеты 10% сразу запишутся в смету."
+      }</div>
     `;
     return;
   }
@@ -4348,18 +4513,18 @@ function paymentItemHasCheckedBin(item) {
 }
 
 function updatePaymentInvoiceUiAfterCheck(eventId, item) {
-  renderPaymentExtraFields(eventId);
-  const methodSelect = $("paymentMethodSelect");
-  if (methodSelect) methodSelect.value = "invoice";
+  renderPaymentPositionState(eventId);
   const message = $("paymentMessage");
   if (message) message.textContent = "БИН проверен и зафиксирован в смете";
 }
 
 async function checkPaymentInvoiceBin(eventId) {
-  const item = selectedPaymentItem(eventId);
+  let item = selectedPaymentItem(eventId);
   if (!item || item.item_type === "manager_salary") {
     throw new Error("Выбери позицию из сметы");
   }
+
+  item = await materializePaymentItemIfNeeded(eventId, item, "invoice");
 
   const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
   if (bin.length !== 12) {
@@ -4388,6 +4553,7 @@ async function checkPaymentInvoiceBin(eventId) {
   item.vat_amount = taxResult.vat_amount || 0;
   item.deduction_amount = taxResult.deduction_amount || 0;
   item.payment_method = "invoice";
+  item.contractor_name = taxResult.contractor_name || null;
 
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
@@ -4444,9 +4610,17 @@ async function prepareInvoicePaymentItem(eventId, item) {
 }
 
 async function prepareSelfEmployedPaymentItem(eventId, item) {
-  const surname = ($("paymentSelfEmployedInput")?.value || "").trim();
+  item = await materializePaymentItemIfNeeded(eventId, item, "self_employed");
+
+  const existingSurname = selfEmployedSurnameFromItem(item);
+  const surname = existingSurname || (($("paymentSelfEmployedInput")?.value || "").trim());
+
   if (!surname) {
     throw new Error("Для самозанятого обязательно укажи фамилию");
+  }
+
+  if (itemHasLockedSelfEmployedPayment(item) && existingSurname) {
+    return existingSurname;
   }
 
   const base = paymentBaseAmountForItem(item);
@@ -4464,14 +4638,23 @@ async function prepareSelfEmployedPaymentItem(eventId, item) {
 }
 
 async function prepareSimplePaymentItem(eventId, item, method) {
-  item.payment_method = method;
-  item.iin_bin = null;
-  item.iin_bin_locked = false;
-  item.tax_check_status = null;
-  item.vat_amount = 0;
-  item.deduction_amount = 0;
+  item = await materializePaymentItemIfNeeded(eventId, item, method);
+
+  const fixed = fixedPaymentMethodForItem(item);
+  const finalMethod = fixed || method;
+
+  item.payment_method = finalMethod;
+
+  if (finalMethod === "cash" || finalMethod === "card") {
+    item.iin_bin = null;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
+  }
 
   await persistItemBeforePayment(eventId, item);
+  return item;
 }
 
 async function submitManagerPayment(eventId) {
@@ -4479,10 +4662,10 @@ async function submitManagerPayment(eventId) {
   const button = $("paymentCreateBtn");
   if (message) message.textContent = "";
 
-  const item = selectedPaymentItem(eventId);
+  let item = selectedPaymentItem(eventId);
   if (!item) throw new Error("Выбери позицию");
 
-  const method = $("paymentMethodSelect")?.value || "cash";
+  const method = fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash";
   const amount = paymentPayloadAmount();
 
   if (!amount || amount <= 0) {
@@ -4516,11 +4699,16 @@ async function submitManagerPayment(eventId) {
           comment = await prepareInvoicePaymentItem(eventId, item);
         } else if (method === "self_employed") {
           comment = await prepareSelfEmployedPaymentItem(eventId, item);
+          item = selectedPaymentItem(eventId) || item;
         } else {
-          await prepareSimplePaymentItem(eventId, item, method);
+          item = await prepareSimplePaymentItem(eventId, item, method);
         }
 
         const card = method === "card" ? (($("paymentCardInput")?.value || "").replace(/\D/g, "")) : null;
+
+        if (item?.is_new_payment_position || String(item.id).startsWith("tmp-")) {
+          throw new Error("Не удалось создать позицию перед заявкой");
+        }
 
         await api(`/event-items/${item.id}/payment-requests`, {
           method: "POST",
