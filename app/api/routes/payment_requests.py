@@ -561,6 +561,7 @@ def update_payment_request_status(
 
     if payload.status == "rejected":
         request.rejected_at = datetime.utcnow()
+        request.money_status = "cancelled"
 
         # Refund: if an already paid request is cancelled, remove it from paid amount.
         if previous_status in {"paid"} and item is not None:
@@ -586,8 +587,8 @@ def update_payment_request_money_status(
 ):
     request = get_request_or_404(db, request_id)
 
-    if payload.money_status not in {"waiting_money", "cash_received"}:
-        raise HTTPException(status_code=400, detail="money_status должен быть waiting_money или cash_received")
+    if payload.money_status not in {"waiting_money", "cash_received", "cancelled"}:
+        raise HTTPException(status_code=400, detail="money_status должен быть waiting_money, cash_received или cancelled")
 
     event = require_payment_request_edit(db, current_user, request)
 

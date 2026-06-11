@@ -21,7 +21,7 @@ class PaymentRequestStatusUpdate(BaseModel):
 
 
 class PaymentRequestMoneyStatusUpdate(BaseModel):
-    # waiting_money / cash_received
+    # waiting_money / cash_received / cancelled
     money_status: str
 
 

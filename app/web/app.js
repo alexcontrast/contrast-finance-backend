@@ -2129,6 +2129,16 @@ function injectManagerUxStyles() {
     #eventModalActions {
       flex-wrap: nowrap !important;
     }
+
+
+    /* v0.37.04: статус денег "Отменено" */
+    .status.cancelled.request-money-badge,
+    .request-money-badge.cancelled,
+    .event-request-status-badge.cancelled {
+      background: rgba(255, 232, 226, .95) !important;
+      border-color: rgba(194, 82, 64, .34) !important;
+      color: #a33b2f !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2653,6 +2663,7 @@ function sortItemsCoordinatorFirst(items) {
 
 
 function requestMoneyStatus(request) {
+  if (["rejected", "cancelled"].includes(request?.status)) return "cancelled";
   return request?.money_status || (request?.status === "cash_received" ? "cash_received" : "waiting_money");
 }
 
@@ -3291,7 +3302,9 @@ function adminRequestActions(request, mode = "regular") {
   const buttons = [];
 
   if (mode === "archive") {
-    buttons.push(`<button class="small danger" data-refund-request="${request.id}">Вернуть</button>`);
+    if (status === "paid" && moneyStatus === "cash_received") {
+      buttons.push(`<button class="small danger" data-refund-request="${request.id}">Вернуть</button>`);
+    }
     return buttons.join("");
   }
 
@@ -3489,10 +3502,10 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
           <tbody>
             ${filtered.map((request) => `
               <tr>
-                <td>${formatDateRu(request.created_at) || ""}</td>
-                <td>${request.manager_name || ""}</td>
-                <td>${request.client_name || request.customer_name || ""}</td>
-                <td>${request.event_title || ""}</td>
+                <td>${formatDateRu(request.created_at || request.created_date || request.date_created || request.request_date) || ""}</td>
+                <td>${request.manager_name || managerNameById(request.manager_id) || managerNameForRequest(request) || ""}</td>
+                <td>${request.client_name || request.customer_name || request.event_client_name || request.client || ""}</td>
+                <td>${request.event_title || request.title || request.event_name || ""}</td>
                 <td>${request.position || request.item_name_snapshot || ""}</td>
                 <td><strong>${formatMoney(request.amount_requested)}</strong></td>
                 <td>${paymentMethodLabel(request.payment_method)}</td>
@@ -3636,16 +3649,16 @@ function attachPaymentRequestActions() {
     button.addEventListener("click", async () => {
       const id = button.getAttribute("data-refund-request");
 
-      if (!confirm(`Вернуть деньги по заявке #${id}? Статус оплаты станет “Отменено”, статус денег — “Ждём денег”.`)) return;
+      if (!confirm(`Вернуть деньги по заявке #${id}? Статус оплаты станет “Отменено”, статус денег — “Отменено”.`)) return;
 
       try {
-        await api(`/payment-requests/${id}/money-status`, {
-          method: "PATCH",
-          body: JSON.stringify({ money_status: "waiting_money" }),
-        });
         await api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected" }),
+        });
+        await api(`/payment-requests/${id}/money-status`, {
+          method: "PATCH",
+          body: JSON.stringify({ money_status: "cancelled" }),
         });
         await withLoading(loadDashboard, "Обновляем данные…");
       } catch (error) {
