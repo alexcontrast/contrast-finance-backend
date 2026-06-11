@@ -2139,6 +2139,121 @@ function injectManagerUxStyles() {
       border-color: rgba(194, 82, 64, .34) !important;
       color: #a33b2f !important;
     }
+
+
+    /* v0.37.05: вернуть нормальную ширину модалки мероприятия после money_status-таблиц */
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .event-modal,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-card {
+      width: min(1280px, calc(100vw - 32px)) !important;
+      max-width: 1280px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalContent {
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-metric-cards {
+      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+      gap: 12px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-metric-cards .card.metric {
+      min-width: 0 !important;
+      padding: 14px 14px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-metric-cards .value {
+      font-size: clamp(18px, 1.65vw, 26px) !important;
+      line-height: 1.05 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-metric-cards .label {
+      white-space: normal !important;
+      line-height: 1.15 !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table-wrap,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection .table-wrap {
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: auto !important;
+      overscroll-behavior-x: contain !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection table {
+      width: 100% !important;
+      min-width: 980px !important;
+      table-layout: fixed !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection th,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection td {
+      min-width: 0 !important;
+      max-width: none !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      vertical-align: middle !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(1),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(1) {
+      width: 28% !important;
+      white-space: normal !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(2),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(2),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(3),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(3),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(4),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(4),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(5),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(5),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(6),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(6) {
+      width: 11% !important;
+      white-space: nowrap !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table th:nth-child(7),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .estimate-table td:nth-child(7) {
+      width: 16% !important;
+      white-space: nowrap !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection th,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection td {
+      font-size: 12px !important;
+      padding: 8px 8px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection .request-actions-row {
+      justify-content: flex-start !important;
+      gap: 6px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) #eventModalRequestsSection .request-actions-row button {
+      padding: 7px 9px !important;
+      font-size: 11px !important;
+    }
+
+    @media (max-width: 900px) {
+      #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-metric-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
+
+      #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode) .modal-metric-cards .value {
+        font-size: 20px !important;
+      }
+    }
 `;
   document.head.appendChild(style);
 }
