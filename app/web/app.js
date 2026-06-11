@@ -1708,6 +1708,107 @@ function injectManagerUxStyles() {
     .admin-events-table-wrap {
       overflow-x: visible !important;
     }
+
+
+    /* v0.36.02: точная раскладка ширин таблицы мероприятий */
+    .admin-events-table {
+      table-layout: fixed !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      font-size: 11.5px !important;
+    }
+
+    .admin-events-table th,
+    .admin-events-table td {
+      padding: 7px 7px !important;
+      font-size: 11.5px !important;
+      line-height: 1.08 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+    .admin-events-table th {
+      font-size: 9.8px !important;
+      letter-spacing: .045em !important;
+    }
+
+    .admin-events-table th:nth-child(1),
+    .admin-events-table td:nth-child(1) {
+      width: 76px !important;
+      min-width: 76px !important;
+      max-width: 76px !important;
+    }
+
+    .admin-events-table th:nth-child(2),
+    .admin-events-table td:nth-child(2) {
+      width: 16% !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table th:nth-child(3),
+    .admin-events-table td:nth-child(3) {
+      width: 14% !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table th:nth-child(4),
+    .admin-events-table td:nth-child(4) {
+      width: 17% !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table th:nth-child(5),
+    .admin-events-table td:nth-child(5) {
+      width: 94px !important;
+      min-width: 94px !important;
+      max-width: 94px !important;
+    }
+
+    .admin-events-table th:nth-child(6),
+    .admin-events-table td:nth-child(6) {
+      width: 92px !important;
+      min-width: 92px !important;
+      max-width: 92px !important;
+    }
+
+    .admin-events-table th:nth-child(7),
+    .admin-events-table td:nth-child(7),
+    .admin-events-table th:nth-child(8),
+    .admin-events-table td:nth-child(8),
+    .admin-events-table th:nth-child(9),
+    .admin-events-table td:nth-child(9) {
+      width: 84px !important;
+      min-width: 84px !important;
+      max-width: 84px !important;
+    }
+
+    .admin-events-table th:nth-child(10),
+    .admin-events-table td:nth-child(10) {
+      width: 42px !important;
+      min-width: 42px !important;
+      max-width: 42px !important;
+      text-align: center !important;
+    }
+
+    .admin-events-table td:nth-child(7),
+    .admin-events-table td:nth-child(8),
+    .admin-events-table td:nth-child(9) {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .admin-events-table .admin-event-status-badge {
+      font-size: 9.8px !important;
+      padding: 4px 6px !important;
+      max-width: 100% !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+
+    .admin-events-table-wrap {
+      overflow-x: visible !important;
+    }
 `;
   document.head.appendChild(style);
 }
