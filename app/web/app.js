@@ -1640,6 +1640,74 @@ function injectManagerUxStyles() {
     .admin-events-table-wrap {
       overflow-x: auto !important;
     }
+
+
+    /* v0.36.01: цвета столбцов сметы после переноса "Способ" */
+    .estimate-table th:nth-child(5),
+    .estimate-table td:nth-child(5) {
+      background: rgba(220, 244, 252, .72) !important;
+    }
+
+    .estimate-table th:nth-child(6),
+    .estimate-table td:nth-child(6) {
+      background: rgba(237, 226, 248, .72) !important;
+    }
+
+    .estimate-table th:nth-child(7),
+    .estimate-table td:nth-child(7) {
+      background: transparent !important;
+    }
+
+    /* v0.36.01: компактная таблица мероприятий без горизонтального скролла */
+    .admin-events-table {
+      table-layout: fixed !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      font-size: 12px !important;
+    }
+
+    .admin-events-table th,
+    .admin-events-table td {
+      padding: 8px 9px !important;
+      font-size: 12px !important;
+      line-height: 1.12 !important;
+      white-space: nowrap !important;
+    }
+
+    .admin-events-table th {
+      font-size: 10.5px !important;
+      letter-spacing: .055em !important;
+    }
+
+    .admin-events-table td:nth-child(1) { width: 82px; }
+    .admin-events-table td:nth-child(2) { width: 136px; }
+    .admin-events-table td:nth-child(3) { width: 120px; }
+    .admin-events-table td:nth-child(4) { width: 150px; }
+    .admin-events-table td:nth-child(5) { width: 96px; }
+    .admin-events-table td:nth-child(6) { width: 104px; }
+    .admin-events-table td:nth-child(7),
+    .admin-events-table td:nth-child(8),
+    .admin-events-table td:nth-child(9) { width: 92px; }
+    .admin-events-table td:nth-child(10) { width: 54px; }
+
+    .admin-events-table td:nth-child(2),
+    .admin-events-table td:nth-child(3),
+    .admin-events-table td:nth-child(4),
+    .admin-events-table td:nth-child(5) {
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+    .admin-events-table .admin-event-status-badge {
+      font-size: 10.5px !important;
+      padding: 4px 8px !important;
+      white-space: nowrap !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table-wrap {
+      overflow-x: visible !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1656,6 +1724,7 @@ const state = {
   paymentCustomerFilter: "all",
   paymentManagerFilter: "all",
   eventDepartmentFilter: "all",
+  eventCustomerFilter: "all",
   eventManagerFilter: "all",
   eventStatusFilter: "all",
   eventSearch: "",
@@ -1735,6 +1804,7 @@ function attachMonthYearSelectors() {
       state.month = selectedMonthValue();
       state.paymentCustomerFilter = "all";
       state.paymentManagerFilter = "all";
+      state.eventCustomerFilter = "all";
       const user = state.bootstrap?.user;
       if (user?.role === "manager") {
         clearManagerSelectedEventUi();
@@ -2636,6 +2706,7 @@ function renderEventsTable(events, allowClick = false) {
 function renderEventFilters(events) {
   const managers = getManagers();
   const statuses = [...new Set((events || []).map((event) => event.status).filter(Boolean))];
+  const customers = eventCustomerFilterOptions(events || []);
 
   return `
     <div class="filters-row">
@@ -2660,14 +2731,14 @@ function renderEventFilters(events) {
       <label class="compact-label">Статус
         <select id="eventStatusFilter">
           <option value="all">Все статусы</option>
-          ${statuses.map((status) => `
-            <option value="${status}" ${state.eventStatusFilter === status ? "selected" : ""}>${statusLabel(status)}</option>
-          `).join("")}
+          ${statuses.map((status) => `<option value="${status}" ${state.eventStatusFilter === status ? "selected" : ""}>${statusLabel(status)}</option>`).join("")}
         </select>
       </label>
 
-      <label class="compact-label search-label">Поиск по заказчику
-        <input id="eventSearch" value="${state.eventSearch || ""}" placeholder="Название заказчика" />
+      <label class="compact-label">Заказчик
+        <select id="eventCustomerFilter">
+          ${selectOptions(customers, state.eventCustomerFilter, "Все заказчики")}
+        </select>
       </label>
     </div>
   `;
@@ -3019,36 +3090,33 @@ function attachFilters() {
 
   const eventDepartment = document.getElementById("eventDepartmentFilter");
   if (eventDepartment) {
-    eventDepartment.addEventListener("change", async (event) => {
+    eventDepartment.addEventListener("change", (event) => {
       state.eventDepartmentFilter = event.target.value;
-      await withLoading(loadDashboard, "Фильтруем мероприятия…");
+      renderAdminDashboard(state.adminData);
     });
   }
 
   const eventManager = document.getElementById("eventManagerFilter");
   if (eventManager) {
-    eventManager.addEventListener("change", async (event) => {
+    eventManager.addEventListener("change", (event) => {
       state.eventManagerFilter = event.target.value;
-      await withLoading(loadDashboard, "Фильтруем мероприятия…");
+      renderAdminDashboard(state.adminData);
     });
   }
 
   const eventStatus = document.getElementById("eventStatusFilter");
   if (eventStatus) {
-    eventStatus.addEventListener("change", async (event) => {
+    eventStatus.addEventListener("change", (event) => {
       state.eventStatusFilter = event.target.value;
-      await withLoading(loadDashboard, "Фильтруем мероприятия…");
+      renderAdminDashboard(state.adminData);
     });
   }
 
-  const eventSearch = document.getElementById("eventSearch");
-  if (eventSearch) {
-    eventSearch.addEventListener("input", (event) => {
-      state.eventSearch = event.target.value;
-      clearTimeout(window.__cfEventSearchTimer);
-      window.__cfEventSearchTimer = setTimeout(() => {
-        withLoading(loadDashboard, "Ищем…").catch((error) => alert(error.message));
-      }, 350);
+  const eventCustomer = document.getElementById("eventCustomerFilter");
+  if (eventCustomer) {
+    eventCustomer.addEventListener("change", (event) => {
+      state.eventCustomerFilter = event.target.value;
+      renderAdminDashboard(state.adminData);
     });
   }
 }
@@ -3154,8 +3222,11 @@ function customerVatTopAmount(summary) {
 }
 
 function customerTaxesTopAmount(summary) {
-  // Для верхней карточки "Налоги ... к уплате" нужны внутренние налоги к уплате.
-  return asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
+  // Для верхней карточки "Налоги ... к уплате" нужна сумма именно к уплате:
+  // внутренние налоги минус доступные вычеты.
+  const grossTaxes = asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
+  const deductions = asNumber(summary?.deductions_total ?? summary?.tax_deductions_total ?? 0);
+  return Math.max(0, Math.round(grossTaxes - deductions));
 }
 
 function customerTurnoverAmount(summary) {
@@ -3457,6 +3528,12 @@ function groupedAdminEventsForTable(events) {
   });
 }
 
+
+function eventCustomerFilterOptions(events) {
+  const grouped = groupedAdminEventsForTable(events || []);
+  return uniqueSortedValues(grouped.map((event) => event.client_name));
+}
+
 function eventMatchesAdminFilters(event) {
   if (state.eventDepartmentFilter !== "all") {
     const departmentIds = event.department_ids || [event.department_id];
@@ -3472,9 +3549,8 @@ function eventMatchesAdminFilters(event) {
     return false;
   }
 
-  const search = String(state.eventSearch || "").trim().toLowerCase();
-  if (search && !String(event.client_name || "").toLowerCase().includes(search)) {
-    return false;
+  if (state.eventCustomerFilter && state.eventCustomerFilter !== "all") {
+    if (String(event.client_name || "") !== String(state.eventCustomerFilter)) return false;
   }
 
   return true;
