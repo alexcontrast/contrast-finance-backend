@@ -20,8 +20,11 @@ class Event(Base):
     department_id: Mapped[int] = mapped_column(ForeignKey("departments.id"), nullable=False, index=True)
     manager_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
 
-    # draft / review / accepted / revision / completed / cancelled
+    # Рабочий статус: draft / review / accepted / revision / completed / cancelled
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)
+
+    # Статус денег клиента: waiting_money / cash_received. Независим от рабочего статуса.
+    money_status: Mapped[str] = mapped_column(String(50), nullable=False, default="waiting_money", index=True)
 
     # ip_contrast_event / our_no_vat / simplified / cash
     client_calc_type: Mapped[str] = mapped_column(String(50), nullable=False)

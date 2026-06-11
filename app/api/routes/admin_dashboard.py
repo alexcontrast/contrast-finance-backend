@@ -242,6 +242,7 @@ def get_admin_dashboard(
                     title=event.title,
                     event_date=event.event_date,
                     status=event.status,
+                    money_status=getattr(event, "money_status", "waiting_money"),
                     client_calc_type=event.client_calc_type,
                     department_id=allocated_department_id,
                     department_name=allocated_department_name,
@@ -309,6 +310,7 @@ def get_admin_dashboard(
             amount_requested=request.amount_requested,
             payment_method=payment_method_label(request.payment_method),
             status=request.status,
+            money_status=getattr(request, "money_status", "waiting_money"),
             tax_status=tax_status_label(request.tax_status_snapshot),
             warning_over_remaining=request.warning_over_remaining,
         )

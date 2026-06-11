@@ -1988,6 +1988,24 @@ function injectManagerUxStyles() {
       border-color: rgba(53, 150, 57, .35) !important;
       color: #1f7a35 !important;
     }
+
+
+    /* v0.37.00: money_status отдельно от status */
+    .admin-event-money-badge {
+      margin-left: 6px !important;
+      display: inline-flex !important;
+      vertical-align: middle !important;
+      white-space: nowrap !important;
+      background: #7CFF35 !important;
+      border-color: rgba(72, 195, 12, .62) !important;
+      color: #173f0b !important;
+    }
+
+    .status.waiting_money {
+      background: rgba(245, 245, 245, .92) !important;
+      border-color: rgba(150, 150, 150, .28) !important;
+      color: #686868 !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2152,6 +2170,7 @@ function statusLabel(status) {
     accepted: "Принято",
     completed: "Завершено",
     cash_received: "Деньги в кассе",
+    waiting_money: "Ждём денег",
     cancelled: "Отменено",
     new: "Новая",
     to_pay: "На оплату",
@@ -2509,13 +2528,32 @@ function sortItemsCoordinatorFirst(items) {
   });
 }
 
+
+function requestMoneyStatus(request) {
+  return request?.money_status || (request?.status === "cash_received" ? "cash_received" : "waiting_money");
+}
+
+function eventMoneyStatus(event) {
+  return event?.money_status || (event?.status === "cash_received" ? "cash_received" : "waiting_money");
+}
+
+function eventIsMoneyArchive(event) {
+  return eventMoneyStatus(event) === "cash_received" && !["draft", "revision", "cancelled"].includes(event?.status);
+}
+
 function modalFilteredRequests(requests, status) {
   if (!status || status === "all") return requests || [];
   if (status === "active") {
-    return (requests || []).filter((request) => !["rejected", "cash_received"].includes(request.status));
+    return (requests || []).filter((request) => !["rejected", "cancelled"].includes(request.status));
   }
   if (status === "archive") {
-    return (requests || []).filter((request) => ["rejected", "cash_received"].includes(request.status));
+    return (requests || []).filter((request) => ["rejected", "cancelled"].includes(request.status));
+  }
+  if (status === "cash_received") {
+    return (requests || []).filter((request) => requestMoneyStatus(request) === "cash_received");
+  }
+  if (status === "waiting_money") {
+    return (requests || []).filter((request) => requestMoneyStatus(request) !== "cash_received");
   }
   return (requests || []).filter((request) => request.status === status);
 }
@@ -2528,7 +2566,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
       <h3>Заявки мероприятия</h3>
       <span class="muted">${filtered.length} из ${(requests || []).length} шт.</span>
     </div>
-    ${(requests || []).some((request) => request.status === "cash_received") ? `
+    ${(requests || []).some((request) => requestMoneyStatus(request) === "cash_received") ? `
       <div class="event-request-cash-note">
         <span class="status cash_received event-request-status-badge">Деньги в кассе</span>
         <span>По мероприятию уже есть оплаты со статусом “Деньги в кассе”. Повторно отправлять всё мероприятие в кассу нельзя.</span>
@@ -2543,6 +2581,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
           <option value="new" ${selectedStatus === "new" ? "selected" : ""}>Новая</option>
           <option value="paid" ${selectedStatus === "paid" ? "selected" : ""}>Оплачено</option>
           <option value="cash_received" ${selectedStatus === "cash_received" ? "selected" : ""}>Деньги в кассе</option>
+          <option value="waiting_money" ${selectedStatus === "waiting_money" ? "selected" : ""}>Ждём денег</option>
           <option value="rejected" ${selectedStatus === "rejected" ? "selected" : ""}>Отменено</option>
         </select>
       </label>
@@ -2558,7 +2597,8 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
               <th>Сумма заявки</th>
               <th>Способ</th>
               <th>Налоговый статус</th>
-              <th>Статус</th>
+              <th>Статус оплаты</th>
+              <th>Статус денег</th>
               <th>Действия</th>
             </tr>
           </thead>
@@ -2571,6 +2611,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
                 <td>${paymentMethodLabel(request.payment_method)}</td>
                 <td>${request.tax_status || request.tax_status_label || ""}</td>
                 <td><span class="status ${request.status} event-request-status-badge">${statusLabel(request.status)}</span></td>
+                <td><span class="status ${requestMoneyStatus(request)} event-request-status-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
                 <td>
                   <div class="inline-actions">
                     ${adminRequestActions(request)}
@@ -2612,11 +2653,11 @@ function attachManagerSalaryRequestButton() {
 }
 
 function activePaymentRequests(requests) {
-  return (requests || []).filter((request) => !["rejected", "cash_received"].includes(request.status));
+  return (requests || []).filter((request) => !["rejected", "cancelled"].includes(request.status));
 }
 
 function archivedPaymentRequests(requests) {
-  return (requests || []).filter((request) => ["rejected", "cash_received"].includes(request.status));
+  return (requests || []).filter((request) => ["rejected", "cancelled"].includes(request.status));
 }
 
 
@@ -2865,28 +2906,26 @@ function filteredEvents(events) {
 }
 
 function filteredPaymentRequests(requests, mode = "regular") {
-  let list = [...(requests || [])];
+  let list = requests || [];
 
   if (mode === "archive") {
-    if (state.paymentStatusFilter === "all" || state.paymentStatusFilter === "active") {
-      list = list.filter((request) => ["rejected", "cash_received"].includes(request.status));
-    } else {
+    list = list.filter((request) => ["rejected", "cancelled"].includes(request.status));
+    if (state.paymentStatusFilter !== "all" && state.paymentStatusFilter !== "active") {
       list = list.filter((request) => request.status === state.paymentStatusFilter);
     }
   } else {
-    if (state.paymentStatusFilter === "active" || state.paymentStatusFilter === "all") {
-      list = list.filter((request) => !["rejected", "cash_received"].includes(request.status));
-    } else {
+    list = list.filter((request) => !["rejected", "cancelled"].includes(request.status));
+    if (state.paymentStatusFilter !== "active" && state.paymentStatusFilter !== "all") {
       list = list.filter((request) => request.status === state.paymentStatusFilter);
     }
   }
 
   if (state.paymentCustomerFilter && state.paymentCustomerFilter !== "all") {
-    list = list.filter((request) => String(clientNameForRequest(request) || "") === String(state.paymentCustomerFilter));
+    list = list.filter((request) => String(request.client_name || request.customer_name || "") === String(state.paymentCustomerFilter));
   }
 
   if (state.paymentManagerFilter && state.paymentManagerFilter !== "all") {
-    list = list.filter((request) => String(managerNameForRequest(request) || "") === String(state.paymentManagerFilter));
+    list = list.filter((request) => String(request.manager_name || "") === String(state.paymentManagerFilter));
   }
 
   return list;
@@ -2978,7 +3017,7 @@ function renderEventsTable(events, allowClick = false) {
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
               <td>${calcTypeLabel(event.client_calc_type)}</td>
-              <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>
+              <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span>${eventMoneyStatus(event) === "cash_received" ? `<span class="status cash_received admin-event-money-badge">Деньги в кассе</span>` : ""}</td>
               <td>${formatMoney(event.external_total)}</td>
               <td>${formatMoney(event.final_company_income)}</td>
               <td>${formatMoney(event.manager_salary || 0)}</td>
@@ -3079,7 +3118,6 @@ function renderPaymentFilters(requests = [], mode = "regular") {
 
   const archiveOptions = `
     <option value="all" ${state.paymentStatusFilter === "all" || state.paymentStatusFilter === "active" ? "selected" : ""}>Весь архив</option>
-    <option value="cash_received" ${state.paymentStatusFilter === "cash_received" ? "selected" : ""}>Деньги в кассе</option>
     <option value="rejected" ${state.paymentStatusFilter === "rejected" ? "selected" : ""}>Отменено</option>
   `;
 
@@ -3109,7 +3147,7 @@ function renderPaymentFilters(requests = [], mode = "regular") {
 function canManagerCancelRequest(request) {
   const user = state.bootstrap?.user;
   if (!user || user.role !== "manager") return false;
-  return !["paid", "cash_received", "rejected"].includes(request.status);
+  return !["paid", "rejected"].includes(request.status);
 }
 
 function adminRequestActions(request) {
@@ -3117,16 +3155,18 @@ function adminRequestActions(request) {
   if (!user || user.role !== "admin") return "";
 
   const status = request.status;
+  const moneyStatus = requestMoneyStatus(request);
   const buttons = [];
 
   if (status === "new" || status === "tax_check_needed" || status === "to_pay") {
     buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
     buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Отменить</button>`);
   } else if (status === "paid") {
-    buttons.push(`<button class="small secondary" data-set-request-status="${request.id}:cash_received">Деньги в кассе</button>`);
     buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Возврат</button>`);
-  } else if (status === "cash_received") {
-    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Возврат</button>`);
+  }
+
+  if (moneyStatus !== "cash_received" && status !== "rejected") {
+    buttons.push(`<button class="small secondary" data-set-request-money-status="${request.id}:cash_received">Деньги в кассе</button>`);
   }
 
   return buttons.join("");
@@ -3337,6 +3377,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
               <td>${paymentMethodLabel(request.payment_method)}</td>
               <td>${request.tax_status || request.tax_status_label || ""}</td>
               <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
+              <td><span class="status ${requestMoneyStatus(request)}">${statusLabel(requestMoneyStatus(request))}</span></td>
               <td>
                 <div class="inline-actions">
                   ${adminRequestActions(request)}
@@ -3434,7 +3475,6 @@ function attachPaymentRequestActions() {
 
       const labels = {
         paid: "отметить оплаченной",
-        cash_received: "отметить деньги в кассе",
         rejected: "отменить / оформить возврат",
       };
 
@@ -3444,6 +3484,25 @@ function attachPaymentRequestActions() {
         await api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status }),
+        });
+        await withLoading(loadDashboard, "Обновляем данные…");
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-set-request-money-status]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const raw = button.getAttribute("data-set-request-money-status");
+      const [id, money_status] = raw.split(":");
+
+      if (!confirm(`Заявку #${id} отметить как “Деньги в кассе”?`)) return;
+
+      try {
+        await api(`/payment-requests/${id}/money-status`, {
+          method: "PATCH",
+          body: JSON.stringify({ money_status }),
         });
         await withLoading(loadDashboard, "Обновляем данные…");
       } catch (error) {
@@ -3614,16 +3673,16 @@ function adminEventModalActions(event, requests = []) {
   const normalizedRequests = requests || [];
   const deleteStatusAllowed = ["draft", "revision"].includes(event?.status);
   const hasActivePayments = normalizedRequests.some((request) => !["rejected", "cancelled"].includes(request.status));
-  const hasCashReceivedPayments = normalizedRequests.some((request) => request.status === "cash_received");
+  const hasCashReceivedMoney = eventMoneyStatus(event) === "cash_received" || normalizedRequests.some((request) => requestMoneyStatus(request) === "cash_received");
   const canDelete = deleteStatusAllowed && !hasActivePayments;
 
   const showAccept = ["review", "accepted"].includes(event?.status);
   const canAccept = event?.status === "review";
   const canRevision = event?.status === "review";
-  const canReturnToWork = ["accepted", "cash_received"].includes(event?.status);
+  const canReturnToWork = ["accepted"].includes(event?.status) && eventMoneyStatus(event) === "cash_received";
 
-  const showCashReceived = !["draft", "cancelled"].includes(event?.status);
-  const canCashReceived = showCashReceived && event?.status !== "cash_received" && !hasCashReceivedPayments;
+  const showCashReceived = !["cancelled"].includes(event?.status);
+  const canCashReceived = showCashReceived && !hasCashReceivedMoney;
 
   return `
     <div class="event-modal-actions">
@@ -3631,7 +3690,7 @@ function adminEventModalActions(event, requests = []) {
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
       ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
       ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
-      ${showCashReceived ? `<button class="event-action-btn event-cash-btn ${canCashReceived ? "" : "is-disabled"}" ${canCashReceived ? "" : `disabled title="Оплаты уже отмечены как Деньги в кассе"`} data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
+      ${showCashReceived ? `<button class="event-action-btn event-cash-btn ${canCashReceived ? "" : "is-disabled"}" ${canCashReceived ? "" : `disabled title="Деньги уже в кассе"`} data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
     </div>
   `;
 }
@@ -3667,7 +3726,7 @@ function installAdminEventModalActions(event, requests = []) {
     revisionBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
       await api(`/events/${event.id}/revision`, { method: "POST" });
-      if (["accepted", "cash_received"].includes(event?.status)) {
+      if (eventIsMoneyArchive(event)) {
         state.activeAdminTab = "events";
       }
       await openEventModal(event.id);
@@ -3947,8 +4006,8 @@ function eventMatchesAdminFilters(event) {
 function renderAdminEvents(data, mode = "active") {
   const groupedEvents = groupedAdminEventsForTable(data.events || []);
   const byMode = mode === "archive"
-    ? groupedEvents.filter((event) => event.status === "cash_received")
-    : groupedEvents.filter((event) => event.status !== "cash_received");
+    ? groupedEvents.filter((event) => eventIsMoneyArchive(event))
+    : groupedEvents.filter((event) => !eventIsMoneyArchive(event));
   const events = byMode.filter(eventMatchesAdminFilters);
   return `
     ${renderEventFilters(byMode)}
@@ -4315,7 +4374,7 @@ function renderManagerEventList(data) {
             <span data-mini-meta>${event.title || "Без названия"} · ${formatDateRu(event.event_date)}</span>
             <small data-mini-calc>${customerPaymentLabel(event.client_calc_type)}</small>
             <div class="mini-badge-row">
-              <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>
+              <em data-mini-status class="status-badge ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</em>${eventMoneyStatus(event) === "cash_received" ? `<em class="status-badge status-tone-accepted">Деньги в кассе</em>` : ""}
               ${coauthorBadgeHtml(event, 'data-mini-coauthor')}
             </div>
           </button>
@@ -5312,7 +5371,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           <div class="overview-label">Карточка мероприятия</div>
           <h2>${event.title}</h2>
           <div class="event-badge-row">
-            <span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span>
+            <span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span>${eventMoneyStatus(event) === "cash_received" ? `<span class="status cash_received status-tone-accepted">Деньги в кассе</span>` : ""}
             ${coauthorBadgeHtml(event)}
           </div>
         </div>

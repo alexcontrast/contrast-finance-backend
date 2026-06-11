@@ -31,6 +31,7 @@ class EventRead(BaseModel):
     department_id: int
     manager_id: int
     status: str
+    money_status: str
     client_calc_type: str
     manager_percent: Decimal
     agency_commission_amount: Decimal

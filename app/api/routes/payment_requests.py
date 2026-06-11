@@ -268,6 +268,7 @@ def build_payment_request_card(request: PaymentRequest) -> PaymentRequestCardRea
         tax_status=tax_status_label(request.tax_status_snapshot),
         comment=request.comment,
         status=request.status,
+        money_status=getattr(request, "money_status", "waiting_money"),
         warning_over_remaining=request.warning_over_remaining,
     )
 
@@ -376,6 +377,7 @@ def create_payment_request(
         amount_requested=payload.amount_requested,
         payment_method=payment_method,
         status="new",
+        money_status=getattr(event, "money_status", "waiting_money"),
         comment=payload.comment,
 
         item_name_snapshot=item.external_name,
@@ -459,6 +461,7 @@ def create_manager_salary_payment_request(
         amount_requested=payload.amount_requested,
         payment_method=payment_method,
         status="new",
+        money_status=getattr(event, "money_status", "waiting_money"),
         comment=payload.comment,
 
         item_name_snapshot=salary_item.external_name,
@@ -500,11 +503,11 @@ def update_payment_request_status(
 ):
     request = get_request_or_404(db, request_id)
 
-    allowed = {"new", "to_pay", "paid", "cash_received", "rejected", "tax_check_needed"}
+    allowed = {"new", "to_pay", "paid", "rejected", "tax_check_needed", "cash_received"}
     if payload.status not in allowed:
         raise HTTPException(
             status_code=400,
-            detail="status должен быть new, to_pay, paid, cash_received, rejected или tax_check_needed",
+            detail="status должен быть new, to_pay, paid, rejected или tax_check_needed",
         )
 
     event = require_payment_request_edit(db, current_user, request)
@@ -514,7 +517,7 @@ def update_payment_request_status(
     # Department head remains read-only because require_payment_request_edit rejects it.
     if current_user.role != "admin":
         if current_user.role == "manager" and payload.status == "rejected":
-            if request.status in {"paid", "cash_received"}:
+            if request.status in {"paid"}:
                 raise HTTPException(
                     status_code=400,
                     detail="Оплаченную заявку нельзя отменить менеджером",
@@ -531,10 +534,21 @@ def update_payment_request_status(
 
     previous_status = request.status
 
+    item = db.get(EventItem, request.event_item_id)
+
+    if payload.status == "cash_received":
+        # Legacy compatibility: old button used status=cash_received.
+        # Now this only changes money_status and does not change contractor payment status.
+        request.money_status = "cash_received"
+        request.cash_received_at = datetime.utcnow()
+        request.updated_at = datetime.utcnow()
+        db.add(request)
+        db.commit()
+        db.refresh(request)
+        return enrich_payment_request_read(request, db)
+
     request.status = payload.status
     request.updated_at = datetime.utcnow()
-
-    item = db.get(EventItem, request.event_item_id)
 
     if payload.status == "paid" and previous_status != "paid":
         request.paid_at = datetime.utcnow()
@@ -544,14 +558,11 @@ def update_payment_request_status(
             item.updated_at = datetime.utcnow()
             db.add(item)
 
-    if payload.status == "cash_received":
-        request.cash_received_at = datetime.utcnow()
-
     if payload.status == "rejected":
         request.rejected_at = datetime.utcnow()
 
         # Refund: if an already paid request is cancelled, remove it from paid amount.
-        if previous_status in {"paid", "cash_received"} and item is not None:
+        if previous_status in {"paid"} and item is not None:
             item.paid_amount = item.paid_amount - request.amount_requested
             if item.paid_amount < 0:
                 item.paid_amount = 0
@@ -562,4 +573,38 @@ def update_payment_request_status(
     db.commit()
     db.refresh(request)
 
+    return enrich_payment_request_read(request, db)
+
+
+@router.patch("/payment-requests/{request_id}/money-status", response_model=PaymentRequestRead)
+def update_payment_request_money_status(
+    request_id: int,
+    payload: PaymentRequestMoneyStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    request = get_request_or_404(db, request_id)
+
+    if payload.money_status not in {"waiting_money", "cash_received"}:
+        raise HTTPException(status_code=400, detail="money_status должен быть waiting_money или cash_received")
+
+    event = require_payment_request_edit(db, current_user, request)
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Статус денег может менять только админ")
+
+    request.money_status = payload.money_status
+    if payload.money_status == "cash_received":
+        request.cash_received_at = datetime.utcnow()
+
+        # Если хотя бы одна заявка по мероприятию отмечена как деньги в кассе,
+        # мероприятие тоже получает money_status=cash_received.
+        event.money_status = "cash_received"
+        event.updated_at = datetime.utcnow()
+        db.add(event)
+
+    request.updated_at = datetime.utcnow()
+    db.add(request)
+    db.commit()
+    db.refresh(request)
     return enrich_payment_request_read(request, db)

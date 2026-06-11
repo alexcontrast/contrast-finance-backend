@@ -21,8 +21,11 @@ class PaymentRequest(Base):
     # invoice / card / cash / self_employed
     payment_method: Mapped[str] = mapped_column(String(50), nullable=False)
 
-    # new / to_pay / paid / cash_received / rejected / tax_check_needed
+    # Статус оплаты подрядчику: new / to_pay / paid / rejected / tax_check_needed
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="new", index=True)
+
+    # Статус денег клиента по мероприятию: waiting_money / cash_received. Независим от оплаты подрядчику.
+    money_status: Mapped[str] = mapped_column(String(50), nullable=False, default="waiting_money", index=True)
 
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 

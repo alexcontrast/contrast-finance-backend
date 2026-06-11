@@ -193,6 +193,7 @@ def get_manager_dashboard(
                 title=event.title,
                 event_date=event.event_date,
                 status=event.status,
+                money_status=getattr(event, "money_status", "waiting_money"),
                 external_total=q(money(summary["external_total"])),
                 fact_total=q(money(summary["fact_total"])),
                 paid_total=q(money(summary["paid_total"])),

@@ -142,7 +142,8 @@ def create_event(
         event_date=payload.event_date,
         department_id=department_id,
         manager_id=manager_id,
-        status=payload.status,
+        status="accepted" if payload.status == "cash_received" else payload.status,
+        money_status="cash_received" if payload.status == "cash_received" else "waiting_money",
         client_calc_type=payload.client_calc_type,
         manager_percent=payload.manager_percent,
         agency_commission_amount=payload.agency_commission_amount,
@@ -185,7 +186,12 @@ def update_event(
         event.department_id = payload.department_id
         event.manager_id = payload.manager_id
 
-    event.status = payload.status
+    if payload.status == "cash_received":
+        # Legacy compatibility: old frontend used event.status=cash_received.
+        event.status = "accepted"
+        event.money_status = "cash_received"
+    else:
+        event.status = payload.status
     event.client_calc_type = payload.client_calc_type
     event.manager_percent = payload.manager_percent
     event.agency_commission_amount = payload.agency_commission_amount
@@ -237,8 +243,7 @@ def send_event_to_revision(
     if event.status not in {"review", "accepted", "cash_received"}:
         raise HTTPException(status_code=400, detail="На доработку можно отправить только мероприятие на проверке, принятое или архивное")
 
-    # Откатываем только статус мероприятия. Статусы оплат не меняем:
-    # если оплаты уже были `Деньги в кассе`, они такими и остаются.
+    # Откатываем только рабочий статус мероприятия. Статусы денег не меняем.
     event.status = "revision"
     event.updated_at = datetime.utcnow()
 
@@ -266,12 +271,14 @@ def mark_event_cash_received(
 
     now = datetime.utcnow()
     for request in payment_requests:
-        request.status = "cash_received"
+        # Статус оплаты подрядчику не трогаем. Это независимая ось.
+        request.money_status = "cash_received"
         request.cash_received_at = now
         request.updated_at = now
         db.add(request)
 
-    event.status = "cash_received"
+    # Рабочий статус мероприятия не трогаем. Фиксируем только деньги клиента.
+    event.money_status = "cash_received"
     event.updated_at = now
 
     db.add(event)

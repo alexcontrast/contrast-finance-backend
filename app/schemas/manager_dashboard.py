@@ -10,6 +10,7 @@ class ManagerDashboardEventRead(BaseModel):
     title: str
     event_date: date
     status: str
+    money_status: str = "waiting_money"
 
     external_total: Decimal
     fact_total: Decimal

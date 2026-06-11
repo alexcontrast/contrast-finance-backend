@@ -23,6 +23,7 @@ class AdminEventRowRead(BaseModel):
     title: str
     event_date: date
     status: str
+    money_status: str = "waiting_money"
     client_calc_type: str | None = None
     department_id: int
     department_name: str | None
@@ -45,6 +46,7 @@ class AdminPaymentRequestRowRead(BaseModel):
     amount_requested: Decimal
     payment_method: str
     status: str
+    money_status: str = "waiting_money"
     tax_status: str | None
     warning_over_remaining: bool
 

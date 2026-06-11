@@ -16,8 +16,13 @@ class PaymentRequestCreate(BaseModel):
 
 
 class PaymentRequestStatusUpdate(BaseModel):
-    # new / to_pay / paid / cash_received / rejected / tax_check_needed
+    # new / to_pay / paid / rejected / tax_check_needed
     status: str
+
+
+class PaymentRequestMoneyStatusUpdate(BaseModel):
+    # waiting_money / cash_received
+    money_status: str
 
 
 class PaymentRequestRead(BaseModel):
@@ -31,6 +36,7 @@ class PaymentRequestRead(BaseModel):
     amount_requested: Decimal
     payment_method: str
     status: str
+    money_status: str
     comment: str | None
 
     item_name_snapshot: str | None
@@ -89,4 +95,5 @@ class PaymentRequestCardRead(BaseModel):
 
     comment: str | None
     status: str
+    money_status: str = "waiting_money"
     warning_over_remaining: bool
