@@ -1604,6 +1604,42 @@ function injectManagerUxStyles() {
       display: inline !important;
       color: #171a16 !important;
     }
+
+
+    /* v0.36.00: таблица мероприятий в одну строку */
+    .admin-events-table {
+      table-layout: auto !important;
+      width: max-content !important;
+      min-width: 100% !important;
+    }
+
+    .admin-events-table th,
+    .admin-events-table td {
+      white-space: nowrap !important;
+      vertical-align: middle !important;
+    }
+
+    .admin-events-table td:nth-child(4),
+    .admin-events-table td:nth-child(5) {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .admin-events-table th {
+      font-size: 12px !important;
+      letter-spacing: .07em !important;
+    }
+
+    .admin-events-table .admin-event-status-badge {
+      white-space: nowrap !important;
+      display: inline-flex !important;
+      min-width: max-content !important;
+    }
+
+    .admin-events-table-wrap {
+      overflow-x: auto !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3118,8 +3154,8 @@ function customerVatTopAmount(summary) {
 }
 
 function customerTaxesTopAmount(summary) {
-  // Только банковские/налоговые платежи по Упрощенке, которые выставляются сверху заказчику.
-  return asNumber(summary?.simplified_bank_tax_amount ?? summary?.customer_bank_tax_amount ?? 0);
+  // Для верхней карточки "Налоги ... к уплате" нужны внутренние налоги к уплате.
+  return asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
 }
 
 function customerTurnoverAmount(summary) {
@@ -3152,6 +3188,13 @@ function customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, v
 }
 
 
+
+function customerEstimateBankTaxTopAmount(summary) {
+  // В строке сметы "Налоги" показываем только банковские/налоговые платежи,
+  // которые добавляются сверху заказчику при Упрощенке.
+  return asNumber(summary?.simplified_bank_tax_amount ?? summary?.customer_bank_tax_amount ?? 0);
+}
+
 function customerEstimateVatTopAmount(event, summary, items, taxesAmount, agencyAmount) {
   // В строке сметы "НДС" нужен НДС по смете — то есть та часть,
   // которая добивает позиции + комиссия + налоги до оборота.
@@ -3171,16 +3214,17 @@ function customerEstimateVatTopAmount(event, summary, items, taxesAmount, agency
 
 
 function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
-  const agencyAmount = customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, 0);
-  const estimateVatAmount = customerEstimateVatTopAmount(event, summary, items, taxesAmount, agencyAmount);
+  const bankTaxTopAmount = customerEstimateBankTaxTopAmount(summary);
+  const agencyAmount = customerAgencyCommissionTopAmount(event, summary, items, bankTaxTopAmount, 0);
+  const estimateVatAmount = customerEstimateVatTopAmount(event, summary, items, bankTaxTopAmount, agencyAmount);
   const rows = [];
 
   if (agencyAmount > 0) {
     rows.push({ name: "Комиссия", amount: agencyAmount });
   }
 
-  if (asNumber(taxesAmount) > 0) {
-    rows.push({ name: "Налоги", amount: taxesAmount });
+  if (asNumber(bankTaxTopAmount) > 0) {
+    rows.push({ name: "Налоги", amount: bankTaxTopAmount });
   }
 
   if (asNumber(estimateVatAmount) > 0) {
@@ -3193,9 +3237,9 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
       <td>${formatMoney(row.amount)}</td>
       <td>0</td>
       <td>0</td>
+      <td>0</td>
+      <td>0</td>
       <td>—</td>
-      <td>0</td>
-      <td>0</td>
     </tr>
   `).join("");
 }
@@ -3227,8 +3271,8 @@ async function openEventModal(eventId) {
     $("eventModalContent").innerHTML = `
       <div class="grid cards modal-metric-cards">
         ${metric("Оборот", formatMoney(customerTurnoverAmount(summary)))}
-        ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)}`, formatMoney(taxesAmount))}
-        ${metric("НДС", formatMoney(vatAmount))}
+        ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)} к уплате`, formatMoney(taxesAmount))}
+        ${metric("НДС к уплате", formatMoney(vatAmount))}
         <div class="card metric manager-salary-metric">
           <div class="label">Менеджер 21%</div>
           <div class="value">${formatMoney(managerSalary)}</div>
@@ -3246,7 +3290,7 @@ async function openEventModal(eventId) {
         <table class="estimate-table">
           <thead>
             <tr>
-              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>Способ</th><th>НДС</th><th>Вычеты</th>
+              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>НДС</th><th>Вычеты</th><th>Способ</th>
             </tr>
           </thead>
           <tbody>
@@ -3256,9 +3300,9 @@ async function openEventModal(eventId) {
                 <td>${formatMoney(item.external_amount)}</td>
                 <td>${formatMoney(item.amount_fact)}</td>
                 <td>${formatMoney(item.paid_amount)}</td>
-                <td>${paymentMethodLabel(item.payment_method)}</td>
                 <td>${formatMoney(itemVatVisible(item))}</td>
                 <td>${formatMoney(itemDeductionVisible(item))}</td>
+                <td>${paymentMethodLabel(item.payment_method)}</td>
               </tr>
             `).join("")}
             ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}
