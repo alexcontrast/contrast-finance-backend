@@ -1935,6 +1935,14 @@ function injectManagerUxStyles() {
       box-shadow: none !important;
       pointer-events: none !important;
     }
+
+
+    /* v0.36.07: кнопка "Вернуть в работу" */
+    #eventModalActions .event-return-btn {
+      background: rgba(244, 247, 241, .98) !important;
+      border: 1px solid rgba(125, 133, 118, .32) !important;
+      color: #52594f !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3558,13 +3566,15 @@ function adminEventModalActions(event, requests = []) {
 
   const showAccept = ["review", "accepted"].includes(event?.status);
   const canAccept = event?.status === "review";
-  const canRevision = ["review", "accepted"].includes(event?.status);
+  const canRevision = event?.status === "review";
+  const canReturnToWork = ["accepted", "cash_received"].includes(event?.status);
   const canCashReceived = !["draft", "revision", "cancelled", "cash_received"].includes(event?.status);
 
   return `
     <div class="event-modal-actions">
       ${deleteStatusAllowed ? `<button class="danger-btn event-action-btn event-delete-btn ${canDelete ? "" : "is-disabled"}" ${canDelete ? "" : `disabled title="Нельзя удалить: есть активные оплаты"`} data-admin-event-delete="${event.id}">Удалить</button>` : ""}
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
+      ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
       ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
       ${canCashReceived ? `<button class="event-action-btn event-cash-btn" data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
     </div>
@@ -3602,6 +3612,9 @@ function installAdminEventModalActions(event, requests = []) {
     revisionBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
       await api(`/events/${event.id}/revision`, { method: "POST" });
+      if (["accepted", "cash_received"].includes(event?.status)) {
+        state.activeAdminTab = "events";
+      }
       await openEventModal(event.id);
       await loadDashboard();
     });

@@ -234,9 +234,11 @@ def send_event_to_revision(
     require_admin_event_action(current_user)
     event = get_event_or_404(db, event_id)
 
-    if event.status not in {"review", "accepted"}:
-        raise HTTPException(status_code=400, detail="На доработку можно отправить только мероприятие на проверке или принятое")
+    if event.status not in {"review", "accepted", "cash_received"}:
+        raise HTTPException(status_code=400, detail="На доработку можно отправить только мероприятие на проверке, принятое или архивное")
 
+    # Откатываем только статус мероприятия. Статусы оплат не меняем:
+    # если оплаты уже были `Деньги в кассе`, они такими и остаются.
     event.status = "revision"
     event.updated_at = datetime.utcnow()
 
