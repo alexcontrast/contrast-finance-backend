@@ -2081,6 +2081,54 @@ function injectManagerUxStyles() {
       text-overflow: ellipsis !important;
       justify-content: center !important;
     }
+
+
+    /* v0.37.03: размеры бейджей денег и ровные ряды кнопок */
+    .admin-event-money-badge,
+    .request-money-badge,
+    .event-request-status-badge,
+    .request-status-badge {
+      min-height: 24px !important;
+      height: 24px !important;
+      padding: 4px 8px !important;
+      border-radius: 999px !important;
+      font-size: 10.5px !important;
+      line-height: 1 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      white-space: nowrap !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .admin-event-money-badge {
+      margin-left: 0 !important;
+    }
+
+    .request-actions-row,
+    .inline-actions,
+    .coauthor-actions,
+    .share-actions,
+    .coauthor-row-actions {
+      display: flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      flex-wrap: nowrap !important;
+    }
+
+    .request-actions-row button,
+    .inline-actions button,
+    .coauthor-actions button,
+    .share-actions button,
+    .coauthor-row-actions button {
+      white-space: nowrap !important;
+      flex: 0 0 auto !important;
+    }
+
+    #eventModalActions {
+      flex-wrap: nowrap !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2644,7 +2692,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
     ${(requests || []).some((request) => requestMoneyStatus(request) === "cash_received") ? `
       <div class="event-request-cash-note">
         <span class="status cash_received event-request-status-badge">Деньги в кассе</span>
-        <span>По мероприятию уже есть оплаты со статусом “Деньги в кассе”. Повторно отправлять всё мероприятие в кассу нельзя.</span>
+        <span>По мероприятию уже есть оплаты со статусом “Деньги в кассе”.</span>
       </div>
     ` : ""}
 
@@ -2674,6 +2722,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
               <th>Налоговый статус</th>
               <th>Статус оплаты</th>
               <th>Статус денег</th>
+              <th>Кнопки</th>
             </tr>
           </thead>
           <tbody>
@@ -2685,7 +2734,13 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
                 <td>${paymentMethodLabel(request.payment_method)}</td>
                 <td>${request.tax_status || request.tax_status_label || ""}</td>
                 <td><span class="status ${request.status} event-request-status-badge">${statusLabel(request.status)}</span></td>
-                <td><span class="status ${requestMoneyStatus(request)} event-request-status-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
+                <td><span class="status ${requestMoneyStatus(request)} event-request-status-badge request-money-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
+                <td>
+                  <div class="inline-actions request-actions-row">
+                    ${adminRequestActions(request, "regular")}
+                    ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
+                  </div>
+                </td>
               </tr>
             `).join("")}
           </tbody>
@@ -3227,7 +3282,7 @@ function canManagerCancelRequest(request) {
   return !["paid", "rejected"].includes(request.status);
 }
 
-function adminRequestActions(request) {
+function adminRequestActions(request, mode = "regular") {
   const user = state.bootstrap?.user;
   if (!user || user.role !== "admin") return "";
 
@@ -3235,14 +3290,16 @@ function adminRequestActions(request) {
   const moneyStatus = requestMoneyStatus(request);
   const buttons = [];
 
-  if (status === "new" || status === "tax_check_needed" || status === "to_pay") {
-    buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
-    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Отменить</button>`);
-  } else if (status === "paid") {
-    buttons.push(`<button class="small danger" data-set-request-status="${request.id}:rejected">Возврат</button>`);
+  if (mode === "archive") {
+    buttons.push(`<button class="small danger" data-refund-request="${request.id}">Вернуть</button>`);
+    return buttons.join("");
   }
 
-  if (moneyStatus !== "cash_received" && status !== "rejected") {
+  if (status !== "paid" && !["rejected", "cancelled"].includes(status)) {
+    buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
+  }
+
+  if (moneyStatus !== "cash_received" && !["rejected", "cancelled"].includes(status)) {
     buttons.push(`<button class="small secondary" data-set-request-money-status="${request.id}:cash_received">Деньги в кассе</button>`);
   }
 
@@ -3401,65 +3458,58 @@ async function openManagerPaymentRequestsModal(eventId) {
 }
 
 
-function renderPaymentRequestsTable(requests, title = "Заявки на оплату", mode = "regular") {
-  const baseRequests = mode === "archive" ? archivedPaymentRequests(requests) : activePaymentRequests(requests);
-  const filteredRequests = filteredPaymentRequests(requests, mode);
-
-  if (!baseRequests.length) {
-    return `
-      <div class="block-title"><h3>${title}</h3></div>
-      ${renderPaymentFilters(requests, mode)}
-      <div class="empty-state">Заявок пока нет.</div>
-    `;
-  }
-
-  if (!filteredRequests.length) {
-    return `
-      <div class="block-title">
-        <h3>${title}</h3>
-        <span class="muted">0 из ${baseRequests.length} шт.</span>
-      </div>
-      ${renderPaymentFilters(requests, mode)}
-      <div class="empty-state">По выбранным фильтрам заявок нет.</div>
-    `;
-  }
+function renderPaymentRequestsTable(requests, title = "Заявки", mode = "regular") {
+  const filtered = filteredPaymentRequests(requests || [], mode);
 
   return `
+    ${renderPaymentFilters(requests || [], mode)}
+
     <div class="block-title">
       <h3>${title}</h3>
-      <span class="muted">${filteredRequests.length} из ${baseRequests.length} шт.</span>
+      <span class="muted">${filtered.length} шт.</span>
     </div>
-    ${renderPaymentFilters(requests, mode)}
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Менеджер</th>
-            <th>Заказчик</th>
-            <th>Позиция</th>
-            <th>Сумма заявки</th>
-            <th>Способ</th>
-            <th>Налоговый статус</th>
-            <th>Статус</th>
-            <th>Действия</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filteredRequests.map((request) => `
+
+    ${filtered.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td>${managerNameForRequest(request)}</td>
-              <td><strong>${clientNameForRequest(request)}</strong></td>
-              <td>${request.position || request.item_name_snapshot || ""}</td>
-              <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
-              <td>${paymentMethodLabel(request.payment_method)}</td>
-              <td>${request.tax_status || request.tax_status_label || ""}</td>
-              <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
-              <td><span class="status ${requestMoneyStatus(request)}">${statusLabel(requestMoneyStatus(request))}</span></td>
+              <th>Дата</th>
+              <th>Менеджер</th>
+              <th>Заказчик</th>
+              <th>Мероприятие</th>
+              <th>Позиция</th>
+              <th>Сумма</th>
+              <th>Способ</th>
+              <th>Статус оплаты</th>
+              <th>Статус денег</th>
+              <th>Кнопки</th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            ${filtered.map((request) => `
+              <tr>
+                <td>${formatDateRu(request.created_at) || ""}</td>
+                <td>${request.manager_name || ""}</td>
+                <td>${request.client_name || request.customer_name || ""}</td>
+                <td>${request.event_title || ""}</td>
+                <td>${request.position || request.item_name_snapshot || ""}</td>
+                <td><strong>${formatMoney(request.amount_requested)}</strong></td>
+                <td>${paymentMethodLabel(request.payment_method)}</td>
+                <td><span class="status ${request.status} request-status-badge">${statusLabel(request.status)}</span></td>
+                <td><span class="status ${requestMoneyStatus(request)} request-money-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
+                <td>
+                  <div class="inline-actions request-actions-row">
+                    ${adminRequestActions(request, mode)}
+                    ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
+                  </div>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    ` : `<div class="empty-state">Заявок нет.</div>`}
   `;
 }
 
@@ -3574,6 +3624,28 @@ function attachPaymentRequestActions() {
         await api(`/payment-requests/${id}/money-status`, {
           method: "PATCH",
           body: JSON.stringify({ money_status }),
+        });
+        await withLoading(loadDashboard, "Обновляем данные…");
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-refund-request]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.getAttribute("data-refund-request");
+
+      if (!confirm(`Вернуть деньги по заявке #${id}? Статус оплаты станет “Отменено”, статус денег — “Ждём денег”.`)) return;
+
+      try {
+        await api(`/payment-requests/${id}/money-status`, {
+          method: "PATCH",
+          body: JSON.stringify({ money_status: "waiting_money" }),
+        });
+        await api(`/payment-requests/${id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "rejected" }),
         });
         await withLoading(loadDashboard, "Обновляем данные…");
       } catch (error) {
@@ -3773,6 +3845,10 @@ function installAdminEventModalActions(event, requests = []) {
   const oldActions = document.getElementById("eventModalActions");
   if (oldActions) oldActions.remove();
 
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "admin") return;
+  if ($("eventModalBackdrop")?.classList.contains("payment-modal-mode")) return;
+
   const holder = document.createElement("div");
   holder.id = "eventModalActions";
   holder.innerHTML = adminEventModalActions(event, requests);
@@ -3821,11 +3897,10 @@ function installAdminEventModalActions(event, requests = []) {
     cashBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
       if (cashBtn.disabled || cashBtn.classList.contains("is-disabled")) return;
-      if (!confirm("Отметить все оплаты мероприятия как “Деньги в кассе” и отправить мероприятие в архив?")) return;
+      if (!confirm("Отметить все оплаты мероприятия как “Деньги в кассе”?")) return;
 
       await api(`/events/${event.id}/cash-received`, { method: "POST" });
-      $("eventModalBackdrop").classList.add("hidden");
-      state.activeAdminTab = "events_archive";
+      await openEventModal(event.id);
       await loadDashboard();
     });
   }
@@ -6934,6 +7009,10 @@ async function submitManagerPayment(eventId) {
 }
 
 function openManagerPaymentModal(eventId) {
+  const staleEventActions = document.getElementById("eventModalActions");
+  if (staleEventActions) staleEventActions.remove();
+  // openManagerPaymentModal__removeEventModalActions
+
   const backdrop = $("eventModalBackdrop");
   const title = $("eventModalTitle");
   const content = $("eventModalContent");
