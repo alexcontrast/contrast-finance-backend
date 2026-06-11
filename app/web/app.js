@@ -2254,6 +2254,23 @@ function injectManagerUxStyles() {
         font-size: 20px !important;
       }
     }
+
+
+    /* v0.37.09: запрет удаления мероприятия, если деньги в кассе */
+    button.is-disabled,
+    button:disabled,
+    .event-delete-btn.is-disabled,
+    .danger-btn.is-disabled {
+      opacity: .48 !important;
+      filter: grayscale(.25) !important;
+      cursor: not-allowed !important;
+      box-shadow: none !important;
+    }
+
+    button:disabled,
+    button.is-disabled {
+      pointer-events: none !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3954,6 +3971,7 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
 
 function canAdminDeleteEvent(event, requests = []) {
   if (!event || !["draft", "revision"].includes(event.status)) return false;
+  if (eventMoneyStatus(event) === "cash_received") return false;
   return !(requests || []).some((request) => !["rejected", "cancelled"].includes(request.status));
 }
 
@@ -3961,8 +3979,14 @@ function adminEventModalActions(event, requests = []) {
   const normalizedRequests = requests || [];
   const deleteStatusAllowed = ["draft", "revision"].includes(event?.status);
   const hasActivePayments = normalizedRequests.some((request) => !["rejected", "cancelled"].includes(request.status));
-  const hasCashReceivedMoney = eventMoneyStatus(event) === "cash_received" || normalizedRequests.some((request) => requestMoneyStatus(request) === "cash_received");
-  const canDelete = deleteStatusAllowed && !hasActivePayments;
+  const eventCashReceived = eventMoneyStatus(event) === "cash_received";
+  const hasCashReceivedMoney = eventCashReceived || normalizedRequests.some((request) => requestMoneyStatus(request) === "cash_received");
+  const deleteDisabledReason = eventCashReceived
+    ? "Нельзя удалить: деньги уже в кассе"
+    : hasActivePayments
+      ? "Нельзя удалить: есть активные оплаты"
+      : "";
+  const canDelete = deleteStatusAllowed && !hasActivePayments && !eventCashReceived;
 
   const showAccept = ["review", "accepted"].includes(event?.status);
   const canAccept = event?.status === "review";
@@ -3974,7 +3998,7 @@ function adminEventModalActions(event, requests = []) {
 
   return `
     <div class="event-modal-actions">
-      ${deleteStatusAllowed ? `<button class="danger-btn event-action-btn event-delete-btn ${canDelete ? "" : "is-disabled"}" ${canDelete ? "" : `disabled title="Нельзя удалить: есть активные оплаты"`} data-admin-event-delete="${event.id}">Удалить</button>` : ""}
+      ${deleteStatusAllowed ? `<button class="danger-btn event-action-btn event-delete-btn ${canDelete ? "" : "is-disabled"}" ${canDelete ? "" : `disabled title="${deleteDisabledReason}"`} data-admin-event-delete="${event.id}" ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>` : ""}
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
       ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
       ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
@@ -5673,7 +5697,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
           ${eventIsCoauthored(event)
             ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
             : `<button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>`}
-          <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} style="margin-left:auto;">Удалить</button>
+          <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} style="margin-left:auto;" ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>
         </div>
       </div>
 

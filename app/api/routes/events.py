@@ -302,6 +302,12 @@ def delete_event(
             detail="Удалять можно только черновики или мероприятия на доработке",
         )
 
+    if getattr(event, "money_status", "waiting_money") == "cash_received" or event.status == "cash_received":
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить мероприятие: деньги уже в кассе",
+        )
+
     if active_payment_requests_count(db, event.id) > 0:
         raise HTTPException(
             status_code=400,
