@@ -178,6 +178,12 @@ def update_event(
     event = get_event_or_404(db, event_id)
     require_event_edit(current_user, event)
 
+    if current_user.role == "manager" and event.status not in {"draft", "revision"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Менеджер может редактировать только черновик или мероприятие на доработке",
+        )
+
     event.client_name = payload.client_name
     event.title = payload.title
     event.event_date = payload.event_date

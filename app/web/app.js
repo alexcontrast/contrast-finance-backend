@@ -2271,6 +2271,26 @@ function injectManagerUxStyles() {
     button.is-disabled {
       pointer-events: none !important;
     }
+
+
+    /* v0.37.10: жёсткая блокировка редактирования менеджером статуса "На проверке" */
+    .manager-event-card.is-readonly input,
+    .manager-event-card.is-readonly select,
+    .manager-event-card.is-readonly textarea,
+    .manager-event-card.is-readonly [data-item-field],
+    .manager-event-card.is-readonly [data-event-field] {
+      pointer-events: none !important;
+      user-select: none !important;
+    }
+
+    .manager-event-card.is-readonly .save-draft-btn,
+    .manager-event-card.is-readonly [data-manager-event-send-review],
+    .manager-event-card.is-readonly .disabled-action {
+      pointer-events: none !important;
+      opacity: .48 !important;
+      cursor: not-allowed !important;
+      box-shadow: none !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2488,21 +2508,26 @@ function getDraftEvent(event) {
   if (!state.managerDraftEventsById) state.managerDraftEventsById = {};
   const key = String(event.id);
 
+  const alwaysFreshFields = [
+    "status",
+    "money_status",
+    "is_coauthored",
+    "coauthor_name",
+    "coauthor_user_id",
+    "owner_manager_id",
+    "owner_manager_name",
+    "share_percent",
+    "active_payment_requests_count",
+    "payment_requests_count",
+  ];
+
   if (!state.managerDraftEventsById[key]) {
     state.managerDraftEventsById[key] = JSON.parse(JSON.stringify(event));
   } else {
-    // Черновик хранит редактируемые поля карточки, но служебные поля соавторства
-    // должны обновляться из свежего manager-dashboard после назначения/удаления соавтора.
-    [
-      "is_coauthored",
-      "coauthor_name",
-      "coauthor_user_id",
-      "owner_manager_id",
-      "owner_manager_name",
-      "share_percent",
-      "active_payment_requests_count",
-      "payment_requests_count",
-    ].forEach((field) => {
+    // Локальный черновик хранит редактируемые поля, но рабочий статус
+    // всегда должен приходить свежим с сервера. Иначе после отправки
+    // "На проверку" карточка могла оставаться редактируемой как draft/revision.
+    alwaysFreshFields.forEach((field) => {
       if (Object.prototype.hasOwnProperty.call(event, field)) {
         state.managerDraftEventsById[key][field] = event[field];
       }
@@ -5009,13 +5034,17 @@ function setDraftItemValue(eventId, itemId, field, value) {
 
 function attachDraftEventInputs(eventId) {
   document.querySelectorAll("[data-event-field]").forEach((input) => {
+    input.disabled = input.disabled || !canEditManagerEvent(state.currentManagerEvent);
+
     input.addEventListener("input", () => {
+      if (input.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
       refreshDraftVisibleCalculations(eventId);
       updateCurrentManagerMiniCardLive();
     });
 
     input.addEventListener("change", () => {
+      if (input.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
       renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
     });
@@ -5186,7 +5215,10 @@ function showDraftSavedHint() {
 
 function attachDraftInputs(eventId) {
   document.querySelectorAll("[data-item-field]").forEach((input) => {
+    input.disabled = input.disabled || !canEditManagerEvent(state.currentManagerEvent);
+
     input.addEventListener("input", () => {
+      if (input.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       const itemId = input.getAttribute("data-item-id");
       const field = input.getAttribute("data-item-field");
       setDraftItemValue(eventId, itemId, field, input.value);
@@ -5195,6 +5227,7 @@ function attachDraftInputs(eventId) {
     });
 
     input.addEventListener("change", () => {
+      if (input.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       const itemId = input.getAttribute("data-item-id");
       const field = input.getAttribute("data-item-field");
       setDraftItemValue(eventId, itemId, field, input.value);
@@ -5300,7 +5333,7 @@ function eventStatusToneClass(status) {
 }
 
 function canEditManagerEvent(event) {
-  return ["draft", "revision"].includes(event?.status);
+  return ["draft", "revision"].includes(String(event?.status || ""));
 }
 
 function canShowDeleteManagerEvent(event) {
@@ -7232,28 +7265,34 @@ function attachManagerCreateWorkspaceActions() {
   const addExternalBtn = document.getElementById("addExternalPositionBtn");
   const addInternalBtn = document.getElementById("addInternalPositionBtn");
   [addExternalBtn, addInternalBtn].filter(Boolean).forEach((button) => {
+    button.disabled = !managerCardCanEdit;
+    button.classList.toggle("disabled-action", !managerCardCanEdit);
     button.addEventListener("click", () => {
-      if (!managerCardCanEdit) return;
+      if (!canEditManagerEvent(state.currentManagerEvent)) return;
       addDraftRegularPosition(state.selectedManagerEventId);
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   });
 
   document.querySelectorAll("[data-delete-item]").forEach((button) => {
+    button.disabled = button.disabled || !managerCardCanEdit;
+    button.classList.toggle("disabled-action", !managerCardCanEdit);
     button.addEventListener("click", () => {
       if (button.disabled) return;
-      if (!managerCardCanEdit) return;
+      if (!canEditManagerEvent(state.currentManagerEvent)) return;
       if (!confirm("Удалить позицию?")) return;
       deleteDraftItem(state.selectedManagerEventId, button.getAttribute("data-delete-item"));
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   });
-document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
+
+  document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
+    button.disabled = !managerCardCanEdit;
+    button.classList.toggle("disabled-action", !managerCardCanEdit);
     button.addEventListener("click", async () => {
-      if (!managerCardCanEdit) return;
+      if (button.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       const eventId = button.getAttribute("data-manager-event-save-draft");
       await withLoading(async () => {
-        await saveDraftEvent(eventId);
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "draft");
@@ -7264,13 +7303,14 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
   });
 
   document.querySelectorAll("[data-manager-event-send-review]").forEach((button) => {
+    button.disabled = !managerCardCanEdit;
+    button.classList.toggle("disabled-action", !managerCardCanEdit);
     button.addEventListener("click", async () => {
-      if (!managerCardCanEdit) return;
+      if (button.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       const eventId = button.getAttribute("data-manager-event-send-review");
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
 
       await withLoading(async () => {
-        await saveDraftEvent(eventId);
         await saveDraftEvent(eventId);
         await saveDraftItems(eventId);
         await updateManagerEventStatus(eventId, "review");
@@ -7280,8 +7320,7 @@ document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) =>
     });
   });
 
-
-attachEstimateKeyboardNavigation();
+  attachEstimateKeyboardNavigation();
   attachEstimateDragAndDrop();
 
   document.querySelectorAll("[data-manager-event-pay]").forEach((button) => {
@@ -7341,7 +7380,7 @@ attachEstimateKeyboardNavigation();
   document.querySelectorAll("[data-manager-event-delete]").forEach((button) => {
     button.addEventListener("click", async () => {
       if (button.disabled) return;
-      if (!managerCardCanEdit) return;
+      if (!canEditManagerEvent(state.currentManagerEvent)) return;
 
       const eventId = button.getAttribute("data-manager-event-delete");
       if (eventHasActivePaymentRequests({ id: eventId })) {
@@ -7358,7 +7397,6 @@ attachEstimateKeyboardNavigation();
   });
 
   bindTaxButtons();
-
 }
 
 
