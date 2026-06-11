@@ -1809,6 +1809,34 @@ function injectManagerUxStyles() {
     .admin-events-table-wrap {
       overflow-x: visible !important;
     }
+
+
+    /* v0.36.03: слово "Заявки" в шапке мероприятий помещается полностью */
+    .admin-events-table th:nth-child(10),
+    .admin-events-table td:nth-child(10) {
+      width: 56px !important;
+      min-width: 56px !important;
+      max-width: 56px !important;
+      text-align: center !important;
+    }
+
+    .admin-events-table th:nth-child(10) {
+      font-size: 9.4px !important;
+      letter-spacing: .035em !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
+    }
+
+    .admin-events-table th:nth-child(7),
+    .admin-events-table td:nth-child(7),
+    .admin-events-table th:nth-child(8),
+    .admin-events-table td:nth-child(8),
+    .admin-events-table th:nth-child(9),
+    .admin-events-table td:nth-child(9) {
+      width: 80px !important;
+      min-width: 80px !important;
+      max-width: 80px !important;
+    }
 `;
   document.head.appendChild(style);
 }
