@@ -1863,6 +1863,51 @@ function injectManagerUxStyles() {
       background: rgba(255, 235, 230, .96) !important;
       border-color: rgba(205, 86, 67, .38) !important;
     }
+
+
+    /* v0.36.05: выравнивание кнопок действий мероприятия */
+    #eventModalActions {
+      align-items: center !important;
+      gap: 8px !important;
+    }
+
+    #eventModalActions .event-action-btn {
+      min-height: 42px !important;
+      height: 42px !important;
+      padding: 0 18px !important;
+      border-radius: 16px !important;
+      font-size: 14px !important;
+      font-weight: 950 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+    }
+
+    #eventModalActions .event-accept-btn {
+      background: rgba(216, 244, 210, .98) !important;
+      border: 1px solid rgba(53, 150, 57, .35) !important;
+      color: #1f7a35 !important;
+    }
+
+    #eventModalActions .event-cash-btn {
+      background: #7CFF35 !important;
+      border: 1px solid rgba(72, 195, 12, .62) !important;
+      color: #173f0b !important;
+      box-shadow: 0 10px 24px rgba(124, 255, 53, .22) !important;
+    }
+
+    #eventModalActions .event-revision-btn {
+      background: rgba(244, 247, 241, .98) !important;
+      border: 1px solid rgba(125, 133, 118, .32) !important;
+      color: #52594f !important;
+    }
+
+    #eventModalActions .event-delete-btn {
+      min-height: 42px !important;
+      height: 42px !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3482,13 +3527,15 @@ function canAdminDeleteEvent(event, requests = []) {
 function adminEventModalActions(event, requests = []) {
   const canDelete = canAdminDeleteEvent(event, requests);
   const canAccept = event?.status === "review";
+  const canRevision = ["review", "accepted"].includes(event?.status);
   const canCashReceived = !["draft", "revision", "cancelled", "cash_received"].includes(event?.status);
 
   return `
     <div class="event-modal-actions">
-      ${canDelete ? `<button class="danger-btn" data-admin-event-delete="${event.id}">Удалить</button>` : ""}
-      ${canAccept ? `<button class="secondary" data-admin-event-accept="${event.id}">Принять</button>` : ""}
-      ${canCashReceived ? `<button class="primary" data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
+      ${canDelete ? `<button class="danger-btn event-action-btn event-delete-btn" data-admin-event-delete="${event.id}">Удалить</button>` : ""}
+      ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
+      ${canAccept ? `<button class="event-action-btn event-accept-btn" data-admin-event-accept="${event.id}">Принять</button>` : ""}
+      ${canCashReceived ? `<button class="event-action-btn event-cash-btn" data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
     </div>
   `;
 }
@@ -3514,6 +3561,16 @@ function installAdminEventModalActions(event, requests = []) {
 
       await api(`/events/${event.id}`, { method: "DELETE" });
       $("eventModalBackdrop").classList.add("hidden");
+      await loadDashboard();
+    });
+  }
+
+  const revisionBtn = holder.querySelector("[data-admin-event-revision]");
+  if (revisionBtn) {
+    revisionBtn.addEventListener("click", async (clickEvent) => {
+      clickEvent.stopPropagation();
+      await api(`/events/${event.id}/revision`, { method: "POST" });
+      await openEventModal(event.id);
       await loadDashboard();
     });
   }

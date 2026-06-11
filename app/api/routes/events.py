@@ -225,6 +225,27 @@ def accept_event(
     return event
 
 
+@router.post("/events/{event_id}/revision", response_model=EventRead)
+def send_event_to_revision(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    if event.status not in {"review", "accepted"}:
+        raise HTTPException(status_code=400, detail="На доработку можно отправить только мероприятие на проверке или принятое")
+
+    event.status = "revision"
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 @router.post("/events/{event_id}/cash-received", response_model=EventRead)
 def mark_event_cash_received(
     event_id: int,
