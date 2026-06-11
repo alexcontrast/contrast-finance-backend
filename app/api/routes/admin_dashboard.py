@@ -304,6 +304,7 @@ def get_admin_dashboard(
     payment_rows = [
         AdminPaymentRequestRowRead(
             id=request.id,
+            created_at=request.created_at,
             event_id=request.event_id,
             event_title=event_title_by_id.get(request.event_id),
             position=request.item_name_snapshot,

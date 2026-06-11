@@ -40,6 +40,7 @@ class AdminEventRowRead(BaseModel):
 
 class AdminPaymentRequestRowRead(BaseModel):
     id: int
+    created_at: datetime | None = None
     event_id: int
     event_title: str | None
     position: str | None

@@ -3177,7 +3177,7 @@ function filteredPaymentRequests(requests, mode = "regular") {
   }
 
   if (state.paymentCustomerFilter && state.paymentCustomerFilter !== "all") {
-    list = list.filter((request) => String(request.client_name || request.customer_name || "") === String(state.paymentCustomerFilter));
+    list = list.filter((request) => String(paymentRequestClientName(request)) === String(state.paymentCustomerFilter));
   }
 
   if (state.paymentManagerFilter && state.paymentManagerFilter !== "all") {
@@ -3344,9 +3344,9 @@ function uniqueSortedValues(values) {
     .sort((a, b) => a.localeCompare(b, "ru"));
 }
 
-function paymentCustomerFilterOptions(requests, mode = "regular") {
-  const base = mode === "archive" ? archivedPaymentRequests(requests) : activePaymentRequests(requests);
-  return uniqueSortedValues(base.map((request) => clientNameForRequest(request)));
+function paymentCustomerFilterOptions(requests) {
+  const names = [...new Set((requests || []).map((request) => paymentRequestClientName(request)).filter(Boolean))];
+  return names.sort((a, b) => String(a).localeCompare(String(b), "ru"));
 }
 
 function paymentManagerFilterOptions(requests, mode = "regular") {
@@ -3586,6 +3586,23 @@ async function openManagerPaymentRequestsModal(eventId) {
 }
 
 
+
+function paymentRequestDateValue(request) {
+  return request?.created_at || request?.created_date || request?.date_created || request?.request_date || request?.createdAt || request?.date || "";
+}
+
+function paymentRequestClientName(request) {
+  return request?.client_name || request?.customer_name || request?.event_client_name || request?.client || request?.customer || request?.company_name || "";
+}
+
+function paymentRequestManagerName(request) {
+  return request?.manager_name || managerNameById(request?.manager_id) || managerNameForRequest(request) || "";
+}
+
+function paymentRequestEventTitle(request) {
+  return request?.event_title || request?.title || request?.event_name || request?.event || "";
+}
+
 function renderPaymentRequestsTable(requests, title = "Заявки", mode = "regular") {
   const filtered = filteredPaymentRequests(requests || [], mode);
 
@@ -3617,10 +3634,10 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
           <tbody>
             ${filtered.map((request) => `
               <tr>
-                <td>${formatDateRu(request.created_at || request.created_date || request.date_created || request.request_date) || ""}</td>
-                <td>${request.manager_name || managerNameById(request.manager_id) || managerNameForRequest(request) || ""}</td>
-                <td>${request.client_name || request.customer_name || request.event_client_name || request.client || ""}</td>
-                <td>${request.event_title || request.title || request.event_name || ""}</td>
+                <td>${formatDateRu(paymentRequestDateValue(request)) || paymentRequestDateValue(request) || ""}</td>
+                <td>${paymentRequestManagerName(request)}</td>
+                <td>${paymentRequestClientName(request)}</td>
+                <td>${paymentRequestEventTitle(request)}</td>
                 <td>${request.position || request.item_name_snapshot || ""}</td>
                 <td><strong>${formatMoney(request.amount_requested)}</strong></td>
                 <td>${paymentMethodLabel(request.payment_method)}</td>
