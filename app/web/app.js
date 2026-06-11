@@ -2291,6 +2291,92 @@ function injectManagerUxStyles() {
       cursor: not-allowed !important;
       box-shadow: none !important;
     }
+
+
+    /* v0.37.12: фикс модалки менеджера "Мои оплаты" */
+    #plansModalBackdrop.manager-payments-modal .modal,
+    #plansModalBackdrop.manager-payments-modal .modal-card,
+    #plansModalBackdrop.manager-payments-modal .event-modal,
+    #eventModalBackdrop.manager-payments-modal .modal,
+    #eventModalBackdrop.manager-payments-modal .modal-card,
+    #eventModalBackdrop.manager-payments-modal .event-modal {
+      width: min(860px, calc(100vw - 32px)) !important;
+      max-width: 860px !important;
+      min-width: 0 !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal .modal-head,
+    #eventModalBackdrop.manager-payments-modal .modal-head {
+      display: flex !important;
+      align-items: flex-start !important;
+      justify-content: space-between !important;
+      gap: 16px !important;
+      flex-wrap: nowrap !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal .modal-head > div,
+    #eventModalBackdrop.manager-payments-modal .modal-head > div {
+      min-width: 0 !important;
+      flex: 1 1 auto !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal .modal-head h2,
+    #eventModalBackdrop.manager-payments-modal .modal-head h2 {
+      margin: 0 !important;
+      white-space: normal !important;
+      overflow-wrap: anywhere !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal .modal-head button,
+    #eventModalBackdrop.manager-payments-modal .modal-head button {
+      flex: 0 0 auto !important;
+      white-space: nowrap !important;
+      align-self: flex-start !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal #plansModalContent,
+    #eventModalBackdrop.manager-payments-modal #eventModalContent {
+      max-width: 100% !important;
+      overflow-x: hidden !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal .table-wrap,
+    #plansModalBackdrop.manager-payments-modal .payments-list,
+    #plansModalBackdrop.manager-payments-modal .manager-payments-list,
+    #eventModalBackdrop.manager-payments-modal .table-wrap,
+    #eventModalBackdrop.manager-payments-modal .payments-list,
+    #eventModalBackdrop.manager-payments-modal .manager-payments-list {
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: auto !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal table,
+    #eventModalBackdrop.manager-payments-modal table {
+      width: 100% !important;
+      min-width: 720px !important;
+      table-layout: fixed !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal th,
+    #plansModalBackdrop.manager-payments-modal td,
+    #eventModalBackdrop.manager-payments-modal th,
+    #eventModalBackdrop.manager-payments-modal td {
+      min-width: 0 !important;
+      max-width: none !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      vertical-align: middle !important;
+      font-size: 12px !important;
+      padding: 8px 8px !important;
+    }
+
+    #plansModalBackdrop.manager-payments-modal .request-actions-row,
+    #eventModalBackdrop.manager-payments-modal .request-actions-row {
+      justify-content: flex-start !important;
+      gap: 6px !important;
+      flex-wrap: nowrap !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3585,6 +3671,13 @@ function renderManagerPaymentRequestsModal(eventId) {
 }
 
 async function openManagerPaymentRequestsModal(eventId) {
+  const paymentsModalBackdrop = $("plansModalBackdrop") || $("eventModalBackdrop");
+  if (paymentsModalBackdrop) {
+    paymentsModalBackdrop.classList.add("manager-payments-modal");
+    paymentsModalBackdrop.classList.remove("manager-create-modal", "payment-modal-mode", "pin-modal-mode", "profile-modal-mode");
+  }
+  // managerPaymentsModalClass_v03712
+
   const backdrop = $("eventModalBackdrop");
   const title = $("eventModalTitle");
   const content = $("eventModalContent");
@@ -4102,6 +4195,10 @@ function installAdminEventModalActions(event, requests = []) {
 
 
 async function openEventModal(eventId) {
+  const stalePaymentsModal = $("plansModalBackdrop") || $("eventModalBackdrop");
+  if (stalePaymentsModal) stalePaymentsModal.classList.remove("manager-payments-modal");
+  // openEventModal_removeManagerPaymentsModal_v03712
+
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
   $("eventModalBackdrop").classList.remove("payment-modal-mode");
@@ -5838,6 +5935,10 @@ function renderManagerCreateModal() {
 }
 
 function openManagerCreateModal() {
+  const stalePaymentsModal = $("plansModalBackdrop") || $("eventModalBackdrop");
+  if (stalePaymentsModal) stalePaymentsModal.classList.remove("manager-payments-modal");
+  // openManagerCreateModal_removeManagerPaymentsModal_v03712
+
   const title = document.getElementById("plansModalTitle");
   if (title) {
     title.textContent = "Создать мероприятие";
@@ -7211,6 +7312,10 @@ async function submitManagerPayment(eventId) {
 }
 
 function openManagerPaymentModal(eventId) {
+  const stalePaymentsModal = $("plansModalBackdrop") || $("eventModalBackdrop");
+  if (stalePaymentsModal) stalePaymentsModal.classList.remove("manager-payments-modal");
+  // openManagerPaymentModal_removeManagerPaymentsModal_v03712
+
   const staleEventActions = document.getElementById("eventModalActions");
   if (staleEventActions) staleEventActions.remove();
   // openManagerPaymentModal__removeEventModalActions
