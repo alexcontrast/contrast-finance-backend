@@ -1908,6 +1908,33 @@ function injectManagerUxStyles() {
       min-height: 42px !important;
       height: 42px !important;
     }
+
+
+    /* v0.36.06: статусы Принято / Деньги в кассе и неактивные админ-кнопки */
+    .status.accepted,
+    .admin-events-table .admin-event-status-badge.accepted {
+      background: rgba(216, 244, 210, .98) !important;
+      border-color: rgba(53, 150, 57, .35) !important;
+      color: #1f7a35 !important;
+      box-shadow: none !important;
+    }
+
+    .status.cash_received,
+    .admin-events-table .admin-event-status-badge.cash_received {
+      background: #7CFF35 !important;
+      border-color: rgba(72, 195, 12, .62) !important;
+      color: #173f0b !important;
+      box-shadow: 0 8px 18px rgba(124, 255, 53, .18) !important;
+    }
+
+    #eventModalActions .event-action-btn.is-disabled,
+    #eventModalActions .event-action-btn:disabled {
+      opacity: .48 !important;
+      filter: grayscale(.25) !important;
+      cursor: not-allowed !important;
+      box-shadow: none !important;
+      pointer-events: none !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -3525,16 +3552,20 @@ function canAdminDeleteEvent(event, requests = []) {
 }
 
 function adminEventModalActions(event, requests = []) {
-  const canDelete = canAdminDeleteEvent(event, requests);
+  const deleteStatusAllowed = ["draft", "revision"].includes(event?.status);
+  const hasActivePayments = (requests || []).some((request) => !["rejected", "cancelled"].includes(request.status));
+  const canDelete = deleteStatusAllowed && !hasActivePayments;
+
+  const showAccept = ["review", "accepted"].includes(event?.status);
   const canAccept = event?.status === "review";
   const canRevision = ["review", "accepted"].includes(event?.status);
   const canCashReceived = !["draft", "revision", "cancelled", "cash_received"].includes(event?.status);
 
   return `
     <div class="event-modal-actions">
-      ${canDelete ? `<button class="danger-btn event-action-btn event-delete-btn" data-admin-event-delete="${event.id}">Удалить</button>` : ""}
+      ${deleteStatusAllowed ? `<button class="danger-btn event-action-btn event-delete-btn ${canDelete ? "" : "is-disabled"}" ${canDelete ? "" : `disabled title="Нельзя удалить: есть активные оплаты"`} data-admin-event-delete="${event.id}">Удалить</button>` : ""}
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
-      ${canAccept ? `<button class="event-action-btn event-accept-btn" data-admin-event-accept="${event.id}">Принять</button>` : ""}
+      ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
       ${canCashReceived ? `<button class="event-action-btn event-cash-btn" data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
     </div>
   `;
@@ -3557,6 +3588,7 @@ function installAdminEventModalActions(event, requests = []) {
   if (deleteBtn) {
     deleteBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
+      if (deleteBtn.disabled || deleteBtn.classList.contains("is-disabled")) return;
       if (!confirm("Удалить мероприятие?")) return;
 
       await api(`/events/${event.id}`, { method: "DELETE" });
@@ -3579,6 +3611,7 @@ function installAdminEventModalActions(event, requests = []) {
   if (acceptBtn) {
     acceptBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
+      if (acceptBtn.disabled || acceptBtn.classList.contains("is-disabled")) return;
       await api(`/events/${event.id}/accept`, { method: "POST" });
       await openEventModal(event.id);
       await loadDashboard();
