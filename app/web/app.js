@@ -2829,7 +2829,7 @@ function eventMoneyStatus(event) {
 }
 
 function eventIsMoneyArchive(event) {
-  return eventMoneyStatus(event) === "cash_received" && !["draft", "revision", "cancelled"].includes(event?.status);
+  return event?.status === "accepted" && eventMoneyStatus(event) === "cash_received";
 }
 
 function modalFilteredRequests(requests, status) {
