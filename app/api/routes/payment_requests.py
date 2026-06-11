@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.payment_request import (
     PaymentRequestCardRead,
     PaymentRequestCreate,
+    PaymentRequestMoneyStatusUpdate,
     PaymentRequestRead,
     PaymentRequestStatusUpdate,
 )
