@@ -199,6 +199,64 @@ def update_event(
     return event
 
 
+def require_admin_event_action(current_user: User) -> None:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admin can perform this action")
+
+
+@router.post("/events/{event_id}/accept", response_model=EventRead)
+def accept_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    if event.status != "review":
+        raise HTTPException(status_code=400, detail="Принять можно только мероприятие на проверке")
+
+    event.status = "accepted"
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.post("/events/{event_id}/cash-received", response_model=EventRead)
+def mark_event_cash_received(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    payment_requests = db.execute(
+        select(PaymentRequest).where(
+            PaymentRequest.event_id == event.id,
+            PaymentRequest.status.notin_(["rejected", "cancelled"]),
+        )
+    ).scalars().all()
+
+    now = datetime.utcnow()
+    for request in payment_requests:
+        request.status = "cash_received"
+        request.cash_received_at = now
+        request.updated_at = now
+        db.add(request)
+
+    event.status = "cash_received"
+    event.updated_at = now
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
 @router.delete("/events/{event_id}")
 def delete_event(
     event_id: int,

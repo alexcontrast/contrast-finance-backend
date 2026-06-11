@@ -1837,6 +1837,32 @@ function injectManagerUxStyles() {
       min-width: 80px !important;
       max-width: 80px !important;
     }
+
+
+    /* v0.36.04: действия админа в модалке мероприятия */
+    #eventModalActions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-left: auto;
+      margin-right: 8px;
+    }
+
+    #eventModalActions button {
+      min-height: 38px;
+      padding: 8px 13px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    #eventModalActions .danger-btn {
+      color: #b84835 !important;
+      background: rgba(255, 235, 230, .96) !important;
+      border-color: rgba(205, 86, 67, .38) !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -1998,12 +2024,13 @@ function statusLabel(status) {
     draft: "Черновик",
     review: "На проверке",
     revision: "На доработке",
+    accepted: "Принято",
     completed: "Завершено",
+    cash_received: "Деньги в кассе",
     cancelled: "Отменено",
     new: "Новая",
     to_pay: "На оплату",
     paid: "Оплачено",
-    cash_received: "Деньги в кассе",
     rejected: "Отменено",
     tax_check_needed: "Нужна проверка",
   }[status] || status;
@@ -2738,6 +2765,7 @@ function renderAdminTabs() {
   const tabs = [
     ["overview", "Обзор"],
     ["events", "Мероприятия"],
+    ["events_archive", "Архив мероприятий"],
     ["requests", "Заявки"],
     ["requests_archive", "Архив заявок"],
     ["plans", "Задать планы"],
@@ -3445,6 +3473,76 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
 }
 
 
+
+function canAdminDeleteEvent(event, requests = []) {
+  if (!event || !["draft", "revision"].includes(event.status)) return false;
+  return !(requests || []).some((request) => !["rejected", "cancelled"].includes(request.status));
+}
+
+function adminEventModalActions(event, requests = []) {
+  const canDelete = canAdminDeleteEvent(event, requests);
+  const canAccept = event?.status === "review";
+  const canCashReceived = !["draft", "revision", "cancelled", "cash_received"].includes(event?.status);
+
+  return `
+    <div class="event-modal-actions">
+      ${canDelete ? `<button class="danger-btn" data-admin-event-delete="${event.id}">Удалить</button>` : ""}
+      ${canAccept ? `<button class="secondary" data-admin-event-accept="${event.id}">Принять</button>` : ""}
+      ${canCashReceived ? `<button class="primary" data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
+    </div>
+  `;
+}
+
+function installAdminEventModalActions(event, requests = []) {
+  const closeBtn = $("eventModalCloseBtn");
+  if (!closeBtn) return;
+
+  const oldActions = document.getElementById("eventModalActions");
+  if (oldActions) oldActions.remove();
+
+  const holder = document.createElement("div");
+  holder.id = "eventModalActions";
+  holder.innerHTML = adminEventModalActions(event, requests);
+
+  closeBtn.parentElement.insertBefore(holder, closeBtn);
+
+  const deleteBtn = holder.querySelector("[data-admin-event-delete]");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async (clickEvent) => {
+      clickEvent.stopPropagation();
+      if (!confirm("Удалить мероприятие?")) return;
+
+      await api(`/events/${event.id}`, { method: "DELETE" });
+      $("eventModalBackdrop").classList.add("hidden");
+      await loadDashboard();
+    });
+  }
+
+  const acceptBtn = holder.querySelector("[data-admin-event-accept]");
+  if (acceptBtn) {
+    acceptBtn.addEventListener("click", async (clickEvent) => {
+      clickEvent.stopPropagation();
+      await api(`/events/${event.id}/accept`, { method: "POST" });
+      await openEventModal(event.id);
+      await loadDashboard();
+    });
+  }
+
+  const cashBtn = holder.querySelector("[data-admin-event-cash-received]");
+  if (cashBtn) {
+    cashBtn.addEventListener("click", async (clickEvent) => {
+      clickEvent.stopPropagation();
+      if (!confirm("Отметить все оплаты мероприятия как “Деньги в кассе” и отправить мероприятие в архив?")) return;
+
+      await api(`/events/${event.id}/cash-received`, { method: "POST" });
+      $("eventModalBackdrop").classList.add("hidden");
+      state.activeAdminTab = "events_archive";
+      await loadDashboard();
+    });
+  }
+}
+
+
 async function openEventModal(eventId) {
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
@@ -3515,6 +3613,7 @@ async function openEventModal(eventId) {
       </div>
     `;
 
+    installAdminEventModalActions(event, requests || []);
     attachPaymentRequestActions();
     attachEventModalRequestFilter(requests || []);
   } catch (error) {
@@ -3686,11 +3785,14 @@ function eventMatchesAdminFilters(event) {
 }
 
 
-function renderAdminEvents(data) {
+function renderAdminEvents(data, mode = "active") {
   const groupedEvents = groupedAdminEventsForTable(data.events || []);
-  const events = groupedEvents.filter(eventMatchesAdminFilters);
+  const byMode = mode === "archive"
+    ? groupedEvents.filter((event) => event.status === "cash_received")
+    : groupedEvents.filter((event) => event.status !== "cash_received");
+  const events = byMode.filter(eventMatchesAdminFilters);
   return `
-    ${renderEventFilters(data.events || [])}
+    ${renderEventFilters(byMode)}
     ${renderEventsTable(events, true)}
   `;
 }
@@ -3824,7 +3926,9 @@ function renderAdminDashboard(data) {
   if (state.activeAdminTab === "overview") {
     $("dashboardContent").innerHTML = renderAdminOverview(data);
   } else if (state.activeAdminTab === "events") {
-    $("dashboardContent").innerHTML = renderAdminEvents(data);
+    $("dashboardContent").innerHTML = renderAdminEvents(data, "active");
+  } else if (state.activeAdminTab === "events_archive") {
+    $("dashboardContent").innerHTML = renderAdminEvents(data, "archive");
   } else if (state.activeAdminTab === "requests") {
     $("dashboardContent").innerHTML = renderPaymentRequestsTable(data.payment_requests || [], "Все заявки", "regular");
   } else if (state.activeAdminTab === "requests_archive") {
