@@ -23,6 +23,7 @@ class AdminEventRowRead(BaseModel):
     title: str
     event_date: date
     status: str
+    client_calc_type: str | None = None
     department_id: int
     department_name: str | None
     manager_id: int

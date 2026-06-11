@@ -242,6 +242,7 @@ def get_admin_dashboard(
                     title=event.title,
                     event_date=event.event_date,
                     status=event.status,
+                    client_calc_type=event.client_calc_type,
                     department_id=allocated_department_id,
                     department_name=allocated_department_name,
                     manager_id=allocated_manager.id if allocated_manager else event.manager_id,

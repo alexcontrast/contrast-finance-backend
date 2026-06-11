@@ -1790,7 +1790,7 @@ function paymentMethodLabel(method) {
 
 function calcTypeLabel(type) {
   return {
-    ip_contrast_event: "ИП Contrast Event",
+    ip_contrast_event: "Contrast Event",
     our_no_vat: "ОУР без НДС",
     simplified: "Упрощенка",
     cash: "Нал",
@@ -2568,6 +2568,7 @@ function renderEventsTable(events, allowClick = false) {
             <th>Менеджер</th>
             <th>Заказчик</th>
             <th>Мероприятие</th>
+            <th>Оплата</th>
             <th>Статус</th>
             <th>Оборот</th>
             <th>Доход</th>
@@ -2582,6 +2583,7 @@ function renderEventsTable(events, allowClick = false) {
               <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
+              <td>${calcTypeLabel(event.client_calc_type)}</td>
               <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>
               <td>${formatMoney(event.external_total)}</td>
               <td>${formatMoney(event.final_company_income)}</td>
@@ -3149,8 +3151,28 @@ function customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, v
   return Math.max(0, Math.round(turnover - subtotal - asNumber(taxesAmount) - asNumber(vatAmount)));
 }
 
+
+function customerEstimateVatTopAmount(event, summary, items, taxesAmount, agencyAmount) {
+  // В строке сметы "НДС" нужен НДС по смете — то есть та часть,
+  // которая добивает позиции + комиссия + налоги до оборота.
+  // Верхняя карточка "НДС" остаётся отдельной: НДС к оплате / с учётом вычетов.
+  const explicit = asNumber(
+    summary?.estimate_vat_amount ??
+    summary?.customer_vat_top_amount ??
+    summary?.customer_vat_amount ??
+    0
+  );
+  if (explicit > 0) return explicit;
+
+  const turnover = customerTurnoverAmount(summary);
+  const subtotal = estimateExternalSubtotal(items);
+  return Math.max(0, Math.round(turnover - subtotal - asNumber(agencyAmount) - asNumber(taxesAmount)));
+}
+
+
 function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
-  const agencyAmount = customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, vatAmount);
+  const agencyAmount = customerAgencyCommissionTopAmount(event, summary, items, taxesAmount, 0);
+  const estimateVatAmount = customerEstimateVatTopAmount(event, summary, items, taxesAmount, agencyAmount);
   const rows = [];
 
   if (agencyAmount > 0) {
@@ -3161,8 +3183,8 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
     rows.push({ name: "Налоги", amount: taxesAmount });
   }
 
-  if (asNumber(vatAmount) > 0) {
-    rows.push({ name: "НДС", amount: vatAmount });
+  if (asNumber(estimateVatAmount) > 0) {
+    rows.push({ name: "НДС", amount: estimateVatAmount });
   }
 
   return rows.map((row) => `
