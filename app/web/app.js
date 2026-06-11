@@ -2006,6 +2006,81 @@ function injectManagerUxStyles() {
       border-color: rgba(150, 150, 150, .28) !important;
       color: #686868 !important;
     }
+
+
+    /* v0.37.02: отдельная колонка "Статус денег" в мероприятиях */
+    .admin-events-table th:nth-child(1),
+    .admin-events-table td:nth-child(1) {
+      width: 70px !important;
+      min-width: 70px !important;
+      max-width: 70px !important;
+    }
+
+    .admin-events-table th:nth-child(2),
+    .admin-events-table td:nth-child(2) {
+      width: 13% !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table th:nth-child(3),
+    .admin-events-table td:nth-child(3) {
+      width: 12% !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table th:nth-child(4),
+    .admin-events-table td:nth-child(4) {
+      width: 14% !important;
+      min-width: 0 !important;
+    }
+
+    .admin-events-table th:nth-child(5),
+    .admin-events-table td:nth-child(5) {
+      width: 82px !important;
+      min-width: 82px !important;
+      max-width: 82px !important;
+    }
+
+    .admin-events-table th:nth-child(6),
+    .admin-events-table td:nth-child(6) {
+      width: 84px !important;
+      min-width: 84px !important;
+      max-width: 84px !important;
+    }
+
+    .admin-events-table th:nth-child(7),
+    .admin-events-table td:nth-child(7) {
+      width: 104px !important;
+      min-width: 104px !important;
+      max-width: 104px !important;
+    }
+
+    .admin-events-table th:nth-child(8),
+    .admin-events-table td:nth-child(8),
+    .admin-events-table th:nth-child(9),
+    .admin-events-table td:nth-child(9),
+    .admin-events-table th:nth-child(10),
+    .admin-events-table td:nth-child(10) {
+      width: 76px !important;
+      min-width: 76px !important;
+      max-width: 76px !important;
+    }
+
+    .admin-events-table th:nth-child(11),
+    .admin-events-table td:nth-child(11) {
+      width: 52px !important;
+      min-width: 52px !important;
+      max-width: 52px !important;
+      text-align: center !important;
+    }
+
+    .admin-event-money-badge {
+      margin-left: 0 !important;
+      max-width: 100% !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      justify-content: center !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2599,7 +2674,6 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
               <th>Налоговый статус</th>
               <th>Статус оплаты</th>
               <th>Статус денег</th>
-              <th>Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -2612,12 +2686,6 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
                 <td>${request.tax_status || request.tax_status_label || ""}</td>
                 <td><span class="status ${request.status} event-request-status-badge">${statusLabel(request.status)}</span></td>
                 <td><span class="status ${requestMoneyStatus(request)} event-request-status-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
-                <td>
-                  <div class="inline-actions">
-                    ${adminRequestActions(request)}
-                    ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
-                  </div>
-                </td>
               </tr>
             `).join("")}
           </tbody>
@@ -2653,11 +2721,18 @@ function attachManagerSalaryRequestButton() {
 }
 
 function activePaymentRequests(requests) {
-  return (requests || []).filter((request) => !["rejected", "cancelled"].includes(request.status));
+  return (requests || []).filter((request) => {
+    if (["rejected", "cancelled"].includes(request.status)) return false;
+    if (request.status === "paid" && requestMoneyStatus(request) === "cash_received") return false;
+    return true;
+  });
 }
 
 function archivedPaymentRequests(requests) {
-  return (requests || []).filter((request) => ["rejected", "cancelled"].includes(request.status));
+  return (requests || []).filter((request) => {
+    if (["rejected", "cancelled"].includes(request.status)) return true;
+    return request.status === "paid" && requestMoneyStatus(request) === "cash_received";
+  });
 }
 
 
@@ -2909,12 +2984,12 @@ function filteredPaymentRequests(requests, mode = "regular") {
   let list = requests || [];
 
   if (mode === "archive") {
-    list = list.filter((request) => ["rejected", "cancelled"].includes(request.status));
+    list = archivedPaymentRequests(list);
     if (state.paymentStatusFilter !== "all" && state.paymentStatusFilter !== "active") {
       list = list.filter((request) => request.status === state.paymentStatusFilter);
     }
   } else {
-    list = list.filter((request) => !["rejected", "cancelled"].includes(request.status));
+    list = activePaymentRequests(list);
     if (state.paymentStatusFilter !== "active" && state.paymentStatusFilter !== "all") {
       list = list.filter((request) => request.status === state.paymentStatusFilter);
     }
@@ -3003,6 +3078,7 @@ function renderEventsTable(events, allowClick = false) {
             <th>Мероприятие</th>
             <th>Оплата</th>
             <th>Статус</th>
+            <th>Статус денег</th>
             <th>Оборот</th>
             <th>Доход</th>
             <th>ЗП менеджера</th>
@@ -3017,7 +3093,8 @@ function renderEventsTable(events, allowClick = false) {
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
               <td>${calcTypeLabel(event.client_calc_type)}</td>
-              <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span>${eventMoneyStatus(event) === "cash_received" ? `<span class="status cash_received admin-event-money-badge">Деньги в кассе</span>` : ""}</td>
+              <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>
+              <td><span class="status ${eventMoneyStatus(event)} admin-event-money-badge">${statusLabel(eventMoneyStatus(event))}</span></td>
               <td>${formatMoney(event.external_total)}</td>
               <td>${formatMoney(event.final_company_income)}</td>
               <td>${formatMoney(event.manager_salary || 0)}</td>
@@ -3378,12 +3455,6 @@ function renderPaymentRequestsTable(requests, title = "Заявки на опл�
               <td>${request.tax_status || request.tax_status_label || ""}</td>
               <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
               <td><span class="status ${requestMoneyStatus(request)}">${statusLabel(requestMoneyStatus(request))}</span></td>
-              <td>
-                <div class="inline-actions">
-                  ${adminRequestActions(request)}
-                  ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
-                </div>
-              </td>
             </tr>
           `).join("")}
         </tbody>
