@@ -1968,6 +1968,26 @@ function injectManagerUxStyles() {
       font-size: 13px;
       font-weight: 800;
     }
+
+
+    /* v0.36.09: миникарточка мероприятия "Деньги в кассе" зелёная как "Принято" */
+    .manager-event-card.status-cash_received,
+    .manager-event-card.cash_received,
+    .event-card.status-cash_received,
+    .event-card.cash_received {
+      background: rgba(216, 244, 210, .98) !important;
+      border-color: rgba(53, 150, 57, .35) !important;
+      color: #1f3f24 !important;
+    }
+
+    .manager-event-card.status-cash_received .status,
+    .manager-event-card.cash_received .status,
+    .event-card.status-cash_received .status,
+    .event-card.cash_received .status {
+      background: rgba(216, 244, 210, .98) !important;
+      border-color: rgba(53, 150, 57, .35) !important;
+      color: #1f7a35 !important;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -4900,7 +4920,7 @@ function eventStatusToneClass(status) {
   const normalized = String(status || "").toLowerCase();
 
   if (["review", "on_review", "pending", "pending_review"].includes(normalized)) return "status-tone-review";
-  if (["accepted", "approved", "completed", "done", "archive", "archived"].includes(normalized)) return "status-tone-accepted";
+  if (["accepted", "approved", "completed", "done", "archive", "archived", "cash_received"].includes(normalized)) return "status-tone-accepted";
   if (["revision", "needs_revision", "rework"].includes(normalized)) return "status-tone-draft";
   return "status-tone-draft";
 }
