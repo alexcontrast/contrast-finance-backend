@@ -299,14 +299,15 @@ def get_admin_dashboard(
     else:
         payment_requests = []
 
-    event_title_by_id = {event.id: event.title for event in events}
+    event_by_id = {event.id: event for event in events}
 
     payment_rows = [
         AdminPaymentRequestRowRead(
             id=request.id,
             created_at=request.created_at,
             event_id=request.event_id,
-            event_title=event_title_by_id.get(request.event_id),
+            event_title=event_by_id.get(request.event_id).title if event_by_id.get(request.event_id) else None,
+            client_name=event_by_id.get(request.event_id).client_name if event_by_id.get(request.event_id) else None,
             position=request.item_name_snapshot,
             amount_requested=request.amount_requested,
             payment_method=payment_method_label(request.payment_method),
