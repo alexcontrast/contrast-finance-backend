@@ -1943,6 +1943,31 @@ function injectManagerUxStyles() {
       border: 1px solid rgba(125, 133, 118, .32) !important;
       color: #52594f !important;
     }
+
+
+    /* v0.36.08: статус денег в кассе виден в модалке, повторная кнопка отключена */
+    .event-request-status-badge.cash_received,
+    .event-request-cash-note .status.cash_received {
+      background: #7CFF35 !important;
+      border-color: rgba(72, 195, 12, .62) !important;
+      color: #173f0b !important;
+      box-shadow: 0 8px 18px rgba(124, 255, 53, .16) !important;
+      white-space: nowrap !important;
+    }
+
+    .event-request-cash-note {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 12px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(124, 255, 53, .10);
+      border: 1px solid rgba(72, 195, 12, .20);
+      color: #264620;
+      font-size: 13px;
+      font-weight: 800;
+    }
 `;
   document.head.appendChild(style);
 }
@@ -2483,6 +2508,12 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
       <h3>Заявки мероприятия</h3>
       <span class="muted">${filtered.length} из ${(requests || []).length} шт.</span>
     </div>
+    ${(requests || []).some((request) => request.status === "cash_received") ? `
+      <div class="event-request-cash-note">
+        <span class="status cash_received event-request-status-badge">Деньги в кассе</span>
+        <span>По мероприятию уже есть оплаты со статусом “Деньги в кассе”. Повторно отправлять всё мероприятие в кассу нельзя.</span>
+      </div>
+    ` : ""}
 
     <div class="filters-row">
       <label class="compact-label">Статус оплаты
@@ -2519,7 +2550,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
                 <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
                 <td>${paymentMethodLabel(request.payment_method)}</td>
                 <td>${request.tax_status || request.tax_status_label || ""}</td>
-                <td><span class="status ${request.status}">${statusLabel(request.status)}</span></td>
+                <td><span class="status ${request.status} event-request-status-badge">${statusLabel(request.status)}</span></td>
                 <td>
                   <div class="inline-actions">
                     ${adminRequestActions(request)}
@@ -3560,15 +3591,19 @@ function canAdminDeleteEvent(event, requests = []) {
 }
 
 function adminEventModalActions(event, requests = []) {
+  const normalizedRequests = requests || [];
   const deleteStatusAllowed = ["draft", "revision"].includes(event?.status);
-  const hasActivePayments = (requests || []).some((request) => !["rejected", "cancelled"].includes(request.status));
+  const hasActivePayments = normalizedRequests.some((request) => !["rejected", "cancelled"].includes(request.status));
+  const hasCashReceivedPayments = normalizedRequests.some((request) => request.status === "cash_received");
   const canDelete = deleteStatusAllowed && !hasActivePayments;
 
   const showAccept = ["review", "accepted"].includes(event?.status);
   const canAccept = event?.status === "review";
   const canRevision = event?.status === "review";
   const canReturnToWork = ["accepted", "cash_received"].includes(event?.status);
-  const canCashReceived = !["draft", "revision", "cancelled", "cash_received"].includes(event?.status);
+
+  const showCashReceived = !["draft", "cancelled"].includes(event?.status);
+  const canCashReceived = showCashReceived && event?.status !== "cash_received" && !hasCashReceivedPayments;
 
   return `
     <div class="event-modal-actions">
@@ -3576,7 +3611,7 @@ function adminEventModalActions(event, requests = []) {
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
       ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
       ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
-      ${canCashReceived ? `<button class="event-action-btn event-cash-btn" data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
+      ${showCashReceived ? `<button class="event-action-btn event-cash-btn ${canCashReceived ? "" : "is-disabled"}" ${canCashReceived ? "" : `disabled title="Оплаты уже отмечены как Деньги в кассе"`} data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
     </div>
   `;
 }
@@ -3635,6 +3670,7 @@ function installAdminEventModalActions(event, requests = []) {
   if (cashBtn) {
     cashBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
+      if (cashBtn.disabled || cashBtn.classList.contains("is-disabled")) return;
       if (!confirm("Отметить все оплаты мероприятия как “Деньги в кассе” и отправить мероприятие в архив?")) return;
 
       await api(`/events/${event.id}/cash-received`, { method: "POST" });
