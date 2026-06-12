@@ -2293,16 +2293,18 @@ function injectManagerUxStyles() {
     }
 
 
-    /* v0.37.12: фикс модалки менеджера "Мои оплаты" */
+    /* v0.37.13: "Мои оплаты" по ширине внутренних карточек, без пустых боков */
     #plansModalBackdrop.manager-payments-modal .modal,
     #plansModalBackdrop.manager-payments-modal .modal-card,
     #plansModalBackdrop.manager-payments-modal .event-modal,
     #eventModalBackdrop.manager-payments-modal .modal,
     #eventModalBackdrop.manager-payments-modal .modal-card,
     #eventModalBackdrop.manager-payments-modal .event-modal {
-      width: min(860px, calc(100vw - 32px)) !important;
-      max-width: 860px !important;
+      width: fit-content !important;
+      max-width: calc(100vw - 32px) !important;
       min-width: 0 !important;
+      padding-left: 18px !important;
+      padding-right: 18px !important;
     }
 
     #plansModalBackdrop.manager-payments-modal .modal-head,
@@ -2336,7 +2338,10 @@ function injectManagerUxStyles() {
 
     #plansModalBackdrop.manager-payments-modal #plansModalContent,
     #eventModalBackdrop.manager-payments-modal #eventModalContent {
+      width: fit-content !important;
       max-width: 100% !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
       overflow-x: hidden !important;
     }
 
@@ -3671,17 +3676,16 @@ function renderManagerPaymentRequestsModal(eventId) {
 }
 
 async function openManagerPaymentRequestsModal(eventId) {
-  const paymentsModalBackdrop = $("plansModalBackdrop") || $("eventModalBackdrop");
-  if (paymentsModalBackdrop) {
-    paymentsModalBackdrop.classList.add("manager-payments-modal");
-    paymentsModalBackdrop.classList.remove("manager-create-modal", "payment-modal-mode", "pin-modal-mode", "profile-modal-mode");
-  }
-  // managerPaymentsModalClass_v03712
-
   const backdrop = $("eventModalBackdrop");
   const title = $("eventModalTitle");
   const content = $("eventModalContent");
   if (!backdrop || !title || !content) return;
+
+  const plansBackdrop = $("plansModalBackdrop");
+  if (plansBackdrop) plansBackdrop.classList.remove("manager-payments-modal");
+  backdrop.classList.add("manager-payments-modal");
+  backdrop.classList.remove("manager-create-modal", "payment-modal-mode", "pin-modal-mode", "profile-modal-mode");
+  // managerPaymentsModalClass_v03713
 
   await refreshManagerPaymentRequestsForEvent(eventId);
 
