@@ -4636,6 +4636,7 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
       <td>0</td>
       <td>0</td>
       <td>0</td>
+      <td>0</td>
       <td>—</td>
     </tr>
   `).join("");
@@ -4862,7 +4863,7 @@ async function openEventModal(eventId) {
         <table class="estimate-table">
           <thead>
             <tr>
-              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>НДС</th><th>Вычеты</th><th>Способ</th>
+              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>Комиссия</th><th>НДС</th><th>Вычеты</th><th>Способ</th>
             </tr>
           </thead>
           <tbody>
@@ -4872,6 +4873,7 @@ async function openEventModal(eventId) {
                 <td>${formatMoney(item.external_amount)}</td>
                 <td>${formatMoney(item.amount_fact)}</td>
                 <td>${formatMoney(item.paid_amount)}</td>
+                <td>${formatMoney(internalCommissionValue(item))}</td>
                 <td>${formatMoney(itemVatVisible(item))}</td>
                 <td>${formatMoney(itemDeductionVisible(item))}</td>
                 <td>${paymentMethodLabel(item.payment_method)}</td>
