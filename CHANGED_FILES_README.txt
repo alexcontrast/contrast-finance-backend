@@ -1,4 +1,4 @@
-Contrast Finance v0.40.15 — changed files only
+Contrast Finance v0.40.17 — changed files only
 
 Changed files:
 - app/api/routes/legacy_migration.py
@@ -14,4 +14,4 @@ Fix:
 - Clearer message when the selected file is missing or invalid.
 
 
-v0.40.16: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.
+v0.40.17: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.

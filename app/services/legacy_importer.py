@@ -63,6 +63,13 @@ MONTHS_RU = {
     "декабрь": 12,
 }
 
+# PostgreSQL NUMERIC(14,2) columns can store values below 1_000_000_000_000.
+# Legacy sheets occasionally contain a card number in a money column because a
+# cancelled card request was entered incorrectly in the old bot. Sanitize those
+# values before writing to DB so one bad legacy row does not stop migration.
+DB_MONEY_ABS_LIMIT = Decimal("1000000000000.00")
+
+
 
 def sheet_rows(data: dict[str, Any], name: str) -> list[dict[str, Any]]:
     return list(((data.get("sheets") or {}).get(name) or {}).get("rows") or [])
@@ -93,6 +100,41 @@ def money(value: Any) -> Decimal:
         return Decimal(str(value).replace(" ", "").replace(",", ".")).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         return Decimal("0.00")
+
+
+def money_fits_db(value: Decimal) -> bool:
+    return abs(value) < DB_MONEY_ABS_LIMIT
+
+
+def safe_money(value: Any, *, fallback: Decimal = Decimal("0.00")) -> Decimal:
+    result = money(value)
+    return result if money_fits_db(result) else fallback
+
+
+def legacy_payment_amount(row: dict[str, Any], status: str, stats: ImportStats | None = None) -> Decimal:
+    amount = money(row.get("Сумма заявки"))
+    if money_fits_db(amount):
+        return amount
+
+    legacy_payment_id = text(row.get("Payment ID")) or "без Payment ID"
+    raw_digits = re.sub(r"\D", "", text(row.get("Сумма заявки")))
+    card_digits = re.sub(r"\D", "", text(row.get("Номер карты")))
+    method = payment_method_map(row.get("Способ оплаты заявки"))
+
+    # Known legacy bad-data pattern: the card number was saved into
+    # "Сумма заявки". For cancelled rows this should have no financial effect.
+    if method == "card" and card_digits and raw_digits == card_digits:
+        fallback = Decimal("0.00") if status == "cancelled" else (money(row.get("Остаток на момент заявки")) or money(row.get("Сумма по смете")))
+        if not money_fits_db(fallback):
+            fallback = Decimal("0.00")
+        message = f"Заявка {legacy_payment_id}: в 'Сумма заявки' было похоже записан номер карты; импортировано как {fallback}."
+    else:
+        fallback = Decimal("0.00")
+        message = f"Заявка {legacy_payment_id}: слишком большая сумма заявки {amount}; импортировано как 0.00."
+
+    if stats is not None:
+        stats.warnings.append(message)
+    return fallback
 
 
 def number(value: Any, default: Decimal = Decimal("0.00")) -> Decimal:
@@ -602,16 +644,16 @@ def upsert_payment_requests(db: Session, data: dict[str, Any], event_map: dict[s
         payment.event_id = event.id
         payment.event_item_id = item.id
         payment.created_by_user_id = user.id
-        payment.amount_requested = money(row.get("Сумма заявки"))
+        payment.amount_requested = legacy_payment_amount(row, status, stats)
         payment.payment_method = method
         payment.status = status
         payment.money_status = money_status
         payment.comment = text(row.get("Комментарий менеджера")) or None
         payment.item_name_snapshot = text(row.get("Позиция")) or item.external_name
-        payment.item_amount_plan_snapshot = money(row.get("Сумма по смете"))
+        payment.item_amount_plan_snapshot = safe_money(row.get("Сумма по смете"))
         payment.item_amount_fact_snapshot = item.amount_fact
-        payment.item_paid_amount_snapshot = money(row.get("Уже оплачено на момент заявки"))
-        payment.item_remaining_snapshot = money(row.get("Остаток на момент заявки"))
+        payment.item_paid_amount_snapshot = safe_money(row.get("Уже оплачено на момент заявки"))
+        payment.item_remaining_snapshot = safe_money(row.get("Остаток на момент заявки"))
         payment.contractor_id = contractor.id if contractor else None
         payment.contractor_name_snapshot = text(row.get("КГД название")) or text(row.get("Подрядчик")) or None
         payment.iin_bin_snapshot = re.sub(r"\D", "", text(row.get("БИН/ИИН"))) or None
@@ -723,11 +765,20 @@ def validate_legacy_data(data: dict[str, Any]) -> dict[str, Any]:
 
     status_counts: dict[str, int] = {}
     money_status_counts: dict[str, int] = {}
+    unsafe_payment_amounts: list[str] = []
     for row in payments:
         st = payment_status_map(row)
         ms = money_status_map(row, st)
         status_counts[st] = status_counts.get(st, 0) + 1
         money_status_counts[ms] = money_status_counts.get(ms, 0) + 1
+        amount = money(row.get("Сумма заявки"))
+        if not money_fits_db(amount):
+            unsafe_payment_amounts.append(text(row.get("Payment ID")) or "без Payment ID")
+    if unsafe_payment_amounts:
+        warnings.append(
+            "Есть заявки со слишком большой суммой в старой таблице; при импорте будут исправлены/обнулены: "
+            + ", ".join(unsafe_payment_amounts[:20])
+        )
 
     return {
         "valid": not errors,

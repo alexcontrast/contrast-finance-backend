@@ -18,7 +18,7 @@ from app.services.legacy_importer import import_legacy_data, import_legacy_data_
 
 router = APIRouter(tags=["legacy_migration"])
 LEGACY_IMPORT_JOBS: dict[str, dict[str, Any]] = {}
-LEGACY_PAGE_VERSION = "0.40.16"
+LEGACY_PAGE_VERSION = "0.40.17"
 
 
 def require_migration_token(token: str | None):
@@ -51,7 +51,7 @@ def legacy_migration_page():
 <body>
   <div class="card">
     <h1>Импорт старого Contrast</h1>
-    <p class="muted"><b>Страница v0.40.16</b>. 1) Сначала запусти сухую проверку. 2) Если ошибок нет — запусти боевой импорт.</p>
+    <p class="muted"><b>Страница v0.40.17</b>. 1) Сначала запусти сухую проверку. 2) Если ошибок нет — запусти боевой импорт.</p>
     <p class="warn">После успешной миграции лучше сразу удалить переменную <b>LEGACY_MIGRATION_TOKEN</b> или сменить её.</p>
     <label for="token">Migration token</label>
     <input id="token" type="password" placeholder="LEGACY_MIGRATION_TOKEN" autocomplete="off">

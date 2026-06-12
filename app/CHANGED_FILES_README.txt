@@ -32,4 +32,4 @@ v0.40.13: Legacy importer merges legacy open statuses (`Новая`/`На опл
 v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.
 
 
-v0.40.16: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.
+v0.40.17: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.
