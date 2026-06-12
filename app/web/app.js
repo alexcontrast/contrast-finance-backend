@@ -8305,10 +8305,77 @@ function setClosingCustomSplitVisibility() {
   });
 }
 
+function captureClosingExpenseDraft() {
+  const panel = document.getElementById("closingPanel");
+  if (!panel || panel.dataset.closingMonth !== String(state.month)) return null;
+
+  const fieldIds = [
+    "closingExpenseTitle",
+    "closingExpenseAmount",
+    "closingExpenseAllocation",
+    "closingExpenseSanzhar",
+    "closingExpenseRaufal",
+    "closingExpenseComment",
+  ];
+  const fields = {};
+  fieldIds.forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) fields[id] = input.value;
+  });
+
+  const active = document.activeElement;
+  const activeId = active?.id || null;
+  const activeEditExpenseId = active?.dataset?.editExpenseAmountId || null;
+  const editInput = document.querySelector("[data-edit-expense-amount-id]");
+
+  return {
+    month: state.month,
+    fields,
+    activeId,
+    activeEditExpenseId,
+    editExpenseId: editInput?.dataset?.editExpenseAmountId || null,
+    editExpenseAmount: editInput?.value || null,
+    selectionStart: typeof active?.selectionStart === "number" ? active.selectionStart : null,
+    selectionEnd: typeof active?.selectionEnd === "number" ? active.selectionEnd : null,
+  };
+}
+
+function restoreClosingExpenseDraft(draft) {
+  if (!draft || draft.month !== state.month) return;
+
+  Object.entries(draft.fields || {}).forEach(([id, value]) => {
+    const input = document.getElementById(id);
+    if (input) input.value = value;
+  });
+  setClosingCustomSplitVisibility();
+
+  if (draft.editExpenseId && draft.editExpenseAmount !== null) {
+    const editInput = document.querySelector(`[data-edit-expense-amount-id="${draft.editExpenseId}"]`);
+    if (editInput) editInput.value = draft.editExpenseAmount;
+  }
+
+  const focusTarget = draft.activeEditExpenseId
+    ? document.querySelector(`[data-edit-expense-amount-id="${draft.activeEditExpenseId}"]`)
+    : (draft.activeId ? document.getElementById(draft.activeId) : null);
+
+  if (focusTarget && typeof focusTarget.focus === "function") {
+    focusTarget.focus();
+    if (typeof focusTarget.setSelectionRange === "function" && draft.selectionStart !== null && draft.selectionEnd !== null) {
+      try {
+        focusTarget.setSelectionRange(draft.selectionStart, draft.selectionEnd);
+      } catch (_) {
+        // Some input types do not support selection ranges.
+      }
+    }
+  }
+}
+
 function renderClosingPanelFromCache() {
   const panel = document.getElementById("closingPanel");
   const data = state.closingPanelData;
   if (!panel || !data || data.month !== state.month) return;
+
+  const draft = captureClosingExpenseDraft();
 
   panel.dataset.eventsAttached = "0";
   panel.innerHTML = renderClosingContent(
@@ -8319,6 +8386,7 @@ function renderClosingPanelFromCache() {
     Boolean(data.calcPending),
   );
   attachClosingPanelEvents();
+  restoreClosingExpenseDraft(draft);
 }
 
 function cacheClosingPanelData(data) {
