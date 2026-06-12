@@ -1966,3 +1966,154 @@ button[data-manager-event-save-draft]:hover {
 .plans-table-monthly td[data-plan-calc-manager] {
   white-space: nowrap;
 }
+
+/* v0.37.19 compact plans editor */
+.plans-editor {
+  gap: 12px;
+}
+
+.plans-editor-title {
+  align-items: center;
+  gap: 12px;
+}
+
+.plans-editor-title h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.plans-editor-title p {
+  margin-top: 3px;
+  max-width: 760px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.plans-help-card.plans-help-card-compact {
+  padding: 8px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.plans-help-card.plans-help-card-compact span {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.plans-table-wrap {
+  padding: 6px;
+  border-radius: 16px;
+}
+
+.plans-table-monthly {
+  min-width: 900px;
+  table-layout: fixed;
+  border-spacing: 0 5px;
+}
+
+.plans-table-monthly th {
+  padding: 0 6px 2px;
+  font-size: 10px;
+  letter-spacing: .045em;
+  white-space: nowrap;
+}
+
+.plans-table-monthly td {
+  padding: 5px 6px;
+  font-size: 12px;
+  line-height: 1.15;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.plans-table-monthly td:first-child {
+  width: 78px;
+  font-size: 12px;
+}
+
+.plans-table-monthly th:nth-child(1) { width: 78px; }
+.plans-table-monthly th:nth-child(2) { width: 126px; }
+.plans-table-monthly th:nth-child(3) { width: 178px; }
+.plans-table-monthly th:nth-child(4),
+.plans-table-monthly th:nth-child(5),
+.plans-table-monthly th:nth-child(7) { width: 112px; }
+.plans-table-monthly th:nth-child(6) { width: 78px; }
+
+.plans-table-monthly .plan-month-input {
+  width: 116px;
+  height: 32px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.plan-percent-pair {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-percent-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.plan-percent-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.plan-percent-control b {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.plan-percent-input {
+  width: 45px;
+  min-width: 45px;
+  height: 30px;
+  padding: 5px 6px;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.plans-table-monthly td[data-plan-calc-sanzhar],
+.plans-table-monthly td[data-plan-calc-raufal],
+.plans-table-monthly td[data-plan-calc-manager] {
+  font-size: 12px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.plans-save-message {
+  min-height: 18px;
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .plans-table-monthly {
+    min-width: 860px;
+  }
+
+  .plans-table-monthly th:nth-child(3) {
+    width: 164px;
+  }
+
+  .plan-percent-input {
+    width: 42px;
+    min-width: 42px;
+  }
+}

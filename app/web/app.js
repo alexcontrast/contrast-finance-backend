@@ -4563,10 +4563,14 @@ function formatPercentValue(value) {
 }
 
 function renderPlanPercentInput(monthValue, kind, value, label) {
+  const shortLabel = label === "Менеджер" ? "Мен." : label;
   return `
-    <label class="plan-percent-cell">
-      <span>${label}</span>
-      <input class="plan-percent-input" data-plan-percent="${kind}" data-plan-month="${monthValue}" inputmode="decimal" value="${formatPercentValue(value)}" />
+    <label class="plan-percent-cell plan-percent-cell-${kind}">
+      <span>${shortLabel}</span>
+      <span class="plan-percent-control">
+        <input class="plan-percent-input" data-plan-percent="${kind}" data-plan-month="${monthValue}" inputmode="decimal" value="${formatPercentValue(value)}" />
+        <b>%</b>
+      </span>
     </label>
   `;
 }
@@ -4581,15 +4585,15 @@ function renderPlansSkeleton(data) {
       <div class="block-title plans-editor-title">
         <div>
           <h3>Задать планы на ${year}</h3>
-          <p class="muted">Год берётся из верхнего переключателя. Каждый месяц хранит свои проценты — прошлые месяцы не переписываются.</p>
+          <p class="muted">Каждый месяц хранит свой план и свои проценты. Прошлые месяцы не переписываются.</p>
         </div>
         <button id="savePlansYearBtn" class="secondary" ${isLoaded ? "" : "disabled"}>Сохранить планы</button>
       </div>
 
       ${!isLoaded ? `<div class="empty-state">Загружаем планы за ${year}…</div>` : `
-        <div class="plans-help-card">
-          <strong>Проценты задаются отдельно для каждого месяца.</strong>
-          <span>Меняешь июль — меняется только июль. Санжар и Рауфаль автоматически держат сумму 100%.</span>
+        <div class="plans-help-card plans-help-card-compact">
+          <strong>Проценты отдельно по месяцам.</strong>
+          <span>Санжар и Рауфаль в каждой строке автоматически дают 100%.</span>
         </div>
 
         <div class="plans-table-wrap">
@@ -4597,12 +4601,12 @@ function renderPlansSkeleton(data) {
             <thead>
               <tr>
                 <th>Месяц</th>
-                <th>План компании</th>
-                <th>Деление отдела</th>
-                <th>План Санжара</th>
-                <th>План Рауфаля</th>
-                <th>План менеджера</th>
-                <th>Сумма менеджера</th>
+                <th>Компания</th>
+                <th>Отделы %</th>
+                <th>Санжар</th>
+                <th>Рауфаль</th>
+                <th>Мен. %</th>
+                <th>Менеджер</th>
               </tr>
             </thead>
             <tbody>
