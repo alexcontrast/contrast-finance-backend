@@ -25,7 +25,7 @@ def get_event_summary(
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    require_event_view(current_user, event)
+    require_event_view(current_user, event, db)
 
     result = db.execute(
         select(EventItem)

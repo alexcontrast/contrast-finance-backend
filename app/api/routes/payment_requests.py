@@ -340,7 +340,7 @@ def list_event_payment_requests(
     current_user: User = Depends(get_current_user),
 ):
     event = get_event_or_404(db, event_id)
-    require_event_view(current_user, event)
+    require_event_view(current_user, event, db)
 
     result = db.execute(
         select(PaymentRequest)
