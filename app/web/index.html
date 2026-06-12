@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Contrast Finance 2.0</title>
-  <link rel="stylesheet" href="/web/styles.css?v=0.38.4" />
+  <link rel="stylesheet" href="/web/styles.css?v=0.38.5" />
 </head>
 <body>
   <div class="app-shell">
@@ -97,6 +97,20 @@
           </div>
         </div>
 
+
+        <div id="departmentExpensesModalBackdrop" class="modal-backdrop hidden department-expenses-modal-backdrop">
+          <div class="modal department-expenses-modal">
+            <div class="modal-head">
+              <div>
+                <div class="eyebrow">Расходы отдела</div>
+                <h2 id="departmentExpensesModalTitle">Расходы</h2>
+              </div>
+              <button id="departmentExpensesModalCloseBtn" class="ghost">Закрыть</button>
+            </div>
+            <div id="departmentExpensesModalContent"></div>
+          </div>
+        </div>
+
         <section id="changePinCard" class="card narrow hidden">
           <h2>Смена PIN</h2>
           <label>Старый PIN
@@ -122,6 +136,6 @@
     </div>
   </div>
 
-  <script src="/web/app.js?v=0.38.4"></script>
+  <script src="/web/app.js?v=0.38.5"></script>
 </body>
 </html>

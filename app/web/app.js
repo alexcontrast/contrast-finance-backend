@@ -3719,10 +3719,10 @@ function renderDepartmentHeadRequestsTable(requests = []) {
 }
 
 function renderDepartmentHeadExpensesTable(expenses = []) {
-  if (!expenses.length) return `<div class="empty-state">Расходов по этому отделу пока нет.</div>`;
+  if (!expenses.length) return `<div class="empty-state compact-empty-state">Расходов по этому отделу пока нет.</div>`;
   return `
-    <div class="table-wrap department-head-expenses-wrap">
-      <table class="department-head-expenses-table">
+    <div class="table-wrap department-head-expenses-wrap compact-expenses-wrap">
+      <table class="department-head-expenses-table compact-expenses-table">
         <thead>
           <tr>
             <th>Расход</th>
@@ -3748,8 +3748,77 @@ function renderDepartmentHeadExpensesTable(expenses = []) {
   `;
 }
 
+function renderDepartmentHeadExpensesModalContent(data = {}) {
+  const expenses = data.expenses || [];
+  const amount = data.calculation?.expense_amount ?? data.expenses_amount ?? 0;
+  return `
+    <div class="department-expenses-modal-content">
+      <div class="department-expenses-modal-summary">
+        <span>${escapeHtml(data.department_name || "Отдел")}</span>
+        <strong>${formatMoney(amount)} ₸</strong>
+        <em>${expenses.length} расход${expenses.length === 1 ? "" : "ов"}</em>
+      </div>
+      ${renderDepartmentHeadExpensesTable(expenses)}
+    </div>
+  `;
+}
+
+function closeDepartmentHeadExpensesModal() {
+  const backdrop = document.getElementById("departmentExpensesModalBackdrop");
+  if (backdrop) backdrop.classList.add("hidden");
+}
+
+function openDepartmentHeadExpensesModal() {
+  const backdrop = document.getElementById("departmentExpensesModalBackdrop");
+  const title = document.getElementById("departmentExpensesModalTitle");
+  const content = document.getElementById("departmentExpensesModalContent");
+  if (!backdrop || !content) return;
+
+  const data = state.departmentHeadData || {};
+  if (title) title.textContent = `Расходы · ${data.department_name || "отдел"}`;
+  content.innerHTML = renderDepartmentHeadExpensesModalContent(data);
+  backdrop.classList.remove("hidden");
+}
+
+function attachDepartmentHeadExpensesModal() {
+  document.querySelectorAll("[data-open-department-expenses]").forEach((button) => {
+    button.addEventListener("click", openDepartmentHeadExpensesModal);
+    button.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openDepartmentHeadExpensesModal();
+      }
+    });
+  });
+
+  const closeBtn = document.getElementById("departmentExpensesModalCloseBtn");
+  if (closeBtn && !closeBtn.dataset.bound) {
+    closeBtn.dataset.bound = "1";
+    closeBtn.addEventListener("click", closeDepartmentHeadExpensesModal);
+  }
+
+  const backdrop = document.getElementById("departmentExpensesModalBackdrop");
+  if (backdrop && !backdrop.dataset.bound) {
+    backdrop.dataset.bound = "1";
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closeDepartmentHeadExpensesModal();
+    });
+  }
+}
+
+function departmentHeadClickableExpenseMetric(value, count) {
+  return `
+    <button class="card metric department-expense-summary-card" type="button" data-open-department-expenses aria-label="Открыть расходы отдела">
+      <div class="label">Расходы</div>
+      <div class="value">${value}</div>
+      <div class="metric-hint">${count} шт. · открыть</div>
+    </button>
+  `;
+}
+
 function renderDepartmentHeadTotals(data) {
   const calc = data.calculation || {};
+  const expensesCount = (data.expenses || []).length;
   return `
     <section class="closing-mini-section department-head-total-section">
       <div class="closing-section-head">
@@ -3760,18 +3829,10 @@ function renderDepartmentHeadTotals(data) {
         ${metric("План", formatMoney(calc.plan_amount || data.plan_amount || 0))}
         ${metric("Факт", formatMoney(calc.income_amount || data.fact_income_amount || 0))}
         ${metric("Выполнение", `${calc.completion_percent || data.completion_percent || 0}%`)}
-        ${metric("Расходы", formatMoney(calc.expense_amount || data.expenses_amount || 0))}
+        ${departmentHeadClickableExpenseMetric(formatMoney(calc.expense_amount || data.expenses_amount || 0), expensesCount)}
         ${metric("% главы", `${calc.head_percent || 0}%`)}
         ${metric("ЗП главы", formatMoney(calc.head_salary || 0))}
       </div>
-    </section>
-
-    <section class="closing-mini-section department-head-total-section">
-      <div class="closing-section-head">
-        <h4>Расходы отдела</h4>
-        <span>${(data.expenses || []).length} шт.</span>
-      </div>
-      ${renderDepartmentHeadExpensesTable(data.expenses || [])}
     </section>
   `;
 }
@@ -5411,6 +5472,7 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
 
   attachEventRows();
   attachDepartmentHeadFilters();
+  attachDepartmentHeadExpensesModal();
 }
 
 

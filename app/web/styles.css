@@ -2680,3 +2680,158 @@ button[data-manager-event-save-draft]:hover {
     text-align: left;
   }
 }
+
+/* v0.38.5 — главдеп: план по центру + независимая модалка расходов */
+.department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong:nth-child(2) {
+  text-align: center;
+}
+
+.department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong:nth-child(3) {
+  text-align: right;
+}
+
+.department-expense-summary-card {
+  appearance: none;
+  border: 1px solid rgba(70, 88, 62, .12);
+  cursor: pointer;
+  text-align: left;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.department-expense-summary-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(53, 203, 40, .38);
+  box-shadow: 0 14px 30px rgba(32, 56, 15, .1);
+}
+
+.department-expense-summary-card .metric-hint {
+  margin-top: 5px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #5f6d57;
+  white-space: nowrap;
+}
+
+.department-expenses-modal-backdrop {
+  z-index: 90;
+}
+
+.department-expenses-modal {
+  width: fit-content;
+  min-width: min(620px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  padding: 22px 24px 24px;
+}
+
+.department-expenses-modal #departmentExpensesModalContent {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.department-expenses-modal-content {
+  display: grid;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.department-expenses-modal-summary {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(70, 88, 62, .12);
+  border-radius: 14px;
+  background: rgba(247, 252, 243, .9);
+  font-size: 12px;
+}
+
+.department-expenses-modal-summary span {
+  font-weight: 900;
+}
+
+.department-expenses-modal-summary strong {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.department-expenses-modal-summary em {
+  color: #6a745f;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.department-head-expenses-wrap.compact-expenses-wrap {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 14px;
+}
+
+.department-head-expenses-table.compact-expenses-table {
+  width: auto;
+  min-width: 0;
+  table-layout: auto;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.department-head-expenses-table.compact-expenses-table th,
+.department-head-expenses-table.compact-expenses-table td {
+  padding: 7px 9px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.department-head-expenses-table.compact-expenses-table th:first-child,
+.department-head-expenses-table.compact-expenses-table td:first-child,
+.department-head-expenses-table.compact-expenses-table th:last-child,
+.department-head-expenses-table.compact-expenses-table td:last-child {
+  text-align: left;
+}
+
+.department-head-expenses-table.compact-expenses-table td:nth-child(3),
+.department-head-expenses-table.compact-expenses-table td:nth-child(4) {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.compact-empty-state {
+  padding: 12px 14px;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) {
+    grid-template-columns: 1fr;
+  }
+  .department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong:nth-child(2),
+  .department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong:nth-child(3) {
+    text-align: left;
+  }
+  .department-expenses-modal {
+    min-width: 0;
+    width: calc(100vw - 24px);
+    padding: 18px 16px;
+  }
+  .department-expenses-modal-summary {
+    grid-template-columns: 1fr;
+  }
+}
