@@ -2420,6 +2420,7 @@ const state = {
   eventStatusFilter: "all",
   eventSearch: "",
   activeAdminTab: "overview",
+  activeDepartmentHeadTab: "overview",
   activeManagerTab: "events",
   selectedManagerEventId: null,
   managerEstimateTab: "external",
@@ -2428,6 +2429,7 @@ const state = {
   managerDraftEventsById: {},
   managerDraftTempSeq: 1,
   adminData: null,
+  departmentHeadData: null,
   users: [],
   monthlyPlans: [],
   monthlyPlansYear: null,
@@ -3405,6 +3407,255 @@ function renderAdminTabs() {
       }, 80);
     });
   });
+}
+
+
+function renderDepartmentHeadTabs() {
+  const tabs = [
+    ["overview", "Обзор"],
+    ["events", "Мероприятия"],
+    ["requests", "Заявки"],
+    ["totals", "Итог"],
+  ];
+
+  $("adminTabs").classList.remove("hidden");
+  $("adminTabs").innerHTML = tabs.map(([key, label]) => `
+    <button class="tab-btn ${state.activeDepartmentHeadTab === key ? "active" : ""}" data-dephead-tab="${key}">
+      ${label}
+    </button>
+  `).join("");
+
+  document.querySelectorAll("[data-dephead-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeDepartmentHeadTab = button.getAttribute("data-dephead-tab");
+      setLoading(true, "Переключаем вкладку…");
+      setTimeout(() => {
+        try {
+          renderDepartmentDashboard(state.departmentHeadData || {});
+        } finally {
+          setLoading(false);
+        }
+      }, 60);
+    });
+  });
+}
+
+function renderDepartmentHeadManagerRows(managers = []) {
+  if (!managers.length) return `<div class="empty-state">Активных менеджеров отдела пока нет.</div>`;
+
+  return `
+    <section class="department-head-panel">
+      <div class="block-title compact-block-title">
+        <h3>Менеджеры отдела</h3>
+        <span class="muted">${managers.length} чел.</span>
+      </div>
+      <div class="department-head-manager-list">
+        ${managers.map((manager) => {
+          const percent = asNumber(manager.completion_percent);
+          return `
+            <article class="department-head-manager-row">
+              <div class="department-head-manager-main">
+                <strong>${escapeHtml(manager.name || "Менеджер")}</strong>
+                <span class="muted">${manager.events_count || 0} мер.</span>
+              </div>
+              <div class="department-head-manager-progress">
+                <div class="manager-plan-row department-head-plan-row">
+                  <span>Факт: ${formatMoney(manager.fact_income_amount)} ₸</span>
+                  <span>План: ${formatMoney(manager.plan_amount)} ₸</span>
+                  <strong>${percent}%</strong>
+                </div>
+                ${progressLine(percent)}
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderDepartmentHeadOverview(data) {
+  const percent = asNumber(data.completion_percent);
+  const calc = data.calculation || {};
+  return `
+    <section class="manager-plan-panel department-head-plan-panel ${departmentClassByName(data.department_name)}">
+      <div>
+        <div class="overview-label">План отдела</div>
+        <h3>${escapeHtml(data.department_name || "Отдел")}</h3>
+      </div>
+      <div class="manager-plan-main">
+        <div class="manager-plan-row">
+          <strong>Факт: ${formatMoney(data.fact_income_amount)} ₸</strong>
+          <strong>Цель: ${formatMoney(data.plan_amount)} ₸</strong>
+          <strong>${percent}%</strong>
+        </div>
+        ${progressLine(percent)}
+        <div class="muted">Осталось: ${formatMoney(data.remaining_to_plan)} ₸ · расходов: ${formatMoney(data.expenses_amount)} ₸</div>
+      </div>
+    </section>
+
+    <div class="grid cards department-head-metrics">
+      ${metric("Мероприятий", data.events_count || 0)}
+      ${metric("Черновиков", data.drafts_count || 0)}
+      ${metric("Менеджеров", data.managers_count || 0)}
+      ${metric("Предв. ЗП главы", formatMoney(calc.head_salary || 0))}
+    </div>
+
+    ${renderDepartmentHeadManagerRows(data.managers || [])}
+  `;
+}
+
+function renderDepartmentHeadEventsTable(events = []) {
+  if (!events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
+  const sortedEvents = [...events].sort((a, b) => {
+    const dateCompare = String(a.event_date || "").localeCompare(String(b.event_date || ""));
+    if (dateCompare !== 0) return dateCompare;
+    return Number(a.id || 0) - Number(b.id || 0);
+  });
+
+  return `
+    <div class="table-wrap admin-events-table-wrap department-head-table-wrap">
+      <table class="admin-events-table department-head-events-table">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Менеджер</th>
+            <th>Заказчик</th>
+            <th>Мероприятие</th>
+            <th>Статус</th>
+            <th>Статус денег</th>
+            <th>Оборот</th>
+            <th>Доход всего</th>
+            <th>В план отдела</th>
+            <th>Доля</th>
+            <th>Заявки</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedEvents.map((event) => `
+            <tr class="clickable-row admin-event-row ${event.is_shared ? "department-mixed" : departmentClassByName(dataSafeDepartmentName(event))}" data-event-id="${event.id}">
+              <td class="nowrap">${formatDateRu(event.event_date) || event.event_date || ""}</td>
+              <td>${escapeHtml(event.manager_name || managerNameById(event.manager_id) || "")}</td>
+              <td><strong>${escapeHtml(event.client_name || "")}</strong></td>
+              <td>${escapeHtml(event.title || "")}${event.is_shared ? `<span class="mini-chip">соавт.</span>` : ""}</td>
+              <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>
+              <td><span class="status ${eventMoneyStatus(event)} admin-event-money-badge">${statusLabel(eventMoneyStatus(event))}</span></td>
+              <td>${formatMoney(event.external_total)}</td>
+              <td>${formatMoney(event.final_company_income)}</td>
+              <td><strong>${formatMoney(event.department_income)}</strong></td>
+              <td>${formatPercentValue(event.department_share_percent || 0)}%</td>
+              <td>${event.active_payment_requests_count ?? event.payment_requests_count ?? 0}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function dataSafeDepartmentName(event) {
+  return event.department_name || departmentNameById(event.department_id) || "";
+}
+
+function renderDepartmentHeadRequestsTable(requests = []) {
+  if (!requests.length) return `<div class="empty-state">Заявок отдела нет.</div>`;
+  return `
+    <div class="block-title compact-block-title">
+      <h3>Заявки отдела</h3>
+      <span class="muted">${requests.length} шт.</span>
+    </div>
+    <div class="table-wrap department-head-table-wrap">
+      <table class="department-head-requests-table">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Менеджер</th>
+            <th>Заказчик</th>
+            <th>Мероприятие</th>
+            <th>Позиция</th>
+            <th>Сумма</th>
+            <th>Способ</th>
+            <th>Оплата</th>
+            <th>Деньги</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${requests.map((request) => `
+            <tr>
+              <td>${formatDateRu(paymentRequestDateValue(request)) || paymentRequestDateValue(request) || ""}</td>
+              <td>${escapeHtml(request.manager_name || "")}</td>
+              <td>${escapeHtml(paymentRequestClientName(request))}</td>
+              <td>${escapeHtml(paymentRequestEventTitle(request))}</td>
+              <td>${escapeHtml(request.position || request.item_name_snapshot || "")}</td>
+              <td><strong>${formatMoney(request.amount_requested)}</strong></td>
+              <td>${paymentMethodLabel(request.payment_method)}</td>
+              <td><span class="status ${request.status} request-status-badge">${statusLabel(request.status)}</span></td>
+              <td><span class="status ${requestMoneyStatus(request)} request-money-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDepartmentHeadExpensesTable(expenses = []) {
+  if (!expenses.length) return `<div class="empty-state">Расходов по этому отделу пока нет.</div>`;
+  return `
+    <div class="table-wrap department-head-expenses-wrap">
+      <table class="department-head-expenses-table">
+        <thead>
+          <tr>
+            <th>Расход</th>
+            <th>Тип</th>
+            <th>Сумма отдела</th>
+            <th>Общая сумма</th>
+            <th>Комментарий</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${expenses.map((expense) => `
+            <tr>
+              <td><strong>${escapeHtml(expense.title || "")}</strong></td>
+              <td>${escapeHtml(expense.allocation_label || "")}</td>
+              <td><strong>${formatMoney(expense.department_amount)}</strong></td>
+              <td>${formatMoney(expense.total_amount)}</td>
+              <td>${escapeHtml(expense.comment || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDepartmentHeadTotals(data) {
+  const calc = data.calculation || {};
+  return `
+    <section class="closing-mini-section department-head-total-section">
+      <div class="closing-section-head">
+        <h4>Итог отдела</h4>
+        <span>актуальная калькуляция</span>
+      </div>
+      <div class="closing-calc-grid department-head-calc-grid">
+        ${metric("План", formatMoney(calc.plan_amount || data.plan_amount || 0))}
+        ${metric("Факт", formatMoney(calc.income_amount || data.fact_income_amount || 0))}
+        ${metric("Выполнение", `${calc.completion_percent || data.completion_percent || 0}%`)}
+        ${metric("Расходы", formatMoney(calc.expense_amount || data.expenses_amount || 0))}
+        ${metric("% главы", `${calc.head_percent || 0}%`)}
+        ${metric("ЗП главы", formatMoney(calc.head_salary || 0))}
+        ${metric("Остаток отдела", formatMoney(calc.remaining_after_head || 0))}
+      </div>
+    </section>
+
+    <section class="closing-mini-section department-head-total-section">
+      <div class="closing-section-head">
+        <h4>Расходы отдела</h4>
+        <span>${(data.expenses || []).length} шт.</span>
+      </div>
+      ${renderDepartmentHeadExpensesTable(data.expenses || [])}
+    </section>
+  `;
 }
 
 
@@ -4979,35 +5230,38 @@ function renderAdminDashboard(data) {
 }
 
 function renderDepartmentDashboard(data, paymentRequests = []) {
-  $("adminTabs").classList.add("hidden");
+  data = data || {};
+  state.departmentHeadData = data;
+  renderDepartmentHeadTabs();
+
+  const calc = data.calculation || {};
   renderSummary([
     ["План отдела", formatMoney(data.plan_amount)],
     ["Факт", formatMoney(data.fact_income_amount)],
-    ["Выполнение", `${data.completion_percent}%`],
+    ["Выполнение", `${data.completion_percent || 0}%`],
     ["Расходы", formatMoney(data.expenses_amount)],
+    ["ЗП главы", formatMoney(calc.head_salary || 0)],
   ]);
 
-  $("dashboardTitle").textContent = `Кабинет отдела: ${data.department_name}`;
-  $("dashboardHint").textContent = data.include_drafts ? "С черновиками" : "Без черновиков";
+  $("dashboardTitle").textContent = `Кабинет отдела: ${data.department_name || ""}`;
+  $("dashboardHint").textContent = "Только просмотр";
 
-  const requests = data.payment_requests || paymentRequests || [];
+  if (state.activeDepartmentHeadTab === "events") {
+    $("dashboardContent").innerHTML = `
+      <div class="block-title compact-block-title"><h3>Мероприятия отдела</h3><span class="muted">${data.events_count || 0} шт.</span></div>
+      ${renderDepartmentHeadEventsTable(data.events || [])}
+    `;
+  } else if (state.activeDepartmentHeadTab === "requests") {
+    $("dashboardContent").innerHTML = renderDepartmentHeadRequestsTable(data.payment_requests || paymentRequests || []);
+  } else if (state.activeDepartmentHeadTab === "totals") {
+    $("dashboardContent").innerHTML = renderDepartmentHeadTotals(data);
+  } else {
+    $("dashboardContent").innerHTML = renderDepartmentHeadOverview(data);
+  }
 
-  $("dashboardContent").innerHTML = `
-    <div class="grid cards">
-      ${metric("Остаток до плана", formatMoney(data.remaining_to_plan))}
-      ${metric("Мероприятий", data.events_count)}
-      ${metric("Черновиков", data.drafts_count)}
-      ${metric("Менеджеров", data.managers?.length || data.managers_count || 0)}
-    </div>
-    <div class="block-title"><h3>Мероприятия</h3></div>
-    ${renderEventsTable(data.events || [], true)}
-    ${renderPaymentRequestsTable(requests, "Заявки отдела")}
-  `;
-
-  attachPaymentRequestActions();
-  attachFilters();
   attachEventRows();
 }
+
 
 
 
@@ -9012,11 +9266,8 @@ async function loadDashboard() {
   }
 
   if (user.role === "department_head") {
-    const [dashboard, requests] = await Promise.all([
-      api(`/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true`),
-      api("/payment-requests"),
-    ]);
-    renderDepartmentDashboard(dashboard, requests);
+    const dashboard = await api(`/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
+    renderDepartmentDashboard(dashboard);
     return;
   }
 

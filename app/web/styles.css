@@ -2482,3 +2482,110 @@ button[data-manager-event-save-draft]:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* v0.38.2 — read-only кабинеты глав депов */
+.department-head-plan-panel {
+  margin-bottom: 14px;
+}
+
+.department-head-metrics {
+  margin-bottom: 14px;
+}
+
+.department-head-panel,
+.department-head-total-section {
+  margin-top: 14px;
+}
+
+.compact-block-title {
+  margin: 10px 0 8px;
+}
+
+.department-head-manager-list {
+  display: grid;
+  gap: 8px;
+}
+
+.department-head-manager-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(70, 88, 62, .12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .72);
+}
+
+.department-head-manager-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.department-head-manager-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-head-manager-progress {
+  min-width: 0;
+}
+
+.department-head-plan-row {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.department-head-table-wrap table,
+.department-head-expenses-wrap table {
+  font-size: 12px;
+}
+
+.department-head-events-table th,
+.department-head-events-table td,
+.department-head-requests-table th,
+.department-head-requests-table td,
+.department-head-expenses-table th,
+.department-head-expenses-table td {
+  padding: 8px 9px;
+  vertical-align: middle;
+}
+
+.department-head-events-table td:nth-child(7),
+.department-head-events-table td:nth-child(8),
+.department-head-events-table td:nth-child(9),
+.department-head-events-table td:nth-child(10),
+.department-head-events-table td:nth-child(11),
+.department-head-requests-table td:nth-child(6),
+.department-head-expenses-table td:nth-child(3),
+.department-head-expenses-table td:nth-child(4) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.department-head-calc-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.mini-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(50, 168, 82, .12);
+  color: #277235;
+  font-size: 10px;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+@media (max-width: 820px) {
+  .department-head-manager-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

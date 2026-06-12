@@ -26,3 +26,4 @@ class EventShare(Base):
     )
 
     event = relationship("Event", back_populates="shares")
+    user = relationship("User")

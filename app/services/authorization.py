@@ -14,6 +14,18 @@ def event_share_user_ids(event: Event) -> set[int]:
         return set()
 
 
+def event_share_department_ids(event: Event) -> set[int]:
+    department_ids: set[int] = set()
+    try:
+        for share in (event.shares or []):
+            share_user = getattr(share, "user", None)
+            if share_user and share_user.department_id:
+                department_ids.add(share_user.department_id)
+    except Exception:
+        return set()
+    return department_ids
+
+
 def can_view_event(user: User, event: Event) -> bool:
     if user.role == "admin":
         return True
@@ -22,7 +34,10 @@ def can_view_event(user: User, event: Event) -> bool:
         return event.manager_id == user.id or user.id in event_share_user_ids(event)
 
     if user.role == "department_head":
-        return event.department_id == user.department_id
+        return (
+            event.department_id == user.department_id
+            or user.department_id in event_share_department_ids(event)
+        )
 
     return False
 

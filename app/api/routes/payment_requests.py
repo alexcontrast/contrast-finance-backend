@@ -2,12 +2,13 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.event_share import EventShare
 from app.models.payment_request import PaymentRequest
 from app.models.user import User
 from app.schemas.payment_request import (
@@ -290,7 +291,10 @@ def event_scope_query_for_user(query, user: User):
         return query.where(Event.manager_id == user.id)
 
     if user.role == "department_head":
-        return query.where(Event.department_id == user.department_id)
+        shared_event_ids = select(EventShare.event_id).join(
+            User, User.id == EventShare.user_id
+        ).where(User.department_id == user.department_id)
+        return query.where(or_(Event.department_id == user.department_id, Event.id.in_(shared_event_ids)))
 
     raise HTTPException(status_code=403, detail="Not enough permissions")
 
