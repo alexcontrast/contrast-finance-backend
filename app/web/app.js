@@ -3647,6 +3647,33 @@ function canManagerCancelEventRequest(request) {
   return !["paid", "cash_received", "rejected"].includes(request.status);
 }
 
+function removeEventModalActions() {
+  const oldActions = document.getElementById("eventModalActions");
+  if (oldActions) oldActions.remove();
+}
+
+function resetEventModalModes() {
+  const eventBackdrop = $("eventModalBackdrop");
+  const plansBackdrop = $("plansModalBackdrop");
+
+  if (plansBackdrop) {
+    plansBackdrop.classList.remove("manager-payments-modal");
+  }
+
+  if (eventBackdrop) {
+    eventBackdrop.classList.remove(
+      "manager-payments-modal",
+      "manager-create-modal",
+      "payment-modal-mode",
+      "pin-modal-mode",
+      "profile-modal-mode",
+      "manager-requests-modal-mode"
+    );
+  }
+
+  removeEventModalActions();
+}
+
 function renderManagerPaymentRequestsModal(eventId) {
   const requests = eventPaymentRequestsForManager(eventId);
   const groups = groupedPaymentRequestsByPosition(requests);
@@ -3698,17 +3725,12 @@ async function openManagerPaymentRequestsModal(eventId) {
   const content = $("eventModalContent");
   if (!backdrop || !title || !content) return;
 
-  const plansBackdrop = $("plansModalBackdrop");
-  if (plansBackdrop) plansBackdrop.classList.remove("manager-payments-modal");
+  resetEventModalModes();
   backdrop.classList.add("manager-payments-modal");
-  backdrop.classList.remove("manager-create-modal", "payment-modal-mode", "pin-modal-mode", "profile-modal-mode");
-  // managerPaymentsModalClass_v03713
+  // managerPaymentsModalClass_v03715
 
   await refreshManagerPaymentRequestsForEvent(eventId);
 
-  backdrop.classList.remove("pin-modal-mode");
-  backdrop.classList.remove("profile-modal-mode");
-  backdrop.classList.remove("payment-modal-mode");
   backdrop.classList.add("manager-requests-modal-mode");
   backdrop.classList.remove("hidden");
 
@@ -4150,8 +4172,7 @@ function installAdminEventModalActions(event, requests = []) {
   const closeBtn = $("eventModalCloseBtn");
   if (!closeBtn) return;
 
-  const oldActions = document.getElementById("eventModalActions");
-  if (oldActions) oldActions.remove();
+  removeEventModalActions();
 
   const user = state.bootstrap?.user;
   if (!user || user.role !== "admin") return;
@@ -4216,13 +4237,9 @@ function installAdminEventModalActions(event, requests = []) {
 
 
 async function openEventModal(eventId) {
-  const stalePaymentsModal = $("plansModalBackdrop") || $("eventModalBackdrop");
-  if (stalePaymentsModal) stalePaymentsModal.classList.remove("manager-payments-modal");
-  // openEventModal_removeManagerPaymentsModal_v03712
+  resetEventModalModes();
+  // openEventModal_resetSharedChrome_v03715
 
-  $("eventModalBackdrop").classList.remove("pin-modal-mode");
-  $("eventModalBackdrop").classList.remove("profile-modal-mode");
-  $("eventModalBackdrop").classList.remove("payment-modal-mode");
   $("eventModalBackdrop").classList.remove("hidden");
   $("eventModalTitle").textContent = `Мероприятие #${eventId}`;
   $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
@@ -7333,21 +7350,14 @@ async function submitManagerPayment(eventId) {
 }
 
 function openManagerPaymentModal(eventId) {
-  const stalePaymentsModal = $("plansModalBackdrop") || $("eventModalBackdrop");
-  if (stalePaymentsModal) stalePaymentsModal.classList.remove("manager-payments-modal");
-  // openManagerPaymentModal_removeManagerPaymentsModal_v03712
-
-  const staleEventActions = document.getElementById("eventModalActions");
-  if (staleEventActions) staleEventActions.remove();
-  // openManagerPaymentModal__removeEventModalActions
+  resetEventModalModes();
+  // openManagerPaymentModal_resetSharedChrome_v03715
 
   const backdrop = $("eventModalBackdrop");
   const title = $("eventModalTitle");
   const content = $("eventModalContent");
   if (!backdrop || !title || !content) return;
 
-  backdrop.classList.remove("pin-modal-mode");
-  backdrop.classList.remove("profile-modal-mode");
   backdrop.classList.add("payment-modal-mode");
   backdrop.classList.remove("hidden");
 
@@ -7678,7 +7688,7 @@ function openManagerProfileModal() {
   if (!backdrop || !title || !content) return;
 
   const user = state.bootstrap?.user || {};
-  backdrop.classList.remove("pin-modal-mode");
+  resetEventModalModes();
   backdrop.classList.add("profile-modal-mode");
   backdrop.classList.remove("hidden");
   title.textContent = "Данные менеджера";
@@ -8058,7 +8068,7 @@ function openChangePinModal() {
   const content = $("eventModalContent");
   if (!backdrop || !title || !content) return;
 
-  backdrop.classList.remove("profile-modal-mode");
+  resetEventModalModes();
   backdrop.classList.add("pin-modal-mode");
   backdrop.classList.remove("hidden");
   title.textContent = "Смена PIN";
