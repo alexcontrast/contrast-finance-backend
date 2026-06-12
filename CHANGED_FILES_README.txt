@@ -1,29 +1,30 @@
-Contrast Finance Backend v0.40.8 — changed files only
+Contrast Finance Backend v0.40.9 — changed files only
 
-Base: v0.40.7.
+Base: v0.40.8.
 
 Reason:
-When a manager or admin cancelled/rejected a payment request, some Telegram cards could remain visible.
+After bot redeploy, the new Telegram worker could send existing active payment requests again if those requests did not have active `admin_payment_card` rows in `telegram_messages`.
 
 Exact cause:
-The bot deleted only messages that were stored as active rows in `telegram_messages`. Cards sent from the ad-hoc `Мои заявки` view were not stored there, and handlers did not explicitly delete the clicked callback message as a fallback. Therefore the database status changed correctly, but the visible Telegram card could remain in chat.
+`poll_site_requests()` selected every active request without an active admin Telegram card. After a redeploy or after old test cards created before message persistence, those old requests looked like "not notified" and were republished.
 
 Changed files:
 - app/telegram_bot/main.py
-  - BOT_VERSION -> CONTRAST_FINANCE_BOT_V0.40.8_NEW_SITE.
-  - `Мои заявки` cards are now saved as `manager_payment_card` rows.
-  - `sync_request_cards()` accepts `extra_messages` for the clicked callback message.
-  - Admin reject/cancel and manager cancel pass the clicked card as a delete fallback.
-  - If Telegram reports an already-deleted message, the DB row is marked deleted, not failed.
+  - BOT_VERSION -> CONTRAST_FINANCE_BOT_V0.40.9_NEW_SITE.
+  - Added `BOT_STARTED_AT`.
+  - Added env flag `TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START` (default false).
+  - `poll_site_requests()` now publishes only requests created after this bot worker started, unless the env flag is explicitly enabled.
+  - Startup logs show bot start time and whether existing-request publication is enabled.
 - app/core/config.py
 - app/app/core/config.py
 - README.md
 - CHANGED_FILES_README.txt
 
 Behavior:
-- Manager/admin cancellation now deletes saved admin/manager cards plus the clicked callback card.
-- Multiple manager cards for the same request from `Мои заявки` are cleaned up together.
-- Tatiana cards, when enabled, are updated and not deleted.
+- Redeploying the bot no longer spams old active requests.
+- New requests created on the site while the bot is running are still sent to Telegram.
+- Status synchronization for existing saved cards is unchanged.
+- To intentionally backfill old requests once, set `TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START=true`, redeploy, then set it back to false.
 
 Checks passed:
 - python3 -m py_compile app/telegram_bot/main.py

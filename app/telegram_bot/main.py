@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.8_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.9_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -60,6 +60,13 @@ TATYANA_CHAT_ID = int(os.getenv("TELEGRAM_TATYANA_CHAT_ID") or os.getenv("TATYAN
 TATYANA_ENABLED = str(os.getenv("TELEGRAM_TATYANA_ENABLED") or "false").strip().lower() in {"1", "true", "yes", "on"}
 POLL_SECONDS = int(os.getenv("TELEGRAM_POLL_SECONDS") or os.getenv("POLL_SITE_REQUESTS_SECONDS") or "20")
 POLL_BATCH_LIMIT = int(os.getenv("TELEGRAM_POLL_BATCH_LIMIT") or os.getenv("BOT_POLL_BATCH_LIMIT") or "10")
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def env_int(name: str, default: int) -> int:
@@ -74,6 +81,12 @@ def env_int(name: str, default: int) -> int:
 # If an import/migration needs another year temporarily, set TELEGRAM_MIN_EVENT_YEAR.
 TELEGRAM_MIN_EVENT_YEAR = env_int("TELEGRAM_MIN_EVENT_YEAR", date.today().year)
 TELEGRAM_DIRTY_MARKER_AT = datetime(2000, 1, 1)
+
+# Prevent Telegram spam after Railway redeploys. By default the bot publishes
+# only payment requests created after this worker started. Old active requests
+# without saved Telegram message rows are not sent again automatically.
+BOT_STARTED_AT = datetime.utcnow()
+TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START = env_bool("TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START", False)
 
 (
     BIND_PHONE,
@@ -1645,11 +1658,14 @@ async def poll_site_requests(context: ContextTypes.DEFAULT_TYPE):
             TelegramMessage.message_type == "admin_payment_card",
             TelegramMessage.status == "active",
         ).exists()
+        query = select(PaymentRequest).where(
+            not_(subq),
+            PaymentRequest.status.in_(["new", "to_pay", "tax_check_needed"]),
+        )
+        if not TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START:
+            query = query.where(PaymentRequest.created_at >= BOT_STARTED_AT)
         requests = db.execute(
-            select(PaymentRequest)
-            .where(not_(subq), PaymentRequest.status.in_(["new", "to_pay", "tax_check_needed"]))
-            .order_by(PaymentRequest.id.desc())
-            .limit(POLL_BATCH_LIMIT)
+            query.order_by(PaymentRequest.id.desc()).limit(POLL_BATCH_LIMIT)
         ).scalars().all()
         request_ids = [r.id for r in requests if not is_recently_published(r.id)]
     for request_id in request_ids:
@@ -1738,6 +1754,8 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     require_env()
     print("BOT VERSION:", BOT_VERSION)
+    print("BOT STARTED AT:", BOT_STARTED_AT.isoformat())
+    print("PUBLISH EXISTING REQUESTS ON START:", TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START)
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     bind_conversation = ConversationHandler(
