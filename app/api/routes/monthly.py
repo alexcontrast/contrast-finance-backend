@@ -11,7 +11,9 @@ from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_plan import MonthlyPlan
+from app.models.user import User
 from app.schemas.monthly_plan import CompanyDashboardRead, DepartmentDashboardRead, MonthlyPlanCreate, MonthlyPlanRead
+from app.services.auth import require_roles
 from app.services.event_calculator import calculate_event_summary_values, q
 
 
@@ -107,7 +109,11 @@ def get_department_expenses(db: Session, department_name: str, year: int, month:
 
 
 @router.post("/monthly-plans", response_model=MonthlyPlanRead)
-def create_or_update_monthly_plan(payload: MonthlyPlanCreate, db: Session = Depends(get_db)):
+def create_or_update_monthly_plan(
+    payload: MonthlyPlanCreate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     month = normalize_month(payload.month)
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month)).scalar_one_or_none()
 
@@ -135,7 +141,10 @@ def create_or_update_monthly_plan(payload: MonthlyPlanCreate, db: Session = Depe
 
 
 @router.get("/monthly-plans", response_model=list[MonthlyPlanRead])
-def list_monthly_plans(db: Session = Depends(get_db)):
+def list_monthly_plans(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     return db.execute(select(MonthlyPlan).order_by(MonthlyPlan.month.desc())).scalars().all()
 
 

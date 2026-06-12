@@ -210,3 +210,31 @@ def update_user_pin(
     db.refresh(user)
 
     return user_to_read(user)
+
+@router.delete("/users/{user_id}", response_model=UserRead)
+def deactivate_manager(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить самого себя")
+
+    if user.role != "manager":
+        raise HTTPException(status_code=400, detail="Удалять из этой кнопки можно только менеджеров")
+
+    # Soft delete: кабинет блокируется сразу через is_active=False.
+    # Мероприятия и заявки остаются в базе, чтобы факт месяца не пересчитался назад.
+    user.is_active = False
+    user.updated_at = datetime.utcnow()
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user_to_read(user)
+

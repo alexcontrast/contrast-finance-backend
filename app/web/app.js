@@ -2429,6 +2429,8 @@ const state = {
   managerDraftTempSeq: 1,
   adminData: null,
   users: [],
+  monthlyPlans: [],
+  monthlyPlansYear: null,
   authMode: "manager",
 };
 
@@ -4379,7 +4381,7 @@ function renderAdminOverview(data) {
                 <div class="manager-progress-row">
                   <div class="manager-progress-main">
                     <strong class="manager-progress-name">
-                      <span>${row.manager.name}</span>
+                      <span>${escapeHtml(row.manager.name)}</span>
                       ${row.eventsCount ? `<em class="manager-events-count-badge">${row.eventsCount}</em>` : ""}
                     </strong>
                     <span>${formatMoney(row.income)} ₸ · ${row.percent}%</span>
@@ -4387,6 +4389,7 @@ function renderAdminOverview(data) {
                   <div class="manager-progress-bar">
                     ${progressLine(row.percent)}
                   </div>
+                  <button class="manager-delete-btn" data-delete-manager-id="${row.manager.id}" data-delete-manager-name="${escapeHtml(row.manager.name)}" title="Удалить менеджера" type="button">×</button>
                 </div>
               `).join("") : `<div class="empty-state">Менеджеров в отделе пока нет.</div>`}
             </div>
@@ -4490,25 +4493,107 @@ function renderAdminEvents(data, mode = "active") {
   `;
 }
 
+function planEditorYear() {
+  const year = Number(String(state.month || "").slice(0, 4));
+  return Number.isFinite(year) && year > 2000 ? year : new Date().getFullYear();
+}
+
+function monthlyPlanKey(year, monthValue) {
+  return `${year}-${monthValue}`;
+}
+
+function planMonthDate(year, monthValue) {
+  return `${year}-${monthValue}-01`;
+}
+
+function monthlyPlansByMonth(year) {
+  const map = new Map();
+  (state.monthlyPlans || []).forEach((plan) => {
+    const monthKey = String(plan.month || "").slice(0, 7);
+    if (monthKey.startsWith(`${year}-`)) map.set(monthKey, plan);
+  });
+  return map;
+}
+
+function defaultPlanPercent(plans, key, fallback) {
+  const currentPlan = plans.get(String(state.month || "").slice(0, 7));
+  const firstPlan = [...plans.values()][0];
+  const value = currentPlan?.[key] ?? firstPlan?.[key] ?? fallback;
+  const number = normalizeNumberInput(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function formatPercentValue(value) {
+  const number = Math.round(normalizeNumberInput(value) * 100) / 100;
+  return String(number).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+}
+
 function renderPlansSkeleton(data) {
+  const year = planEditorYear();
+  const isLoaded = Number(state.monthlyPlansYear) === Number(year);
+  const plans = monthlyPlansByMonth(year);
+  const sanzharPercent = defaultPlanPercent(plans, "sanzhar_share_percent", 66.67);
+  const raufalPercent = defaultPlanPercent(plans, "raufal_share_percent", 33.33);
+  const managerPercent = defaultPlanPercent(plans, "manager_personal_plan_percent", 12.5);
+
   return `
-    <div class="block-title">
-      <h3>Планы</h3>
-      <button id="openPlansModalBtn" class="secondary">Задать планы</button>
-    </div>
-    <div class="empty-state">
-      Скелет готов: здесь будет редактирование общего плана, долей отделов и индивидуальных планов менеджеров.
-      Сохранение подключим следующим шагом к backend-ручкам планов.
-    </div>
-    <div class="overview-section">
-      <h3>Текущие значения</h3>
-      <div class="grid cards">
-        ${metric("План компании", formatMoney(data.company_plan_amount))}
-        ${metric("Личный план менеджера", formatMoney(data.manager_personal_plan_amount))}
-        ${metric("Санжар", "2/3")}
-        ${metric("Рауфаль", "1/3")}
+    <section class="plans-editor" id="plansEditor" data-plans-year="${year}">
+      <div class="block-title plans-editor-title">
+        <div>
+          <h3>Задать планы на ${year}</h3>
+          <p class="muted">Год берётся из верхнего переключателя. Введи общий план компании по каждому месяцу.</p>
+        </div>
+        <button id="savePlansYearBtn" class="secondary" ${isLoaded ? "" : "disabled"}>Сохранить планы</button>
       </div>
-    </div>
+
+      ${!isLoaded ? `<div class="empty-state">Загружаем планы за ${year}…</div>` : `
+        <div class="plans-settings-grid">
+          <label>Санжар, %
+            <input id="planSanzharPercent" inputmode="decimal" value="${formatPercentValue(sanzharPercent)}" />
+          </label>
+          <label>Рауфаль, %
+            <input id="planRaufalPercent" inputmode="decimal" value="${formatPercentValue(raufalPercent)}" />
+          </label>
+          <label>План менеджера, % от плана компании
+            <input id="planManagerPercent" inputmode="decimal" value="${formatPercentValue(managerPercent)}" />
+          </label>
+        </div>
+
+        <div class="plans-table-wrap">
+          <table class="plans-table">
+            <thead>
+              <tr>
+                <th>Месяц</th>
+                <th>План компании</th>
+                <th>Санжар</th>
+                <th>Рауфаль</th>
+                <th>План менеджера</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${MONTHS_RU.map(([monthValue, label]) => {
+                const key = monthlyPlanKey(year, monthValue);
+                const plan = plans.get(key);
+                const companyPlan = plan?.company_plan_amount ?? "";
+                return `
+                  <tr>
+                    <td><strong>${label}</strong></td>
+                    <td>
+                      <input class="plan-month-input" data-month-plan-input="${monthValue}" inputmode="numeric" value="${formatInputNumber(companyPlan)}" placeholder="0" />
+                    </td>
+                    <td data-plan-calc-sanzhar="${monthValue}">0</td>
+                    <td data-plan-calc-raufal="${monthValue}">0</td>
+                    <td data-plan-calc-manager="${monthValue}">0</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+
+        <div id="plansSaveMessage" class="muted plans-save-message"></div>
+      `}
+    </section>
   `;
 }
 
@@ -4594,6 +4679,7 @@ function renderAdminEmptyDashboard(month, error = null) {
   attachPaymentRequestActions();
   attachFilters();
   attachEventRows();
+  attachManagerDeleteButtons();
   attachPlansModal();
 }
 
@@ -4635,6 +4721,7 @@ function renderAdminDashboard(data) {
   attachPaymentRequestActions();
   attachFilters();
   attachEventRows();
+  attachManagerDeleteButtons();
   attachPlansModal();
 }
 
@@ -7897,50 +7984,164 @@ function renderManagerDashboard(data, paymentRequests = []) {
     }
   }
 }
-function attachPlansModal() {
-  const btn = document.getElementById("openPlansModalBtn");
-  if (!btn) return;
+async function ensureMonthlyPlansLoadedForEditor() {
+  const editor = document.getElementById("plansEditor");
+  if (!editor) return false;
 
-  btn.addEventListener("click", () => {
-    const managers = getManagers();
-    $("plansModalBackdrop").classList.remove("hidden");
-    $("plansModalContent").innerHTML = `
-      <div class="form-grid">
-        <label>Общий план компании
-          <input value="${state.adminData?.company_plan_amount || ""}" />
-        </label>
-        <label>Доля Санжар, %
-          <input value="66.67" />
-        </label>
-        <label>Доля Рауфаль, %
-          <input value="33.33" />
-        </label>
-      </div>
+  const year = Number(editor.dataset.plansYear || planEditorYear());
+  if (Number(state.monthlyPlansYear) === year) return true;
 
-      <div class="divider"></div>
+  try {
+    const plans = await api(`/monthly-plans?_=${Date.now()}`);
+    state.monthlyPlans = Array.isArray(plans) ? plans : [];
+    state.monthlyPlansYear = year;
+  } catch (error) {
+    editor.innerHTML = `<div class="empty-state">Не удалось загрузить планы: ${escapeHtml(error.message)}</div>`;
+    return false;
+  }
 
-      <h3>Индивидуальные планы менеджеров</h3>
-      <p class="small-note">По умолчанию каждому менеджеру 1/8 общего плана. Сохранение подключим к backend следующим шагом.</p>
+  const content = document.getElementById("dashboardContent");
+  if (content && state.activeAdminTab === "plans") {
+    content.innerHTML = renderPlansSkeleton(state.adminData || emptyAdminDashboard(state.month));
+    attachPlansModal();
+  }
 
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Менеджер</th><th>Отдел</th><th>Процент от общего плана</th></tr></thead>
-          <tbody>
-            ${managers.map((manager) => `
-              <tr>
-                <td>${manager.name}</td>
-                <td>${departmentNameById(manager.department_id)}</td>
-                <td><input value="12.5" /></td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
+  return false;
+}
 
-      <div class="divider"></div>
-      <button class="secondary" disabled>Сохранение подключим следующим шагом</button>
-    `;
+function setMirroredDepartmentPercent(changedInput, mirroredInput) {
+  if (!changedInput || !mirroredInput) return;
+  const value = Math.max(0, Math.min(100, normalizeNumberInput(changedInput.value)));
+  mirroredInput.value = formatPercentValue(100 - value);
+}
+
+function updatePlansCalculatedCells() {
+  const sanzharPercent = normalizeNumberInput(document.getElementById("planSanzharPercent")?.value || 0);
+  const raufalPercent = normalizeNumberInput(document.getElementById("planRaufalPercent")?.value || 0);
+  const managerPercent = normalizeNumberInput(document.getElementById("planManagerPercent")?.value || 0);
+
+  document.querySelectorAll("[data-month-plan-input]").forEach((input) => {
+    const monthValue = input.dataset.monthPlanInput;
+    const companyPlan = normalizeNumberInput(input.value);
+
+    const sanzharCell = document.querySelector(`[data-plan-calc-sanzhar="${monthValue}"]`);
+    const raufalCell = document.querySelector(`[data-plan-calc-raufal="${monthValue}"]`);
+    const managerCell = document.querySelector(`[data-plan-calc-manager="${monthValue}"]`);
+
+    if (sanzharCell) sanzharCell.textContent = formatMoney(companyPlan * sanzharPercent / 100);
+    if (raufalCell) raufalCell.textContent = formatMoney(companyPlan * raufalPercent / 100);
+    if (managerCell) managerCell.textContent = formatMoney(companyPlan * managerPercent / 100);
   });
+}
+
+async function savePlansYear() {
+  const button = document.getElementById("savePlansYearBtn");
+  const message = document.getElementById("plansSaveMessage");
+  const year = planEditorYear();
+  const sanzharPercent = normalizeNumberInput(document.getElementById("planSanzharPercent")?.value || 0);
+  const raufalPercent = normalizeNumberInput(document.getElementById("planRaufalPercent")?.value || 0);
+  const managerPercent = normalizeNumberInput(document.getElementById("planManagerPercent")?.value || 0);
+
+  if (Math.abs((sanzharPercent + raufalPercent) - 100) > 0.01) {
+    alert("Сумма процентов Санжар и Рауфаль должна быть 100%.");
+    return;
+  }
+
+  if (managerPercent < 0 || managerPercent > 100) {
+    alert("Процент плана менеджера должен быть от 0 до 100.");
+    return;
+  }
+
+  const inputs = [...document.querySelectorAll("[data-month-plan-input]")];
+  const rows = inputs.map((input) => ({
+    month: planMonthDate(year, input.dataset.monthPlanInput),
+    company_plan_amount: String(Math.round(normalizeNumberInput(input.value) * 100) / 100),
+    sanzhar_share_percent: String(Math.round(sanzharPercent * 100) / 100),
+    raufal_share_percent: String(Math.round(raufalPercent * 100) / 100),
+    manager_personal_plan_percent: String(Math.round(managerPercent * 100) / 100),
+  }));
+
+  try {
+    setButtonLoading(button, true, "Сохраняем…");
+    if (message) message.textContent = "Сохраняем 12 месяцев…";
+
+    for (const payload of rows) {
+      await api("/monthly-plans", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
+
+    state.monthlyPlansYear = null;
+    if (message) message.textContent = "Планы сохранены.";
+    await loadDashboard();
+  } catch (error) {
+    if (message) message.textContent = error.message;
+    else alert(error.message);
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
+async function deleteManagerFromSystem(managerId, managerName) {
+  const name = managerName || "менеджера";
+  const ok = window.confirm(`Удалить ${name}? Кабинет менеджера сразу заблокируется. Его мероприятия останутся в базе и в планах текущего месяца.`);
+  if (!ok) return;
+
+  await withLoading(async () => {
+    await api(`/users/${managerId}`, { method: "DELETE" });
+    await loadDashboard();
+  }, "Удаляем менеджера…");
+}
+
+function attachManagerDeleteButtons() {
+  document.querySelectorAll("[data-delete-manager-id]").forEach((button) => {
+    if (button.dataset.attached === "1") return;
+    button.dataset.attached = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      deleteManagerFromSystem(button.dataset.deleteManagerId, button.dataset.deleteManagerName).catch((error) => alert(error.message));
+    });
+  });
+}
+
+async function attachPlansModal() {
+  const editor = document.getElementById("plansEditor");
+  if (!editor) return;
+
+  const loaded = await ensureMonthlyPlansLoadedForEditor();
+  if (!loaded) return;
+
+  const sanzharInput = document.getElementById("planSanzharPercent");
+  const raufalInput = document.getElementById("planRaufalPercent");
+  const managerInput = document.getElementById("planManagerPercent");
+
+  if (sanzharInput && raufalInput) {
+    sanzharInput.addEventListener("input", () => {
+      setMirroredDepartmentPercent(sanzharInput, raufalInput);
+      updatePlansCalculatedCells();
+    });
+    raufalInput.addEventListener("input", () => {
+      setMirroredDepartmentPercent(raufalInput, sanzharInput);
+      updatePlansCalculatedCells();
+    });
+  }
+
+  if (managerInput) managerInput.addEventListener("input", updatePlansCalculatedCells);
+
+  document.querySelectorAll("[data-month-plan-input]").forEach((input) => {
+    input.addEventListener("input", updatePlansCalculatedCells);
+    input.addEventListener("blur", () => {
+      input.value = formatInputNumber(input.value);
+      updatePlansCalculatedCells();
+    });
+  });
+
+  const saveButton = document.getElementById("savePlansYearBtn");
+  if (saveButton) saveButton.addEventListener("click", savePlansYear);
+
+  updatePlansCalculatedCells();
 }
 
 async function loadUsersForAdmin() {

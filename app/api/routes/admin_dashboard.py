@@ -180,8 +180,11 @@ def get_admin_dashboard(
         select(Department).where(Department.is_active == True).order_by(Department.id)  # noqa: E712
     ).scalars().all()
 
-    users = db.execute(select(User).where(User.is_active == True)).scalars().all()  # noqa: E712
-    user_by_id = {user.id: user for user in users}
+    # Для расчёта факта отделов нужны и уже отключённые менеджеры:
+    # их кабинет блокируется, но мероприятия текущего месяца должны остаться в базе и в планах.
+    all_users = db.execute(select(User)).scalars().all()
+    active_users = [user for user in all_users if user.is_active]
+    user_by_id = {user.id: user for user in all_users}
     dept_by_id = {department.id: department for department in departments}
 
     event_query = select(Event).where(
@@ -267,7 +270,7 @@ def get_admin_dashboard(
         dept_plan = department_plan_amount(plan, department.name)
         dept_expenses = get_department_expenses(db, department.name, month_date.year, month_date.month)
         drafts_count = len(department_draft_event_ids_by_id.get(department.id, set()))
-        managers_count = len([user for user in users if user.department_id == department.id])
+        managers_count = len([user for user in active_users if user.department_id == department.id])
         dept_events_count = len(department_event_ids_by_id.get(department.id, set()))
 
         company_fact += dept_fact
