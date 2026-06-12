@@ -1915,3 +1915,54 @@ button[data-manager-event-save-draft]:hover {
     grid-column: 2;
   }
 }
+
+/* v0.37.18 month-specific plan percentages */
+.plans-help-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  background: rgba(110, 245, 0, .08);
+  border: 1px solid rgba(110, 245, 0, .22);
+  border-radius: 18px;
+  padding: 13px 16px;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.plans-help-card span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.plans-table-monthly {
+  min-width: 1080px;
+}
+
+.plan-percent-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(86px, 1fr));
+  gap: 8px;
+}
+
+.plan-percent-cell {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.plan-percent-input {
+  width: 92px;
+  max-width: 100%;
+  text-align: right;
+}
+
+.plans-table-monthly td[data-plan-calc-sanzhar],
+.plans-table-monthly td[data-plan-calc-raufal],
+.plans-table-monthly td[data-plan-calc-manager] {
+  white-space: nowrap;
+}
