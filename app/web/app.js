@@ -2208,10 +2208,13 @@ function injectManagerUxStyles() {
 
 
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.kgd-col,
-    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.kgd-col,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.kgd-col {
+      background: #f4f7ec !important;
+    }
+
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.paid-col,
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.paid-col {
-      background: #f4f7ec !important;
+      background: #fff !important;
     }
 
 

@@ -3030,7 +3030,7 @@ body.login-mode #loginScreen .auth-title::before {
 }
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.paid-col,
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.paid-col {
-  background: #f4f7ec !important;
+  background: #fff !important;
 }
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-handle {
   width: 16px !important;
@@ -3068,7 +3068,7 @@ body.login-mode #loginScreen .auth-title::before {
 .internal-estimate-table td.paid-col,
 .event-modal-estimate-table th.paid-col,
 .event-modal-estimate-table td.paid-col {
-  background: #f4f7ec !important;
+  background: #fff !important;
 }
 .event-modal-estimate-table {
   width: 100% !important;
