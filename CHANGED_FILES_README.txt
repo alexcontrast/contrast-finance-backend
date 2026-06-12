@@ -1,10 +1,18 @@
-Contrast Finance Backend v0.37.13 — changed files only
+Contrast Finance Backend v0.37.14 — changed files only
 
-Changed files:
-- README.md
-- CHANGED_FILES_README.txt
-- app/core/config.py
-- app/web/app.js
+Точечный фикс модалки менеджера `Мои оплаты` после v0.37.13.
 
-Миграций нет.
-Backend-логика не менялась относительно v0.37.12.
+Причина, почему на экране всё ещё было много пустого места:
+- в v0.37.13 был исправлен CSS/JS, но `app/web/index.html` всё ещё подключал `/web/app.js?v=0.37.12`;
+- браузер мог продолжать брать старый закэшированный `app.js`, поэтому новая логика ширины фактически не применялась.
+
+Что изменено:
+- `app/web/index.html`: cache-bust обновлён до `app.js?v=0.37.14` и `styles.css?v=0.37.14`;
+- `app/web/app.js`: дополнительно зафиксирована ширина внутренних wrapper'ов `Мои оплаты` по контенту, чтобы карточки не растягивали модалку через старые общие классы;
+- `app/core/config.py`: VERSION = `0.37.14`.
+
+Backend-логика и миграции не менялись.
+
+Проверки:
+- `node --check app/web/app.js`
+- `python3 -m compileall -q app`

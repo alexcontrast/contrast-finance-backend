@@ -2293,7 +2293,7 @@ function injectManagerUxStyles() {
     }
 
 
-    /* v0.37.13: "Мои оплаты" по ширине внутренних карточек, без пустых боков */
+    /* v0.37.14: "Мои оплаты" реально по ширине внутренних карточек + cache-bust через index.html */
     #plansModalBackdrop.manager-payments-modal .modal,
     #plansModalBackdrop.manager-payments-modal .modal-card,
     #plansModalBackdrop.manager-payments-modal .event-modal,
@@ -2343,6 +2343,23 @@ function injectManagerUxStyles() {
       margin-left: auto !important;
       margin-right: auto !important;
       overflow-x: hidden !important;
+    }
+
+    #eventModalBackdrop.manager-payments-modal .manager-event-requests-modal,
+    #eventModalBackdrop.manager-payments-modal .compact-payments-modal,
+    #eventModalBackdrop.manager-payments-modal .grouped-payments-modal,
+    #eventModalBackdrop.manager-payments-modal .compact-grouped-payments {
+      width: fit-content !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+    }
+
+    #eventModalBackdrop.manager-payments-modal .manager-payment-position-group.compact {
+      width: fit-content !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
     }
 
     #plansModalBackdrop.manager-payments-modal .table-wrap,
