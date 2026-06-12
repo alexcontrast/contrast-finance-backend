@@ -9,3 +9,4 @@ pydantic==2.10.4
 PyJWT==2.10.1
 python-telegram-bot==21.6
 requests==2.32.3
+python-multipart==0.0.20

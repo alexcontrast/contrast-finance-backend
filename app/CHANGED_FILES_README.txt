@@ -30,3 +30,6 @@ Contrast Finance v0.40.10 — changed files only
 
 v0.40.13: Legacy importer merges legacy open statuses (`Новая`/`На оплату`) into `new` and legacy terminal rejection statuses (`Отклонено`/`Отменено`) into `cancelled`.
 v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.
+
+
+v0.40.16: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.

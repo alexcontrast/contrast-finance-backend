@@ -1,13 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from __future__ import annotations
+
+import json
+import threading
+import time
+import uuid
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.services.legacy_importer import import_legacy_data, import_legacy_data_step, validate_legacy_data
 
 
 router = APIRouter(tags=["legacy_migration"])
+LEGACY_IMPORT_JOBS: dict[str, dict[str, Any]] = {}
+LEGACY_PAGE_VERSION = "0.40.16"
 
 
 def require_migration_token(token: str | None):
@@ -40,7 +51,7 @@ def legacy_migration_page():
 <body>
   <div class="card">
     <h1>Импорт старого Contrast</h1>
-    <p class="muted">1) Сначала запусти сухую проверку. 2) Если ошибок нет — запусти боевой импорт.</p>
+    <p class="muted"><b>Страница v0.40.16</b>. 1) Сначала запусти сухую проверку. 2) Если ошибок нет — запусти боевой импорт.</p>
     <p class="warn">После успешной миграции лучше сразу удалить переменную <b>LEGACY_MIGRATION_TOKEN</b> или сменить её.</p>
     <label for="token">Migration token</label>
     <input id="token" type="password" placeholder="LEGACY_MIGRATION_TOKEN" autocomplete="off">
@@ -51,6 +62,19 @@ def legacy_migration_page():
       <button id="dryRunBtn" type="button">Сухая проверка</button>
       <button id="importBtn" class="secondary" type="button">Импортировать в базу</button>
     </div>
+    <hr style="border:0;border-top:1px solid #e2e7dd;margin:22px 0">
+    <h3>Резервный режим без JavaScript</h3>
+    <p class="muted">Если выше не появляется «Файл выбран», используй эти кнопки. Они отправляют файл обычной HTML-формой.</p>
+    <form method="post" action="/api/legacy-migration/validate-file" enctype="multipart/form-data" target="_blank">
+      <input name="token" type="password" placeholder="LEGACY_MIGRATION_TOKEN">
+      <input name="file" type="file" accept="application/json,.json">
+      <button type="submit">Резервная сухая проверка</button>
+    </form>
+    <form method="post" action="/legacy-migration/start-import-file" enctype="multipart/form-data" target="_blank">
+      <input name="token" type="password" placeholder="LEGACY_MIGRATION_TOKEN">
+      <input name="file" type="file" accept="application/json,.json">
+      <button class="secondary" type="submit">Резервный импорт в базу</button>
+    </form>
     <h3>Результат</h3>
     <pre id="out">Жду файл…</pre>
   </div>
@@ -176,6 +200,107 @@ def legacy_migration_page():
         headers={"Cache-Control": "no-store"},
     )
 
+
+
+async def uploaded_legacy_json(file: UploadFile) -> dict[str, Any]:
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Файл пустой или не был загружен")
+    try:
+        return json.loads(raw.decode("utf-8-sig"))
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Не удалось прочитать JSON-файл: {err}")
+
+
+@router.post("/api/legacy-migration/validate-file")
+async def validate_legacy_migration_file(
+    token: str = Form(...),
+    file: UploadFile = File(...),
+):
+    require_migration_token(token)
+    data = await uploaded_legacy_json(file)
+    return {"ok": True, "dry_run": True, "page_version": LEGACY_PAGE_VERSION, "result": validate_legacy_data(data)}
+
+
+def set_job(job_id: str, **updates: Any) -> None:
+    job = LEGACY_IMPORT_JOBS.setdefault(job_id, {})
+    job.update(updates)
+    job["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+
+def run_legacy_import_job(job_id: str, data: dict[str, Any]) -> None:
+    if SessionLocal is None:
+        set_job(job_id, ok=False, status="failed", error="DATABASE_URL is not configured")
+        return
+    plan = [
+        {"step": "core", "label": "1/6 пользователи, отделы, цели", "limit": 1},
+        {"step": "events", "label": "2/6 мероприятия", "limit": 20},
+        {"step": "shares", "label": "3/6 доли/соавторы", "limit": 1},
+        {"step": "items", "label": "4/6 позиции", "limit": 100},
+        {"step": "payments", "label": "5/6 заявки оплат", "limit": 50},
+        {"step": "final", "label": "6/6 финальная проверка", "limit": 1},
+    ]
+    set_job(job_id, ok=True, status="running", started_at=datetime.utcnow().isoformat() + "Z", log=[])
+    try:
+        for item in plan:
+            offset = 0
+            while True:
+                db = SessionLocal()
+                try:
+                    result = import_legacy_data_step(db, data, item["step"], offset=offset, limit=item["limit"])
+                finally:
+                    db.close()
+                entry = {"label": item["label"], "step": item["step"], "offset": offset, "result": result}
+                job = LEGACY_IMPORT_JOBS.setdefault(job_id, {})
+                job.setdefault("log", []).append(entry)
+                set_job(job_id, current=item["label"], last_result=result)
+                if result.get("done"):
+                    break
+                offset = int(result.get("next_offset") or 0)
+                time.sleep(0.1)
+        set_job(job_id, ok=True, status="completed", current="Готово", finished_at=datetime.utcnow().isoformat() + "Z")
+    except Exception as err:
+        set_job(job_id, ok=False, status="failed", error=str(err), finished_at=datetime.utcnow().isoformat() + "Z")
+
+
+@router.post("/legacy-migration/start-import-file", response_class=HTMLResponse)
+async def start_legacy_migration_file(
+    token: str = Form(...),
+    file: UploadFile = File(...),
+):
+    require_migration_token(token)
+    data = await uploaded_legacy_json(file)
+    validation = validate_legacy_data(data)
+    if validation.get("errors"):
+        return HTMLResponse("<pre>Импорт не запущен: есть ошибки проверки\n" + json.dumps(validation, ensure_ascii=False, indent=2) + "</pre>", status_code=400)
+    job_id = uuid.uuid4().hex[:12]
+    set_job(job_id, ok=True, status="queued", current="Поставлено в очередь", validation=validation)
+    thread = threading.Thread(target=run_legacy_import_job, args=(job_id, data), daemon=True)
+    thread.start()
+    return HTMLResponse(f"""
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="refresh" content="3;url=/legacy-migration/job/{job_id}"><title>Legacy import job</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;background:#f7f8f5;padding:24px">
+<h1>Импорт запущен</h1>
+<p>Job ID: <b>{job_id}</b></p>
+<p>Страница будет обновляться каждые 3 секунды.</p>
+<p><a href="/legacy-migration/job/{job_id}">Открыть статус импорта</a></p>
+</body></html>
+""")
+
+
+@router.get("/legacy-migration/job/{job_id}", response_class=HTMLResponse)
+def legacy_migration_job_page(job_id: str):
+    job = LEGACY_IMPORT_JOBS.get(job_id)
+    if not job:
+        return HTMLResponse("<pre>Job не найден. Возможно, web-service был перезапущен.</pre>", status_code=404)
+    refresh = "" if job.get("status") in {"completed", "failed"} else f'<meta http-equiv="refresh" content="3;url=/legacy-migration/job/{job_id}">'
+    return HTMLResponse(f"""
+<!doctype html><html lang="ru"><head><meta charset="utf-8">{refresh}<title>Legacy import status</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;background:#f7f8f5;padding:24px">
+<h1>Статус импорта</h1>
+<pre style="white-space:pre-wrap;background:#111;color:#eaffd1;padding:14px;border-radius:14px">{json.dumps(job, ensure_ascii=False, indent=2)}</pre>
+</body></html>
+""")
 
 @router.post("/api/legacy-migration/validate")
 async def validate_legacy_migration(

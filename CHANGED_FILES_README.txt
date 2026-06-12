@@ -12,3 +12,6 @@ Fix:
 - Buttons are bound with addEventListener instead of inline onclick.
 - File is parsed immediately after selection, so Safari/cache issues are visible before dry-run/import.
 - Clearer message when the selected file is missing or invalid.
+
+
+v0.40.16: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.

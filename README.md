@@ -19,3 +19,6 @@ v0.40.12: Legacy migration dry-run now uses fast JSON validation without touchin
 
 ## v0.40.15
 - Improved legacy migration page file handling for Safari/browser cache: explicit selected-file indicator, button event listeners, and clearer messages when the JSON file is not selected/read.
+
+
+v0.40.16: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.
