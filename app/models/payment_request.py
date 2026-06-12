@@ -11,6 +11,7 @@ class PaymentRequest(Base):
     __tablename__ = "payment_requests"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    legacy_payment_id: Mapped[str | None] = mapped_column(String(80), nullable=True, unique=True, index=True)
 
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), nullable=False, index=True)
     event_item_id: Mapped[int] = mapped_column(ForeignKey("event_items.id"), nullable=False, index=True)

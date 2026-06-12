@@ -11,6 +11,7 @@ class EventItem(Base):
     __tablename__ = "event_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    legacy_item_key: Mapped[str | None] = mapped_column(String(160), nullable=True, unique=True, index=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), nullable=False, index=True)
 
     # regular / coordinator

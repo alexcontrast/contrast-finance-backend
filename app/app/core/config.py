@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.40.10"
+    VERSION: str = "0.40.11"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -22,6 +22,9 @@ class Settings:
     CONTRACTOR_DEDUCTION_RATE: Decimal = Decimal(os.getenv("CONTRACTOR_DEDUCTION_RATE", "0.10"))
     CONTRAST_INTERNAL_TAX_RATE: Decimal = Decimal(os.getenv("CONTRAST_INTERNAL_TAX_RATE", "0.12"))
     SIMPLIFIED_TAX_RATE: Decimal = Decimal(os.getenv("SIMPLIFIED_TAX_RATE", "0.05"))
+
+    # Temporary one-time legacy migration page/API. Set before import, remove after migration.
+    LEGACY_MIGRATION_TOKEN: str | None = os.getenv("LEGACY_MIGRATION_TOKEN")
 
 
 @lru_cache

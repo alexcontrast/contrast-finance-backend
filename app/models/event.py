@@ -11,6 +11,7 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    legacy_event_id: Mapped[str | None] = mapped_column(String(80), nullable=True, unique=True, index=True)
 
     # Заказчик важнее названия — в интерфейсе показываем первым.
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)

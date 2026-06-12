@@ -19,3 +19,9 @@ Contrast Finance v0.40.10 — changed files only
 Проверки:
 - python3 -m compileall -q app
 - python3 -m py_compile app/telegram_bot/main.py
+
+
+## v0.40.11
+- Added one-time legacy migration importer for Apps Script / Google Sheets export JSON.
+- Added legacy identifiers for idempotent event/item/payment imports.
+- Added /legacy-migration upload page protected by LEGACY_MIGRATION_TOKEN.
