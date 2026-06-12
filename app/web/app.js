@@ -4694,10 +4694,10 @@ function renderClosingSkeleton(data) {
       <div class="block-title closing-title">
         <div>
           <h3>Закрыть месяц</h3>
-          <p class="muted">Мини-калькуляция за ${monthLabelRu(state.month)}. Мероприятия после закрытия не блокируются.</p>
+          <p class="muted">Расходы за ${monthLabelRu(state.month)}. Калькуляция подтянется после загрузки расходов.</p>
         </div>
       </div>
-      <div class="empty-state">Загружаем расходы и расчёт месяца…</div>
+      <div class="empty-state">Загружаем расходы месяца…</div>
     </section>
   `;
 }
@@ -4758,8 +4758,11 @@ function closingDepartmentCard(title, prefix, calc) {
   `;
 }
 
-function renderClosingCalculation(calc, closing) {
+function renderClosingCalculation(calc, closing, calcPending = false) {
   if (!calc) {
+    if (calcPending) {
+      return `<div class="empty-state closing-empty">Расходы уже загружены. Калькуляция подтягивается в фоне…</div>`;
+    }
     return `<div class="empty-state closing-empty">Сначала задайте план месяца во вкладке «Задать планы».</div>`;
   }
 
@@ -4828,7 +4831,7 @@ function renderClosingContent(expenses, calc, closing, error = null, calcPending
         <h4>Калькуляция</h4>
         <span>${calcPending ? "обновляется в фоне…" : "10% / 15%"}</span>
       </div>
-      ${renderClosingCalculation(calc, closing)}
+      ${renderClosingCalculation(calc, closing, calcPending)}
       ${calcPending ? `<div class="muted closing-message">Расход сохранён. Калькуляция обновится автоматически через пару секунд.</div>` : ""}
       <div class="closing-actions">
         <button id="recalculateClosingBtn" class="secondary" type="button">Пересчитать</button>
@@ -8221,8 +8224,29 @@ async function loadClosingByMonth(month) {
   }
 }
 
-async function loadClosingPanelData() {
+async function loadClosingPanelData(options = {}) {
   const month = state.month;
+  const includeCalculation = Boolean(options.includeCalculation);
+  const cached = state.closingPanelData && state.closingPanelData.month === month
+    ? state.closingPanelData
+    : null;
+
+  if (!includeCalculation) {
+    const [expenses, closing] = await Promise.allSettled([
+      api(`/monthly-expenses?month=${month}&_=${Date.now()}`),
+      loadClosingByMonth(month),
+    ]);
+
+    return {
+      month,
+      expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
+      calc: cached?.calc || null,
+      closing: closing.status === "fulfilled" ? closing.value : cached?.closing || null,
+      error: expenses.status === "rejected" ? expenses.reason?.message : null,
+      calcPending: true,
+    };
+  }
+
   const [expenses, calcResult, closing] = await Promise.allSettled([
     api(`/monthly-expenses?month=${month}&_=${Date.now()}`),
     api(`/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
@@ -8232,9 +8256,9 @@ async function loadClosingPanelData() {
   if (calcResult.status === "rejected") {
     return {
       month,
-      expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
-      calc: null,
-      closing: closing.status === "fulfilled" ? closing.value : null,
+      expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : cached?.expenses || [],
+      calc: cached?.calc || null,
+      closing: closing.status === "fulfilled" ? closing.value : cached?.closing || null,
       error: calcResult.reason?.message || "Не удалось рассчитать закрытие месяца",
       calcPending: false,
     };
@@ -8242,9 +8266,9 @@ async function loadClosingPanelData() {
 
   return {
     month,
-    expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
+    expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : cached?.expenses || [],
     calc: calcResult.value,
-    closing: closing.status === "fulfilled" ? closing.value : null,
+    closing: closing.status === "fulfilled" ? closing.value : cached?.closing || null,
     error: expenses.status === "rejected" ? expenses.reason?.message : null,
     calcPending: false,
   };
@@ -8332,19 +8356,24 @@ function markClosingCalculationPending() {
   scheduleClosingCalculationRefresh();
 }
 
-async function refreshClosingPanel() {
+async function refreshClosingPanel(options = {}) {
   const panel = document.getElementById("closingPanel");
   if (!panel) return;
 
   const loadedForMonth = panel.dataset.closingMonth;
   if (loadedForMonth !== String(state.month)) return;
 
+  const includeCalculation = Boolean(options.includeCalculation);
+
   try {
-    const data = await loadClosingPanelData();
+    const data = await loadClosingPanelData({ includeCalculation });
     cacheClosingPanelData(data);
     renderClosingPanelFromCache();
+    if (!includeCalculation && !data.error) {
+      scheduleClosingCalculationRefresh(250);
+    }
   } catch (error) {
-    cacheClosingPanelData({ month: state.month, expenses: [], calc: null, closing: null, error: error.message });
+    cacheClosingPanelData({ month: state.month, expenses: [], calc: null, closing: null, error: error.message, calcPending: false });
     renderClosingPanelFromCache();
   }
 }
@@ -8482,7 +8511,7 @@ async function recalculateSelectedMonthClosing() {
 
   if (!isClosed) {
     await withLoading(async () => {
-      await refreshClosingPanel();
+      await refreshClosingPanel({ includeCalculation: true });
     }, "Пересчитываем…");
     return;
   }
