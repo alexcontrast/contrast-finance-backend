@@ -4865,11 +4865,17 @@ async function openAdminEventEditMode(eventId) {
   delete state.managerDraftDeletedByEventId[String(eventId)];
 
   try {
-    const [event, items, summary] = await Promise.all([
+    const [event, items, summary, requests] = await Promise.all([
       api(`/events/${eventId}`),
       api(`/events/${eventId}/items`),
       api(`/events/${eventId}/summary`),
+      api(`/events/${eventId}/payment-requests`),
     ]);
+
+    // В админском редакторе кнопки удаления/блокировки способов оплаты
+    // должны знать о заявках мероприятия. Иначе UI разрешал удалить строку,
+    // но backend потом отклонял DELETE из-за активных заявок, и весь save падал.
+    state.managerPaymentRequests = requests || [];
 
     const draftEvent = getDraftEvent(event);
     state.currentManagerEvent = draftEvent;
@@ -8434,14 +8440,19 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-admin-event-save-edit");
       if (!eventId || button.disabled) return;
-      await withLoading(async () => {
-        await saveDraftEvent(eventId);
-        await saveDraftItems(eventId);
-        showToast("Изменения сохранены");
-        await closeAdminEventEditMode(eventId, false);
-        await openEventModal(eventId);
-        await loadDashboard();
-      }, "Сохраняем изменения…");
+
+      try {
+        await withLoading(async () => {
+          await saveDraftEvent(eventId);
+          await saveDraftItems(eventId);
+          showToast("Изменения сохранены");
+          await closeAdminEventEditMode(eventId, false);
+          await openEventModal(eventId);
+          await loadDashboard();
+        }, "Сохраняем изменения…");
+      } catch (error) {
+        alert(error.message || "Не удалось сохранить изменения");
+      }
     });
   });
 

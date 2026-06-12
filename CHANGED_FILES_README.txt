@@ -1,12 +1,7 @@
-Contrast Finance v0.40.18 — changed files only
+Contrast Finance v0.40.25
 
-Changed files:
-- app/web/app.js
-- app/web/index.html
-- app/core/config.py
-- app/app/core/config.py
-- app/telegram_bot/main.py
-- README.md
-- app/README.md
-
-v0.40.18: admin can return accepted events to revision and open a safe pencil edit mode in the admin event modal.
+Исправлено сохранение админского редактирования мероприятия:
+- админский редактор теперь загружает заявки мероприятия;
+- кнопка удаления позиции корректно блокируется, если по позиции есть активные заявки;
+- сохранение больше не выглядит как «ничего не произошло»: ошибка backend показывается alert;
+- причина старого поведения: редактор не знал о заявках и разрешал DELETE, который backend запрещал.
