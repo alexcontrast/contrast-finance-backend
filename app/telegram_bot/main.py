@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.1_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.3_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -267,11 +267,18 @@ def money_status_label(status: str | None) -> str:
 
 
 def is_terminal_for_admin_manager(request: PaymentRequest) -> bool:
-    return request.status == "rejected" or request.money_status == "cash_received"
+    # В новой системе статус оплаты подрядчику и статус денег клиента живут отдельно.
+    # Карточку нельзя удалять только потому, что деньги уже в кассе: если оплата
+    # подрядчику ещё new/to_pay, админу всё ещё нужно обработать заявку.
+    return bool(
+        request.status == "rejected"
+        or request.money_status == "cancelled"
+        or (request.status == "paid" and request.money_status == "cash_received")
+    )
 
 
 def is_active_for_manager(request: PaymentRequest) -> bool:
-    return request.status in {"new", "to_pay", "paid", "tax_check_needed"} and request.money_status != "cash_received"
+    return request.status in {"new", "to_pay", "paid", "tax_check_needed"} and not is_terminal_for_admin_manager(request)
 
 
 def should_notify_tatyana(request: PaymentRequest) -> bool:
@@ -388,6 +395,61 @@ def load_manager_flow(telegram_id: Any) -> Dict[str, Any]:
         }
 
 
+
+ACTIVE_PAYMENT_STATUSES_FOR_LOCK = {"new", "to_pay", "paid", "tax_check_needed"}
+
+
+def active_payment_requests_for_item(db: Session, item_id: int) -> List[PaymentRequest]:
+    """Requests that still lock payment method for an item.
+
+    Telegram must mirror the site: a method is fixed only after a real active
+    payment request exists, or for invoice after BIN/IIN was checked and locked.
+    A draft self-employed value on the item alone is not a hard lock.
+    """
+    if not item_id:
+        return []
+    return db.execute(
+        select(PaymentRequest)
+        .where(
+            PaymentRequest.event_item_id == int(item_id),
+            PaymentRequest.status.in_(list(ACTIVE_PAYMENT_STATUSES_FOR_LOCK)),
+            PaymentRequest.money_status != "cancelled",
+        )
+        .order_by(PaymentRequest.id.desc())
+    ).scalars().all()
+
+
+def item_has_locked_invoice_payment(item: EventItem) -> bool:
+    return bool(item and item.iin_bin and item.iin_bin_locked)
+
+
+def fixed_payment_method_for_item(db: Session, item: EventItem | None, is_salary: bool = False) -> Optional[str]:
+    if item is None:
+        return None
+    if is_salary:
+        return None
+    if item.item_type == "coordinator":
+        return "cash"
+
+    active_request = active_payment_requests_for_item(db, int(item.id))[0:1]
+    if active_request:
+        return active_request[0].payment_method
+
+    if item_has_locked_invoice_payment(item):
+        return "invoice"
+
+    return None
+
+
+def payment_method_locked_for_item(db: Session, item: EventItem | None, is_salary: bool = False) -> bool:
+    return fixed_payment_method_for_item(db, item, is_salary=is_salary) is not None
+
+
+def self_employed_surname_from_item(item: EventItem | None) -> str:
+    note = str(getattr(item, "internal_note", None) or "").strip()
+    match = re.search(r"Самозанятый\s*:\s*(.+)", note, flags=re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
 def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
     items = db.execute(
         select(EventItem)
@@ -399,12 +461,19 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
         if item.item_type == "manager_salary":
             continue
         base_amount = item.amount_fact if item.amount_fact is not None else item.external_amount
+        fixed_method = fixed_payment_method_for_item(db, item)
         rows.append({
             "itemId": str(item.id),
             "positionName": item.external_name,
             "budgetAmount": str(base_amount or 0),
             "paidAmount": str(item.paid_amount or 0),
             "paymentMethod": item.payment_method,
+            "fixedPaymentMethod": fixed_method,
+            "paymentMethodLocked": bool(fixed_method),
+            "iinBin": item.iin_bin,
+            "iinBinLocked": bool(item.iin_bin_locked),
+            "taxCheckStatus": item.tax_check_status,
+            "internalNote": item.internal_note,
             "isManagerSalary": False,
         })
 
@@ -418,6 +487,8 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
             "budgetAmount": str(manager_salary),
             "paidAmount": str(paid_salary),
             "paymentMethod": None,
+            "fixedPaymentMethod": None,
+            "paymentMethodLocked": False,
             "isManagerSalary": True,
         })
     return rows
@@ -615,7 +686,7 @@ def validate_bot_request(item: EventItem, method: str, amount: Decimal, card_num
             raise RuntimeError("Для По счету нужен проверенный BIN/ИИН. Проверь БИН/ИИН ещё раз или выбери другой способ.")
     if method == "card" and not looks_like_card_number(card_number):
         raise RuntimeError("Для На карту нужен номер карты из 16 цифр")
-    if method == "self_employed" and not comment_has_surname(comment):
+    if method == "self_employed" and not (comment_has_surname(comment) or self_employed_surname_from_item(item)):
         raise RuntimeError("Для Самозанятого фамилия обязательна в комментарии")
     if method not in {"invoice", "card", "cash", "self_employed"}:
         raise RuntimeError("Некорректный способ оплаты")
@@ -659,10 +730,18 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             item = db.get(EventItem, int(item_token))
             if item is None or item.event_id != event.id or item.is_deleted:
                 raise RuntimeError("Позиция не найдена")
+
+            fixed_method = fixed_payment_method_for_item(db, item)
+            if fixed_method and method != fixed_method:
+                raise RuntimeError(f"Способ оплаты уже закреплён за этой позицией: {payment_method_label(fixed_method)}")
+            method = fixed_method or method
+
             item.payment_method = method
             if method == "invoice":
                 if payload.get("bin_iin"):
                     apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin")))
+                elif not item_has_locked_invoice_payment(item):
+                    raise RuntimeError("Для По счету сначала проверь БИН/ИИН")
             elif method == "self_employed":
                 base = item.amount_fact if item.amount_fact is not None else item.external_amount
                 item.tax_check_status = "self_employed"
@@ -700,7 +779,7 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             item_paid_amount_snapshot=item.paid_amount,
             item_remaining_snapshot=remaining,
             contractor_id=None,
-            contractor_name_snapshot=comment if method == "self_employed" else None,
+            contractor_name_snapshot=(comment or self_employed_surname_from_item(item)) if method == "self_employed" else None,
             iin_bin_snapshot=item.iin_bin if method == "invoice" else None,
             tax_status_snapshot=item.tax_check_status if method == "invoice" else ("self_employed" if method == "self_employed" else None),
             vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else ("no_vat" if method in {"invoice", "self_employed"} else None),
@@ -819,8 +898,11 @@ def items_keyboard(items: List[Dict[str, Any]], allow_extra: bool) -> InlineKeyb
     return InlineKeyboardMarkup(rows)
 
 
-def payment_method_keyboard(is_salary: bool = False) -> InlineKeyboardMarkup:
-    methods = ["На карту", "Нал"] if is_salary else PAYMENT_METHODS
+def payment_method_keyboard(is_salary: bool = False, fixed_method: str | None = None) -> InlineKeyboardMarkup:
+    if fixed_method:
+        methods = [payment_method_label(fixed_method)]
+    else:
+        methods = ["На карту", "Нал"] if is_salary else PAYMENT_METHODS
     return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=f"paymethod:{label}")] for label in methods])
 
 
@@ -1140,7 +1222,12 @@ async def choose_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_item"] = item or {}
     context.user_data.pop("new_position_name", None)
     is_salary = item_id == SALARY_ITEM_ID
-    await query.edit_message_text(f"Позиция: {item.get('positionName') if item else item_id}\n\nВыбери способ оплаты:", reply_markup=payment_method_keyboard(is_salary=is_salary))
+    fixed_method = (item or {}).get("fixedPaymentMethod") if not is_salary else None
+    fixed_hint = "\nСпособ оплаты уже закреплён за этой позицией." if fixed_method else ""
+    await query.edit_message_text(
+        f"Позиция: {item.get('positionName') if item else item_id}{fixed_hint}\n\nВыбери способ оплаты:",
+        reply_markup=payment_method_keyboard(is_salary=is_salary, fixed_method=fixed_method),
+    )
     return PAYMENT_METHOD
 
 
@@ -1162,10 +1249,24 @@ async def choose_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer("Выбран способ оплаты")
     method_label = query.data.replace("paymethod:", "")
     method = payment_method_code(method_label)
+
+    selected_item = context.user_data.get("selected_item") or {}
+    fixed_method = selected_item.get("fixedPaymentMethod")
+    if fixed_method:
+        if method != fixed_method:
+            await query.answer("Способ оплаты уже закреплён за этой позицией.", show_alert=True)
+            return PAYMENT_METHOD
+        method_label = payment_method_label(fixed_method)
+        method = fixed_method
+
     context.user_data["payment_method"] = method_label
     context.user_data.pop("bin_iin", None)
     context.user_data.pop("kgd_note", None)
+
     if method == "invoice":
+        if fixed_method == "invoice" and selected_item.get("iinBin") and selected_item.get("iinBinLocked"):
+            await query.edit_message_text("Способ оплаты По счету уже закреплён и БИН/ИИН проверен.\n\nВведи сумму заявки:")
+            return AMOUNT
         await query.edit_message_text("Введи БИН/ИИН подрядчика. Ровно 12 цифр:")
         return BIN_IIN
     if method == "self_employed":

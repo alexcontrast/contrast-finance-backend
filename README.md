@@ -1,33 +1,19 @@
-# Contrast Finance Backend v0.38.10
+# Contrast Finance Backend v0.40.3
 
 Changed files only.
 
-Hotfix: корректная видимость мероприятий у главдепов после смены отдела менеджера.
+Telegram bot hotfix for the new v0.40 site.
 
-- кабинет главдепа больше не считает `events.department_id` главным источником истины, если менеджер уже переведён в другой отдел;
-- для обычного мероприятия отдел определяется по текущему отделу основного менеджера;
-- для соавторского мероприятия отдел определяется по текущим `event_shares`;
-- старый `event.department_id` используется только как fallback для orphan legacy events без менеджера;
-- доступ к карточке, общий `/events` и `/payment-requests` приведены к той же логике.
+What changed:
+
+- Telegram cards are no longer removed just because `money_status = cash_received`; payment status and money status are independent.
+- Admin/manager Telegram cards are terminal only when the request is rejected/cancelled or when payment is `paid` and money is `cash_received`.
+- The bot now mirrors the site payment-method lock logic:
+  - if a position already has a fixed payment method, Telegram offers only that method;
+  - invoice is fixed after BIN/IIN is checked and locked;
+  - self-employed is fixed only after an active payment request exists, not after a draft item value alone;
+  - the backend side of the bot also enforces the same fixed method.
+- When a bot request is created as invoice or self-employed, the item gets the same tax/payment data that the site writes.
+- Tatiana notifications remain implemented for invoice and self-employed but stay disabled while `TELEGRAM_TATYANA_ENABLED=false`.
 
 No DB migrations.
-Frontend layout changes are not included.
-
-## v0.40.1 Telegram bot worker
-
-Run the new Telegram bot as a separate Railway worker/process:
-
-```bash
-python -m app.telegram_bot.main
-```
-
-Required env for the test bot:
-
-```env
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_ADMIN_CHAT_ID=...
-TELEGRAM_TATYANA_CHAT_ID=1896781134
-TELEGRAM_TATYANA_ENABLED=false
-```
-
-Tatiana notifications are implemented for `invoice` and `self_employed`, but disabled by default to avoid test spam.
