@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.6_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.8_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -73,6 +73,7 @@ def env_int(name: str, default: int) -> int:
 # By default managers see events from the current calendar year and later.
 # If an import/migration needs another year temporarily, set TELEGRAM_MIN_EVENT_YEAR.
 TELEGRAM_MIN_EVENT_YEAR = env_int("TELEGRAM_MIN_EVENT_YEAR", date.today().year)
+TELEGRAM_DIRTY_MARKER_AT = datetime(2000, 1, 1)
 
 (
     BIND_PHONE,
@@ -1025,15 +1026,35 @@ async def safe_delete(bot, message: TelegramMessage) -> bool:
         await bot.delete_message(chat_id=int(message.chat_id), message_id=int(message.message_id))
         return True
     except Exception as err:
+        err_text = str(err)
+        # If the message is already gone, Telegram returns an error, but for our
+        # sync flow this is still a successful deletion: the user no longer sees it.
+        already_gone = "not found" in err_text.lower() or "message to delete not found" in err_text.lower()
         with db_session() as db:
             msg = db.get(TelegramMessage, message.id)
             if msg:
-                msg.status = "failed"
-                msg.error_message = str(err)
+                if already_gone:
+                    msg.status = "deleted"
+                    msg.deleted_at = datetime.utcnow()
+                    msg.error_message = None
+                else:
+                    msg.status = "failed"
+                    msg.error_message = err_text
                 msg.updated_at = datetime.utcnow()
                 db.add(msg)
                 db.commit()
+        return already_gone
+
+
+async def safe_delete_raw(bot, chat_id: Any, message_id: Any) -> bool:
+    if not chat_id or not message_id:
         return False
+    try:
+        await bot.delete_message(chat_id=int(chat_id), message_id=int(message_id))
+        return True
+    except Exception as err:
+        err_text = str(err).lower()
+        return "not found" in err_text or "message to delete not found" in err_text
 
 
 async def safe_edit(bot, message: TelegramMessage, request: PaymentRequest, title: str, is_admin: bool = False, is_manager: bool = False) -> bool:
@@ -1045,8 +1066,30 @@ async def safe_edit(bot, message: TelegramMessage, request: PaymentRequest, titl
             parse_mode="HTML",
             reply_markup=admin_keyboard(request) if is_admin else (manager_keyboard(request) if is_manager else None),
         )
+        with db_session() as db:
+            msg = db.get(TelegramMessage, message.id)
+            if msg:
+                msg.status = "active"
+                msg.error_message = None
+                msg.updated_at = datetime.utcnow()
+                db.add(msg)
+                db.commit()
         return True
     except Exception as err:
+        # Telegram raises "message is not modified" when the card already has the same
+        # status/text. Treat it as a successful sync and move this message to the end
+        # of the polling queue, otherwise the bot keeps syncing the same old cards.
+        err_text = str(err)
+        if "not modified" in err_text.lower():
+            with db_session() as db:
+                msg = db.get(TelegramMessage, message.id)
+                if msg:
+                    msg.status = "active"
+                    msg.error_message = None
+                    msg.updated_at = datetime.utcnow()
+                    db.add(msg)
+                    db.commit()
+            return True
         with db_session() as db:
             msg = db.get(TelegramMessage, message.id)
             if msg:
@@ -1109,10 +1152,11 @@ async def publish_created_request_cards(bot, manager_chat_id: Any, request_id: i
     remember_recently_published(request_id)
 
 
-async def delete_admin_manager_cards(bot, request: PaymentRequest) -> None:
+async def delete_admin_manager_cards(bot, request: PaymentRequest, extra_messages: Optional[List[tuple[Any, Any]]] = None) -> None:
     with db_session() as db:
         messages = active_messages(db, request.id)
         admin_manager_messages = [m for m in messages if m.message_type in {"admin_payment_card", "manager_payment_card"}]
+    known_pairs = {(str(m.chat_id), str(m.message_id)) for m in admin_manager_messages}
     for message in admin_manager_messages:
         deleted = await safe_delete(bot, message)
         if deleted:
@@ -1120,15 +1164,33 @@ async def delete_admin_manager_cards(bot, request: PaymentRequest) -> None:
                 msg = db.get(TelegramMessage, message.id)
                 if msg:
                     msg.status = "deleted"
-                    msg.deleted_at = datetime.utcnow()
+                    msg.deleted_at = msg.deleted_at or datetime.utcnow()
+                    msg.error_message = None
                     msg.updated_at = datetime.utcnow()
                     db.add(msg)
                     db.commit()
 
+    # Some cards are produced by ad-hoc views such as “Мои заявки” and may not
+    # exist in telegram_messages yet. Also, if a card was sent by an earlier bot
+    # build before message-id persistence worked, the clicked message still must
+    # disappear after cancellation/rejection.
+    for chat_id, message_id in extra_messages or []:
+        if not chat_id or not message_id:
+            continue
+        pair = (str(chat_id), str(message_id))
+        if pair in known_pairs:
+            continue
+        await safe_delete_raw(bot, chat_id, message_id)
 
-async def sync_request_cards(bot, request: PaymentRequest, title: str = "🧾 Заявка обновлена") -> None:
+
+async def sync_request_cards(
+    bot,
+    request: PaymentRequest,
+    title: str = "🧾 Заявка обновлена",
+    extra_messages: Optional[List[tuple[Any, Any]]] = None,
+) -> None:
     if is_terminal_for_admin_manager(request):
-        await delete_admin_manager_cards(bot, request)
+        await delete_admin_manager_cards(bot, request, extra_messages=extra_messages)
         await sync_tatyana_message(bot, request, "🧾 Заявка по счету обновлена")
         return
     with db_session() as db:
@@ -1475,7 +1537,12 @@ async def my_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await progress_msg.edit_text(f"Найдено заявок: {len(active)}")
         for request in active:
-            await update.message.reply_html(payment_text_from_request(request), reply_markup=manager_keyboard(request))
+            msg = await update.message.reply_html(payment_text_from_request(request), reply_markup=manager_keyboard(request))
+            with db_session() as db:
+                req = db.get(PaymentRequest, int(request.id))
+                if req is not None:
+                    save_message(db, req.id, update.effective_chat.id, msg.message_id, "manager_payment_card", req.created_by_user_id)
+                    db.commit()
     except Exception as err:
         await progress_msg.edit_text("⚠️ Не удалось загрузить заявки.")
         await update.message.reply_text(f"Не удалось загрузить заявки: {err}")
@@ -1538,7 +1605,12 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         await query.edit_message_reply_markup(reply_markup=None)
         request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), action, "admin")
-        await sync_request_cards(context.bot, request, "🧾 Заявка обновлена")
+        await sync_request_cards(
+            context.bot,
+            request,
+            "🧾 Заявка обновлена",
+            extra_messages=[(query.message.chat_id, query.message.message_id)] if query.message else None,
+        )
         await query.answer("Готово")
     except Exception as err:
         await query.answer(str(err), show_alert=True)
@@ -1552,7 +1624,12 @@ async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TY
         return
     try:
         request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), "cancel", "manager")
-        await sync_request_cards(context.bot, request, "🧾 Заявка обновлена")
+        await sync_request_cards(
+            context.bot,
+            request,
+            "🧾 Заявка обновлена",
+            extra_messages=[(query.message.chat_id, query.message.message_id)] if query.message else None,
+        )
         await context.bot.send_message(chat_id=query.from_user.id, text="Заявка отменена.", reply_markup=MAIN_KEYBOARD)
     except Exception as err:
         try:

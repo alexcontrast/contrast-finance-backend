@@ -1,31 +1,30 @@
-Contrast Finance Backend v0.40.7 — changed files only
+Contrast Finance Backend v0.40.8 — changed files only
 
-Base: v0.40.6.
+Base: v0.40.7.
 
 Reason:
-Website-side payment status/money-status changes must update Telegram cards for manager, admin and Tatiana and trigger the same delete/update flows as Telegram button actions.
+When a manager or admin cancelled/rejected a payment request, some Telegram cards could remain visible.
+
+Exact cause:
+The bot deleted only messages that were stored as active rows in `telegram_messages`. Cards sent from the ad-hoc `Мои заявки` view were not stored there, and handlers did not explicitly delete the clicked callback message as a fallback. Therefore the database status changed correctly, but the visible Telegram card could remain in chat.
 
 Changed files:
-- app/api/routes/payment_requests.py
-  - Added mark_payment_request_for_telegram_sync().
-  - Status and money-status PATCH endpoints now mark active Telegram messages for immediate background sync.
 - app/telegram_bot/main.py
-  - BOT_VERSION -> CONTRAST_FINANCE_BOT_V0.40.7_NEW_SITE.
-  - Successful edits now advance telegram_messages.updated_at.
-  - Telegram "message is not modified" is treated as a successful sync.
+  - BOT_VERSION -> CONTRAST_FINANCE_BOT_V0.40.8_NEW_SITE.
+  - `Мои заявки` cards are now saved as `manager_payment_card` rows.
+  - `sync_request_cards()` accepts `extra_messages` for the clicked callback message.
+  - Admin reject/cancel and manager cancel pass the clicked card as a delete fallback.
+  - If Telegram reports an already-deleted message, the DB row is marked deleted, not failed.
 - app/core/config.py
 - app/app/core/config.py
 - README.md
 - CHANGED_FILES_README.txt
 
 Behavior:
-- Site changes update admin, manager and Tatiana Telegram cards via bot background polling.
-- Admin/manager cards are deleted on rejected/cancelled or paid + cash_received.
-- new/to_pay + cash_received still stays visible because payment status and money status are separate.
-- Tatiana notification remains controlled by TELEGRAM_TATYANA_ENABLED; when enabled her card is updated but not deleted.
+- Manager/admin cancellation now deletes saved admin/manager cards plus the clicked callback card.
+- Multiple manager cards for the same request from `Мои заявки` are cleaned up together.
+- Tatiana cards, when enabled, are updated and not deleted.
 
 Checks passed:
-- python3 -m compileall -q app
 - python3 -m py_compile app/telegram_bot/main.py
-
-No migrations.
+- python3 -m compileall -q app

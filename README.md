@@ -1,14 +1,11 @@
-# Contrast Finance Backend v0.40.6
+# Contrast Finance v0.40.8
 
-Telegram bot/payment request hotfix for the stable v0.40 site.
+Hotfix for Telegram card deletion after cancelled/rejected payment requests.
 
 ## Changes
+- Telegram now deletes the exact clicked callback message as a fallback after admin rejection or manager cancellation.
+- Cards generated from `Мои заявки` are now saved into `telegram_messages`, so later cancellation/rejection deletes every visible manager card, not only the original creation card.
+- If Telegram says a message to delete is already gone, the message row is marked as deleted instead of failed.
+- Terminal rules are unchanged: rejected/cancelled always delete admin/manager cards; paid + cash_received deletes admin/manager cards; new/to_pay + cash_received stays visible.
 
-- Telegram self-employed requests no longer fail with a generic create error when surname is missing: the bot asks for the surname and continues the same request.
-- If a self-employed surname is already saved on the site or from a previous Telegram request, Telegram uses it automatically.
-- Invoice Telegram cards now show the contractor legal name from KGD as `Подрядчик`.
-- Extra positions created from Telegram are fact-only expenses: `Сумма по смете = 0`, `Факт = сумма заявки`.
-- Manager payment modal no longer saves the whole event before creating a payment request, so extra-position payment requests can be created for events on review/accepted as fact-only expenses.
-- Site payment request snapshots for invoice requests now store the KGD legal name when available.
-
-No migrations.
+No database migrations.
