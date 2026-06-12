@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.department import Department
+from app.models.monthly_closing import MonthlyClosing
 from app.models.user import User
 from app.schemas.users_manage import NativeUserCreate, UserPinUpdate, UserRead, UserRoleUpdate
 from app.services.auth import native_pin_hash, normalize_phone, require_roles
@@ -261,6 +262,11 @@ def restore_manager(
     deactivated_at = user.updated_at.date() if user.updated_at else today
     if deactivated_at.year != today.year or deactivated_at.month != today.month:
         raise HTTPException(status_code=400, detail="Восстановить менеджера можно только до конца месяца удаления")
+
+    closing_month = date(deactivated_at.year, deactivated_at.month, 1)
+    closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == closing_month)).scalar_one_or_none()
+    if closing is not None and closing.status == "closed":
+        raise HTTPException(status_code=400, detail="Месяц уже закрыт. Восстановить менеджера нельзя")
 
     user.is_active = True
     user.updated_at = datetime.utcnow()

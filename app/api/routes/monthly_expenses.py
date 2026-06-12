@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.monthly_expense import MonthlyExpense
+from app.models.monthly_plan import MonthlyPlan
 from app.schemas.monthly_expense import (
     MonthlyExpenseCreate,
     MonthlyExpenseRead,
@@ -41,12 +42,27 @@ def parse_month(month: str) -> date:
         raise HTTPException(status_code=400, detail="month must be YYYY-MM or YYYY-MM-DD") from exc
 
 
-def calculate_allocation(payload: MonthlyExpenseCreate) -> tuple[Decimal, Decimal]:
+def default_split_percentages(db: Session, month: date) -> tuple[Decimal, Decimal]:
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month)).scalar_one_or_none()
+    if plan is None:
+        return Decimal("66.67"), Decimal("33.33")
+
+    sanzhar_percent = money(plan.sanzhar_share_percent)
+    raufal_percent = money(plan.raufal_share_percent)
+
+    if sanzhar_percent < 0 or raufal_percent < 0 or q(sanzhar_percent + raufal_percent) == Decimal("0.00"):
+        return Decimal("66.67"), Decimal("33.33")
+
+    return sanzhar_percent, raufal_percent
+
+
+def calculate_allocation(payload: MonthlyExpenseCreate, db: Session, month: date) -> tuple[Decimal, Decimal]:
     amount = money(payload.amount)
     allocation_type = payload.allocation_type
 
     if allocation_type == "default_split":
-        sanzhar = q(amount * Decimal("2") / Decimal("3"))
+        sanzhar_percent, _ = default_split_percentages(db, month)
+        sanzhar = q(amount * sanzhar_percent / Decimal("100"))
         raufal = q(amount - sanzhar)
         return sanzhar, raufal
 
@@ -72,10 +88,36 @@ def calculate_allocation(payload: MonthlyExpenseCreate) -> tuple[Decimal, Decima
     )
 
 
+def allocated_amounts_for_expense(db: Session, expense: MonthlyExpense) -> tuple[Decimal, Decimal]:
+    if expense.allocation_type == "default_split":
+        sanzhar_percent, _ = default_split_percentages(db, normalize_month(expense.month))
+        sanzhar = q(money(expense.amount) * sanzhar_percent / Decimal("100"))
+        return sanzhar, q(money(expense.amount) - sanzhar)
+
+    return q(money(expense.sanzhar_amount)), q(money(expense.raufal_amount))
+
+
+def expense_to_read(db: Session, expense: MonthlyExpense) -> MonthlyExpenseRead:
+    sanzhar_amount, raufal_amount = allocated_amounts_for_expense(db, expense)
+    return MonthlyExpenseRead(
+        id=expense.id,
+        month=expense.month,
+        title=expense.title,
+        amount=expense.amount,
+        allocation_type=expense.allocation_type,
+        sanzhar_amount=sanzhar_amount,
+        raufal_amount=raufal_amount,
+        comment=expense.comment,
+        created_by_user_id=expense.created_by_user_id,
+        created_at=expense.created_at,
+        updated_at=expense.updated_at,
+    )
+
+
 @router.post("/monthly-expenses", response_model=MonthlyExpenseRead)
 def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(get_db)):
     month = normalize_month(payload.month)
-    sanzhar_amount, raufal_amount = calculate_allocation(payload)
+    sanzhar_amount, raufal_amount = calculate_allocation(payload, db, month)
 
     expense = MonthlyExpense(
         month=month,
@@ -93,7 +135,7 @@ def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(
     db.add(expense)
     db.commit()
     db.refresh(expense)
-    return expense
+    return expense_to_read(db, expense)
 
 
 @router.get("/monthly-expenses", response_model=list[MonthlyExpenseRead])
@@ -108,7 +150,7 @@ def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db
         )
 
     result = db.execute(query.order_by(MonthlyExpense.month.desc(), MonthlyExpense.id.desc()))
-    return result.scalars().all()
+    return [expense_to_read(db, expense) for expense in result.scalars().all()]
 
 
 @router.get("/monthly-expenses/summary", response_model=MonthlyExpenseSummaryRead)
@@ -123,8 +165,9 @@ def get_monthly_expenses_summary(month: str, db: Session = Depends(get_db)):
     ).scalars().all()
 
     total = sum((money(expense.amount) for expense in expenses), Decimal("0.00"))
-    sanzhar = sum((money(expense.sanzhar_amount) for expense in expenses), Decimal("0.00"))
-    raufal = sum((money(expense.raufal_amount) for expense in expenses), Decimal("0.00"))
+    allocated = [allocated_amounts_for_expense(db, expense) for expense in expenses]
+    sanzhar = sum((amounts[0] for amounts in allocated), Decimal("0.00"))
+    raufal = sum((amounts[1] for amounts in allocated), Decimal("0.00"))
 
     return MonthlyExpenseSummaryRead(
         month=month_date,
@@ -133,3 +176,18 @@ def get_monthly_expenses_summary(month: str, db: Session = Depends(get_db)):
         raufal_amount=q(raufal),
         expenses_count=len(expenses),
     )
+
+
+@router.delete("/monthly-expenses/{expense_id}")
+def delete_monthly_expense(expense_id: int, db: Session = Depends(get_db)):
+    expense = db.get(MonthlyExpense, expense_id)
+    if expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    deleted = {
+        "id": expense.id,
+        "ok": True,
+    }
+    db.delete(expense)
+    db.commit()
+    return deleted

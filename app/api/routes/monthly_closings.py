@@ -9,10 +9,13 @@ from app.db.session import get_db
 from app.models.department import Department
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.event_share import EventShare
 from app.models.monthly_closing import MonthlyClosing
 from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_plan import MonthlyPlan
+from app.models.user import User
 from app.schemas.monthly_closing import MonthlyClosingCalculateRead, MonthlyClosingRead
+from app.services.auth import require_roles
 from app.services.event_calculator import calculate_event_summary_values, q
 
 
@@ -53,16 +56,23 @@ def get_department_by_name(db: Session, name: str) -> Department | None:
     return db.execute(select(Department).where(Department.name == name)).scalar_one_or_none()
 
 
+def allocated_amount(value: Decimal, share_percent: Decimal) -> Decimal:
+    return q(money(value) * money(share_percent) / Decimal("100"))
+
+
 def get_department_income(db: Session, department_id: int, year: int, month: int) -> Decimal:
-    # Month closing excludes cancelled events and includes drafts by current agreed dashboard default.
+    # Closing uses the same business meaning as admin overview:
+    # cancelled events are excluded, drafts are included, shared events are split by event_shares.
     events = db.execute(
         select(Event).where(
-            Event.department_id == department_id,
             extract("year", Event.event_date) == year,
             extract("month", Event.event_date) == month,
             Event.status != "cancelled",
         )
     ).scalars().all()
+
+    users = db.execute(select(User)).scalars().all()
+    user_by_id = {user.id: user for user in users}
 
     income = Decimal("0.00")
 
@@ -74,9 +84,29 @@ def get_department_income(db: Session, department_id: int, year: int, month: int
         ).scalars().all()
 
         values = calculate_event_summary_values(event, items)
-        income += money(values["final_company_income"])
+        event_income = money(values["final_company_income"])
+
+        shares = db.execute(select(EventShare).where(EventShare.event_id == event.id)).scalars().all()
+        if not shares:
+            manager = user_by_id.get(event.manager_id)
+            event_department_id = manager.department_id if manager and manager.department_id else event.department_id
+            if event_department_id == department_id:
+                income += event_income
+            continue
+
+        for share in shares:
+            manager = user_by_id.get(share.user_id)
+            if manager and manager.department_id == department_id:
+                income += allocated_amount(event_income, share.share_percent)
 
     return q(income)
+
+
+def expense_default_split_amounts(db: Session, expense: MonthlyExpense) -> tuple[Decimal, Decimal]:
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == expense.month)).scalar_one_or_none()
+    sanzhar_percent = money(plan.sanzhar_share_percent) if plan is not None else Decimal("66.67")
+    sanzhar = q(money(expense.amount) * sanzhar_percent / Decimal("100"))
+    return sanzhar, q(money(expense.amount) - sanzhar)
 
 
 def get_department_expenses(db: Session, department_name: str, year: int, month: int) -> Decimal:
@@ -90,10 +120,15 @@ def get_department_expenses(db: Session, department_name: str, year: int, month:
     total = Decimal("0.00")
 
     for expense in expenses:
+        if expense.allocation_type == "default_split":
+            sanzhar_amount, raufal_amount = expense_default_split_amounts(db, expense)
+        else:
+            sanzhar_amount, raufal_amount = money(expense.sanzhar_amount), money(expense.raufal_amount)
+
         if department_name == "Санжар":
-            total += money(expense.sanzhar_amount)
+            total += sanzhar_amount
         elif department_name == "Рауфаль":
-            total += money(expense.raufal_amount)
+            total += raufal_amount
 
     return q(total)
 
@@ -174,13 +209,22 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
 
 
 @router.get("/monthly-closings/calculate", response_model=MonthlyClosingCalculateRead)
-def calculate_monthly_closing(month: str, db: Session = Depends(get_db)):
+def calculate_monthly_closing(
+    month: str,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     month_date = parse_month(month)
     return calculate_closing(db, month_date)
 
 
 @router.post("/monthly-closings/close", response_model=MonthlyClosingRead)
-def close_month(month: str, closed_by_user_id: int, db: Session = Depends(get_db)):
+def close_month(
+    month: str,
+    closed_by_user_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
     month_date = parse_month(month)
     calculated = calculate_closing(db, month_date)
 
@@ -221,8 +265,30 @@ def close_month(month: str, closed_by_user_id: int, db: Session = Depends(get_db
     closing.founder_three_amount = calculated.founder_three_amount
 
     closing.status = "closed"
-    closing.closed_by_user_id = closed_by_user_id
+    closing.closed_by_user_id = closed_by_user_id or current_admin.id
     closing.closed_at = now
+
+    db.add(closing)
+    db.commit()
+    db.refresh(closing)
+    return closing
+
+
+@router.post("/monthly-closings/reopen", response_model=MonthlyClosingRead)
+def reopen_month(
+    month: str,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
+    month_date = parse_month(month)
+    closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
+    if closing is None:
+        raise HTTPException(status_code=404, detail="Monthly closing not found")
+
+    closing.status = "reopened"
+    closing.closed_at = None
+    closing.closed_by_user_id = None
+    closing.updated_at = datetime.utcnow()
 
     db.add(closing)
     db.commit()

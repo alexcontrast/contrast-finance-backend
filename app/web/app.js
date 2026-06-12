@@ -3306,7 +3306,9 @@ function managerDeletedInSelectedMonth(manager) {
 }
 
 function canRestoreManagerInSelectedMonth(manager) {
-  return managerDeletedInSelectedMonth(manager) && String(state.month || "").slice(0, 7) === currentCalendarMonthKey();
+  const monthKey = String(state.month || "").slice(0, 7);
+  const monthClosed = state.adminData?.closing?.status === "closed";
+  return managerDeletedInSelectedMonth(manager) && monthKey === currentCalendarMonthKey() && !monthClosed;
 }
 
 function getOverviewManagers() {
@@ -4649,25 +4651,188 @@ function renderPlansSkeleton(data) {
 }
 
 
+function monthLabelRu(monthKey) {
+  const value = String(monthKey || state.month || "").slice(5, 7);
+  const month = MONTHS_RU.find(([key]) => key === value);
+  const year = String(monthKey || state.month || "").slice(0, 4);
+  return `${month?.[1] || value} ${year}`.trim();
+}
+
+function closingStatusLabel(status) {
+  if (status === "closed") return "Закрыт";
+  if (status === "reopened") return "Открыт заново";
+  return "Не закрыт";
+}
+
+function closingMonthDate(monthKey = state.month) {
+  return `${String(monthKey || "").slice(0, 7)}-01`;
+}
+
+function departmentDefaultSplitLabel() {
+  const depSanzhar = (state.adminData?.departments || []).find((dep) => String(dep.department_name || "").includes("Санжар"));
+  const companyPlan = asNumber(state.adminData?.company_plan_amount);
+  const sanzharPlan = asNumber(depSanzhar?.plan_amount);
+  const sanzharPercent = companyPlan > 0 ? Math.round((sanzharPlan / companyPlan) * 10000) / 100 : 66.67;
+  const raufalPercent = Math.round((100 - sanzharPercent) * 100) / 100;
+  return `${formatPercentValue(sanzharPercent)} / ${formatPercentValue(raufalPercent)}%`;
+}
+
+function expenseAllocationLabel(expense) {
+  const type = expense?.allocation_type;
+  if (type === "sanzhar_only") return "Санжар";
+  if (type === "raufal_only") return "Рауфаль";
+  if (type === "custom") return "Вручную";
+  return `По плану ${departmentDefaultSplitLabel()}`;
+}
+
 function renderClosingSkeleton(data) {
   return `
-    <div class="block-title">
-      <h3>Закрыть месяц</h3>
+    <section class="closing-panel" id="closingPanel" data-closing-month="${state.month}">
+      <div class="block-title closing-title">
+        <div>
+          <h3>Закрыть месяц</h3>
+          <p class="muted">Мини-калькуляция за ${monthLabelRu(state.month)}. Мероприятия после закрытия не блокируются.</p>
+        </div>
+      </div>
+      <div class="empty-state">Загружаем расходы и расчёт месяца…</div>
+    </section>
+  `;
+}
+
+function renderClosingExpenseRows(expenses) {
+  if (!expenses.length) {
+    return `<div class="empty-state closing-empty">Расходов за месяц пока нет.</div>`;
+  }
+
+  return `
+    <div class="closing-table-wrap">
+      <table class="closing-table closing-expenses-table">
+        <thead>
+          <tr>
+            <th>Расход</th>
+            <th>Сумма</th>
+            <th>Деление</th>
+            <th>Санжар</th>
+            <th>Рауфаль</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${expenses.map((expense) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(expense.title || "Расход")}</strong>
+                ${expense.comment ? `<small>${escapeHtml(expense.comment)}</small>` : ""}
+              </td>
+              <td>${formatMoney(expense.amount)}</td>
+              <td>${expenseAllocationLabel(expense)}</td>
+              <td>${formatMoney(expense.sanzhar_amount)}</td>
+              <td>${formatMoney(expense.raufal_amount)}</td>
+              <td><button class="closing-icon-btn danger" data-delete-expense-id="${expense.id}" type="button" title="Удалить расход">×</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
     </div>
-    <div class="empty-state">
-      Здесь будет ввод расходов и закрытие месяца. По умолчанию расход делится: Санжар 2/3, Рауфаль 1/3.
-      Для каждой позиции будет выбор: по умолчанию / 100% Санжар / 100% Рауфаль / вручную.
+  `;
+}
+
+function closingDepartmentCard(title, prefix, calc) {
+  return `
+    <article class="closing-department-card ${departmentClassByName(title)}">
+      <div class="closing-card-head">
+        <h4>${title}</h4>
+        <span>${formatPercentValue(calc?.[`${prefix}_completion_percent`] || 0)}%</span>
+      </div>
+      <div class="closing-lines">
+        <div><span>План</span><b>${formatMoney(calc?.[`${prefix}_plan_amount`] || 0)}</b></div>
+        <div><span>Факт</span><b>${formatMoney(calc?.[`${prefix}_income_amount`] || 0)}</b></div>
+        <div><span>Расходы</span><b>${formatMoney(calc?.[`${prefix}_expense_amount`] || 0)}</b></div>
+        <div><span>Руководитель</span><b>${formatMoney(calc?.[`${prefix}_head_salary`] || 0)} · ${formatPercentValue(calc?.[`${prefix}_head_percent`] || 0)}%</b></div>
+        <div class="total"><span>Остаток</span><b>${formatMoney(calc?.[`${prefix}_remaining_after_head`] || 0)}</b></div>
+      </div>
+    </article>
+  `;
+}
+
+function renderClosingCalculation(calc, closing) {
+  if (!calc) {
+    return `<div class="empty-state closing-empty">Сначала задайте план месяца во вкладке «Задать планы».</div>`;
+  }
+
+  return `
+    <div class="closing-calc-grid">
+      ${closingDepartmentCard("Санжар", "sanzhar", calc)}
+      ${closingDepartmentCard("Рауфаль", "raufal", calc)}
     </div>
 
-    <div class="overview-section">
-      <h3>Текущее закрытие</h3>
-      <div class="grid cards">
-        ${metric("Расходы компании", formatMoney(data.company_expenses_amount))}
-        ${metric("Санжар расходы", formatMoney((data.departments || [])[0]?.expenses_amount || 0))}
-        ${metric("Рауфаль расходы", formatMoney((data.departments || [])[1]?.expenses_amount || 0))}
-        ${metric("Статус", data.closing?.status || "Не закрыт")}
+    <div class="closing-founders-card">
+      <div class="closing-card-head">
+        <h4>Учредители</h4>
+        <span>${formatMoney(calc.founders_total_amount || 0)}</span>
+      </div>
+      <div class="closing-founders-grid">
+        <div><span>Александр</span><b>${formatMoney(calc.founder_one_amount || 0)}</b></div>
+        <div><span>Дмитрий</span><b>${formatMoney(calc.founder_two_amount || 0)}</b></div>
+        <div><span>Иван</span><b>${formatMoney(calc.founder_three_amount || 0)}</b></div>
       </div>
     </div>
+  `;
+}
+
+function renderClosingContent(expenses, calc, closing, error = null) {
+  const status = closing?.status || state.adminData?.closing?.status || "draft";
+  const isClosed = status === "closed";
+
+  return `
+    <div class="block-title closing-title">
+      <div>
+        <h3>Закрыть месяц</h3>
+        <p class="muted">${monthLabelRu(state.month)} · расходы делятся по процентам из планов месяца: ${departmentDefaultSplitLabel()}</p>
+      </div>
+      <span class="closing-status ${isClosed ? "closed" : "draft"}">${closingStatusLabel(status)}</span>
+    </div>
+
+    ${error ? `<div class="error closing-error">${escapeHtml(error)}</div>` : ""}
+
+    <section class="closing-mini-section">
+      <div class="closing-section-head">
+        <h4>Расходы</h4>
+        <span>${formatMoney((expenses || []).reduce((sum, item) => sum + asNumber(item.amount), 0))}</span>
+      </div>
+      <div class="closing-expense-form">
+        <input id="closingExpenseTitle" placeholder="Название" />
+        <input id="closingExpenseAmount" inputmode="numeric" placeholder="Сумма" />
+        <select id="closingExpenseAllocation">
+          <option value="default_split">По плану месяца</option>
+          <option value="sanzhar_only">100% Санжар</option>
+          <option value="raufal_only">100% Рауфаль</option>
+          <option value="custom">Вручную</option>
+        </select>
+        <input id="closingExpenseSanzhar" class="closing-custom-split hidden" inputmode="numeric" placeholder="Санжар" />
+        <input id="closingExpenseRaufal" class="closing-custom-split hidden" inputmode="numeric" placeholder="Рауфаль" />
+        <input id="closingExpenseComment" placeholder="Комментарий" />
+        <button id="addClosingExpenseBtn" type="button">Добавить</button>
+      </div>
+      ${renderClosingExpenseRows(expenses || [])}
+    </section>
+
+    <section class="closing-mini-section">
+      <div class="closing-section-head">
+        <h4>Калькуляция</h4>
+        <span>10% / 15%</span>
+      </div>
+      ${renderClosingCalculation(calc, closing)}
+      <div class="closing-actions">
+        <button id="recalculateClosingBtn" class="secondary" type="button">Пересчитать</button>
+        ${isClosed ? `
+          <button id="reopenClosingBtn" class="secondary" type="button">Открыть месяц</button>
+        ` : `
+          <button id="closeMonthBtn" type="button">Закрыть месяц</button>
+        `}
+      </div>
+      <div id="closingMessage" class="muted closing-message"></div>
+    </section>
   `;
 }
 
@@ -4733,6 +4898,7 @@ function renderAdminEmptyDashboard(month, error = null) {
   attachEventRows();
   attachManagerDeleteButtons();
   attachPlansModal();
+  attachClosingPanel();
 }
 
 function clearDashboardForPeriodLoading() {
@@ -4775,6 +4941,7 @@ function renderAdminDashboard(data) {
   attachEventRows();
   attachManagerDeleteButtons();
   attachPlansModal();
+  attachClosingPanel();
 }
 
 function renderDepartmentDashboard(data, paymentRequests = []) {
@@ -8036,6 +8203,174 @@ function renderManagerDashboard(data, paymentRequests = []) {
     }
   }
 }
+
+async function loadClosingByMonth(month) {
+  try {
+    return await api(`/monthly-closings/by-month?month=${month}&_=${Date.now()}`);
+  } catch (error) {
+    const message = String(error.message || "");
+    if (message.includes("404") || message.includes("Monthly closing not found")) return null;
+    throw error;
+  }
+}
+
+async function loadClosingPanelData({ saveIfClosed = false } = {}) {
+  const month = state.month;
+  const [expenses, calcResult, closing] = await Promise.allSettled([
+    api(`/monthly-expenses?month=${month}&_=${Date.now()}`),
+    api(`/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
+    loadClosingByMonth(month),
+  ]);
+
+  if (calcResult.status === "rejected") {
+    return {
+      expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
+      calc: null,
+      closing: closing.status === "fulfilled" ? closing.value : null,
+      error: calcResult.reason?.message || "Не удалось рассчитать закрытие месяца",
+    };
+  }
+
+  let currentClosing = closing.status === "fulfilled" ? closing.value : null;
+  if (saveIfClosed && currentClosing?.status === "closed") {
+    currentClosing = await api(`/monthly-closings/close?month=${month}`, { method: "POST" });
+  }
+
+  return {
+    expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
+    calc: calcResult.value,
+    closing: currentClosing,
+    error: expenses.status === "rejected" ? expenses.reason?.message : null,
+  };
+}
+
+function setClosingCustomSplitVisibility() {
+  const allocation = document.getElementById("closingExpenseAllocation")?.value;
+  document.querySelectorAll(".closing-custom-split").forEach((input) => {
+    input.classList.toggle("hidden", allocation !== "custom");
+  });
+}
+
+async function refreshClosingPanel(options = {}) {
+  const panel = document.getElementById("closingPanel");
+  if (!panel) return;
+
+  const loadedForMonth = panel.dataset.closingMonth;
+  if (loadedForMonth !== String(state.month)) return;
+
+  try {
+    const { expenses, calc, closing, error } = await loadClosingPanelData(options);
+    panel.dataset.eventsAttached = "0";
+    panel.innerHTML = renderClosingContent(expenses, calc, closing, error);
+    attachClosingPanelEvents();
+  } catch (error) {
+    panel.dataset.eventsAttached = "0";
+    panel.innerHTML = renderClosingContent([], null, null, error.message);
+    attachClosingPanelEvents();
+  }
+}
+
+async function addClosingExpense() {
+  const titleInput = document.getElementById("closingExpenseTitle");
+  const amountInput = document.getElementById("closingExpenseAmount");
+  const allocationInput = document.getElementById("closingExpenseAllocation");
+  const commentInput = document.getElementById("closingExpenseComment");
+  const sanzharInput = document.getElementById("closingExpenseSanzhar");
+  const raufalInput = document.getElementById("closingExpenseRaufal");
+
+  const title = String(titleInput?.value || "").trim();
+  const amount = normalizeNumberInput(amountInput?.value || 0);
+  const allocationType = allocationInput?.value || "default_split";
+
+  if (!title) {
+    alert("Укажите название расхода.");
+    titleInput?.focus();
+    return;
+  }
+  if (amount <= 0) {
+    alert("Укажите сумму расхода.");
+    amountInput?.focus();
+    return;
+  }
+
+  const payload = {
+    month: closingMonthDate(),
+    title,
+    amount: String(Math.round(amount * 100) / 100),
+    allocation_type: allocationType,
+    comment: String(commentInput?.value || "").trim() || null,
+    created_by_user_id: state.bootstrap?.user?.id || null,
+  };
+
+  if (allocationType === "custom") {
+    payload.sanzhar_amount = String(Math.round(normalizeNumberInput(sanzharInput?.value || 0) * 100) / 100);
+    payload.raufal_amount = String(Math.round(normalizeNumberInput(raufalInput?.value || 0) * 100) / 100);
+  }
+
+  const button = document.getElementById("addClosingExpenseBtn");
+  try {
+    setButtonLoading(button, true, "Добавляем…");
+    await api("/monthly-expenses", { method: "POST", body: JSON.stringify(payload) });
+    await loadDashboard();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
+async function deleteClosingExpense(expenseId) {
+  if (!window.confirm("Удалить расход?")) return;
+  await withLoading(async () => {
+    await api(`/monthly-expenses/${expenseId}`, { method: "DELETE" });
+    await loadDashboard();
+  }, "Удаляем расход…");
+}
+
+async function closeSelectedMonth() {
+  if (!window.confirm(`Закрыть ${monthLabelRu(state.month)}? Это сохранит текущую калькуляцию, но мероприятия останутся редактируемыми.`)) return;
+  await withLoading(async () => {
+    await api(`/monthly-closings/close?month=${state.month}`, { method: "POST" });
+    await loadDashboard();
+  }, "Закрываем месяц…");
+}
+
+async function reopenSelectedMonth() {
+  if (!window.confirm(`Открыть ${monthLabelRu(state.month)} заново?`)) return;
+  await withLoading(async () => {
+    await api(`/monthly-closings/reopen?month=${state.month}`, { method: "POST" });
+    await loadDashboard();
+  }, "Открываем месяц…");
+}
+
+function attachClosingPanelEvents() {
+  const panel = document.getElementById("closingPanel");
+  if (!panel || panel.dataset.eventsAttached === "1") return;
+  panel.dataset.eventsAttached = "1";
+
+  document.getElementById("closingExpenseAllocation")?.addEventListener("change", setClosingCustomSplitVisibility);
+  document.getElementById("addClosingExpenseBtn")?.addEventListener("click", addClosingExpense);
+  document.getElementById("recalculateClosingBtn")?.addEventListener("click", () => {
+    refreshClosingPanel({ saveIfClosed: true }).catch((error) => alert(error.message));
+  });
+  document.getElementById("closeMonthBtn")?.addEventListener("click", () => closeSelectedMonth().catch((error) => alert(error.message)));
+  document.getElementById("reopenClosingBtn")?.addEventListener("click", () => reopenSelectedMonth().catch((error) => alert(error.message)));
+  document.querySelectorAll("[data-delete-expense-id]").forEach((button) => {
+    button.addEventListener("click", () => deleteClosingExpense(button.dataset.deleteExpenseId).catch((error) => alert(error.message)));
+  });
+
+  setClosingCustomSplitVisibility();
+}
+
+async function attachClosingPanel() {
+  const panel = document.getElementById("closingPanel");
+  if (!panel || panel.dataset.loading === "1" || panel.dataset.loaded === "1") return;
+  panel.dataset.loading = "1";
+  await refreshClosingPanel();
+  panel.dataset.loading = "0";
+  panel.dataset.loaded = "1";
+}
+
 async function ensureMonthlyPlansLoadedForEditor() {
   const editor = document.getElementById("plansEditor");
   if (!editor) return false;

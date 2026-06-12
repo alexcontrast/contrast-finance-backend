@@ -88,6 +88,13 @@ def payment_method_label(payment_method: str | None) -> str:
     return labels.get(payment_method, payment_method or "")
 
 
+def expense_default_split_amounts(db: Session, expense: MonthlyExpense) -> tuple[Decimal, Decimal]:
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == expense.month)).scalar_one_or_none()
+    sanzhar_percent = money(plan.sanzhar_share_percent) if plan is not None else Decimal("66.67")
+    sanzhar = q(money(expense.amount) * sanzhar_percent / Decimal("100"))
+    return sanzhar, q(money(expense.amount) - sanzhar)
+
+
 def get_department_expenses(db: Session, department_name: str, year: int, month: int) -> Decimal:
     expenses = db.execute(
         select(MonthlyExpense).where(
@@ -98,10 +105,15 @@ def get_department_expenses(db: Session, department_name: str, year: int, month:
 
     total = Decimal("0.00")
     for expense in expenses:
+        if expense.allocation_type == "default_split":
+            sanzhar_amount, raufal_amount = expense_default_split_amounts(db, expense)
+        else:
+            sanzhar_amount, raufal_amount = money(expense.sanzhar_amount), money(expense.raufal_amount)
+
         if department_name == "Санжар":
-            total += money(expense.sanzhar_amount)
+            total += sanzhar_amount
         elif department_name == "Рауфаль":
-            total += money(expense.raufal_amount)
+            total += raufal_amount
 
     return q(total)
 
@@ -111,7 +123,7 @@ def build_closing(closing: MonthlyClosing | None) -> AdminClosingRead:
         return AdminClosingRead(is_closed=False)
 
     return AdminClosingRead(
-        is_closed=True,
+        is_closed=closing.status == "closed",
         status=closing.status,
         sanzhar_head_salary=closing.sanzhar_head_salary,
         raufal_head_salary=closing.raufal_head_salary,
