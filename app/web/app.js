@@ -5476,13 +5476,17 @@ function setDraftItemValue(eventId, itemId, field, value) {
   }
 
   if (field === "payment_method") {
+    if (value !== "self_employed") {
+      clearDraftSelfEmployedFields(item);
+    }
+
     if (value !== "invoice") {
       item.iin_bin = null;
       item.iin_bin_locked = false;
       item.tax_check_status = null;
     }
 
-    if (value === "cash" || value === "card" || value === "") {
+    if (value === "cash" || value === "card" || value === "" || value === "invoice") {
       item.vat_amount = 0;
       item.deduction_amount = 0;
     }
@@ -6580,8 +6584,11 @@ function syncDraftItemFromRowBeforeTax(itemId) {
     if (item.payment_method === "self_employed") {
       ensureSelfEmployedItemTax(item);
     } else {
+      clearDraftSelfEmployedFields(item);
       item.deduction_amount = 0;
     }
+  } else {
+    clearDraftSelfEmployedFields(item);
   }
 
   return item;
@@ -6930,7 +6937,9 @@ function selfEmployedDeductionBase(item) {
 function ensureSelfEmployedItemTax(item) {
   if (!item) return item;
 
-  const isSelfEmployed = item.payment_method === "self_employed" || item.tax_check_status === "self_employed" || itemHasActiveSelfEmployedPaymentRequest(item);
+  // Самозанятый становится жёстко закреплённым только после активной заявки/оплаты
+  // по этой позиции. Простое переключение в смете остаётся обычным черновым выбором.
+  const isSelfEmployed = item.payment_method === "self_employed" || itemHasActiveSelfEmployedPaymentRequest(item);
   if (!isSelfEmployed) return item;
 
   item.payment_method = "self_employed";
@@ -6943,6 +6952,20 @@ function ensureSelfEmployedItemTax(item) {
   const surname = selfEmployedSurnameFromItem(item);
   if (surname && !String(item.internal_note || "").match(/Самозанятый:\s*/i)) {
     item.internal_note = `Самозанятый: ${surname}`;
+  }
+
+  return item;
+}
+
+function clearDraftSelfEmployedFields(item) {
+  if (!item || itemHasActiveSelfEmployedPaymentRequest(item)) return item;
+
+  if (item.tax_check_status === "self_employed") {
+    item.tax_check_status = null;
+  }
+
+  if (String(item.internal_note || "").match(/^Самозанятый:\s*/i)) {
+    item.internal_note = null;
   }
 
   return item;
@@ -7019,10 +7042,7 @@ function itemHasLockedInvoicePayment(item) {
 }
 
 function itemHasLockedSelfEmployedPayment(item) {
-  return Boolean(
-    itemHasActiveSelfEmployedPaymentRequest(item) ||
-    selfEmployedSurnameFromItem(item)
-  );
+  return itemHasActiveSelfEmployedPaymentRequest(item);
 }
 
 function paymentMethodIsFixed(item) {
@@ -7041,7 +7061,7 @@ function fixedPaymentMethodForItem(item) {
   const activeMethod = paymentMethodFromActiveRequest(item);
   if (activeMethod) return activeMethod;
   if (itemHasLockedInvoicePayment(item)) return "invoice";
-  if (item?.payment_method === "self_employed" || item?.tax_check_status === "self_employed") return "self_employed";
+  if (itemHasActiveSelfEmployedPaymentRequest(item)) return "self_employed";
   return null;
 }
 
