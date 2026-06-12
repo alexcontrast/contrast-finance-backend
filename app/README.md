@@ -1,45 +1,12 @@
-## v0.40.21
-- Исправлена таблица сметы в модалке мероприятия: компактные ширины колонок, чтобы смета помещалась без горизонтального скролла.
-- В админском режиме редактирования drag-колонка стала минимальной, только под маленький квадрат-перетаскивание.
-- В админском редактировании внутренней сметы явно добавлены/закреплены колонки НДС и Вычеты.
-- Исправлена постоянная заливка колонок: НДС — голубая, Вычеты — фиолетовая.
-- Frontend cache-bust updated to v0.40.21.
+## v0.40.23
 
-v0.40.14: Legacy migration production import now runs in Railway-friendly browser-driven batches: core, events, shares, items, payments, final check. The old one-shot endpoint remains but the page no longer uses it for production import.
-# Contrast Finance v0.40.10
+Frontend fix for admin/department-head event modal estimate table colors.
 
-Хотфикс статуса денег: индивидуальное «Деньги в кассе» по заявке больше не поднимает статус денег на всё мероприятие и не трогает соседние заявки. Массовое направление сохраняется только сверху вниз: кнопка «Деньги в кассе» на мероприятии помечает все его активные заявки.
-
-Новых миграций нет.
-
-
-## v0.40.13
-- Legacy migration status mapping updated: legacy `Новая` and `На оплату` both import as `new`; legacy `Отклонено` and `Отменено` both import as `cancelled`. Dry-run status preview now reflects this merged mapping before production import.
-
-## v0.40.12
-- Added one-time legacy migration importer for Apps Script / Google Sheets export JSON.
-- Added legacy identifiers for idempotent event/item/payment imports.
-- Added /legacy-migration upload page protected by LEGACY_MIGRATION_TOKEN.
-
-
-v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.
-
-
-
-
-## v0.40.19
-
-- Added the missing "Комиссия" column to the event modal estimate table.
-- The column is shown between "Оплата" and "НДС" for both admin and department-head event modals.
-- Frontend cache-bust updated to v0.40.19.
-
-## v0.40.18
-
-- Admin event modal: added pencil edit mode for admin to edit event fields and estimates without changing manager restrictions.
-- Admin event modal: accepted events can be returned to revision / rework.
-
-## v0.40.17
-- Improved legacy migration page file handling for Safari/browser cache: explicit selected-file indicator, button event listeners, and clearer messages when the JSON file is not selected/read.
-
-
-v0.40.17: added no-JavaScript fallback multipart validation/import page for legacy migration; background import job with status page; added python-multipart.
+- Removed old global nth-child based estimate-column coloring from injected frontend CSS.
+- Estimate column backgrounds are now bound to semantic classes instead of column numbers.
+- In admin/department-head event modal:
+  - NDS column is blue.
+  - Deductions column is purple.
+  - Commission and Method columns stay neutral/gray like regular amount columns.
+- Added explicit method-col classes to event modal estimate header/body/top rows.
+- Frontend cache-bust updated to v0.40.23.

@@ -1,4 +1,6 @@
-Contrast Finance v0.40.21 — changed files only
+Contrast Finance v0.40.23 — changed files only
+
+Base: v0.40.22
 
 Changed files:
 - app/web/app.js
@@ -10,9 +12,12 @@ Changed files:
 - app/README.md
 - app/CHANGED_FILES_README.txt
 
-v0.40.21:
-- Fixed admin event edit estimate layout so it fits the modal without horizontal scroll.
-- Reduced drag/reorder column to a narrow square handle.
-- Added/fixed visible VAT and deduction columns in admin internal edit table.
-- Fixed column fills: VAT is blue, deductions are purple.
-- Added fixed colgroups for admin/department-head event modal estimate tables.
+Checks:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js
+
+v0.40.23:
+- Fixed admin/department-head event modal estimate table coloring.
+- Removed stale nth-child based coloring that shifted after the Commission column was added.
+- NDS is always blue, Deductions always purple, Commission and Method are neutral/gray.

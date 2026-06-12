@@ -1642,20 +1642,22 @@ function injectManagerUxStyles() {
     }
 
 
-    /* v0.36.01: цвета столбцов сметы после переноса "Способ" */
-    .estimate-table th:nth-child(5),
-    .estimate-table td:nth-child(5) {
+    /* v0.40.23: цвета столбцов сметы привязаны к смысловым классам, не к nth-child */
+    .estimate-table th.vat-col,
+    .estimate-table td.vat-col {
       background: rgba(220, 244, 252, .72) !important;
     }
 
-    .estimate-table th:nth-child(6),
-    .estimate-table td:nth-child(6) {
+    .estimate-table th.deduction-col,
+    .estimate-table td.deduction-col {
       background: rgba(237, 226, 248, .72) !important;
     }
 
-    .estimate-table th:nth-child(7),
-    .estimate-table td:nth-child(7) {
-      background: transparent !important;
+    .estimate-table th.commission-col,
+    .estimate-table td.commission-col,
+    .estimate-table th.method-col,
+    .estimate-table td.method-col {
+      background: #f4f7ec !important;
     }
 
     /* v0.36.01: компактная таблица мероприятий без горизонтального скролла */
@@ -4688,11 +4690,11 @@ function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
       <td><strong>${row.name}</strong></td>
       <td>${formatMoney(row.amount)}</td>
       <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>—</td>
+      <td class="paid-col">0</td>
+      <td class="commission-col">0</td>
+      <td class="vat-col">0</td>
+      <td class="deduction-col">0</td>
+      <td class="method-col">—</td>
     </tr>
   `).join("");
 }
@@ -4928,7 +4930,7 @@ async function openEventModal(eventId) {
           </colgroup>
           <thead>
             <tr>
-              <th>Позиция</th><th>Смета</th><th>Факт</th><th class="paid-col">Оплата</th><th class="commission-col">Комиссия</th><th class="vat-col">НДС</th><th class="deduction-col">Вычеты</th><th>Способ</th>
+              <th>Позиция</th><th>Смета</th><th>Факт</th><th class="paid-col">Оплата</th><th class="commission-col">Комиссия</th><th class="vat-col">НДС</th><th class="deduction-col">Вычеты</th><th class="method-col">Способ</th>
             </tr>
           </thead>
           <tbody>
@@ -4941,7 +4943,7 @@ async function openEventModal(eventId) {
                 <td class="commission-col">${formatMoney(internalCommissionValue(item))}</td>
                 <td class="vat-col">${formatMoney(itemVatVisible(item))}</td>
                 <td class="deduction-col">${formatMoney(itemDeductionVisible(item))}</td>
-                <td>${paymentMethodLabel(item.payment_method)}</td>
+                <td class="method-col">${paymentMethodLabel(item.payment_method)}</td>
               </tr>
             `).join("")}
             ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}

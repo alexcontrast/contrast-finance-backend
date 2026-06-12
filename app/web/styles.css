@@ -3018,29 +3018,31 @@ body.login-mode #loginScreen .auth-title::before {
 .internal-estimate-table th.vat-col,
 .internal-estimate-table td.vat-col,
 .internal-estimate-table col.vat-col,
-.event-modal-estimate-table th:nth-child(6),
-.event-modal-estimate-table td:nth-child(6),
+.event-modal-estimate-table th.vat-col,
+.event-modal-estimate-table td.vat-col,
 .event-modal-estimate-table col.vat-col {
   background: #eaf8fb !important;
 }
 .internal-estimate-table th.deduction-col,
 .internal-estimate-table td.deduction-col,
 .internal-estimate-table col.deduction-col,
-.event-modal-estimate-table th:nth-child(7),
-.event-modal-estimate-table td:nth-child(7),
+.event-modal-estimate-table th.deduction-col,
+.event-modal-estimate-table td.deduction-col,
 .event-modal-estimate-table col.deduction-col {
   background: #f3effb !important;
 }
 .internal-estimate-table th.commission-col,
 .internal-estimate-table td.commission-col,
-.event-modal-estimate-table th:nth-child(5),
-.event-modal-estimate-table td:nth-child(5) {
+.event-modal-estimate-table th.commission-col,
+.event-modal-estimate-table td.commission-col,
+.event-modal-estimate-table th.method-col,
+.event-modal-estimate-table td.method-col {
   background: #f4f7ec !important;
 }
 .internal-estimate-table th.paid-col,
 .internal-estimate-table td.paid-col,
-.event-modal-estimate-table th:nth-child(4),
-.event-modal-estimate-table td:nth-child(4) {
+.event-modal-estimate-table th.paid-col,
+.event-modal-estimate-table td.paid-col {
   background: #f4f7ec !important;
 }
 .event-modal-estimate-table {
