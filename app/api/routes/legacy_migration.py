@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.services.legacy_importer import import_legacy_data
+from app.services.legacy_importer import import_legacy_data, validate_legacy_data
 
 
 router = APIRouter(tags=["legacy_migration"])
@@ -51,19 +51,30 @@ def legacy_migration_page():
     <pre id="out">Жду файл…</pre>
   </div>
 <script>
+async function readJsonResponse(res){
+  const text = await res.text();
+  let data = null;
+  try { data = JSON.parse(text); }
+  catch(err) {
+    return { ok:false, status:res.status, error:`Backend вернул не JSON: ${text.slice(0, 500)}` };
+  }
+  if(!res.ok) return { ok:false, status:res.status, error:data.detail || data.error || data };
+  return data;
+}
 async function runImport(dryRun){
   const out = document.getElementById('out');
   const token = document.getElementById('token').value.trim();
   const file = document.getElementById('file').files[0];
   if(!token) return out.textContent = 'Введите token';
   if(!file) return out.textContent = 'Выберите JSON файл';
-  out.textContent = dryRun ? 'Проверяю…' : 'Импортирую… не закрывай страницу';
+  out.textContent = dryRun ? 'Быстро проверяю структуру JSON…' : 'Импортирую… не закрывай страницу';
   try{
     const body = await file.text();
-    const res = await fetch(`/api/legacy-migration/import?dry_run=${dryRun ? 'true' : 'false'}&token=${encodeURIComponent(token)}`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body
-    });
-    const data = await res.json();
+    const url = dryRun
+      ? `/api/legacy-migration/validate?token=${encodeURIComponent(token)}`
+      : `/api/legacy-migration/import?token=${encodeURIComponent(token)}`;
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+    const data = await readJsonResponse(res);
     out.textContent = JSON.stringify(data, null, 2);
   }catch(err){
     out.textContent = String(err && err.message || err);
@@ -77,10 +88,27 @@ async function runImport(dryRun){
     )
 
 
+@router.post("/api/legacy-migration/validate")
+async def validate_legacy_migration(
+    request: Request,
+    token: str | None = Query(None),
+):
+    require_migration_token(token)
+    try:
+        data = await request.json()
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {err}")
+    try:
+        result = validate_legacy_data(data)
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Legacy validation failed: {err}")
+    return {"ok": result.get("valid", False), "dry_run": True, "result": result}
+
+
 @router.post("/api/legacy-migration/import")
 async def import_legacy_migration(
     request: Request,
-    dry_run: bool = Query(True),
+    dry_run: bool = Query(False),
     token: str | None = Query(None),
     db: Session = Depends(get_db),
 ):

@@ -665,6 +665,94 @@ def upsert_legacy_telegram_messages(db: Session, payment: PaymentRequest, row: d
         stats.telegram_messages_created += 1
 
 
+
+def validate_legacy_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Fast validation for browser dry-run.
+
+    It intentionally does not touch PostgreSQL: Railway can return an upstream
+    timeout when the dry run executes the whole import transaction and then
+    rolls it back. This validation only reads the JSON structure, counts rows,
+    checks required sheets/columns, and previews the mapped volume.
+    """
+    sheets = data.get("sheets") or {}
+    required = {
+        "Пользователи": ["User ID", "Имя", "Отдел"],
+        "Черновики_ивентов": ["Event ID", "User ID", "Менеджер", "Дата мероприятия"],
+        "Позиции_ивентов": ["Event ID", "№", "Позиция"],
+        "Заявки_на_оплату": ["Payment ID", "Event ID", "Статус оплаты", "Статус денег"],
+    }
+    warnings: list[str] = []
+    errors: list[str] = []
+    sheet_counts: dict[str, int] = {}
+
+    version = data.get("version")
+    if version != "contrast_legacy_export_v1":
+        warnings.append(f"Неожиданная версия экспорта: {version}")
+
+    for name, columns in required.items():
+        sheet = sheets.get(name) or {}
+        rows = list(sheet.get("rows") or [])
+        headers = set(sheet.get("headers") or [])
+        sheet_counts[name] = len(rows)
+        if name not in sheets:
+            errors.append(f"Нет обязательного листа: {name}")
+            continue
+        for col in columns:
+            if col not in headers:
+                warnings.append(f"Лист {name}: нет колонки {col}")
+
+    for name, sheet in sheets.items():
+        sheet_counts[name] = len((sheet or {}).get("rows") or [])
+
+    events = sheet_rows(data, "Черновики_ивентов")
+    items = sheet_rows(data, "Позиции_ивентов")
+    payments = sheet_rows(data, "Заявки_на_оплату")
+    users = sheet_rows(data, "Пользователи")
+
+    event_ids = {text(r.get("Event ID")) for r in events if text(r.get("Event ID"))}
+    item_event_ids = {text(r.get("Event ID")) for r in items if text(r.get("Event ID"))}
+    payment_event_ids = {text(r.get("Event ID")) for r in payments if text(r.get("Event ID"))}
+
+    missing_item_events = sorted(list(item_event_ids - event_ids))[:20]
+    missing_payment_events = sorted(list(payment_event_ids - event_ids))[:20]
+    if missing_item_events:
+        warnings.append(f"Есть позиции без мероприятия: {len(item_event_ids - event_ids)}. Примеры: {', '.join(missing_item_events)}")
+    if missing_payment_events:
+        warnings.append(f"Есть заявки без мероприятия: {len(payment_event_ids - event_ids)}. Примеры: {', '.join(missing_payment_events)}")
+
+    status_counts: dict[str, int] = {}
+    money_status_counts: dict[str, int] = {}
+    for row in payments:
+        st = payment_status_map(row)
+        ms = money_status_map(row, st)
+        status_counts[st] = status_counts.get(st, 0) + 1
+        money_status_counts[ms] = money_status_counts.get(ms, 0) + 1
+
+    return {
+        "valid": not errors,
+        "version": version,
+        "exported_at": data.get("exportedAt"),
+        "spreadsheet_name": data.get("spreadsheetName"),
+        "timezone": data.get("timezone"),
+        "sheets_count": len(sheets),
+        "total_rows": sum(sheet_counts.values()),
+        "sheet_counts": sheet_counts,
+        "planned_import": {
+            "users": len(users),
+            "events": len(events),
+            "event_items": len(items),
+            "payment_requests": len(payments),
+            "monthly_plans": len(sheet_rows(data, "Цели")),
+            "customer_payments_archive_rows": len(sheet_rows(data, "Оплаты_заказчиков")),
+        },
+        "payment_status_counts": status_counts,
+        "money_status_counts": money_status_counts,
+        "errors": errors,
+        "warnings": warnings[:80],
+        "note": "Это быстрая сухая проверка структуры JSON без записи в PostgreSQL. Боевой импорт запускается отдельно.",
+    }
+
+
 def import_legacy_data(db: Session, data: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
     stats = ImportStats(dry_run=dry_run)
     if data.get("version") != "contrast_legacy_export_v1":

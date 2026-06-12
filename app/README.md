@@ -5,7 +5,10 @@
 Новых миграций нет.
 
 
-## v0.40.11
+## v0.40.12
 - Added one-time legacy migration importer for Apps Script / Google Sheets export JSON.
 - Added legacy identifiers for idempotent event/item/payment imports.
 - Added /legacy-migration upload page protected by LEGACY_MIGRATION_TOKEN.
+
+
+v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.
