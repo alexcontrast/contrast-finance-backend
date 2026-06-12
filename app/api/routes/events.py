@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models.event import Event
 from app.models.event_share import EventShare
 from app.models.payment_request import PaymentRequest
+from app.models.telegram_message import TelegramMessage
 from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
 from app.services.auth import get_current_user
@@ -30,6 +31,24 @@ class EventActionManagerRead(BaseModel):
     name: str
     department_id: int | None = None
     department_name: str | None = None
+
+
+
+
+def mark_event_payment_requests_for_telegram_sync(db: Session, request_ids: list[int]) -> None:
+    if not request_ids:
+        return
+    dirty_at = datetime(2000, 1, 1)
+    messages = db.execute(
+        select(TelegramMessage).where(
+            TelegramMessage.payment_request_id.in_(request_ids),
+            TelegramMessage.status == "active",
+        )
+    ).scalars().all()
+    for message in messages:
+        message.updated_at = dirty_at
+        message.error_message = None
+        db.add(message)
 
 
 def active_payment_requests_count(db: Session, event_id: int) -> int:
@@ -289,11 +308,13 @@ def mark_event_cash_received(
     ).scalars().all()
 
     now = datetime.utcnow()
+    changed_request_ids: list[int] = []
     for request in payment_requests:
         # Статус оплаты подрядчику не трогаем. Это независимая ось.
         request.money_status = "cash_received"
         request.cash_received_at = now
         request.updated_at = now
+        changed_request_ids.append(request.id)
         db.add(request)
 
     # Рабочий статус мероприятия не трогаем. Фиксируем только деньги клиента.
@@ -301,6 +322,7 @@ def mark_event_cash_received(
     event.updated_at = now
 
     db.add(event)
+    mark_event_payment_requests_for_telegram_sync(db, changed_request_ids)
     db.commit()
     db.refresh(event)
     return event

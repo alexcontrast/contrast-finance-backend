@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.9_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.10_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -1587,12 +1587,12 @@ def update_request_status_in_db(payment_id: int, action: str, actor: str) -> Pay
                 item.updated_at = now
                 db.add(item)
         elif action == "cashin":
+            # Индивидуальная кнопка Telegram «Деньги в кассе» относится только к этой заявке.
+            # Она не должна помечать всё мероприятие и соседние заявки.
+            # Массовая операция мероприятие -> все заявки выполняется только на сайте
+            # через /events/{event_id}/cash-received.
             request.money_status = "cash_received"
             request.cash_received_at = now
-            if event is not None:
-                event.money_status = "cash_received"
-                event.updated_at = now
-                db.add(event)
         elif action == "cancel":
             if actor == "manager" and request.status == "paid":
                 raise RuntimeError("Оплаченную заявку нельзя отменить менеджером")

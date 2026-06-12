@@ -12,6 +12,7 @@ from app.models.event_share import EventShare
 from app.models.payment_request import PaymentRequest
 from app.models.contractor import Contractor
 from app.models.taxpayer_check import TaxpayerCheck
+from app.models.telegram_message import TelegramMessage
 from app.models.user import User
 from app.schemas.payment_request import (
     PaymentRequestCardRead,
@@ -90,6 +91,26 @@ def invoice_contractor_name_from_item(db: Session, item: EventItem) -> str | Non
     ).scalar_one_or_none()
     return getattr(check, "name_result", None)
 
+
+def mark_payment_request_for_telegram_sync(db: Session, request_id: int) -> None:
+    """Make the Telegram worker pick this request first on the next poll.
+
+    We do not need a new queue table for this: active Telegram cards already live in
+    `telegram_messages`. Setting their updated_at to an old marker puts the request
+    at the front of `poll_status_updates`, which then edits/deletes admin, manager
+    and Tatiana cards according to the latest split statuses.
+    """
+    dirty_at = datetime(2000, 1, 1)
+    messages = db.execute(
+        select(TelegramMessage).where(
+            TelegramMessage.payment_request_id == request_id,
+            TelegramMessage.status == "active",
+        )
+    ).scalars().all()
+    for message in messages:
+        message.updated_at = dirty_at
+        message.error_message = None
+        db.add(message)
 
 
 
@@ -587,6 +608,7 @@ def update_payment_request_status(
         request.cash_received_at = datetime.utcnow()
         request.updated_at = datetime.utcnow()
         db.add(request)
+        mark_payment_request_for_telegram_sync(db, request.id)
         db.commit()
         db.refresh(request)
         return enrich_payment_request_read(request, db)
@@ -615,6 +637,7 @@ def update_payment_request_status(
             db.add(item)
 
     db.add(request)
+    mark_payment_request_for_telegram_sync(db, request.id)
     db.commit()
     db.refresh(request)
 
@@ -642,14 +665,13 @@ def update_payment_request_money_status(
     if payload.money_status == "cash_received":
         request.cash_received_at = datetime.utcnow()
 
-        # Если хотя бы одна заявка по мероприятию отмечена как деньги в кассе,
-        # мероприятие тоже получает money_status=cash_received.
-        event.money_status = "cash_received"
-        event.updated_at = datetime.utcnow()
-        db.add(event)
-
+    # Важно: индивидуальный статус денег заявки НЕ поднимается на всё мероприятие.
+    # Обратное направление существует только через /events/{event_id}/cash-received:
+    # мероприятие -> все его заявки.
+    # Заявка -> мероприятие запрещено, иначе одна оплаченная заявка помечает весь ивент.
     request.updated_at = datetime.utcnow()
     db.add(request)
+    mark_payment_request_for_telegram_sync(db, request.id)
     db.commit()
     db.refresh(request)
     return enrich_payment_request_read(request, db)
