@@ -2081,13 +2081,14 @@ button[data-manager-event-save-draft]:hover {
 }
 
 .plan-percent-input {
-  width: 45px;
-  min-width: 45px;
-  height: 30px;
-  padding: 5px 6px;
-  font-size: 12px;
+  width: 48px;
+  min-width: 48px;
+  height: 28px;
+  padding: 4px 4px;
+  box-sizing: border-box;
+  font-size: 10.5px;
   font-weight: 850;
-  text-align: right;
+  text-align: center;
 }
 
 .plans-table-monthly td[data-plan-calc-sanzhar],
@@ -2095,7 +2096,7 @@ button[data-manager-event-save-draft]:hover {
 .plans-table-monthly td[data-plan-calc-manager] {
   font-size: 12px;
   font-weight: 850;
-  text-align: right;
+  text-align: center;
 }
 
 .plans-save-message {
@@ -2113,7 +2114,35 @@ button[data-manager-event-save-draft]:hover {
   }
 
   .plan-percent-input {
-    width: 42px;
-    min-width: 42px;
+    width: 46px;
+    min-width: 46px;
+    font-size: 10px;
   }
+}
+
+/* v0.37.20 plan table alignment polish */
+.plans-table-monthly th:nth-child(4),
+.plans-table-monthly th:nth-child(5),
+.plans-table-monthly th:nth-child(6),
+.plans-table-monthly th:nth-child(7) {
+  text-align: center;
+}
+
+.plans-table-monthly td:nth-child(4),
+.plans-table-monthly td:nth-child(5),
+.plans-table-monthly td:nth-child(6),
+.plans-table-monthly td:nth-child(7) {
+  text-align: center;
+}
+
+.plans-table-monthly td:nth-child(6) .plan-percent-cell {
+  justify-content: center;
+}
+
+.plans-table-monthly td:nth-child(6) .plan-percent-control {
+  justify-content: center;
+}
+
+.plans-table-monthly td:nth-child(3) .plan-percent-pair {
+  justify-content: center;
 }
