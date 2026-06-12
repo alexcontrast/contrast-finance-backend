@@ -2131,6 +2131,54 @@ function injectManagerUxStyles() {
     }
 
 
+    /* v0.40.20: compact admin event editor */
+    #eventModalBackdrop.admin-event-edit-mode .estimate-tabs {
+      display: none !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .modal,
+    #eventModalBackdrop.admin-event-edit-mode .event-modal,
+    #eventModalBackdrop.admin-event-edit-mode .modal-card {
+      width: min(1500px, calc(100vw - 24px)) !important;
+      max-width: 1500px !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode #eventModalContent {
+      overflow-x: hidden !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .estimate-table-wrap {
+      overflow-x: auto !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table {
+      min-width: 1320px !important;
+      table-layout: fixed !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td {
+      padding: 7px 6px !important;
+      font-size: 12px !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table input,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table select {
+      min-height: 32px !important;
+      padding: 5px 7px !important;
+      font-size: 12px !important;
+      border-radius: 8px !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-col {
+      width: 28px !important;
+      min-width: 28px !important;
+      max-width: 28px !important;
+    }
+
+
     /* v0.37.04: статус денег "Отменено" */
     .status.cancelled.request-money-badge,
     .request-money-badge.cancelled,
@@ -4775,7 +4823,7 @@ async function openAdminEventEditMode(eventId) {
 
   state.adminEventEditModeId = Number(eventId);
   state.selectedManagerEventId = Number(eventId);
-  state.managerEstimateTab = state.managerEstimateTab || "external";
+  state.managerEstimateTab = "internal";
   delete state.managerDraftEventsById[String(eventId)];
   delete state.managerDraftItemsByEventId[String(eventId)];
   delete state.managerDraftDeletedByEventId[String(eventId)];
@@ -6013,7 +6061,12 @@ function setDraftItemValue(eventId, itemId, field, value) {
     return;
   }
 
-  if (["external_price", "external_quantity", "external_days", "amount_fact"].includes(field)) {
+  if (field === "external_amount_admin") {
+    const amount = value === "" ? 0 : Math.round(normalizeNumberInput(value));
+    item.external_price = amount;
+    item.external_quantity = 1;
+    item.external_days = 1;
+  } else if (["external_price", "external_quantity", "external_days", "amount_fact"].includes(field)) {
     item[field] = value === "" ? null : Math.round(normalizeNumberInput(value));
   } else {
     item[field] = value;
@@ -6040,7 +6093,7 @@ function setDraftItemValue(eventId, itemId, field, value) {
     }
   }
 
-  if (["external_price", "external_quantity", "external_days"].includes(field) && item.item_type === "coordinator") {
+  if (["external_price", "external_quantity", "external_days", "external_amount_admin"].includes(field) && item.item_type === "coordinator") {
     item.amount_fact = Math.round(externalRowAmount(item) * 0.5);
   }
 
@@ -6048,7 +6101,7 @@ function setDraftItemValue(eventId, itemId, field, value) {
     ensureSelfEmployedItemTax(item);
   }
 
-  if (["amount_fact", "external_price", "external_quantity", "external_days"].includes(field)) {
+  if (["amount_fact", "external_price", "external_quantity", "external_days", "external_amount_admin"].includes(field)) {
     recalculateCheckedItemTax(item);
   }
   updateCurrentManagerMiniCardLive();
@@ -6255,10 +6308,10 @@ function attachDraftInputs(eventId) {
       const field = input.getAttribute("data-item-field");
       setDraftItemValue(eventId, itemId, field, input.value);
 
-      if (["external_price", "amount_fact"].includes(field)) {
+      if (["external_price", "external_amount_admin", "amount_fact"].includes(field)) {
         const items = getDraftItems(eventId);
         const item = items.find((candidate) => String(candidate.id) === String(itemId));
-        input.value = field === "amount_fact" ? internalFactDisplayValue(item) : formatInputNumber(item?.external_price);
+        input.value = field === "amount_fact" ? internalFactDisplayValue(item) : formatInputNumber(field === "external_amount_admin" ? externalRowAmount(item) : item?.external_price);
       }
 
       if (["external_quantity", "external_days"].includes(field)) {
@@ -6283,7 +6336,7 @@ function refreshDraftVisibleCalculations(eventId) {
   const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
   state.currentManagerSummary = summary;
 
-  const activeTab = state.managerEstimateTab || "external";
+  const activeTab = isAdminEditMode ? "internal" : (state.managerEstimateTab || "external");
   if (activeTab === "internal") {
     const grid = document.querySelector(".manager-summary-grid-six");
     if (grid) {
@@ -6416,8 +6469,8 @@ function internalFactDisplayValue(item) {
 
 
 function draggableHandle(item) {
-  if (item.item_type === "coordinator") return `<span class="drag-handle muted" title="Координатор всегда первый">⋮⋮</span>`;
-  return `<span class="drag-handle" draggable="true" data-drag-item="${item.id}" title="Перетащить строку">⋮⋮</span>`;
+  if (item.item_type === "coordinator") return `<span class="drag-handle muted" title="Координатор всегда первый">↕</span>`;
+  return `<span class="drag-handle" draggable="true" data-drag-item="${item.id}" title="Перетащить строку">↕</span>`;
 }
 
 function addDraftRegularPosition(eventId) {
@@ -6686,7 +6739,9 @@ function renderInternalEstimate(items, event, summary = null) {
               <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
                 <td class="drag-col">${draggableHandle(item)}</td>
                 <td>${rowInput(item.external_name || "", `placeholder="Новая позиция" data-item-field="external_name" data-item-id="${item.id}"`)}</td>
-                <td><strong>${formatMoney(externalRowAmount(item))}</strong></td>
+                <td>${state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(event?.id || 0)
+                  ? rowInput(formatInputNumber(externalRowAmount(item)), `data-item-field="external_amount_admin" data-item-id="${item.id}"`)
+                  : `<strong>${formatMoney(externalRowAmount(item))}</strong>`}</td>
                 <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
                 <td>
                   ${isCoordinatorItem(item) ? `
@@ -6738,7 +6793,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
   const readonlyAttrs = canEdit ? "" : "disabled";
 
 
-  const activeTab = state.managerEstimateTab || "external";
+  const activeTab = isAdminEditMode ? "internal" : (state.managerEstimateTab || "external");
 
   return `
     <section class="manager-event-card ${isReadonlyReview ? "is-readonly" : ""}" style="${isReadonlyReview ? "background: rgba(115,120,130,.045);" : ""}">
@@ -6796,16 +6851,18 @@ function renderManagerEventCard(event, items = [], summary = null) {
         ` : ""}
       </div>
 
-      <div class="estimate-tabs">
-        <button class="${activeTab === "external" ? "tab-btn active" : "ghost"}" data-estimate-tab="external">Внешняя смета</button>
-        <button class="${activeTab === "internal" ? "tab-btn active" : "ghost"}" data-estimate-tab="internal">Внутренняя смета</button>
-      </div>
+      ${isAdminEditMode ? "" : `
+        <div class="estimate-tabs">
+          <button class="${activeTab === "external" ? "tab-btn active" : "ghost"}" data-estimate-tab="external">Внешняя смета</button>
+          <button class="${activeTab === "internal" ? "tab-btn active" : "ghost"}" data-estimate-tab="internal">Внутренняя смета</button>
+        </div>
+      `}
 
       <div id="managerEstimatePanel">
-        ${activeTab === "external" ? renderExternalEstimate(items || [], event.id, event) : renderInternalEstimate(items || [], event, summary)}
+        ${isAdminEditMode ? renderInternalEstimate(items || [], event, summary) : (activeTab === "external" ? renderExternalEstimate(items || [], event.id, event) : renderInternalEstimate(items || [], event, summary))}
       </div>
 
-      ${summary && activeTab === "internal" ? `
+      ${summary && (activeTab === "internal" || isAdminEditMode) ? `
         <div class="manager-summary-grid manager-summary-grid-six">
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
           ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}

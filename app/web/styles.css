@@ -1689,10 +1689,14 @@ button[data-manager-event-save-draft]:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 28px;
-  border-radius: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(123,133,116,.36);
+  background: rgba(255,255,255,.55);
   color: #7b8574;
+  font-size: 12px;
+  line-height: 1;
   font-weight: 900;
   user-select: none;
 }
@@ -2950,4 +2954,39 @@ body.login-mode #loginScreen .auth-title::before {
     font-size: 20px;
     max-width: 300px;
   }
+}
+
+
+/* v0.40.20: compact admin event editor */
+#eventModalBackdrop.admin-event-edit-mode .estimate-tabs { display: none !important; }
+#eventModalBackdrop.admin-event-edit-mode .modal,
+#eventModalBackdrop.admin-event-edit-mode .event-modal,
+#eventModalBackdrop.admin-event-edit-mode .modal-card {
+  width: min(1500px, calc(100vw - 24px)) !important;
+  max-width: 1500px !important;
+}
+#eventModalBackdrop.admin-event-edit-mode #eventModalContent { overflow-x: hidden !important; }
+#eventModalBackdrop.admin-event-edit-mode .estimate-table-wrap { overflow-x: auto !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table {
+  min-width: 1320px !important;
+  table-layout: fixed !important;
+}
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td {
+  padding: 7px 6px !important;
+  font-size: 12px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table input,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table select {
+  min-height: 32px !important;
+  padding: 5px 7px !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-col {
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
 }

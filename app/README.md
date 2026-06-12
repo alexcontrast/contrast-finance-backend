@@ -18,6 +18,20 @@ v0.40.14: Legacy migration production import now runs in Railway-friendly browse
 v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.
 
 
+
+## v0.40.20
+- Admin event edit mode now opens directly in internal estimate; external/internal tabs are hidden for admin editing.
+- Compact drag handle in estimate rows.
+- Internal estimate editor keeps VAT and deductions columns visible and compact.
+- Admin can edit planned estimate amount directly from the internal estimate table; this stores it as price with quantity/day set to 1 for that row.
+- Frontend cache-bust updated to v0.40.20.
+
+## v0.40.19
+
+- Added the missing "Комиссия" column to the event modal estimate table.
+- The column is shown between "Оплата" and "НДС" for both admin and department-head event modals.
+- Frontend cache-bust updated to v0.40.19.
+
 ## v0.40.18
 
 - Admin event modal: added pencil edit mode for admin to edit event fields and estimates without changing manager restrictions.
