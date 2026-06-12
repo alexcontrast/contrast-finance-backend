@@ -20,6 +20,10 @@ class MonthlyExpenseCreate(BaseModel):
     created_by_user_id: int | None = None
 
 
+class MonthlyExpenseUpdate(BaseModel):
+    amount: Decimal
+
+
 class MonthlyExpenseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

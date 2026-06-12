@@ -12,6 +12,7 @@ from app.schemas.monthly_expense import (
     MonthlyExpenseCreate,
     MonthlyExpenseRead,
     MonthlyExpenseSummaryRead,
+    MonthlyExpenseUpdate,
 )
 
 
@@ -97,6 +98,46 @@ def allocated_amounts_for_expense(db: Session, expense: MonthlyExpense) -> tuple
     return q(money(expense.sanzhar_amount)), q(money(expense.raufal_amount))
 
 
+
+def calculate_allocation_for_existing_amount(
+    expense: MonthlyExpense,
+    db: Session,
+    new_amount: Decimal,
+) -> tuple[Decimal, Decimal]:
+    amount = q(new_amount)
+
+    if amount <= Decimal("0.00"):
+        raise HTTPException(status_code=400, detail="amount must be greater than zero")
+
+    if expense.allocation_type == "default_split":
+        sanzhar_percent, _ = default_split_percentages(db, normalize_month(expense.month))
+        sanzhar = q(amount * sanzhar_percent / Decimal("100"))
+        return sanzhar, q(amount - sanzhar)
+
+    if expense.allocation_type == "sanzhar_only":
+        return amount, Decimal("0.00")
+
+    if expense.allocation_type == "raufal_only":
+        return Decimal("0.00"), amount
+
+    if expense.allocation_type == "custom":
+        old_sanzhar = money(expense.sanzhar_amount)
+        old_raufal = money(expense.raufal_amount)
+        old_total = q(old_sanzhar + old_raufal)
+
+        if old_total <= Decimal("0.00"):
+            sanzhar_percent, _ = default_split_percentages(db, normalize_month(expense.month))
+            sanzhar = q(amount * sanzhar_percent / Decimal("100"))
+            return sanzhar, q(amount - sanzhar)
+
+        sanzhar = q(amount * old_sanzhar / old_total)
+        return sanzhar, q(amount - sanzhar)
+
+    raise HTTPException(
+        status_code=400,
+        detail="allocation_type должен быть default_split, sanzhar_only, raufal_only или custom",
+    )
+
 def expense_to_read(db: Session, expense: MonthlyExpense) -> MonthlyExpenseRead:
     sanzhar_amount, raufal_amount = allocated_amounts_for_expense(db, expense)
     return MonthlyExpenseRead(
@@ -176,6 +217,25 @@ def get_monthly_expenses_summary(month: str, db: Session = Depends(get_db)):
         raufal_amount=q(raufal),
         expenses_count=len(expenses),
     )
+
+
+@router.patch("/monthly-expenses/{expense_id}", response_model=MonthlyExpenseRead)
+def update_monthly_expense(expense_id: int, payload: MonthlyExpenseUpdate, db: Session = Depends(get_db)):
+    expense = db.get(MonthlyExpense, expense_id)
+    if expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+
+    new_amount = q(money(payload.amount))
+    sanzhar_amount, raufal_amount = calculate_allocation_for_existing_amount(expense, db, new_amount)
+
+    expense.amount = new_amount
+    expense.sanzhar_amount = sanzhar_amount
+    expense.raufal_amount = raufal_amount
+    expense.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(expense)
+    return expense_to_read(db, expense)
 
 
 @router.delete("/monthly-expenses/{expense_id}")

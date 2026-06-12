@@ -2432,6 +2432,7 @@ const state = {
   monthlyPlans: [],
   monthlyPlansYear: null,
   closingPanelData: null,
+  closingEditingExpenseId: null,
   closingCalcRefreshTimer: null,
   closingCalcRefreshSeq: 0,
   authMode: "manager",
@@ -4721,19 +4722,42 @@ function renderClosingExpenseRows(expenses) {
           </tr>
         </thead>
         <tbody>
-          ${expenses.map((expense) => `
-            <tr>
-              <td>
-                <strong>${escapeHtml(expense.title || "Расход")}</strong>
-                ${expense.comment ? `<small>${escapeHtml(expense.comment)}</small>` : ""}
-              </td>
-              <td>${formatMoney(expense.amount)}</td>
-              <td>${expenseAllocationLabel(expense)}</td>
-              <td>${formatMoney(expense.sanzhar_amount)}</td>
-              <td>${formatMoney(expense.raufal_amount)}</td>
-              <td><button class="closing-icon-btn danger" data-delete-expense-id="${expense.id}" type="button" title="Удалить расход">×</button></td>
-            </tr>
-          `).join("")}
+          ${expenses.map((expense) => {
+            const isEditing = Number(state.closingEditingExpenseId) === Number(expense.id);
+            return `
+              <tr class="${isEditing ? "is-editing" : ""}">
+                <td>
+                  <strong>${escapeHtml(expense.title || "Расход")}</strong>
+                  ${expense.comment ? `<small>${escapeHtml(expense.comment)}</small>` : ""}
+                </td>
+                <td>
+                  ${isEditing ? `
+                    <input
+                      class="closing-edit-amount-input"
+                      data-edit-expense-amount-id="${expense.id}"
+                      inputmode="numeric"
+                      value="${escapeHtml(integerInputValue(expense.amount))}"
+                      aria-label="Новая сумма расхода"
+                    />
+                  ` : formatMoney(expense.amount)}
+                </td>
+                <td>${expenseAllocationLabel(expense)}</td>
+                <td>${formatMoney(expense.sanzhar_amount)}</td>
+                <td>${formatMoney(expense.raufal_amount)}</td>
+                <td>
+                  <div class="closing-row-actions">
+                    ${isEditing ? `
+                      <button class="closing-icon-btn success" data-save-expense-id="${expense.id}" type="button" title="Сохранить сумму">✓</button>
+                      <button class="closing-icon-btn neutral" data-cancel-edit-expense-id="${expense.id}" type="button" title="Отменить редактирование">↺</button>
+                    ` : `
+                      <button class="closing-icon-btn edit" data-edit-expense-id="${expense.id}" type="button" title="Изменить сумму">✎</button>
+                      <button class="closing-icon-btn danger" data-delete-expense-id="${expense.id}" type="button" title="Удалить расход">×</button>
+                    `}
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
@@ -8419,9 +8443,101 @@ function removeClosingExpenseFromCache(expenseId) {
     calcPending: true,
     error: null,
   };
+  if (Number(state.closingEditingExpenseId) === Number(expenseId)) {
+    state.closingEditingExpenseId = null;
+  }
   renderClosingPanelFromCache();
   scheduleClosingCalculationRefresh();
   return true;
+}
+
+function updateClosingExpenseInCache(expense) {
+  if (!expense) return false;
+  const current = state.closingPanelData && state.closingPanelData.month === state.month
+    ? state.closingPanelData
+    : null;
+  if (!current) return false;
+
+  state.closingPanelData = {
+    ...current,
+    expenses: (current.expenses || []).map((item) => (
+      Number(item.id) === Number(expense.id) ? expense : item
+    )),
+    calcPending: true,
+    error: null,
+  };
+  state.closingEditingExpenseId = null;
+  renderClosingPanelFromCache();
+  scheduleClosingCalculationRefresh();
+  return true;
+}
+
+function startClosingExpenseEdit(expenseId) {
+  state.closingEditingExpenseId = Number(expenseId);
+  renderClosingPanelFromCache();
+  setTimeout(() => {
+    const input = document.querySelector(`[data-edit-expense-amount-id="${expenseId}"]`);
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }, 0);
+}
+
+function cancelClosingExpenseEdit() {
+  state.closingEditingExpenseId = null;
+  renderClosingPanelFromCache();
+}
+
+async function saveClosingExpenseAmount(expenseId, button = null) {
+  const input = document.querySelector(`[data-edit-expense-amount-id="${expenseId}"]`);
+  const amount = normalizeNumberInput(input?.value || 0);
+
+  if (amount <= 0) {
+    alert("Укажите сумму расхода.");
+    input?.focus();
+    return;
+  }
+
+  try {
+    setButtonLoading(button, true, "…");
+    const updatedExpense = await api(`/monthly-expenses/${expenseId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ amount: String(Math.round(amount * 100) / 100) }),
+    });
+    if (!updateClosingExpenseInCache(updatedExpense)) {
+      state.closingEditingExpenseId = null;
+      markClosingCalculationPending();
+    }
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
+function attachClosingExpenseFormKeyboard() {
+  const titleInput = document.getElementById("closingExpenseTitle");
+  const amountInput = document.getElementById("closingExpenseAmount");
+
+  titleInput?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowRight" || event.key === "Enter") {
+      event.preventDefault();
+      amountInput?.focus();
+      amountInput?.select();
+    }
+  });
+
+  amountInput?.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      titleInput?.focus();
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addClosingExpense().catch((error) => alert(error.message));
+    }
+  });
 }
 
 async function addClosingExpense() {
@@ -8531,11 +8647,34 @@ function attachClosingPanelEvents() {
 
   document.getElementById("closingExpenseAllocation")?.addEventListener("change", setClosingCustomSplitVisibility);
   document.getElementById("addClosingExpenseBtn")?.addEventListener("click", addClosingExpense);
+  attachClosingExpenseFormKeyboard();
   document.getElementById("recalculateClosingBtn")?.addEventListener("click", () => {
     recalculateSelectedMonthClosing().catch((error) => alert(error.message));
   });
   document.getElementById("closeMonthBtn")?.addEventListener("click", () => closeSelectedMonth().catch((error) => alert(error.message)));
   document.getElementById("reopenClosingBtn")?.addEventListener("click", () => reopenSelectedMonth().catch((error) => alert(error.message)));
+  document.querySelectorAll("[data-edit-expense-id]").forEach((button) => {
+    button.addEventListener("click", () => startClosingExpenseEdit(button.dataset.editExpenseId));
+  });
+  document.querySelectorAll("[data-save-expense-id]").forEach((button) => {
+    button.addEventListener("click", () => saveClosingExpenseAmount(button.dataset.saveExpenseId, button).catch((error) => alert(error.message)));
+  });
+  document.querySelectorAll("[data-cancel-edit-expense-id]").forEach((button) => {
+    button.addEventListener("click", cancelClosingExpenseEdit);
+  });
+  document.querySelectorAll("[data-edit-expense-amount-id]").forEach((input) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const saveButton = document.querySelector(`[data-save-expense-id="${input.dataset.editExpenseAmountId}"]`);
+        saveClosingExpenseAmount(input.dataset.editExpenseAmountId, saveButton).catch((error) => alert(error.message));
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelClosingExpenseEdit();
+      }
+    });
+  });
   document.querySelectorAll("[data-delete-expense-id]").forEach((button) => {
     button.addEventListener("click", () => deleteClosingExpense(button.dataset.deleteExpenseId, button).catch((error) => alert(error.message)));
   });

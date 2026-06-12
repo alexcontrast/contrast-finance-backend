@@ -2306,7 +2306,7 @@ button[data-manager-event-save-draft]:hover {
 .closing-table td:last-child {
   border-right: 1px solid rgba(223,234,212,.9);
   border-radius: 0 12px 12px 0;
-  width: 34px;
+  width: 66px;
   text-align: center;
 }
 
@@ -2339,6 +2339,51 @@ button[data-manager-event-save-draft]:hover {
   border: 1px solid rgba(180, 35, 24, .28);
   background: rgba(180, 35, 24, .08);
   color: #b42318;
+}
+
+.closing-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.closing-table tr.is-editing td {
+  background: rgba(110, 245, 0, .045);
+}
+
+.closing-edit-amount-input {
+  width: 92px;
+  height: 28px;
+  padding: 4px 7px;
+  border-radius: 9px;
+  border: 1px solid rgba(110, 245, 0, .38);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: right;
+  box-sizing: border-box;
+}
+
+.closing-icon-btn.edit {
+  border: 1px solid rgba(18, 140, 64, .24);
+  background: rgba(18, 140, 64, .07);
+  color: #128c40;
+  font-size: 14px;
+}
+
+.closing-icon-btn.success {
+  border: 1px solid rgba(18, 140, 64, .30);
+  background: rgba(18, 140, 64, .11);
+  color: #128c40;
+  font-size: 14px;
+}
+
+.closing-icon-btn.neutral {
+  border: 1px solid rgba(152, 162, 179, .28);
+  background: rgba(152, 162, 179, .10);
+  color: #667085;
+  font-size: 14px;
 }
 
 .closing-calc-grid {
