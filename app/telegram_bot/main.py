@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.3_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.5_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -60,6 +60,19 @@ TATYANA_CHAT_ID = int(os.getenv("TELEGRAM_TATYANA_CHAT_ID") or os.getenv("TATYAN
 TATYANA_ENABLED = str(os.getenv("TELEGRAM_TATYANA_ENABLED") or "false").strip().lower() in {"1", "true", "yes", "on"}
 POLL_SECONDS = int(os.getenv("TELEGRAM_POLL_SECONDS") or os.getenv("POLL_SITE_REQUESTS_SECONDS") or "20")
 POLL_BATCH_LIMIT = int(os.getenv("TELEGRAM_POLL_BATCH_LIMIT") or os.getenv("BOT_POLL_BATCH_LIMIT") or "10")
+
+
+def env_int(name: str, default: int) -> int:
+    try:
+        return int(str(os.getenv(name) or "").strip() or default)
+    except Exception:
+        return default
+
+
+# Telegram should not surface old legacy/test events in the payment flow.
+# By default managers see events from the current calendar year and later.
+# If an import/migration needs another year temporarily, set TELEGRAM_MIN_EVENT_YEAR.
+TELEGRAM_MIN_EVENT_YEAR = env_int("TELEGRAM_MIN_EVENT_YEAR", date.today().year)
 
 (
     BIND_PHONE,
@@ -254,6 +267,8 @@ def payment_status_label(status: str | None) -> str:
         return "✅ Оплачено"
     if status == "rejected":
         return "❌ Отклонено"
+    if status == "cancelled":
+        return "❌ Отменено"
     return status
 
 
@@ -270,10 +285,14 @@ def is_terminal_for_admin_manager(request: PaymentRequest) -> bool:
     # В новой системе статус оплаты подрядчику и статус денег клиента живут отдельно.
     # Карточку нельзя удалять только потому, что деньги уже в кассе: если оплата
     # подрядчику ещё new/to_pay, админу всё ещё нужно обработать заявку.
+    # Но отмена/отклонение заявки — всегда финальное состояние для Telegram,
+    # даже если money_status до этого уже был cash_received.
+    payment_status = str(getattr(request, "status", "") or "").strip()
+    money_status = str(getattr(request, "money_status", "") or "").strip()
     return bool(
-        request.status == "rejected"
-        or request.money_status == "cancelled"
-        or (request.status == "paid" and request.money_status == "cash_received")
+        payment_status in {"rejected", "cancelled"}
+        or money_status == "cancelled"
+        or (payment_status == "paid" and money_status == "cash_received")
     )
 
 
@@ -356,11 +375,17 @@ def ensure_manager_from_telegram(telegram_id: Any) -> Optional[User]:
         return user
 
 
+def bot_min_event_date() -> date:
+    year = TELEGRAM_MIN_EVENT_YEAR or date.today().year
+    return date(max(2000, int(year)), 1, 1)
+
+
 def manager_event_query(db: Session, user: User, month: date | None = None):
     shared_event_ids = select(EventShare.event_id).where(EventShare.user_id == user.id)
     query = select(Event).where(
         or_(Event.manager_id == user.id, Event.id.in_(shared_event_ids)),
         Event.status != "cancelled",
+        Event.event_date >= bot_min_event_date(),
     )
     if month is not None:
         query = query.where(
