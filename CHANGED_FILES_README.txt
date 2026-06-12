@@ -1,21 +1,30 @@
-Contrast Finance Backend v0.38.10 — changed files only
+Contrast Finance v0.40.1 — Telegram bot bridge for new site
 
-Purpose:
-- Исправить баг: после смены отдела менеджера его мероприятие могло оставаться видимым у старого главдепа и одновременно появляться у нового.
+Base: stable v0.40 / codebase v0.38.10.
 
-Changed:
-- app/api/routes/department_head_dashboard.py
-  * event_visible_for_department() теперь ориентируется на текущий отдел менеджера/доли, а не на stale event.department_id.
-- app/services/authorization.py
-  * can_view_event() для department_head использует текущий отдел менеджера или shares; event.department_id только fallback для legacy orphan events.
-- app/api/routes/events.py
-  * список событий department_head фильтруется по текущему отделу менеджера/долям.
-- app/api/routes/payment_requests.py
-  * список заявок department_head использует ту же область видимости.
-- app/web/index.html
-  * cache-bust v0.38.10.
-- app/core/config.py / app/app/core/config.py
-  * VERSION = 0.38.10.
-- README.md / CHANGED_FILES_README.txt
+Changed files:
+- app/telegram_bot/__init__.py
+- app/telegram_bot/main.py
+- app/core/config.py
+- requirements.txt
+- Procfile
+- .env.example
+- README.md
+- CHANGED_FILES_README.txt
 
-No DB migrations.
+What changed:
+- Added a separate Telegram bot worker for the new PostgreSQL site.
+- The old Apps Script mechanics were ported conceptually, but the bot now works directly with the new DB models.
+- Test bot is supported through TELEGRAM_BOT_TOKEN.
+- Tatiana notifications are built in for invoice and self-employed requests, but disabled by default via TELEGRAM_TATYANA_ENABLED=false.
+- Payment status and money status are kept separate:
+  - payment request status: new / paid / rejected / tax_check_needed
+  - money status: waiting_money / cash_received / cancelled
+- Admin buttons:
+  - new/to_pay/tax_check_needed -> Оплачено / Отклонить
+  - paid -> Деньги в кассе
+- Admin/manager cards are deleted only for rejected or cash_received requests.
+- Tatiana cards, when enabled, are updated but not deleted.
+- Added Procfile worker: bot: python -m app.telegram_bot.main
+
+No migrations.

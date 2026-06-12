@@ -12,3 +12,22 @@ Hotfix: корректная видимость мероприятий у гла
 
 No DB migrations.
 Frontend layout changes are not included.
+
+## v0.40.1 Telegram bot worker
+
+Run the new Telegram bot as a separate Railway worker/process:
+
+```bash
+python -m app.telegram_bot.main
+```
+
+Required env for the test bot:
+
+```env
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_ADMIN_CHAT_ID=...
+TELEGRAM_TATYANA_CHAT_ID=1896781134
+TELEGRAM_TATYANA_ENABLED=false
+```
+
+Tatiana notifications are implemented for `invoice` and `self_employed`, but disabled by default to avoid test spam.
