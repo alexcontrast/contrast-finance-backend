@@ -4788,7 +4788,7 @@ function renderClosingContent(expenses, calc, closing, error = null) {
     <div class="block-title closing-title">
       <div>
         <h3>Закрыть месяц</h3>
-        <p class="muted">${monthLabelRu(state.month)} · расходы делятся по процентам из планов месяца: ${departmentDefaultSplitLabel()}</p>
+        <p class="muted">${monthLabelRu(state.month)} · вкладка только хранит расходы и расчёт; месяц закрывается только кнопкой ниже.</p>
       </div>
       <span class="closing-status ${isClosed ? "closed" : "draft"}">${closingStatusLabel(status)}</span>
     </div>
@@ -4798,7 +4798,7 @@ function renderClosingContent(expenses, calc, closing, error = null) {
     <section class="closing-mini-section">
       <div class="closing-section-head">
         <h4>Расходы</h4>
-        <span>${formatMoney((expenses || []).reduce((sum, item) => sum + asNumber(item.amount), 0))}</span>
+        <span>${formatMoney((expenses || []).reduce((sum, item) => sum + asNumber(item.amount), 0))} · ${departmentDefaultSplitLabel()}</span>
       </div>
       <div class="closing-expense-form">
         <input id="closingExpenseTitle" placeholder="Название" />
@@ -8214,7 +8214,7 @@ async function loadClosingByMonth(month) {
   }
 }
 
-async function loadClosingPanelData({ saveIfClosed = false } = {}) {
+async function loadClosingPanelData() {
   const month = state.month;
   const [expenses, calcResult, closing] = await Promise.allSettled([
     api(`/monthly-expenses?month=${month}&_=${Date.now()}`),
@@ -8231,15 +8231,10 @@ async function loadClosingPanelData({ saveIfClosed = false } = {}) {
     };
   }
 
-  let currentClosing = closing.status === "fulfilled" ? closing.value : null;
-  if (saveIfClosed && currentClosing?.status === "closed") {
-    currentClosing = await api(`/monthly-closings/close?month=${month}`, { method: "POST" });
-  }
-
   return {
     expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
     calc: calcResult.value,
-    closing: currentClosing,
+    closing: closing.status === "fulfilled" ? closing.value : null,
     error: expenses.status === "rejected" ? expenses.reason?.message : null,
   };
 }
@@ -8251,7 +8246,7 @@ function setClosingCustomSplitVisibility() {
   });
 }
 
-async function refreshClosingPanel(options = {}) {
+async function refreshClosingPanel() {
   const panel = document.getElementById("closingPanel");
   if (!panel) return;
 
@@ -8259,7 +8254,7 @@ async function refreshClosingPanel(options = {}) {
   if (loadedForMonth !== String(state.month)) return;
 
   try {
-    const { expenses, calc, closing, error } = await loadClosingPanelData(options);
+    const { expenses, calc, closing, error } = await loadClosingPanelData();
     panel.dataset.eventsAttached = "0";
     panel.innerHTML = renderClosingContent(expenses, calc, closing, error);
     attachClosingPanelEvents();
@@ -8343,6 +8338,25 @@ async function reopenSelectedMonth() {
   }, "Открываем месяц…");
 }
 
+async function recalculateSelectedMonthClosing() {
+  const existingClosing = await loadClosingByMonth(state.month);
+  const isClosed = existingClosing?.status === "closed";
+
+  if (!isClosed) {
+    await withLoading(async () => {
+      await refreshClosingPanel();
+    }, "Пересчитываем…");
+    return;
+  }
+
+  if (!window.confirm(`Пересчитать и обновить закрытие ${monthLabelRu(state.month)}? Snapshot закрытого месяца будет перезаписан текущими расходами и фактами.`)) return;
+
+  await withLoading(async () => {
+    await api(`/monthly-closings/close?month=${state.month}`, { method: "POST" });
+    await loadDashboard();
+  }, "Пересчитываем закрытый месяц…");
+}
+
 function attachClosingPanelEvents() {
   const panel = document.getElementById("closingPanel");
   if (!panel || panel.dataset.eventsAttached === "1") return;
@@ -8351,7 +8365,7 @@ function attachClosingPanelEvents() {
   document.getElementById("closingExpenseAllocation")?.addEventListener("change", setClosingCustomSplitVisibility);
   document.getElementById("addClosingExpenseBtn")?.addEventListener("click", addClosingExpense);
   document.getElementById("recalculateClosingBtn")?.addEventListener("click", () => {
-    refreshClosingPanel({ saveIfClosed: true }).catch((error) => alert(error.message));
+    recalculateSelectedMonthClosing().catch((error) => alert(error.message));
   });
   document.getElementById("closeMonthBtn")?.addEventListener("click", () => closeSelectedMonth().catch((error) => alert(error.message)));
   document.getElementById("reopenClosingBtn")?.addEventListener("click", () => reopenSelectedMonth().catch((error) => alert(error.message)));
