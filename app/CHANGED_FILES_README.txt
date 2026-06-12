@@ -27,4 +27,5 @@ Contrast Finance v0.40.10 — changed files only
 - Added /legacy-migration upload page protected by LEGACY_MIGRATION_TOKEN.
 
 
+v0.40.13: Legacy importer merges legacy open statuses (`Новая`/`На оплату`) into `new` and legacy terminal rejection statuses (`Отклонено`/`Отменено`) into `cancelled`.
 v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.

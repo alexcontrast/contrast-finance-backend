@@ -5,6 +5,9 @@
 Новых миграций нет.
 
 
+## v0.40.13
+- Legacy migration status mapping updated: legacy `Новая` and `На оплату` both import as `new`; legacy `Отклонено` and `Отменено` both import as `cancelled`. Dry-run status preview now reflects this merged mapping before production import.
+
 ## v0.40.12
 - Added one-time legacy migration importer for Apps Script / Google Sheets export JSON.
 - Added legacy identifiers for idempotent event/item/payment imports.

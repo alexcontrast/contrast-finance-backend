@@ -223,17 +223,18 @@ def payment_method_map(value: Any) -> str | None:
 
 
 def payment_status_map(row: dict[str, Any]) -> str:
-    # Prefer the new split field. Fall back to legacy combined status.
+    # Legacy UI had two practical buckets for open requests:
+    # "Новая" and "На оплату" both mean "active / awaiting admin action".
+    # Legacy "Отклонено" and "Отменено" are also the same business state
+    # for the new system during migration: cancelled.
     source = text(row.get("Статус оплаты")) or text(row.get("Статус"))
     v = source.lower()
     if "оплач" in v or "деньги" in v:
         return "paid"
-    if "отмен" in v:
+    if "отмен" in v or "отклон" in v:
         return "cancelled"
-    if "отклон" in v:
-        return "rejected"
-    if "на оплат" in v:
-        return "to_pay"
+    if "на оплат" in v or "нов" in v:
+        return "new"
     return "new"
 
 
