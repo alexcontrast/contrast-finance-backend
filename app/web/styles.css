@@ -2589,3 +2589,94 @@ button[data-manager-event-save-draft]:hover {
     gap: 8px;
   }
 }
+
+
+/* v0.38.3 — полировка кабинета глав депов */
+.department-head-manager-main {
+  justify-content: flex-start;
+}
+
+.manager-events-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(50, 168, 82, .13);
+  color: #277235;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.department-head-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 70px;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.department-head-plan-row span,
+.department-head-plan-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-head-plan-row span:nth-child(2) {
+  text-align: center;
+}
+
+.department-head-plan-row strong {
+  text-align: right;
+}
+
+.department-head-filters-row {
+  margin-bottom: 10px;
+}
+
+.department-head-calc-grid {
+  grid-template-columns: repeat(6, minmax(112px, 1fr));
+  gap: 10px;
+}
+
+.department-head-calc-grid .metric {
+  min-width: 0;
+  padding: 12px 10px;
+  border-radius: 16px;
+}
+
+.department-head-calc-grid .metric .label {
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.department-head-calc-grid .metric .value {
+  font-size: clamp(14px, 1.35vw, 18px);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 980px) {
+  .department-head-calc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .department-head-plan-row {
+    grid-template-columns: 1fr;
+  }
+  .department-head-plan-row span:nth-child(2),
+  .department-head-plan-row strong {
+    text-align: left;
+  }
+}

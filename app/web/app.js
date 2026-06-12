@@ -3210,11 +3210,12 @@ function formatPhoneInputLive(input) {
 
 function renderUserBadgeContent(user) {
   const name = user?.name || "";
+  const showRole = user?.role !== "department_head";
 
   return `
     <span class="user-badge-main">
       <span class="user-badge-line">${name}</span>
-      <span class="user-badge-role">${roleLabel(user?.role)}</span>
+      ${showRole ? `<span class="user-badge-role">${roleLabel(user?.role)}</span>` : ""}
     </span>
     ${user?.role === "manager" ? `<button class="user-badge-edit" id="headerProfileEditBtn" type="button" title="Редактировать данные">✎</button>` : ""}
   `;
@@ -3428,6 +3429,9 @@ function renderDepartmentHeadTabs() {
   document.querySelectorAll("[data-dephead-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeDepartmentHeadTab = button.getAttribute("data-dephead-tab");
+      if (state.activeDepartmentHeadTab === "requests" && state.paymentStatusFilter === "active") {
+        state.paymentStatusFilter = "all";
+      }
       setLoading(true, "Переключаем вкладку…");
       setTimeout(() => {
         try {
@@ -3452,11 +3456,12 @@ function renderDepartmentHeadManagerRows(managers = []) {
       <div class="department-head-manager-list">
         ${managers.map((manager) => {
           const percent = asNumber(manager.completion_percent);
+          const eventsCount = Number(manager.events_count || 0);
           return `
             <article class="department-head-manager-row">
               <div class="department-head-manager-main">
                 <strong>${escapeHtml(manager.name || "Менеджер")}</strong>
-                <span class="muted">${manager.events_count || 0} мер.</span>
+                ${eventsCount > 0 ? `<span class="manager-events-badge" title="Мероприятий">${eventsCount}</span>` : ""}
               </div>
               <div class="department-head-manager-progress">
                 <div class="manager-plan-row department-head-plan-row">
@@ -3494,26 +3499,79 @@ function renderDepartmentHeadOverview(data) {
       </div>
     </section>
 
-    <div class="grid cards department-head-metrics">
-      ${metric("Мероприятий", data.events_count || 0)}
-      ${metric("Черновиков", data.drafts_count || 0)}
-      ${metric("Менеджеров", data.managers_count || 0)}
-      ${metric("Предв. ЗП главы", formatMoney(calc.head_salary || 0))}
-    </div>
-
     ${renderDepartmentHeadManagerRows(data.managers || [])}
   `;
 }
 
+function departmentHeadEventManagerOptions(events = []) {
+  return uniqueSortedValues((events || []).map((event) => event.manager_name || managerNameById(event.manager_id)).filter(Boolean));
+}
+
+function departmentHeadEventStatusOptions(events = []) {
+  return uniqueSortedValues((events || []).map((event) => event.status).filter(Boolean));
+}
+
+function departmentHeadEventCustomerOptions(events = []) {
+  return uniqueSortedValues((events || []).map((event) => event.client_name).filter(Boolean));
+}
+
+function departmentHeadEventMatchesFilters(event) {
+  if (state.eventManagerFilter && state.eventManagerFilter !== "all") {
+    const managerName = event.manager_name || managerNameById(event.manager_id) || "";
+    if (String(managerName) !== String(state.eventManagerFilter)) return false;
+  }
+
+  if (state.eventStatusFilter && state.eventStatusFilter !== "all" && event.status !== state.eventStatusFilter) {
+    return false;
+  }
+
+  if (state.eventCustomerFilter && state.eventCustomerFilter !== "all") {
+    if (String(event.client_name || "") !== String(state.eventCustomerFilter)) return false;
+  }
+
+  return true;
+}
+
+function renderDepartmentHeadEventFilters(events = []) {
+  const managerOptions = departmentHeadEventManagerOptions(events);
+  const statusOptions = departmentHeadEventStatusOptions(events);
+  const customerOptions = departmentHeadEventCustomerOptions(events);
+
+  return `
+    <div class="filters-row department-head-filters-row">
+      <label class="compact-label">Менеджер
+        <select id="depHeadEventManagerFilter">
+          ${selectOptions(managerOptions, state.eventManagerFilter, "Все менеджеры")}
+        </select>
+      </label>
+      <label class="compact-label">Статус
+        <select id="depHeadEventStatusFilter">
+          ${selectOptions(statusOptions.map((status) => ({ value: status, label: statusLabel(status) })), state.eventStatusFilter, "Все статусы")}
+        </select>
+      </label>
+      <label class="compact-label">Заказчик
+        <select id="depHeadEventCustomerFilter">
+          ${selectOptions(customerOptions, state.eventCustomerFilter, "Все заказчики")}
+        </select>
+      </label>
+    </div>
+  `;
+}
+
 function renderDepartmentHeadEventsTable(events = []) {
-  if (!events.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
-  const sortedEvents = [...events].sort((a, b) => {
+  const sourceEvents = events || [];
+  const filteredEvents = sourceEvents.filter(departmentHeadEventMatchesFilters);
+  if (!sourceEvents.length) return `<div class="empty-state">Нет мероприятий за выбранный месяц.</div>`;
+  const sortedEvents = [...filteredEvents].sort((a, b) => {
     const dateCompare = String(a.event_date || "").localeCompare(String(b.event_date || ""));
     if (dateCompare !== 0) return dateCompare;
     return Number(a.id || 0) - Number(b.id || 0);
   });
 
   return `
+    ${renderDepartmentHeadEventFilters(sourceEvents)}
+    <div class="block-title compact-block-title"><h3>Мероприятия отдела</h3><span class="muted">${filteredEvents.length} из ${sourceEvents.length} шт.</span></div>
+    ${sortedEvents.length ? `
     <div class="table-wrap admin-events-table-wrap department-head-table-wrap">
       <table class="admin-events-table department-head-events-table">
         <thead>
@@ -3550,6 +3608,7 @@ function renderDepartmentHeadEventsTable(events = []) {
         </tbody>
       </table>
     </div>
+    ` : `<div class="empty-state">По фильтрам мероприятий нет.</div>`}
   `;
 }
 
@@ -3557,13 +3616,72 @@ function dataSafeDepartmentName(event) {
   return event.department_name || departmentNameById(event.department_id) || "";
 }
 
-function renderDepartmentHeadRequestsTable(requests = []) {
-  if (!requests.length) return `<div class="empty-state">Заявок отдела нет.</div>`;
+function departmentHeadRequestCustomerOptions(requests = []) {
+  return uniqueSortedValues((requests || []).map((request) => paymentRequestClientName(request)).filter(Boolean));
+}
+
+function departmentHeadRequestManagerOptions(requests = []) {
+  return uniqueSortedValues((requests || []).map((request) => request.manager_name || paymentRequestManagerName(request)).filter(Boolean));
+}
+
+function departmentHeadRequestStatusOptions(requests = []) {
+  return uniqueSortedValues((requests || []).map((request) => request.status).filter(Boolean));
+}
+
+function departmentHeadRequestMatchesFilters(request) {
+  if (state.paymentStatusFilter && state.paymentStatusFilter !== "all" && state.paymentStatusFilter !== "active") {
+    if (request.status !== state.paymentStatusFilter) return false;
+  }
+
+  if (state.paymentCustomerFilter && state.paymentCustomerFilter !== "all") {
+    if (String(paymentRequestClientName(request)) !== String(state.paymentCustomerFilter)) return false;
+  }
+
+  if (state.paymentManagerFilter && state.paymentManagerFilter !== "all") {
+    const managerName = request.manager_name || paymentRequestManagerName(request) || "";
+    if (String(managerName) !== String(state.paymentManagerFilter)) return false;
+  }
+
+  return true;
+}
+
+function renderDepartmentHeadRequestFilters(requests = []) {
+  const statusOptions = departmentHeadRequestStatusOptions(requests);
+  const customerOptions = departmentHeadRequestCustomerOptions(requests);
+  const managerOptions = departmentHeadRequestManagerOptions(requests);
+
   return `
+    <div class="filters-row department-head-filters-row">
+      <label class="compact-label">Статус заявки
+        <select id="depHeadRequestStatusFilter">
+          ${selectOptions(statusOptions.map((status) => ({ value: status, label: statusLabel(status) })), state.paymentStatusFilter === "active" ? "all" : state.paymentStatusFilter, "Все статусы")}
+        </select>
+      </label>
+      <label class="compact-label">Заказчик
+        <select id="depHeadRequestCustomerFilter">
+          ${selectOptions(customerOptions, state.paymentCustomerFilter, "Все заказчики")}
+        </select>
+      </label>
+      <label class="compact-label">Менеджер
+        <select id="depHeadRequestManagerFilter">
+          ${selectOptions(managerOptions, state.paymentManagerFilter, "Все менеджеры")}
+        </select>
+      </label>
+    </div>
+  `;
+}
+
+function renderDepartmentHeadRequestsTable(requests = []) {
+  const sourceRequests = requests || [];
+  const filtered = sourceRequests.filter(departmentHeadRequestMatchesFilters);
+  if (!sourceRequests.length) return `<div class="empty-state">Заявок отдела нет.</div>`;
+  return `
+    ${renderDepartmentHeadRequestFilters(sourceRequests)}
     <div class="block-title compact-block-title">
       <h3>Заявки отдела</h3>
-      <span class="muted">${requests.length} шт.</span>
+      <span class="muted">${filtered.length} из ${sourceRequests.length} шт.</span>
     </div>
+    ${filtered.length ? `
     <div class="table-wrap department-head-table-wrap">
       <table class="department-head-requests-table">
         <thead>
@@ -3580,7 +3698,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
           </tr>
         </thead>
         <tbody>
-          ${requests.map((request) => `
+          ${filtered.map((request) => `
             <tr>
               <td>${formatDateRu(paymentRequestDateValue(request)) || paymentRequestDateValue(request) || ""}</td>
               <td>${escapeHtml(request.manager_name || "")}</td>
@@ -3596,6 +3714,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
         </tbody>
       </table>
     </div>
+    ` : `<div class="empty-state">По фильтрам заявок нет.</div>`}
   `;
 }
 
@@ -3644,7 +3763,6 @@ function renderDepartmentHeadTotals(data) {
         ${metric("Расходы", formatMoney(calc.expense_amount || data.expenses_amount || 0))}
         ${metric("% главы", `${calc.head_percent || 0}%`)}
         ${metric("ЗП главы", formatMoney(calc.head_salary || 0))}
-        ${metric("Остаток отдела", formatMoney(calc.remaining_after_head || 0))}
       </div>
     </section>
 
@@ -3792,9 +3910,11 @@ function paymentManagerFilterOptions(requests, mode = "regular") {
 function selectOptions(values, selectedValue, allLabel) {
   return `
     <option value="all" ${selectedValue === "all" || !selectedValue ? "selected" : ""}>${allLabel}</option>
-    ${values.map((value) => `
-      <option value="${escapeHtml(value)}" ${String(selectedValue) === String(value) ? "selected" : ""}>${escapeHtml(value)}</option>
-    `).join("")}
+    ${values.map((item) => {
+      const value = typeof item === "object" && item !== null ? item.value : item;
+      const label = typeof item === "object" && item !== null ? item.label : item;
+      return `<option value="${escapeHtml(value)}" ${String(selectedValue) === String(value) ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    }).join("")}
   `;
 }
 
@@ -4119,6 +4239,46 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
       </div>
     ` : `<div class="empty-state">Заявок нет.</div>`}
   `;
+}
+
+function attachDepartmentHeadFilters() {
+  const rerender = () => renderDepartmentDashboard(state.departmentHeadData || {});
+
+  const eventManager = document.getElementById("depHeadEventManagerFilter");
+  if (eventManager) eventManager.addEventListener("change", (event) => {
+    state.eventManagerFilter = event.target.value;
+    rerender();
+  });
+
+  const eventStatus = document.getElementById("depHeadEventStatusFilter");
+  if (eventStatus) eventStatus.addEventListener("change", (event) => {
+    state.eventStatusFilter = event.target.value;
+    rerender();
+  });
+
+  const eventCustomer = document.getElementById("depHeadEventCustomerFilter");
+  if (eventCustomer) eventCustomer.addEventListener("change", (event) => {
+    state.eventCustomerFilter = event.target.value;
+    rerender();
+  });
+
+  const requestStatus = document.getElementById("depHeadRequestStatusFilter");
+  if (requestStatus) requestStatus.addEventListener("change", (event) => {
+    state.paymentStatusFilter = event.target.value;
+    rerender();
+  });
+
+  const requestCustomer = document.getElementById("depHeadRequestCustomerFilter");
+  if (requestCustomer) requestCustomer.addEventListener("change", (event) => {
+    state.paymentCustomerFilter = event.target.value;
+    rerender();
+  });
+
+  const requestManager = document.getElementById("depHeadRequestManagerFilter");
+  if (requestManager) requestManager.addEventListener("change", (event) => {
+    state.paymentManagerFilter = event.target.value;
+    rerender();
+  });
 }
 
 function attachFilters() {
@@ -5233,25 +5393,15 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
   data = data || {};
   state.departmentHeadData = data;
   renderDepartmentHeadTabs();
-
-  const calc = data.calculation || {};
-  renderSummary([
-    ["План отдела", formatMoney(data.plan_amount)],
-    ["Факт", formatMoney(data.fact_income_amount)],
-    ["Выполнение", `${data.completion_percent || 0}%`],
-    ["Расходы", formatMoney(data.expenses_amount)],
-    ["ЗП главы", formatMoney(calc.head_salary || 0)],
-  ]);
+  renderSummary([]);
 
   $("dashboardTitle").textContent = `Кабинет отдела: ${data.department_name || ""}`;
-  $("dashboardHint").textContent = "Только просмотр";
+  $("dashboardHint").textContent = "";
 
   if (state.activeDepartmentHeadTab === "events") {
-    $("dashboardContent").innerHTML = `
-      <div class="block-title compact-block-title"><h3>Мероприятия отдела</h3><span class="muted">${data.events_count || 0} шт.</span></div>
-      ${renderDepartmentHeadEventsTable(data.events || [])}
-    `;
+    $("dashboardContent").innerHTML = renderDepartmentHeadEventsTable(data.events || []);
   } else if (state.activeDepartmentHeadTab === "requests") {
+    if (state.paymentStatusFilter === "active") state.paymentStatusFilter = "all";
     $("dashboardContent").innerHTML = renderDepartmentHeadRequestsTable(data.payment_requests || paymentRequests || []);
   } else if (state.activeDepartmentHeadTab === "totals") {
     $("dashboardContent").innerHTML = renderDepartmentHeadTotals(data);
@@ -5260,6 +5410,7 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
   }
 
   attachEventRows();
+  attachDepartmentHeadFilters();
 }
 
 
