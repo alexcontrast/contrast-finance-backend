@@ -1,24 +1,20 @@
-Contrast Finance Backend v0.38.6 — changed files only
+Contrast Finance Backend v0.38.7 — changed files only
 
-База: v0.38.5
+Base: v0.38.6.
 
-Изменённые файлы:
-- README.md
-- CHANGED_FILES_README.txt
+Changed files:
+- app/web/app.js
+- app/web/index.html
 - app/core/config.py
 - app/app/core/config.py
-- app/web/index.html
-- app/web/styles.css
+- README.md
+- CHANGED_FILES_README.txt
+- app/README.md
+- app/CHANGED_FILES_README.txt
 
-Что сделано:
-1. Исправлена реальная причина смещения `План/Цель` в кабинете главдепа.
-2. Предыдущая grid-схема `1fr / 1fr / 72px` центрировала план внутри второй колонки, а не по центру всей шкалы.
-3. Верхняя шкала отдела теперь использует независимое позиционирование: факт слева, план по центру, процент справа.
-4. Строки менеджеров отдела получили такую же фиксацию: факт слева, план по центру, процент справа.
+Fix:
+- «Мои оплаты» у менеджера больше не попадает под широкий стиль модалки мероприятия на 1280px.
+- Причина была в CSS-специфичности общего селектора eventModalBackdrop.
+- Общий широкий стиль теперь не применяется к `manager-payments-modal` и `manager-requests-modal-mode`.
 
-Backend/миграции:
-- Не менялись.
-
-Проверки:
-- node --check app/web/app.js
-- python3 -m compileall -q app
+No DB migrations.
