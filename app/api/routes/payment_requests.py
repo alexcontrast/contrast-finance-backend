@@ -10,6 +10,8 @@ from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.event_share import EventShare
 from app.models.payment_request import PaymentRequest
+from app.models.contractor import Contractor
+from app.models.taxpayer_check import TaxpayerCheck
 from app.models.user import User
 from app.schemas.payment_request import (
     PaymentRequestCardRead,
@@ -65,6 +67,30 @@ def calculate_item_remaining(item: EventItem) -> Decimal:
     """
     base_amount = item.amount_fact if item.amount_fact is not None else item.external_amount
     return base_amount - item.paid_amount
+
+
+def invoice_contractor_name_from_item(db: Session, item: EventItem) -> str | None:
+    if not item.iin_bin:
+        return None
+
+    contractor = db.execute(
+        select(Contractor)
+        .where(Contractor.iin_bin == item.iin_bin)
+        .order_by(Contractor.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if contractor and contractor.name:
+        return contractor.name
+
+    check = db.execute(
+        select(TaxpayerCheck)
+        .where(TaxpayerCheck.iin_bin == item.iin_bin)
+        .order_by(TaxpayerCheck.checked_at.desc(), TaxpayerCheck.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return getattr(check, "name_result", None)
+
+
 
 
 def get_event_items_for_summary(db: Session, event_id: int) -> list[EventItem]:
@@ -398,8 +424,14 @@ def create_payment_request(
         item_paid_amount_snapshot=item.paid_amount,
         item_remaining_snapshot=remaining,
 
-        contractor_id=None,
-        contractor_name_snapshot=payload.comment if payment_method == "self_employed" else None,
+        contractor_id=(
+            db.execute(select(Contractor.id).where(Contractor.iin_bin == item.iin_bin).limit(1)).scalar_one_or_none()
+            if payment_method == "invoice" and item.iin_bin else None
+        ),
+        contractor_name_snapshot=(
+            invoice_contractor_name_from_item(db, item) if payment_method == "invoice"
+            else (payload.comment if payment_method == "self_employed" else None)
+        ),
         iin_bin_snapshot=item.iin_bin if payment_method == "invoice" else None,
         tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
             "self_employed" if payment_method == "self_employed" else None

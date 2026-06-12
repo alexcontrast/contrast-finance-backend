@@ -1,20 +1,14 @@
-# Contrast Finance Backend v0.40.5
+# Contrast Finance Backend v0.40.6
 
-Telegram bot hotfix: cancelled/rejected payment requests are now always terminal for admin/manager Telegram cards, even if the request already had money_status=cash_received. New/to_pay + cash_received still stays visible because payment status and money status are separate.
+Telegram bot/payment request hotfix for the stable v0.40 site.
 
-Changed files only.
+## Changes
 
-Telegram bot hotfix for the new v0.40 site.
+- Telegram self-employed requests no longer fail with a generic create error when surname is missing: the bot asks for the surname and continues the same request.
+- If a self-employed surname is already saved on the site or from a previous Telegram request, Telegram uses it automatically.
+- Invoice Telegram cards now show the contractor legal name from KGD as `Подрядчик`.
+- Extra positions created from Telegram are fact-only expenses: `Сумма по смете = 0`, `Факт = сумма заявки`.
+- Manager payment modal no longer saves the whole event before creating a payment request, so extra-position payment requests can be created for events on review/accepted as fact-only expenses.
+- Site payment request snapshots for invoice requests now store the KGD legal name when available.
 
-What changed:
-
-- The Telegram payment flow no longer shows old legacy/test event months such as June 2022 by default.
-- The bot now filters manager events by `event_date >= January 1` of `TELEGRAM_MIN_EVENT_YEAR`.
-- `TELEGRAM_MIN_EVENT_YEAR` defaults to the current calendar year.
-- For temporary import/testing cases, the year can be overridden in Railway:
-  - `TELEGRAM_MIN_EVENT_YEAR=2025`
-  - or another required year.
-
-This keeps current-year events visible and prevents old imported duplicates from appearing in the bot month picker.
-
-No DB migrations.
+No migrations.

@@ -1,19 +1,28 @@
-Contrast Finance Backend v0.40.5 — changed files only
+Contrast Finance Backend v0.40.6 — changed files only
 
-Reason:
-Telegram bot did not always remove admin/manager cards when an admin cancelled/rejected a request that already had money_status=cash_received. The terminal-state check was too narrow for mixed states like cancelled/rejected + cash_received.
+Base: v0.40.5.
 
-Changed:
+Changed files:
 - app/telegram_bot/main.py
-  * BOT_VERSION = CONTRAST_FINANCE_BOT_V0.40.5_NEW_SITE.
-  * Telegram terminal-state logic now treats payment status rejected/cancelled as final regardless of money_status.
-  * paid + cash_received still removes cards.
-  * new/to_pay + cash_received still does NOT remove cards, because payment and money statuses are separate.
-  * Added a proper display label for status=cancelled.
-- app/core/config.py and app/app/core/config.py: VERSION = 0.40.5.
-- README/CHANGED updated.
+  * BOT_VERSION = CONTRAST_FINANCE_BOT_V0.40.6_NEW_SITE.
+  * Self-employed flow asks for surname instead of failing request creation.
+  * Existing self-employed surname from item/internal note is reused automatically.
+  * Self-employed surname is saved back to item internal_note after Telegram request.
+  * Invoice cards use KGD legal entity name as contractor.
+  * Extra Telegram positions are created with external estimate amount 0 and fact amount = request amount.
+- app/api/routes/payment_requests.py
+  * Invoice payment request snapshots store KGD legal name from contractors/taxpayer checks.
+- app/web/app.js
+  * Payment modal no longer PATCHes the whole event before creating payment requests.
+  * This allows payment extra positions on review/accepted events without opening event editing.
+- app/web/index.html
+  * Cache-bust v0.40.6.
+- app/core/config.py and app/app/core/config.py
+  * VERSION = 0.40.6.
 
-No DB migrations.
-Railway commands are unchanged:
-web: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
-bot: python -m app.telegram_bot.main
+Checks:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js
+
+No database migrations.

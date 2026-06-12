@@ -8029,7 +8029,9 @@ function paymentPayloadAmount() {
 }
 
 async function persistItemBeforePayment(eventId, item) {
-  await saveDraftEvent(eventId);
+  // Заявка на оплату не должна пытаться сохранить само мероприятие.
+  // На статусах «На проверке»/«Принято» редактирование мероприятия закрыто,
+  // но создание оплаты/допрасхода по факту разрешено.
   await saveDraftItems(eventId);
 
   if (String(item.id).startsWith("tmp-")) {

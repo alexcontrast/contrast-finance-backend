@@ -1,14 +1,14 @@
-# Contrast Finance Backend v0.38.10
+# Contrast Finance Backend v0.40.6
 
-Changed files only.
+Telegram bot/payment request hotfix for the stable v0.40 site.
 
-Hotfix: корректная видимость мероприятий у главдепов после смены отдела менеджера.
+## Changes
 
-- кабинет главдепа больше не считает `events.department_id` главным источником истины, если менеджер уже переведён в другой отдел;
-- для обычного мероприятия отдел определяется по текущему отделу основного менеджера;
-- для соавторского мероприятия отдел определяется по текущим `event_shares`;
-- старый `event.department_id` используется только как fallback для orphan legacy events без менеджера;
-- доступ к карточке, общий `/events` и `/payment-requests` приведены к той же логике.
+- Telegram self-employed requests no longer fail with a generic create error when surname is missing: the bot asks for the surname and continues the same request.
+- If a self-employed surname is already saved on the site or from a previous Telegram request, Telegram uses it automatically.
+- Invoice Telegram cards now show the contractor legal name from KGD as `Подрядчик`.
+- Extra positions created from Telegram are fact-only expenses: `Сумма по смете = 0`, `Факт = сумма заявки`.
+- Manager payment modal no longer saves the whole event before creating a payment request, so extra-position payment requests can be created for events on review/accepted as fact-only expenses.
+- Site payment request snapshots for invoice requests now store the KGD legal name when available.
 
-No DB migrations.
-Frontend layout changes are not included.
+No migrations.

@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.5_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.6_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -470,10 +470,42 @@ def payment_method_locked_for_item(db: Session, item: EventItem | None, is_salar
     return fixed_payment_method_for_item(db, item, is_salary=is_salary) is not None
 
 
-def self_employed_surname_from_item(item: EventItem | None) -> str:
-    note = str(getattr(item, "internal_note", None) or "").strip()
-    match = re.search(r"Самозанятый\s*:\s*(.+)", note, flags=re.IGNORECASE)
+def self_employed_surname_from_note(note: Any) -> str:
+    text = str(note or "").strip()
+    match = re.search(r"Самозанятый\s*:\s*(.+)", text, flags=re.IGNORECASE)
     return match.group(1).strip() if match else ""
+
+
+def self_employed_surname_from_item(item: EventItem | None) -> str:
+    return self_employed_surname_from_note(getattr(item, "internal_note", None))
+
+
+def self_employed_surname_from_bot_item(item: Dict[str, Any] | None) -> str:
+    if not item:
+        return ""
+    return str(item.get("selfEmployedSurname") or "").strip() or self_employed_surname_from_note(item.get("internalNote"))
+
+
+def contractor_name_for_invoice(db: Session, item: EventItem | None) -> str:
+    if item is None or not item.iin_bin:
+        return ""
+
+    contractor = db.execute(
+        select(Contractor)
+        .where(Contractor.iin_bin == item.iin_bin)
+        .order_by(Contractor.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if contractor and contractor.name:
+        return str(contractor.name).strip()
+
+    check = db.execute(
+        select(TaxpayerCheck)
+        .where(TaxpayerCheck.iin_bin == item.iin_bin)
+        .order_by(TaxpayerCheck.checked_at.desc(), TaxpayerCheck.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return str(getattr(check, "name_result", None) or "").strip()
 
 def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
     items = db.execute(
@@ -499,6 +531,7 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
             "iinBinLocked": bool(item.iin_bin_locked),
             "taxCheckStatus": item.tax_check_status,
             "internalNote": item.internal_note,
+            "selfEmployedSurname": self_employed_surname_from_item(item),
             "isManagerSalary": False,
         })
 
@@ -636,10 +669,11 @@ def create_extra_item(db: Session, event: Event, name: str, amount: Decimal, met
         event_id=event.id,
         item_type="regular",
         external_name=name,
-        external_price=amount,
+        # Доппозиция из заявки — это фактический расход, а не строка клиентской сметы.
+        external_price=Decimal("0.00"),
         external_quantity=Decimal("1.00"),
         external_days=Decimal("1.00"),
-        external_amount=amount,
+        external_amount=Decimal("0.00"),
         external_note=None,
         amount_fact=amount,
         paid_amount=Decimal("0.00"),
@@ -736,11 +770,16 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             raise RuntimeError("Выбери способ оплаты")
         amount = money(payload.get("amount"))
         item_token = str(payload.get("item_id") or "")
+        comment = str(payload.get("comment") or "").strip() or None
 
         if item_token == EXTRA_ITEM_ID:
             item = create_extra_item(db, event, str(payload.get("new_position_name") or "Допрасход").strip(), amount, method)
             if method == "invoice":
                 apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin") or ""))
+            elif method == "self_employed" and comment_has_surname(comment):
+                item.internal_note = f"Самозанятый: {comment}"
+                db.add(item)
+                db.flush()
         elif item_token == SALARY_ITEM_ID:
             if method not in {"card", "cash"}:
                 raise RuntimeError("ЗП менеджера можно оформить только На карту или Нал")
@@ -774,6 +813,8 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
                 item.iin_bin_locked = False
                 item.vat_amount = Decimal("0.00")
                 item.deduction_amount = (money(base) * get_settings().CONTRACTOR_DEDUCTION_RATE).quantize(Decimal("0.01"))
+                if comment_has_surname(comment):
+                    item.internal_note = f"Самозанятый: {comment}"
             elif method in {"card", "cash"}:
                 item.iin_bin = None
                 item.iin_bin_locked = False
@@ -784,7 +825,6 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             db.add(item)
             db.flush()
 
-        comment = str(payload.get("comment") or "").strip() or None
         card_number = clean_digits(payload.get("card_number")) if method == "card" else None
         validate_bot_request(item, method, amount, card_number, comment)
         remaining = remaining_for_item(item)
@@ -803,8 +843,14 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             item_amount_fact_snapshot=item.amount_fact,
             item_paid_amount_snapshot=item.paid_amount,
             item_remaining_snapshot=remaining,
-            contractor_id=None,
-            contractor_name_snapshot=(comment or self_employed_surname_from_item(item)) if method == "self_employed" else None,
+            contractor_id=(
+                db.execute(select(Contractor.id).where(Contractor.iin_bin == item.iin_bin).limit(1)).scalar_one_or_none()
+                if method == "invoice" and item.iin_bin else None
+            ),
+            contractor_name_snapshot=(
+                contractor_name_for_invoice(db, item) if method == "invoice"
+                else ((comment or self_employed_surname_from_item(item)) if method == "self_employed" else None)
+            ),
             iin_bin_snapshot=item.iin_bin if method == "invoice" else None,
             tax_status_snapshot=item.tax_check_status if method == "invoice" else ("self_employed" if method == "self_employed" else None),
             vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else ("no_vat" if method in {"invoice", "self_employed"} else None),
@@ -826,6 +872,10 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
 def request_dict_for_card(request: PaymentRequest, db: Session) -> Dict[str, Any]:
     event = db.get(Event, request.event_id)
     manager = db.get(User, event.manager_id) if event and event.manager_id else None
+    item = db.get(EventItem, request.event_item_id) if request.event_item_id else None
+    contractor_name = request.contractor_name_snapshot
+    if request.payment_method == "invoice" and not contractor_name:
+        contractor_name = contractor_name_for_invoice(db, item)
     return {
         "paymentId": request.id,
         "managerName": manager.name if manager else "",
@@ -834,7 +884,7 @@ def request_dict_for_card(request: PaymentRequest, db: Session) -> Dict[str, Any
         "eventName": event.title if event else "",
         "eventDate": event.event_date.strftime("%d-%m-%Y") if event and event.event_date else "",
         "positionName": request.item_name_snapshot,
-        "contractorName": request.contractor_name_snapshot,
+        "contractorName": contractor_name,
         "requestPaymentType": payment_method_label(request.payment_method),
         "cardNumber": request.card_number,
         "iinBin": request.iin_bin_snapshot,
@@ -1327,7 +1377,18 @@ async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = await update.message.reply_text("Введи номер карты. Ровно 16 цифр, можно с пробелами:")
         track_message_id(context, msg.message_id)
         return CARD_NUMBER
-    msg = await update.message.reply_text("Комментарий к заявке? Если комментария нет — напиши «-».\nДля Самозанятого укажи фамилию.")
+    if method == "self_employed":
+        surname = self_employed_surname_from_bot_item(context.user_data.get("selected_item") or {})
+        if surname:
+            context.user_data["comment"] = surname
+            msg = await update.message.reply_text(f"Фамилия самозанятого уже указана: {surname}. Отправляю заявку…")
+            track_message_id(context, msg.message_id)
+            return await submit_payment_request_now(update, context)
+        context.user_data["awaiting_self_employed_surname"] = True
+        msg = await update.message.reply_text("Введи фамилию самозанятого:")
+        track_message_id(context, msg.message_id)
+        return COMMENT
+    msg = await update.message.reply_text("Комментарий к заявке? Если комментария нет — напиши «-».")
     track_message_id(context, msg.message_id)
     return COMMENT
 
@@ -1350,7 +1411,19 @@ async def get_comment_and_submit(update: Update, context: ContextTypes.DEFAULT_T
     comment = (update.message.text or "").strip()
     if comment == "-":
         comment = ""
+
+    method = payment_method_code(context.user_data.get("payment_method"))
+    if method == "self_employed":
+        existing_surname = self_employed_surname_from_bot_item(context.user_data.get("selected_item") or {})
+        if not comment and existing_surname:
+            comment = existing_surname
+        if not comment_has_surname(comment):
+            msg = await update.message.reply_text("Для Самозанятого нужна фамилия. Введи фамилию:")
+            track_message_id(context, msg.message_id)
+            return COMMENT
+
     context.user_data["comment"] = comment
+    context.user_data.pop("awaiting_self_employed_surname", None)
     return await submit_payment_request_now(update, context)
 
 

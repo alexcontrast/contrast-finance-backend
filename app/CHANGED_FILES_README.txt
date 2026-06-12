@@ -1,21 +1,28 @@
-Contrast Finance Backend v0.38.10 — changed files only
+Contrast Finance Backend v0.40.6 — changed files only
 
-Purpose:
-- Исправить баг: после смены отдела менеджера его мероприятие могло оставаться видимым у старого главдепа и одновременно появляться у нового.
+Base: v0.40.5.
 
-Changed:
-- app/api/routes/department_head_dashboard.py
-  * event_visible_for_department() теперь ориентируется на текущий отдел менеджера/доли, а не на stale event.department_id.
-- app/services/authorization.py
-  * can_view_event() для department_head использует текущий отдел менеджера или shares; event.department_id только fallback для legacy orphan events.
-- app/api/routes/events.py
-  * список событий department_head фильтруется по текущему отделу менеджера/долям.
+Changed files:
+- app/telegram_bot/main.py
+  * BOT_VERSION = CONTRAST_FINANCE_BOT_V0.40.6_NEW_SITE.
+  * Self-employed flow asks for surname instead of failing request creation.
+  * Existing self-employed surname from item/internal note is reused automatically.
+  * Self-employed surname is saved back to item internal_note after Telegram request.
+  * Invoice cards use KGD legal entity name as contractor.
+  * Extra Telegram positions are created with external estimate amount 0 and fact amount = request amount.
 - app/api/routes/payment_requests.py
-  * список заявок department_head использует ту же область видимости.
+  * Invoice payment request snapshots store KGD legal name from contractors/taxpayer checks.
+- app/web/app.js
+  * Payment modal no longer PATCHes the whole event before creating payment requests.
+  * This allows payment extra positions on review/accepted events without opening event editing.
 - app/web/index.html
-  * cache-bust v0.38.10.
-- app/core/config.py / app/app/core/config.py
-  * VERSION = 0.38.10.
-- README.md / CHANGED_FILES_README.txt
+  * Cache-bust v0.40.6.
+- app/core/config.py and app/app/core/config.py
+  * VERSION = 0.40.6.
 
-No DB migrations.
+Checks:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js
+
+No database migrations.
