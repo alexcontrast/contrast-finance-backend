@@ -17,6 +17,11 @@
 v0.40.12: Legacy migration dry-run now uses fast JSON validation without touching PostgreSQL; migration page handles non-JSON upstream errors clearly.
 
 
+## v0.40.18
+
+- Admin event modal: added pencil edit mode for admin to edit event fields and estimates without changing manager restrictions.
+- Admin event modal: accepted events can be returned to revision / rework.
+
 ## v0.40.17
 - Improved legacy migration page file handling for Safari/browser cache: explicit selected-file indicator, button event listeners, and clearer messages when the JSON file is not selected/read.
 

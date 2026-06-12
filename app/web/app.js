@@ -2428,6 +2428,7 @@ const state = {
   managerDraftDeletedByEventId: {},
   managerDraftEventsById: {},
   managerDraftTempSeq: 1,
+  adminEventEditModeId: null,
   adminData: null,
   departmentHeadData: null,
   users: [],
@@ -4137,10 +4138,12 @@ function resetEventModalModes() {
       "payment-modal-mode",
       "pin-modal-mode",
       "profile-modal-mode",
-      "manager-requests-modal-mode"
+      "manager-requests-modal-mode",
+      "admin-event-edit-mode"
     );
   }
 
+  state.adminEventEditModeId = null;
   removeEventModalActions();
 }
 
@@ -4661,14 +4664,16 @@ function adminEventModalActions(event, requests = []) {
 
   const showAccept = ["review", "accepted"].includes(event?.status);
   const canAccept = event?.status === "review";
-  const canRevision = event?.status === "review";
-  const canReturnToWork = ["accepted"].includes(event?.status) && eventMoneyStatus(event) === "cash_received";
+  const canRevision = event?.status === "review" || (event?.status === "accepted" && !eventCashReceived);
+  const canReturnToWork = ["accepted"].includes(event?.status) && eventCashReceived;
+  const canAdminEdit = event?.status !== "cancelled";
 
   const showCashReceived = !["cancelled"].includes(event?.status);
   const canCashReceived = showCashReceived && !hasCashReceivedMoney;
 
   return `
     <div class="event-modal-actions">
+      ${canAdminEdit ? `<button class="event-action-btn event-edit-btn" data-admin-event-edit="${event.id}" title="Редактировать мероприятие">✏️</button>` : ""}
       ${deleteStatusAllowed ? `<button class="danger-btn event-action-btn event-delete-btn ${canDelete ? "" : "is-disabled"}" ${canDelete ? "" : `disabled title="${deleteDisabledReason}"`} data-admin-event-delete="${event.id}" ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>` : ""}
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
       ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
@@ -4693,6 +4698,14 @@ function installAdminEventModalActions(event, requests = []) {
   holder.innerHTML = adminEventModalActions(event, requests);
 
   closeBtn.parentElement.insertBefore(holder, closeBtn);
+
+  const editBtn = holder.querySelector("[data-admin-event-edit]");
+  if (editBtn) {
+    editBtn.addEventListener("click", async (clickEvent) => {
+      clickEvent.stopPropagation();
+      await openAdminEventEditMode(event.id);
+    });
+  }
 
   const deleteBtn = holder.querySelector("[data-admin-event-delete]");
   if (deleteBtn) {
@@ -4745,6 +4758,64 @@ function installAdminEventModalActions(event, requests = []) {
   }
 }
 
+
+async function openAdminEventEditMode(eventId) {
+  resetEventModalModes();
+
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  backdrop.classList.add("admin-event-edit-mode");
+  backdrop.classList.remove("hidden");
+  title.textContent = `Редактирование мероприятия #${eventId}`;
+  content.innerHTML = `<div class="empty-state">Загрузка редактора...</div>`;
+
+  state.adminEventEditModeId = Number(eventId);
+  state.selectedManagerEventId = Number(eventId);
+  state.managerEstimateTab = state.managerEstimateTab || "external";
+  delete state.managerDraftEventsById[String(eventId)];
+  delete state.managerDraftItemsByEventId[String(eventId)];
+  delete state.managerDraftDeletedByEventId[String(eventId)];
+
+  try {
+    const [event, items, summary] = await Promise.all([
+      api(`/events/${eventId}`),
+      api(`/events/${eventId}/items`),
+      api(`/events/${eventId}/summary`),
+    ]);
+
+    const draftEvent = getDraftEvent(event);
+    state.currentManagerEvent = draftEvent;
+    const draftItems = getDraftItems(eventId, items || []);
+    const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
+    state.currentManagerSummary = previewSummary;
+    state.currentManagerItems = draftItems;
+
+    title.textContent = `✏️ ${event.client_name || "Без заказчика"} · ${event.title || "Без названия"}`;
+    content.innerHTML = renderManagerEventCard(draftEvent, draftItems, previewSummary);
+    attachManagerCreateWorkspaceActions();
+    attachDraftEventInputs(eventId);
+    attachDraftInputs(eventId);
+  } catch (error) {
+    content.innerHTML = `<div class="error">${error.message || "Не удалось открыть редактирование"}</div>`;
+  }
+}
+
+async function closeAdminEventEditMode(eventId, reloadModal = true) {
+  const key = String(eventId || state.adminEventEditModeId || "");
+  if (key) {
+    delete state.managerDraftEventsById[key];
+    delete state.managerDraftItemsByEventId[key];
+    delete state.managerDraftDeletedByEventId[key];
+  }
+  state.adminEventEditModeId = null;
+  $("eventModalBackdrop")?.classList.remove("admin-event-edit-mode");
+  if (reloadModal && eventId) {
+    await openEventModal(eventId);
+  }
+}
 
 async function openEventModal(eventId) {
   resetEventModalModes();
@@ -6283,6 +6354,10 @@ function eventStatusToneClass(status) {
 }
 
 function canEditManagerEvent(event) {
+  const user = state.bootstrap?.user;
+  if (user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(event?.id || 0)) {
+    return event?.status !== "cancelled";
+  }
   return ["draft", "revision"].includes(String(event?.status || ""));
 }
 
@@ -6651,12 +6726,13 @@ function renderInternalEstimate(items, event, summary = null) {
 }
 
 function renderManagerEventCard(event, items = [], summary = null) {
+  const isAdminEditMode = state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(event?.id || 0);
   const canEdit = canEditManagerEvent(event);
   const canDelete = canDeleteManagerEvent(event);
   const eventDeleteLocked = eventHasActivePaymentRequests(event);
   const eventDeleteAllowed = canDelete && !eventDeleteLocked;
   const eventDeleteTitle = eventDeleteDisabledReason(event);
-  const isReadonlyReview = event?.status === "review";
+  const isReadonlyReview = !isAdminEditMode && event?.status === "review";
   const readonlyAttrs = canEdit ? "" : "disabled";
 
 
@@ -6666,7 +6742,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
     <section class="manager-event-card ${isReadonlyReview ? "is-readonly" : ""}" style="${isReadonlyReview ? "background: rgba(115,120,130,.045);" : ""}">
       <div class="manager-event-head">
         <div>
-          <div class="overview-label">Карточка мероприятия</div>
+          <div class="overview-label">${isAdminEditMode ? "Редактирование админом" : "Карточка мероприятия"}</div>
           <h2>${event.title}</h2>
           <div class="event-badge-row">
             <span class="status ${event.status} ${eventStatusToneClass(event.status)}">${statusLabel(event.status)}</span>${eventMoneyStatus(event) === "cash_received" ? `<span class="status cash_received status-tone-accepted">Деньги в кассе</span>` : ""}
@@ -6674,13 +6750,17 @@ function renderManagerEventCard(event, items = [], summary = null) {
           </div>
         </div>
         <div class="inline-actions">
-          <button class="secondary" data-manager-event-pay="${event.id}">Оплатить</button>
-          <button class="ghost" data-manager-event-payments="${event.id}">Мои оплаты</button>
-          <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
-          ${eventIsCoauthored(event)
-            ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
-            : `<button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>`}
-          <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} style="margin-left:auto;" ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>
+          ${isAdminEditMode ? `
+            <span class="status-badge status-tone-review">✏️ Админ-редактирование</span>
+          ` : `
+            <button class="secondary" data-manager-event-pay="${event.id}">Оплатить</button>
+            <button class="ghost" data-manager-event-payments="${event.id}">Мои оплаты</button>
+            <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
+            ${eventIsCoauthored(event)
+              ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
+              : `<button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>`}
+            <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} style="margin-left:auto;" ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>
+          `}
         </div>
       </div>
 
@@ -6738,8 +6818,13 @@ function renderManagerEventCard(event, items = [], summary = null) {
       ` : ""}
 
       <div class="manager-card-bottom-actions">
-        <button class="save-draft-btn ${canEdit ? "" : "disabled-action"}" data-manager-event-save-draft="${event.id}" ${readonlyAttrs}>Сохранить черновик</button>
-        <button class="${canEdit ? "" : "disabled-action"}" data-manager-event-send-review="${event.id}" ${readonlyAttrs}>Отправить Саше</button>
+        ${isAdminEditMode ? `
+          <button class="save-draft-btn" data-admin-event-save-edit="${event.id}">Сохранить изменения</button>
+          <button class="ghost" data-admin-event-cancel-edit="${event.id}">Отмена</button>
+        ` : `
+          <button class="save-draft-btn ${canEdit ? "" : "disabled-action"}" data-manager-event-save-draft="${event.id}" ${readonlyAttrs}>Сохранить черновик</button>
+          <button class="${canEdit ? "" : "disabled-action"}" data-manager-event-send-review="${event.id}" ${readonlyAttrs}>Отправить Саше</button>
+        `}
       </div>
     </section>
   `;
@@ -7144,7 +7229,8 @@ async function checkTaxForItem(itemId) {
 
 function rerenderCurrentManagerCard() {
   if (!state.selectedManagerEventId || !state.currentManagerEvent) return;
-  const holder = $("managerEventDetail");
+  const isAdminEditMode = state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(state.selectedManagerEventId || 0);
+  const holder = isAdminEditMode ? $("eventModalContent") : $("managerEventDetail");
   if (!holder) return;
 
   const items = getDraftItems(state.selectedManagerEventId);
@@ -8223,11 +8309,48 @@ function openManagerPaymentModal(eventId) {
 function attachManagerCreateWorkspaceActions() {
   applyManagerCardReadOnly();
   const managerCardCanEdit = canEditManagerEvent(state.currentManagerEvent);
+  const isAdminEditMode = state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(state.currentManagerEvent?.id || 0);
+
+  document.querySelectorAll("[data-admin-event-save-edit]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-admin-event-save-edit");
+      if (!eventId || button.disabled) return;
+      await withLoading(async () => {
+        await saveDraftEvent(eventId);
+        await saveDraftItems(eventId);
+        showToast("Изменения сохранены");
+        await closeAdminEventEditMode(eventId, false);
+        await openEventModal(eventId);
+        await loadDashboard();
+      }, "Сохраняем изменения…");
+    });
+  });
+
+  document.querySelectorAll("[data-admin-event-cancel-edit]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const eventId = button.getAttribute("data-admin-event-cancel-edit");
+      await closeAdminEventEditMode(eventId, true);
+    });
+  });
 
   document.querySelectorAll("[data-estimate-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.managerEstimateTab = button.getAttribute("data-estimate-tab");
-      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      if (isAdminEditMode) {
+        const content = $("eventModalContent");
+        if (content) {
+          const items = getDraftItems(state.selectedManagerEventId);
+          const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+          state.currentManagerSummary = summary;
+          state.currentManagerItems = items;
+          content.innerHTML = renderManagerEventCard(state.currentManagerEvent, items, summary);
+          attachManagerCreateWorkspaceActions();
+          attachDraftEventInputs(state.selectedManagerEventId);
+          attachDraftInputs(state.selectedManagerEventId);
+        }
+      } else {
+        renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      }
     });
   });
 
@@ -9691,10 +9814,12 @@ const legacyChangePinBtn = $("changePinBtn");
 if (legacyChangePinBtn) legacyChangePinBtn.addEventListener("click", changePin);
 
 $("eventModalCloseBtn").addEventListener("click", () => {
+  state.adminEventEditModeId = null;
   $("eventModalBackdrop").classList.add("hidden");
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
   $("eventModalBackdrop").classList.remove("payment-modal-mode");
+  $("eventModalBackdrop").classList.remove("admin-event-edit-mode");
 });
 
 $("plansModalCloseBtn").addEventListener("click", () => {
