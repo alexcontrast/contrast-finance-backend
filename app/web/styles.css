@@ -1815,22 +1815,84 @@ button[data-manager-event-save-draft]:hover {
   grid-template-columns: minmax(160px, 1.3fr) minmax(160px, 1fr) auto;
 }
 
-.manager-delete-btn {
+.manager-progress-row.is-inactive {
+  background: rgba(242, 244, 247, .92);
+  border-color: rgba(152, 162, 179, .35);
+  filter: grayscale(.35);
+}
+
+.manager-progress-row.is-inactive .manager-progress-main,
+.manager-progress-row.is-inactive .manager-progress-bar {
+  opacity: .74;
+}
+
+.manager-progress-row.is-inactive .progress-fill {
+  background: linear-gradient(90deg, #98a2b3, #667085);
+}
+
+.manager-inactive-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(102, 112, 133, .10);
+  border: 1px solid rgba(102, 112, 133, .18);
+  color: #667085;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.manager-delete-btn,
+.manager-restore-btn,
+.manager-action-placeholder {
   width: 34px;
   height: 34px;
   border-radius: 999px;
-  border: 1px solid rgba(180, 35, 24, .32);
-  background: rgba(180, 35, 24, .08);
-  color: #b42318;
   font-size: 22px;
   line-height: 1;
   font-weight: 950;
+}
+
+.manager-delete-btn,
+.manager-restore-btn {
   cursor: pointer;
+}
+
+.manager-action-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(152, 162, 179, .28);
+  background: rgba(152, 162, 179, .08);
+  color: #98a2b3;
+}
+
+.manager-delete-btn {
+  border: 1px solid rgba(180, 35, 24, .32);
+  background: rgba(180, 35, 24, .08);
+  color: #b42318;
 }
 
 .manager-delete-btn:hover {
   background: rgba(180, 35, 24, .16);
   border-color: rgba(180, 35, 24, .55);
+}
+
+.manager-restore-btn {
+  border: 1px solid rgba(18, 140, 64, .32);
+  background: rgba(18, 140, 64, .10);
+  color: #128c40;
+  font-size: 18px;
+}
+
+.manager-restore-btn:hover {
+  background: rgba(18, 140, 64, .18);
+  border-color: rgba(18, 140, 64, .58);
 }
 
 @media (max-width: 920px) {
@@ -1846,7 +1908,9 @@ button[data-manager-event-save-draft]:hover {
     grid-column: 1 / -1;
   }
 
-  .manager-delete-btn {
+  .manager-delete-btn,
+  .manager-restore-btn,
+  .manager-action-placeholder {
     grid-row: 1;
     grid-column: 2;
   }

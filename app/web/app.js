@@ -3289,6 +3289,32 @@ function getManagers() {
   return (state.users || []).filter((user) => user.role === "manager" && user.is_active);
 }
 
+function userMonthKey(value) {
+  if (!value) return "";
+  return String(value).slice(0, 7);
+}
+
+function currentCalendarMonthKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function managerDeletedInSelectedMonth(manager) {
+  return manager?.role === "manager" && !manager.is_active && userMonthKey(manager.updated_at) === String(state.month || "").slice(0, 7);
+}
+
+function canRestoreManagerInSelectedMonth(manager) {
+  return managerDeletedInSelectedMonth(manager) && String(state.month || "").slice(0, 7) === currentCalendarMonthKey();
+}
+
+function getOverviewManagers() {
+  return (state.users || []).filter((user) => (
+    user.role === "manager" && (user.is_active || managerDeletedInSelectedMonth(user))
+  ));
+}
+
 function managerNameById(id) {
   const user = (state.users || []).find((item) => Number(item.id) === Number(id));
   return user?.name || "";
@@ -4317,7 +4343,7 @@ async function openEventModal(eventId) {
 }
 
 function renderAdminOverview(data) {
-  const managers = getManagers();
+  const managers = getOverviewManagers();
 
   const managerStats = managers.map((manager) => {
     const events = (data.events || []).filter((event) => Number(event.manager_id) === Number(manager.id));
@@ -4326,6 +4352,8 @@ function renderAdminOverview(data) {
     const income = events.reduce((sum, event) => sum + asNumber(event.final_company_income), 0);
     const plan = asNumber(data.manager_personal_plan_amount);
     const percent = plan > 0 ? Math.round((income / plan) * 10000) / 100 : 0;
+    const isInactive = !manager.is_active;
+    const canRestore = canRestoreManagerInSelectedMonth(manager);
 
     return {
       manager,
@@ -4333,6 +4361,8 @@ function renderAdminOverview(data) {
       plan,
       percent,
       eventsCount,
+      isInactive,
+      canRestore,
       departmentId: manager.department_id,
       departmentName: departmentNameById(manager.department_id),
     };
@@ -4378,18 +4408,25 @@ function renderAdminOverview(data) {
 
             <div class="manager-progress-list">
               ${depManagers.length ? depManagers.map((row) => `
-                <div class="manager-progress-row">
+                <div class="manager-progress-row ${row.isInactive ? "is-inactive" : ""}">
                   <div class="manager-progress-main">
                     <strong class="manager-progress-name">
                       <span>${escapeHtml(row.manager.name)}</span>
                       ${row.eventsCount ? `<em class="manager-events-count-badge">${row.eventsCount}</em>` : ""}
+                      ${row.isInactive ? `<em class="manager-inactive-badge">до конца месяца</em>` : ""}
                     </strong>
                     <span>${formatMoney(row.income)} ₸ · ${row.percent}%</span>
                   </div>
                   <div class="manager-progress-bar">
                     ${progressLine(row.percent)}
                   </div>
-                  <button class="manager-delete-btn" data-delete-manager-id="${row.manager.id}" data-delete-manager-name="${escapeHtml(row.manager.name)}" title="Удалить менеджера" type="button">×</button>
+                  ${row.isInactive ? `
+                    ${row.canRestore ? `
+                      <button class="manager-restore-btn" data-restore-manager-id="${row.manager.id}" data-restore-manager-name="${escapeHtml(row.manager.name)}" title="Восстановить менеджера" type="button">↺</button>
+                    ` : `<span class="manager-action-placeholder" title="Срок восстановления прошёл">—</span>`}
+                  ` : `
+                    <button class="manager-delete-btn" data-delete-manager-id="${row.manager.id}" data-delete-manager-name="${escapeHtml(row.manager.name)}" title="Удалить менеджера" type="button">×</button>
+                  `}
                 </div>
               `).join("") : `<div class="empty-state">Менеджеров в отделе пока нет.</div>`}
             </div>
@@ -4399,7 +4436,6 @@ function renderAdminOverview(data) {
     </section>
   `;
 }
-
 
 function groupedAdminEventsForTable(events) {
   const groups = new Map();
@@ -8085,13 +8121,24 @@ async function savePlansYear() {
 
 async function deleteManagerFromSystem(managerId, managerName) {
   const name = managerName || "менеджера";
-  const ok = window.confirm(`Удалить ${name}? Кабинет менеджера сразу заблокируется. Его мероприятия останутся в базе и в планах текущего месяца.`);
+  const ok = window.confirm(`Удалить ${name} до конца месяца? Кабинет менеджера сразу заблокируется. В обзоре текущего месяца он останется серым и его можно будет восстановить.`);
   if (!ok) return;
 
   await withLoading(async () => {
     await api(`/users/${managerId}`, { method: "DELETE" });
     await loadDashboard();
   }, "Удаляем менеджера…");
+}
+
+async function restoreManagerInSystem(managerId, managerName) {
+  const name = managerName || "менеджера";
+  const ok = window.confirm(`Восстановить ${name}? Кабинет менеджера снова станет доступен.`);
+  if (!ok) return;
+
+  await withLoading(async () => {
+    await api(`/users/${managerId}/restore`, { method: "POST" });
+    await loadDashboard();
+  }, "Восстанавливаем менеджера…");
 }
 
 function attachManagerDeleteButtons() {
@@ -8102,6 +8149,16 @@ function attachManagerDeleteButtons() {
       event.preventDefault();
       event.stopPropagation();
       deleteManagerFromSystem(button.dataset.deleteManagerId, button.dataset.deleteManagerName).catch((error) => alert(error.message));
+    });
+  });
+
+  document.querySelectorAll("[data-restore-manager-id]").forEach((button) => {
+    if (button.dataset.attached === "1") return;
+    button.dataset.attached = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      restoreManagerInSystem(button.dataset.restoreManagerId, button.dataset.restoreManagerName).catch((error) => alert(error.message));
     });
   });
 }
@@ -8149,7 +8206,7 @@ async function loadUsersForAdmin() {
   if (!user || user.role !== "admin") return;
 
   try {
-    state.users = await api("/users?include_inactive=false");
+    state.users = await api("/users?include_inactive=true");
   } catch (error) {
     console.warn("Не удалось загрузить пользователей", error);
     state.users = [];

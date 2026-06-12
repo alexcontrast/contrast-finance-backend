@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, select
@@ -227,9 +227,42 @@ def deactivate_manager(
     if user.role != "manager":
         raise HTTPException(status_code=400, detail="Удалять из этой кнопки можно только менеджеров")
 
-    # Soft delete: кабинет блокируется сразу через is_active=False.
-    # Мероприятия и заявки остаются в базе, чтобы факт месяца не пересчитался назад.
+    # Soft delete до конца месяца:
+    # - кабинет блокируется сразу через is_active=False;
+    # - updated_at фиксирует месяц удаления;
+    # - фронт показывает менеджера серым только в этом месяце и даёт восстановить.
     user.is_active = False
+    user.updated_at = datetime.utcnow()
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user_to_read(user)
+
+
+@router.post("/users/{user_id}/restore", response_model=UserRead)
+def restore_manager(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.role != "manager":
+        raise HTTPException(status_code=400, detail="Восстановить из этой кнопки можно только менеджеров")
+
+    if user.is_active:
+        return user_to_read(user)
+
+    today = date.today()
+    deactivated_at = user.updated_at.date() if user.updated_at else today
+    if deactivated_at.year != today.year or deactivated_at.month != today.month:
+        raise HTTPException(status_code=400, detail="Восстановить менеджера можно только до конца месяца удаления")
+
+    user.is_active = True
     user.updated_at = datetime.utcnow()
 
     db.add(user)
