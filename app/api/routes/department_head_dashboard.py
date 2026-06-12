@@ -116,9 +116,17 @@ def department_share_percent(event: Event, department_id: int, user_by_id: dict[
 
 
 def event_visible_for_department(event: Event, department_id: int, user_by_id: dict[int, User]) -> bool:
-    if event.department_id == department_id:
+    # Department-head cabinet follows the current manager/share ownership.
+    # event.department_id can be stale after a manager moves to another department,
+    # so it is only a last-resort fallback when the manager record is missing.
+    if department_share_percent(event, department_id, user_by_id) > Decimal("0.00"):
         return True
-    return department_share_percent(event, department_id, user_by_id) > Decimal("0.00")
+
+    if event.shares:
+        return False
+
+    manager = user_by_id.get(event.manager_id)
+    return manager is None and event.department_id == department_id
 
 
 def expense_default_split_amounts(db: Session, expense: MonthlyExpense) -> tuple[Decimal, Decimal]:

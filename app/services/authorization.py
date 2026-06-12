@@ -49,25 +49,21 @@ def can_view_event(user: User, event: Event, db: Session | None = None) -> bool:
         if not user.department_id:
             return False
 
-        if event.department_id == user.department_id:
-            return True
+        # The source of truth for a department-head view is the current department
+        # of the event manager/share users. Event.department_id can be stale after
+        # a manager was moved between departments, so it must not keep the event
+        # visible in the old department.
+        has_loaded_shares = bool(event.shares)
 
-        # Fallback for old/stale events where department_id was not updated,
-        # but the primary manager already belongs to the head's department.
-        event_manager = getattr(event, "manager", None)
-        if event_manager and event_manager.department_id == user.department_id:
-            return True
-
-        if user.department_id in event_share_department_ids(event):
-            return True
-
-        if db is not None:
-            owner_department_id = db.execute(
-                select(User.department_id).where(User.id == event.manager_id)
-            ).scalar_one_or_none()
-            if owner_department_id == user.department_id:
+        if has_loaded_shares:
+            if user.department_id in event_share_department_ids(event):
+                return True
+        else:
+            event_manager = getattr(event, "manager", None)
+            if event_manager and event_manager.department_id == user.department_id:
                 return True
 
+        if db is not None:
             shared_department_event_id = db.execute(
                 select(EventShare.event_id)
                 .join(User, User.id == EventShare.user_id)
@@ -77,7 +73,27 @@ def can_view_event(user: User, event: Event, db: Session | None = None) -> bool:
                 )
                 .limit(1)
             ).scalar_one_or_none()
-            return shared_department_event_id is not None
+            if shared_department_event_id is not None:
+                return True
+
+            has_any_share = db.execute(
+                select(EventShare.id)
+                .where(EventShare.event_id == event.id)
+                .limit(1)
+            ).scalar_one_or_none() is not None
+
+            if not has_any_share:
+                owner_department_id = db.execute(
+                    select(User.department_id).where(User.id == event.manager_id)
+                ).scalar_one_or_none()
+                if owner_department_id == user.department_id:
+                    return True
+
+                # Last-resort fallback for orphaned legacy events where the manager
+                # no longer exists. Normal moved-manager events must use the current
+                # manager department above.
+                if owner_department_id is None and event.department_id == user.department_id:
+                    return True
 
         return False
 

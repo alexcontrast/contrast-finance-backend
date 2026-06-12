@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -109,7 +109,20 @@ def list_events(
         query = query.where(or_(Event.manager_id == current_user.id, Event.id.in_(shared_event_ids)))
 
     elif current_user.role == "department_head":
-        query = query.where(Event.department_id == current_user.department_id)
+        shared_event_ids = (
+            select(EventShare.event_id)
+            .join(User, User.id == EventShare.user_id)
+            .where(User.department_id == current_user.department_id)
+        )
+        event_has_shares = select(EventShare.id).where(EventShare.event_id == Event.id).exists()
+        primary_manager_in_department = select(User.department_id).where(User.id == Event.manager_id).scalar_subquery() == current_user.department_id
+
+        query = query.where(
+            or_(
+                Event.id.in_(shared_event_ids),
+                and_(not_(event_has_shares), primary_manager_in_department),
+            )
+        )
         if manager_id is not None:
             query = query.where(Event.manager_id == manager_id)
 
