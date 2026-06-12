@@ -1,4 +1,4 @@
-## v0.40.23
+## v0.40.24
 
 Frontend fix for admin/department-head event modal estimate table colors.
 
@@ -9,4 +9,4 @@ Frontend fix for admin/department-head event modal estimate table colors.
   - Deductions column is purple.
   - Commission and Method columns stay neutral/gray like regular amount columns.
 - Added explicit method-col classes to event modal estimate header/body/top rows.
-- Frontend cache-bust updated to v0.40.23.
+- Frontend cache-bust updated to v0.40.24.

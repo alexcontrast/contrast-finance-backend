@@ -1642,7 +1642,7 @@ function injectManagerUxStyles() {
     }
 
 
-    /* v0.40.23: цвета столбцов сметы привязаны к смысловым классам, не к nth-child */
+    /* v0.40.24: цвета столбцов сметы привязаны к смысловым классам, не к nth-child */
     .estimate-table th.vat-col,
     .estimate-table td.vat-col {
       background: rgba(220, 244, 252, .72) !important;
@@ -2133,7 +2133,7 @@ function injectManagerUxStyles() {
     }
 
 
-    /* v0.40.21: compact admin event editor columns */
+    /* v0.40.24: compact admin event editor columns */
     #eventModalBackdrop.admin-event-edit-mode .estimate-tabs {
       display: none !important;
     }
@@ -2185,6 +2185,33 @@ function injectManagerUxStyles() {
       height: 16px !important;
       font-size: 10px !important;
       border-radius: 4px !important;
+    }
+
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.kgd-col,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.kgd-col {
+      width: 42px !important;
+      min-width: 42px !important;
+      max-width: 42px !important;
+      padding-left: 2px !important;
+      padding-right: 2px !important;
+      text-align: center !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.kgd-col .icon-btn {
+      width: 28px !important;
+      min-width: 28px !important;
+      height: 28px !important;
+      padding: 0 !important;
+      border-radius: 8px !important;
+    }
+
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.kgd-col,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.kgd-col,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.paid-col,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.paid-col {
+      background: #f4f7ec !important;
     }
 
 
@@ -6735,12 +6762,12 @@ function renderInternalEstimate(items, event, summary = null) {
           <col class="position-col" />
           <col class="plan-col" />
           <col class="fact-col" />
+          <col class="commission-col" />
           <col class="payment-col" />
           <col class="bin-col" />
           <col class="kgd-col" />
           <col class="vat-col" />
           <col class="deduction-col" />
-          <col class="commission-col" />
           <col class="paid-col" />
           <col class="actions-col" />
         </colgroup>
@@ -6750,12 +6777,12 @@ function renderInternalEstimate(items, event, summary = null) {
             <th>Позиция</th>
             <th>Смета</th>
             <th>Факт</th>
+            <th class="commission-col">Комиссия</th>
             <th>Оплата</th>
             <th>БИН/ИИН</th>
-            <th>КГД</th>
+            <th class="kgd-col">КГД</th>
             <th class="vat-col">НДС</th>
             <th class="deduction-col">Вычеты</th>
-            <th class="commission-col">Комиссия</th>
             <th class="paid-col">Оплачено</th>
             <th></th>
           </tr>
@@ -6776,6 +6803,7 @@ function renderInternalEstimate(items, event, summary = null) {
                   ? rowInput(formatInputNumber(externalRowAmount(item)), `data-item-field="external_amount_admin" data-item-id="${item.id}"`)
                   : `<strong>${formatMoney(externalRowAmount(item))}</strong>`}</td>
                 <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
+                <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
                 <td>
                   ${isCoordinatorItem(item) ? `
                     <select disabled>
@@ -6792,7 +6820,7 @@ function renderInternalEstimate(items, event, summary = null) {
                   `}
                 </td>
                 <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${(item.iin_bin_locked || invoiceLockedByRequest) ? "disabled" : ""}`}`)}</td>
-                <td>
+                <td class="kgd-col">
                   ${isCoordinatorItem(item) ? "—" : (effectivePaymentMethod === "invoice" ? `
                     ${item.iin_bin_locked ? `
                       <button class="icon-btn" data-unlock-tax-item="${item.id}" title="${invoiceLockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${invoiceLockedByRequest ? "disabled" : ""}>✎</button>
@@ -6803,7 +6831,6 @@ function renderInternalEstimate(items, event, summary = null) {
                 </td>
                 <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
                 <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
-                <td class="commission-col"><strong>${formatMoney(internalCommissionValue(item))}</strong></td>
                 <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
                 <td>${deleteButtonHtmlForItem(item)}</td>
               </tr>
