@@ -3248,6 +3248,8 @@ function updateHeaderUserInfo(user) {
 
 
 function showLogin() {
+  document.body.classList.add("login-mode");
+  document.body.classList.remove("dashboard-mode");
   $("loginScreen").classList.remove("hidden");
   $("dashboardScreen").classList.add("hidden");
   $("logoutBtn").classList.add("hidden");
@@ -3261,6 +3263,8 @@ function showLogin() {
 }
 
 function showDashboardShell() {
+  document.body.classList.remove("login-mode");
+  document.body.classList.add("dashboard-mode");
   $("loginScreen").classList.add("hidden");
   $("dashboardScreen").classList.remove("hidden");
   $("logoutBtn").classList.remove("hidden");
