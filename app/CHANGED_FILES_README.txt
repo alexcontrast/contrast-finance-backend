@@ -1,28 +1,31 @@
-Contrast Finance Backend v0.40.6 — changed files only
+Contrast Finance Backend v0.40.7 — changed files only
 
-Base: v0.40.5.
+Base: v0.40.6.
+
+Reason:
+Website-side payment status/money-status changes must update Telegram cards for manager, admin and Tatiana and trigger the same delete/update flows as Telegram button actions.
 
 Changed files:
-- app/telegram_bot/main.py
-  * BOT_VERSION = CONTRAST_FINANCE_BOT_V0.40.6_NEW_SITE.
-  * Self-employed flow asks for surname instead of failing request creation.
-  * Existing self-employed surname from item/internal note is reused automatically.
-  * Self-employed surname is saved back to item internal_note after Telegram request.
-  * Invoice cards use KGD legal entity name as contractor.
-  * Extra Telegram positions are created with external estimate amount 0 and fact amount = request amount.
 - app/api/routes/payment_requests.py
-  * Invoice payment request snapshots store KGD legal name from contractors/taxpayer checks.
-- app/web/app.js
-  * Payment modal no longer PATCHes the whole event before creating payment requests.
-  * This allows payment extra positions on review/accepted events without opening event editing.
-- app/web/index.html
-  * Cache-bust v0.40.6.
-- app/core/config.py and app/app/core/config.py
-  * VERSION = 0.40.6.
+  - Added mark_payment_request_for_telegram_sync().
+  - Status and money-status PATCH endpoints now mark active Telegram messages for immediate background sync.
+- app/telegram_bot/main.py
+  - BOT_VERSION -> CONTRAST_FINANCE_BOT_V0.40.7_NEW_SITE.
+  - Successful edits now advance telegram_messages.updated_at.
+  - Telegram "message is not modified" is treated as a successful sync.
+- app/core/config.py
+- app/app/core/config.py
+- README.md
+- CHANGED_FILES_README.txt
 
-Checks:
+Behavior:
+- Site changes update admin, manager and Tatiana Telegram cards via bot background polling.
+- Admin/manager cards are deleted on rejected/cancelled or paid + cash_received.
+- new/to_pay + cash_received still stays visible because payment status and money status are separate.
+- Tatiana notification remains controlled by TELEGRAM_TATYANA_ENABLED; when enabled her card is updated but not deleted.
+
+Checks passed:
 - python3 -m compileall -q app
 - python3 -m py_compile app/telegram_bot/main.py
-- node --check app/web/app.js
 
-No database migrations.
+No migrations.
