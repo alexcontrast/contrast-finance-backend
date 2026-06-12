@@ -8452,7 +8452,11 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", () => {
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
       addDraftRegularPosition(state.selectedManagerEventId);
-      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      if (isAdminEditMode) {
+        rerenderCurrentManagerCard();
+      } else {
+        renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      }
     });
   });
 
@@ -8464,7 +8468,11 @@ function attachManagerCreateWorkspaceActions() {
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
       if (!confirm("Удалить позицию?")) return;
       deleteDraftItem(state.selectedManagerEventId, button.getAttribute("data-delete-item"));
-      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      if (isAdminEditMode) {
+        rerenderCurrentManagerCard();
+      } else {
+        renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      }
     });
   });
 

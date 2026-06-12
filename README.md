@@ -1,14 +1,10 @@
-Contrast Finance v0.40.19 — changed files only
+Contrast Finance backend v0.40.22 changed-only
 
-Changed files:
-- app/web/app.js
-- app/web/index.html
-- app/core/config.py
-- app/app/core/config.py
-- app/telegram_bot/main.py
+Fix:
+- Admin event edit mode: deleting or adding an estimate row now rerenders the admin modal content itself.
+- Before this fix, the shared editor handler called renderManagerEventDetail(), which only rerenders the manager workspace (#managerEventDetail). In admin modal there is no such holder, so the draft state changed but the visible row stayed in the modal.
 
-v0.40.19:
-- Added the missing "Комиссия" column in the event estimate table inside the event modal.
-- The column is placed between "Оплата" and "НДС".
-- This applies to the admin event modal and the department-head read-only event modal because they share the same event modal renderer.
-- Bumped frontend cache-bust to /web/app.js?v=0.40.19.
+Deploy:
+- Upload changed-only to Railway web service.
+- Redeploy web service.
+- Hard refresh browser cache.
