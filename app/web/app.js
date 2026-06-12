@@ -2431,6 +2431,9 @@ const state = {
   users: [],
   monthlyPlans: [],
   monthlyPlansYear: null,
+  closingPanelData: null,
+  closingCalcRefreshTimer: null,
+  closingCalcRefreshSeq: 0,
   authMode: "manager",
 };
 
@@ -4780,7 +4783,7 @@ function renderClosingCalculation(calc, closing) {
   `;
 }
 
-function renderClosingContent(expenses, calc, closing, error = null) {
+function renderClosingContent(expenses, calc, closing, error = null, calcPending = false) {
   const status = closing?.status || state.adminData?.closing?.status || "draft";
   const isClosed = status === "closed";
 
@@ -4790,7 +4793,10 @@ function renderClosingContent(expenses, calc, closing, error = null) {
         <h3>Закрыть месяц</h3>
         <p class="muted">${monthLabelRu(state.month)} · вкладка только хранит расходы и расчёт; месяц закрывается только кнопкой ниже.</p>
       </div>
-      <span class="closing-status ${isClosed ? "closed" : "draft"}">${closingStatusLabel(status)}</span>
+      <div class="closing-status-row">
+        ${calcPending ? `<span class="closing-status pending">Считаем…</span>` : ""}
+        <span class="closing-status ${isClosed ? "closed" : "draft"}">${closingStatusLabel(status)}</span>
+      </div>
     </div>
 
     ${error ? `<div class="error closing-error">${escapeHtml(error)}</div>` : ""}
@@ -4820,9 +4826,10 @@ function renderClosingContent(expenses, calc, closing, error = null) {
     <section class="closing-mini-section">
       <div class="closing-section-head">
         <h4>Калькуляция</h4>
-        <span>10% / 15%</span>
+        <span>${calcPending ? "обновляется в фоне…" : "10% / 15%"}</span>
       </div>
       ${renderClosingCalculation(calc, closing)}
+      ${calcPending ? `<div class="muted closing-message">Расход сохранён. Калькуляция обновится автоматически через пару секунд.</div>` : ""}
       <div class="closing-actions">
         <button id="recalculateClosingBtn" class="secondary" type="button">Пересчитать</button>
         ${isClosed ? `
@@ -8224,18 +8231,22 @@ async function loadClosingPanelData() {
 
   if (calcResult.status === "rejected") {
     return {
+      month,
       expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
       calc: null,
       closing: closing.status === "fulfilled" ? closing.value : null,
       error: calcResult.reason?.message || "Не удалось рассчитать закрытие месяца",
+      calcPending: false,
     };
   }
 
   return {
+    month,
     expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
     calc: calcResult.value,
     closing: closing.status === "fulfilled" ? closing.value : null,
     error: expenses.status === "rejected" ? expenses.reason?.message : null,
+    calcPending: false,
   };
 }
 
@@ -8246,6 +8257,81 @@ function setClosingCustomSplitVisibility() {
   });
 }
 
+function renderClosingPanelFromCache() {
+  const panel = document.getElementById("closingPanel");
+  const data = state.closingPanelData;
+  if (!panel || !data || data.month !== state.month) return;
+
+  panel.dataset.eventsAttached = "0";
+  panel.innerHTML = renderClosingContent(
+    data.expenses || [],
+    data.calc || null,
+    data.closing || null,
+    data.error || null,
+    Boolean(data.calcPending),
+  );
+  attachClosingPanelEvents();
+}
+
+function cacheClosingPanelData(data) {
+  state.closingPanelData = {
+    month: data?.month || state.month,
+    expenses: Array.isArray(data?.expenses) ? data.expenses : [],
+    calc: data?.calc || null,
+    closing: data?.closing || null,
+    error: data?.error || null,
+    calcPending: Boolean(data?.calcPending),
+  };
+}
+
+function scheduleClosingCalculationRefresh(delayMs = 900) {
+  clearTimeout(state.closingCalcRefreshTimer);
+
+  state.closingCalcRefreshTimer = setTimeout(async () => {
+    const month = state.month;
+    const requestSeq = state.closingCalcRefreshSeq + 1;
+    state.closingCalcRefreshSeq = requestSeq;
+
+    try {
+      const [calcResult, closing] = await Promise.allSettled([
+        api(`/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
+        loadClosingByMonth(month),
+      ]);
+
+      if (requestSeq !== state.closingCalcRefreshSeq || state.month !== month) return;
+
+      const current = state.closingPanelData && state.closingPanelData.month === month
+        ? state.closingPanelData
+        : { month, expenses: [] };
+
+      state.closingPanelData = {
+        ...current,
+        calc: calcResult.status === "fulfilled" ? calcResult.value : current.calc || null,
+        closing: closing.status === "fulfilled" ? closing.value : current.closing || null,
+        error: calcResult.status === "rejected" ? (calcResult.reason?.message || "Не удалось пересчитать месяц") : null,
+        calcPending: false,
+      };
+      renderClosingPanelFromCache();
+    } catch (error) {
+      const current = state.closingPanelData && state.closingPanelData.month === month
+        ? state.closingPanelData
+        : { month, expenses: [] };
+      state.closingPanelData = { ...current, error: error.message, calcPending: false };
+      renderClosingPanelFromCache();
+    }
+  }, delayMs);
+}
+
+function markClosingCalculationPending() {
+  const current = state.closingPanelData && state.closingPanelData.month === state.month
+    ? state.closingPanelData
+    : { month: state.month, expenses: [], calc: null, closing: null, error: null };
+
+  state.closingPanelData = { ...current, calcPending: true, error: null };
+  renderClosingPanelFromCache();
+  scheduleClosingCalculationRefresh();
+}
+
 async function refreshClosingPanel() {
   const panel = document.getElementById("closingPanel");
   if (!panel) return;
@@ -8254,15 +8340,59 @@ async function refreshClosingPanel() {
   if (loadedForMonth !== String(state.month)) return;
 
   try {
-    const { expenses, calc, closing, error } = await loadClosingPanelData();
-    panel.dataset.eventsAttached = "0";
-    panel.innerHTML = renderClosingContent(expenses, calc, closing, error);
-    attachClosingPanelEvents();
+    const data = await loadClosingPanelData();
+    cacheClosingPanelData(data);
+    renderClosingPanelFromCache();
   } catch (error) {
-    panel.dataset.eventsAttached = "0";
-    panel.innerHTML = renderClosingContent([], null, null, error.message);
-    attachClosingPanelEvents();
+    cacheClosingPanelData({ month: state.month, expenses: [], calc: null, closing: null, error: error.message });
+    renderClosingPanelFromCache();
   }
+}
+
+function clearClosingExpenseForm() {
+  ["closingExpenseTitle", "closingExpenseAmount", "closingExpenseComment", "closingExpenseSanzhar", "closingExpenseRaufal"].forEach((id) => {
+    const input = document.getElementById(id);
+    if (input) input.value = "";
+  });
+  const allocationInput = document.getElementById("closingExpenseAllocation");
+  if (allocationInput) allocationInput.value = "default_split";
+  setClosingCustomSplitVisibility();
+}
+
+function insertClosingExpenseIntoCache(expense) {
+  if (!expense) return false;
+  const current = state.closingPanelData && state.closingPanelData.month === state.month
+    ? state.closingPanelData
+    : null;
+  if (!current) return false;
+
+  const existing = Array.isArray(current.expenses) ? current.expenses : [];
+  state.closingPanelData = {
+    ...current,
+    expenses: [expense, ...existing.filter((item) => Number(item.id) !== Number(expense.id))],
+    calcPending: true,
+    error: null,
+  };
+  renderClosingPanelFromCache();
+  scheduleClosingCalculationRefresh();
+  return true;
+}
+
+function removeClosingExpenseFromCache(expenseId) {
+  const current = state.closingPanelData && state.closingPanelData.month === state.month
+    ? state.closingPanelData
+    : null;
+  if (!current) return false;
+
+  state.closingPanelData = {
+    ...current,
+    expenses: (current.expenses || []).filter((item) => Number(item.id) !== Number(expenseId)),
+    calcPending: true,
+    error: null,
+  };
+  renderClosingPanelFromCache();
+  scheduleClosingCalculationRefresh();
+  return true;
 }
 
 async function addClosingExpense() {
@@ -8304,9 +8434,12 @@ async function addClosingExpense() {
 
   const button = document.getElementById("addClosingExpenseBtn");
   try {
-    setButtonLoading(button, true, "Добавляем…");
-    await api("/monthly-expenses", { method: "POST", body: JSON.stringify(payload) });
-    await loadDashboard();
+    setButtonLoading(button, true, "Сохраняем…");
+    const createdExpense = await api("/monthly-expenses", { method: "POST", body: JSON.stringify(payload) });
+    clearClosingExpenseForm();
+    if (!insertClosingExpenseIntoCache(createdExpense)) {
+      markClosingCalculationPending();
+    }
   } catch (error) {
     alert(error.message);
   } finally {
@@ -8314,12 +8447,17 @@ async function addClosingExpense() {
   }
 }
 
-async function deleteClosingExpense(expenseId) {
+async function deleteClosingExpense(expenseId, button = null) {
   if (!window.confirm("Удалить расход?")) return;
-  await withLoading(async () => {
+  try {
+    setButtonLoading(button, true, "…");
     await api(`/monthly-expenses/${expenseId}`, { method: "DELETE" });
-    await loadDashboard();
-  }, "Удаляем расход…");
+    if (!removeClosingExpenseFromCache(expenseId)) {
+      markClosingCalculationPending();
+    }
+  } finally {
+    setButtonLoading(button, false);
+  }
 }
 
 async function closeSelectedMonth() {
@@ -8370,7 +8508,7 @@ function attachClosingPanelEvents() {
   document.getElementById("closeMonthBtn")?.addEventListener("click", () => closeSelectedMonth().catch((error) => alert(error.message)));
   document.getElementById("reopenClosingBtn")?.addEventListener("click", () => reopenSelectedMonth().catch((error) => alert(error.message)));
   document.querySelectorAll("[data-delete-expense-id]").forEach((button) => {
-    button.addEventListener("click", () => deleteClosingExpense(button.dataset.deleteExpenseId).catch((error) => alert(error.message)));
+    button.addEventListener("click", () => deleteClosingExpense(button.dataset.deleteExpenseId, button).catch((error) => alert(error.message)));
   });
 
   setClosingCustomSplitVisibility();

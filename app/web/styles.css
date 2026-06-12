@@ -2147,7 +2147,7 @@ button[data-manager-event-save-draft]:hover {
   justify-content: center;
 }
 
-/* v0.37.21 compact month closing calculator */
+/* v0.37.23 compact month closing calculator */
 .closing-panel {
   display: grid;
   gap: 12px;
@@ -2190,6 +2190,21 @@ button[data-manager-event-save-draft]:hover {
   border-color: rgba(18, 140, 64, .30);
   background: rgba(18, 140, 64, .10);
   color: #128c40;
+}
+
+.closing-status-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.closing-status.pending {
+  min-width: 76px;
+  border-color: rgba(245, 158, 11, .30);
+  background: rgba(245, 158, 11, .10);
+  color: #b45309;
 }
 
 .closing-mini-section {
