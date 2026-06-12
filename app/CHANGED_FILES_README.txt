@@ -1,3 +1,4 @@
+v0.40.14: Legacy migration production import now runs in Railway-friendly browser-driven batches: core, events, shares, items, payments, final check. The old one-shot endpoint remains but the page no longer uses it for production import.
 Contrast Finance v0.40.10 — changed files only
 
 Изменено:

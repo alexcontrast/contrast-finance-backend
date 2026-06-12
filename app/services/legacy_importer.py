@@ -754,6 +754,157 @@ def validate_legacy_data(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+
+def legacy_event_map_for_ids(db: Session, legacy_event_ids: set[str]) -> dict[str, Event]:
+    ids = {str(x).strip() for x in legacy_event_ids if str(x or '').strip()}
+    if not ids:
+        return {}
+    rows = db.execute(select(Event).where(Event.legacy_event_id.in_(ids))).scalars().all()
+    return {event.legacy_event_id: event for event in rows if event.legacy_event_id}
+
+
+def legacy_event_map_for_all(db: Session, data: dict[str, Any]) -> dict[str, Event]:
+    ids = {text(row.get("Event ID")) for row in sheet_rows(data, "Черновики_ивентов") if text(row.get("Event ID"))}
+    return legacy_event_map_for_ids(db, ids)
+
+
+def data_with_sheet_rows(data: dict[str, Any], sheet_name: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return a shallow legacy export clone with one sheet narrowed to a row slice.
+
+    This lets the old full-sheet upsert helpers be reused safely in small
+    Railway-friendly batches without changing their mapping logic.
+    """
+    copy = dict(data or {})
+    sheets = dict((data or {}).get("sheets") or {})
+    sheet = dict(sheets.get(sheet_name) or {})
+    sheet["rows"] = list(rows or [])
+    sheet["lastRow"] = len(rows or []) + 1 if rows else 1
+    sheets[sheet_name] = sheet
+    copy["sheets"] = sheets
+    return copy
+
+
+def import_legacy_data_step(
+    db: Session,
+    data: dict[str, Any],
+    step: str,
+    offset: int = 0,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Run one small production import step and commit it.
+
+    The browser calls this repeatedly. Each step is idempotent: existing legacy
+    IDs are updated, not duplicated. This avoids Railway upstream timeout on one
+    big HTTP request.
+    """
+    step = (step or "").strip().lower()
+    offset = max(int(offset or 0), 0)
+    limit = max(min(int(limit or 100), 500), 1)
+    stats = ImportStats(dry_run=False)
+
+    try:
+        if step == "core":
+            get_or_create_department(db, "Санжар", stats)
+            get_or_create_department(db, "Рауфаль", stats)
+            for row in sheet_rows(data, "Пользователи"):
+                get_or_create_user(db, row, stats)
+            upsert_monthly_plans(db, data, stats)
+            db.commit()
+            return {
+                "step": step,
+                "done": True,
+                "next_offset": 0,
+                "total": len(sheet_rows(data, "Пользователи")) + len(sheet_rows(data, "Цели")),
+                "stats": stats.as_dict(),
+            }
+
+        if step == "events":
+            rows_all = sheet_rows(data, "Черновики_ивентов")
+            rows = rows_all[offset:offset + limit]
+            scoped = data_with_sheet_rows(data, "Черновики_ивентов", rows)
+            upsert_events(db, scoped, stats)
+            db.commit()
+            next_offset = offset + len(rows)
+            return {
+                "step": step,
+                "done": next_offset >= len(rows_all),
+                "next_offset": next_offset,
+                "total": len(rows_all),
+                "processed": len(rows),
+                "stats": stats.as_dict(),
+            }
+
+        if step == "shares":
+            event_map = legacy_event_map_for_all(db, data)
+            upsert_shares(db, data, event_map, stats)
+            db.commit()
+            return {
+                "step": step,
+                "done": True,
+                "next_offset": 0,
+                "total": len(event_map),
+                "stats": stats.as_dict(),
+            }
+
+        if step == "items":
+            rows_all = sheet_rows(data, "Позиции_ивентов")
+            rows = rows_all[offset:offset + limit]
+            ids = {text(row.get("Event ID")) for row in rows if text(row.get("Event ID"))}
+            event_map = legacy_event_map_for_ids(db, ids)
+            scoped = data_with_sheet_rows(data, "Позиции_ивентов", rows)
+            upsert_items(db, scoped, event_map, stats)
+            db.commit()
+            next_offset = offset + len(rows)
+            return {
+                "step": step,
+                "done": next_offset >= len(rows_all),
+                "next_offset": next_offset,
+                "total": len(rows_all),
+                "processed": len(rows),
+                "stats": stats.as_dict(),
+            }
+
+        if step == "payments":
+            rows_all = sheet_rows(data, "Заявки_на_оплату")
+            rows = rows_all[offset:offset + limit]
+            ids = {text(row.get("Event ID")) for row in rows if text(row.get("Event ID"))}
+            event_map = legacy_event_map_for_ids(db, ids)
+            scoped = data_with_sheet_rows(data, "Заявки_на_оплату", rows)
+            upsert_payment_requests(db, scoped, event_map, stats)
+            db.commit()
+            next_offset = offset + len(rows)
+            return {
+                "step": step,
+                "done": next_offset >= len(rows_all),
+                "next_offset": next_offset,
+                "total": len(rows_all),
+                "processed": len(rows),
+                "stats": stats.as_dict(),
+            }
+
+        if step == "final":
+            result = validate_legacy_data(data)
+            imported = {
+                "users_with_legacy_id": db.execute(select(User).where(User.legacy_user_id.is_not(None))).scalars().all(),
+                "events_with_legacy_id": db.execute(select(Event).where(Event.legacy_event_id.is_not(None))).scalars().all(),
+                "items_with_legacy_key": db.execute(select(EventItem).where(EventItem.legacy_item_key.is_not(None))).scalars().all(),
+                "payments_with_legacy_id": db.execute(select(PaymentRequest).where(PaymentRequest.legacy_payment_id.is_not(None))).scalars().all(),
+            }
+            return {
+                "step": step,
+                "done": True,
+                "next_offset": 0,
+                "validation": result,
+                "imported_counts": {key: len(value) for key, value in imported.items()},
+                "note": "Финальная проверка только читает базу и JSON. Запись не выполнялась.",
+            }
+
+        raise ValueError(f"Unknown legacy import step: {step}")
+    except Exception:
+        db.rollback()
+        raise
+
 def import_legacy_data(db: Session, data: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
     stats = ImportStats(dry_run=dry_run)
     if data.get("version") != "contrast_legacy_export_v1":

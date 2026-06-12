@@ -1,3 +1,4 @@
+v0.40.14: Legacy migration production import now runs in Railway-friendly browser-driven batches: core, events, shares, items, payments, final check. The old one-shot endpoint remains but the page no longer uses it for production import.
 # Contrast Finance v0.40.10
 
 Хотфикс статуса денег: индивидуальное «Деньги в кассе» по заявке больше не поднимает статус денег на всё мероприятие и не трогает соседние заявки. Массовое направление сохраняется только сверху вниз: кнопка «Деньги в кассе» на мероприятии помечает все его активные заявки.

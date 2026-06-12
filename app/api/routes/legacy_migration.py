@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.services.legacy_importer import import_legacy_data, validate_legacy_data
+from app.services.legacy_importer import import_legacy_data, import_legacy_data_step, validate_legacy_data
 
 
 router = APIRouter(tags=["legacy_migration"])
@@ -61,23 +61,59 @@ async function readJsonResponse(res){
   if(!res.ok) return { ok:false, status:res.status, error:data.detail || data.error || data };
   return data;
 }
+function appendOut(obj){
+  const out = document.getElementById('out');
+  out.textContent += (out.textContent ? '\n' : '') + JSON.stringify(obj, null, 2);
+  out.scrollTop = out.scrollHeight;
+}
+async function postJson(url, body){
+  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+  return await readJsonResponse(res);
+}
+async function runStep(body, token, step, offset, limit){
+  const url = `/api/legacy-migration/import-step?token=${encodeURIComponent(token)}&step=${encodeURIComponent(step)}&offset=${offset || 0}&limit=${limit || 100}`;
+  return await postJson(url, body);
+}
 async function runImport(dryRun){
   const out = document.getElementById('out');
   const token = document.getElementById('token').value.trim();
   const file = document.getElementById('file').files[0];
   if(!token) return out.textContent = 'Введите token';
   if(!file) return out.textContent = 'Выберите JSON файл';
-  out.textContent = dryRun ? 'Быстро проверяю структуру JSON…' : 'Импортирую… не закрывай страницу';
+  out.textContent = dryRun ? 'Быстро проверяю структуру JSON…' : 'Запускаю пошаговый импорт… не закрывай страницу';
   try{
     const body = await file.text();
-    const url = dryRun
-      ? `/api/legacy-migration/validate?token=${encodeURIComponent(token)}`
-      : `/api/legacy-migration/import?token=${encodeURIComponent(token)}`;
-    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body });
-    const data = await readJsonResponse(res);
-    out.textContent = JSON.stringify(data, null, 2);
+    if(dryRun){
+      const data = await postJson(`/api/legacy-migration/validate?token=${encodeURIComponent(token)}`, body);
+      out.textContent = JSON.stringify(data, null, 2);
+      return;
+    }
+
+    out.textContent = '';
+    const plan = [
+      { step:'core', label:'1/6 пользователи, отделы, цели', limit:1 },
+      { step:'events', label:'2/6 мероприятия', limit:20 },
+      { step:'shares', label:'3/6 доли/соавторы', limit:1 },
+      { step:'items', label:'4/6 позиции', limit:100 },
+      { step:'payments', label:'5/6 заявки оплат', limit:50 },
+      { step:'final', label:'6/6 финальная проверка', limit:1 },
+    ];
+
+    for(const item of plan){
+      appendOut({ status:'started', label:item.label });
+      let offset = 0;
+      while(true){
+        const data = await runStep(body, token, item.step, offset, item.limit);
+        appendOut(data);
+        if(!data.ok) throw new Error(JSON.stringify(data));
+        const result = data.result || {};
+        if(result.done) break;
+        offset = result.next_offset || 0;
+      }
+    }
+    appendOut({ ok:true, status:'completed', note:'Пошаговый импорт завершен. Можно открыть сайт и сверить данные.' });
   }catch(err){
-    out.textContent = String(err && err.message || err);
+    appendOut({ ok:false, error:String(err && err.message || err) });
   }
 }
 </script>
@@ -103,6 +139,28 @@ async def validate_legacy_migration(
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"Legacy validation failed: {err}")
     return {"ok": result.get("valid", False), "dry_run": True, "result": result}
+
+
+
+@router.post("/api/legacy-migration/import-step")
+async def import_legacy_migration_step(
+    request: Request,
+    step: str = Query(...),
+    offset: int = Query(0),
+    limit: int = Query(100),
+    token: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    require_migration_token(token)
+    try:
+        data = await request.json()
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {err}")
+    try:
+        result = import_legacy_data_step(db, data, step=step, offset=offset, limit=limit)
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Legacy step import failed [{step} offset={offset}]: {err}")
+    return {"ok": True, "result": result}
 
 
 @router.post("/api/legacy-migration/import")
