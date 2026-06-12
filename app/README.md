@@ -1,3 +1,10 @@
+## v0.40.21
+- Исправлена таблица сметы в модалке мероприятия: компактные ширины колонок, чтобы смета помещалась без горизонтального скролла.
+- В админском режиме редактирования drag-колонка стала минимальной, только под маленький квадрат-перетаскивание.
+- В админском редактировании внутренней сметы явно добавлены/закреплены колонки НДС и Вычеты.
+- Исправлена постоянная заливка колонок: НДС — голубая, Вычеты — фиолетовая.
+- Frontend cache-bust updated to v0.40.21.
+
 v0.40.14: Legacy migration production import now runs in Railway-friendly browser-driven batches: core, events, shares, items, payments, final check. The old one-shot endpoint remains but the page no longer uses it for production import.
 # Contrast Finance v0.40.10
 
@@ -19,12 +26,6 @@ v0.40.12: Legacy migration dry-run now uses fast JSON validation without touchin
 
 
 
-## v0.40.20
-- Admin event edit mode now opens directly in internal estimate; external/internal tabs are hidden for admin editing.
-- Compact drag handle in estimate rows.
-- Internal estimate editor keeps VAT and deductions columns visible and compact.
-- Admin can edit planned estimate amount directly from the internal estimate table; this stores it as price with quantity/day set to 1 for that row.
-- Frontend cache-bust updated to v0.40.20.
 
 ## v0.40.19
 

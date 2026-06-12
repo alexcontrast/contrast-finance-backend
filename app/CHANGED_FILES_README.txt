@@ -1,4 +1,4 @@
-Contrast Finance v0.40.20 — changed files only
+Contrast Finance v0.40.21 — changed files only
 
 Changed files:
 - app/web/app.js
@@ -10,9 +10,9 @@ Changed files:
 - app/README.md
 - app/CHANGED_FILES_README.txt
 
-v0.40.20:
-- Admin edit opens internal estimate only.
-- External/internal tabs hidden for admin edit mode.
-- Drag handle made compact.
-- VAT and deductions columns kept in admin internal edit table.
-- Admin can edit planned amount directly in internal edit table.
+v0.40.21:
+- Fixed admin event edit estimate layout so it fits the modal without horizontal scroll.
+- Reduced drag/reorder column to a narrow square handle.
+- Added/fixed visible VAT and deduction columns in admin internal edit table.
+- Fixed column fills: VAT is blue, deductions are purple.
+- Added fixed colgroups for admin/department-head event modal estimate tables.

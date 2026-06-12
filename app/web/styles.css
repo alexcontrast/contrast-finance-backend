@@ -2957,7 +2957,7 @@ body.login-mode #loginScreen .auth-title::before {
 }
 
 
-/* v0.40.20: compact admin event editor */
+/* v0.40.21: compact admin event editor + fixed estimate colors */
 #eventModalBackdrop.admin-event-edit-mode .estimate-tabs { display: none !important; }
 #eventModalBackdrop.admin-event-edit-mode .modal,
 #eventModalBackdrop.admin-event-edit-mode .event-modal,
@@ -2965,28 +2965,100 @@ body.login-mode #loginScreen .auth-title::before {
   width: min(1500px, calc(100vw - 24px)) !important;
   max-width: 1500px !important;
 }
-#eventModalBackdrop.admin-event-edit-mode #eventModalContent { overflow-x: hidden !important; }
-#eventModalBackdrop.admin-event-edit-mode .estimate-table-wrap { overflow-x: auto !important; }
+#eventModalBackdrop.admin-event-edit-mode #eventModalContent,
+#eventModalBackdrop.admin-event-edit-mode .estimate-table-wrap { overflow-x: hidden !important; }
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table {
-  min-width: 1320px !important;
+  width: 100% !important;
+  min-width: 0 !important;
   table-layout: fixed !important;
 }
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th,
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td {
-  padding: 7px 6px !important;
-  font-size: 12px !important;
+  padding: 6px 5px !important;
+  font-size: 11px !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table input,
 #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table select {
-  min-height: 32px !important;
-  padding: 5px 7px !important;
-  font-size: 12px !important;
-  border-radius: 8px !important;
+  min-height: 28px !important;
+  padding: 4px 5px !important;
+  font-size: 11px !important;
+  border-radius: 7px !important;
 }
-#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-col {
-  width: 28px !important;
-  min-width: 28px !important;
-  max-width: 28px !important;
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.drag-col,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th.drag-col,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td.drag-col {
+  width: 26px !important;
+  min-width: 26px !important;
+  max-width: 26px !important;
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+}
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.position-col { width: 15% !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.plan-col,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.fact-col,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.paid-col { width: 8% !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.payment-col { width: 9% !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.bin-col { width: 9% !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.kgd-col { width: 4% !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.vat-col,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.deduction-col,
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.commission-col { width: 7% !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.actions-col { width: 32px !important; }
+#eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-handle {
+  width: 16px !important;
+  height: 16px !important;
+  font-size: 10px !important;
+  border-radius: 4px !important;
+}
+
+/* Цвета внутренних колонок должны быть постоянными, а не зависеть от сдвига nth-child. */
+.internal-estimate-table th.vat-col,
+.internal-estimate-table td.vat-col,
+.internal-estimate-table col.vat-col,
+.event-modal-estimate-table th:nth-child(6),
+.event-modal-estimate-table td:nth-child(6),
+.event-modal-estimate-table col.vat-col {
+  background: #eaf8fb !important;
+}
+.internal-estimate-table th.deduction-col,
+.internal-estimate-table td.deduction-col,
+.internal-estimate-table col.deduction-col,
+.event-modal-estimate-table th:nth-child(7),
+.event-modal-estimate-table td:nth-child(7),
+.event-modal-estimate-table col.deduction-col {
+  background: #f3effb !important;
+}
+.internal-estimate-table th.commission-col,
+.internal-estimate-table td.commission-col,
+.event-modal-estimate-table th:nth-child(5),
+.event-modal-estimate-table td:nth-child(5) {
+  background: #f4f7ec !important;
+}
+.internal-estimate-table th.paid-col,
+.internal-estimate-table td.paid-col,
+.event-modal-estimate-table th:nth-child(4),
+.event-modal-estimate-table td:nth-child(4) {
+  background: #f4f7ec !important;
+}
+.event-modal-estimate-table {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+.event-modal-estimate-table col.position-col { width: 28% !important; }
+.event-modal-estimate-table col.amount-col,
+.event-modal-estimate-table col.commission-col,
+.event-modal-estimate-table col.vat-col,
+.event-modal-estimate-table col.deduction-col { width: 10.5% !important; }
+.event-modal-estimate-table col.method-col { width: 11% !important; }
+.event-modal-estimate-table th,
+.event-modal-estimate-table td {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
 }

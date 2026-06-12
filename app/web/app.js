@@ -2131,7 +2131,7 @@ function injectManagerUxStyles() {
     }
 
 
-    /* v0.40.20: compact admin event editor */
+    /* v0.40.21: compact admin event editor columns */
     #eventModalBackdrop.admin-event-edit-mode .estimate-tabs {
       display: none !important;
     }
@@ -2143,39 +2143,46 @@ function injectManagerUxStyles() {
       max-width: 1500px !important;
     }
 
-    #eventModalBackdrop.admin-event-edit-mode #eventModalContent {
+    #eventModalBackdrop.admin-event-edit-mode #eventModalContent,
+    #eventModalBackdrop.admin-event-edit-mode .estimate-table-wrap {
       overflow-x: hidden !important;
     }
 
-    #eventModalBackdrop.admin-event-edit-mode .estimate-table-wrap {
-      overflow-x: auto !important;
-    }
-
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table {
-      min-width: 1320px !important;
+      width: 100% !important;
+      min-width: 0 !important;
       table-layout: fixed !important;
     }
 
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table th,
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table td {
-      padding: 7px 6px !important;
-      font-size: 12px !important;
+      padding: 6px 5px !important;
+      font-size: 11px !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
+      white-space: nowrap !important;
     }
 
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table input,
     #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table select {
-      min-height: 32px !important;
-      padding: 5px 7px !important;
-      font-size: 12px !important;
-      border-radius: 8px !important;
+      min-height: 28px !important;
+      padding: 4px 5px !important;
+      font-size: 11px !important;
+      border-radius: 7px !important;
     }
 
-    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-col {
-      width: 28px !important;
-      min-width: 28px !important;
-      max-width: 28px !important;
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-col,
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table col.drag-col {
+      width: 26px !important;
+      min-width: 26px !important;
+      max-width: 26px !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .drag-handle {
+      width: 16px !important;
+      height: 16px !important;
+      font-size: 10px !important;
+      border-radius: 4px !important;
     }
 
 
@@ -4908,10 +4915,20 @@ async function openEventModal(eventId) {
 
       <h3>Смета</h3>
       <div class="table-wrap estimate-table-wrap">
-        <table class="estimate-table">
+        <table class="estimate-table event-modal-estimate-table">
+          <colgroup>
+            <col class="position-col" />
+            <col class="amount-col" />
+            <col class="amount-col" />
+            <col class="amount-col" />
+            <col class="commission-col" />
+            <col class="vat-col" />
+            <col class="deduction-col" />
+            <col class="method-col" />
+          </colgroup>
           <thead>
             <tr>
-              <th>Позиция</th><th>Смета</th><th>Факт</th><th>Оплата</th><th>Комиссия</th><th>НДС</th><th>Вычеты</th><th>Способ</th>
+              <th>Позиция</th><th>Смета</th><th>Факт</th><th class="paid-col">Оплата</th><th class="commission-col">Комиссия</th><th class="vat-col">НДС</th><th class="deduction-col">Вычеты</th><th>Способ</th>
             </tr>
           </thead>
           <tbody>
@@ -4920,10 +4937,10 @@ async function openEventModal(eventId) {
                 <td><strong>${item.external_name}</strong></td>
                 <td>${formatMoney(item.external_amount)}</td>
                 <td>${formatMoney(item.amount_fact)}</td>
-                <td>${formatMoney(item.paid_amount)}</td>
-                <td>${formatMoney(internalCommissionValue(item))}</td>
-                <td>${formatMoney(itemVatVisible(item))}</td>
-                <td>${formatMoney(itemDeductionVisible(item))}</td>
+                <td class="paid-col">${formatMoney(item.paid_amount)}</td>
+                <td class="commission-col">${formatMoney(internalCommissionValue(item))}</td>
+                <td class="vat-col">${formatMoney(itemVatVisible(item))}</td>
+                <td class="deduction-col">${formatMoney(itemDeductionVisible(item))}</td>
                 <td>${paymentMethodLabel(item.payment_method)}</td>
               </tr>
             `).join("")}
@@ -6711,6 +6728,20 @@ function renderInternalEstimate(items, event, summary = null) {
 
     <div class="table-wrap estimate-table-wrap">
       <table class="estimate-table internal-estimate-table">
+        <colgroup>
+          <col class="drag-col" />
+          <col class="position-col" />
+          <col class="plan-col" />
+          <col class="fact-col" />
+          <col class="payment-col" />
+          <col class="bin-col" />
+          <col class="kgd-col" />
+          <col class="vat-col" />
+          <col class="deduction-col" />
+          <col class="commission-col" />
+          <col class="paid-col" />
+          <col class="actions-col" />
+        </colgroup>
         <thead>
           <tr>
             <th class="drag-col"></th>
@@ -6720,10 +6751,10 @@ function renderInternalEstimate(items, event, summary = null) {
             <th>Оплата</th>
             <th>БИН/ИИН</th>
             <th>КГД</th>
-            <th>НДС</th>
-            <th>Вычеты</th>
-            <th>Комиссия</th>
-            <th>Оплачено</th>
+            <th class="vat-col">НДС</th>
+            <th class="deduction-col">Вычеты</th>
+            <th class="commission-col">Комиссия</th>
+            <th class="paid-col">Оплачено</th>
             <th></th>
           </tr>
         </thead>
