@@ -1,22 +1,18 @@
-Contrast Finance Backend v0.38.8 — changed files only
+Contrast Finance Backend v0.38.9 — changed files only
 
-Base: v0.38.7.
+Purpose:
+- Закрыть баг авторизации: глава отдела мог войти через вкладку «Вход», хотя эта вкладка должна быть только для менеджеров.
 
-Changed files:
-- app/web/app.js
-- app/web/index.html
-- app/web/styles.css
+Changed:
+- app/api/routes/auth.py
+  * /auth/login теперь проверяет соответствие auth_mode и user.role:
+    - manager -> role manager
+    - admin -> role admin
+    - department_head -> role department_head
+  * неизвестный auth_mode отклоняется.
 - app/core/config.py
 - app/app/core/config.py
-- README.md
-- CHANGED_FILES_README.txt
-- app/README.md
-- app/CHANGED_FILES_README.txt
-
-Fix:
-- Login page no longer shows the top header.
-- Auth card remains as the only visible login block.
-- Auth slogan is smaller, centered, and has no green decorative line.
-- Header is restored automatically after successful login.
+- README.md / CHANGED_FILES_README.txt
 
 No DB migrations.
+No frontend behavior changes.

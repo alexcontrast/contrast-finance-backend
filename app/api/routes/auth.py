@@ -92,6 +92,8 @@ def find_department_head_user(db: Session, name: str | None) -> User | None:
 @router.post("/login", response_model=AuthTokenRead)
 def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     auth_mode = str(payload.auth_mode or "manager").strip()
+    if auth_mode not in {"manager", "admin", "department_head"}:
+        raise HTTPException(status_code=401, detail="Неверный тип входа")
 
     if auth_mode == "admin":
         user = find_admin_by_pin(db, payload.pin)
@@ -106,7 +108,12 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
     if auth_mode != "admin" and not verify_pin(user, payload.pin):
         raise HTTPException(status_code=401, detail="Неверное имя/телефон или PIN")
 
-    if auth_mode == "department_head" and user.role != "department_head":
+    expected_role_by_mode = {
+        "manager": "manager",
+        "admin": "admin",
+        "department_head": "department_head",
+    }
+    if user.role != expected_role_by_mode[auth_mode]:
         raise HTTPException(status_code=401, detail="Неверное имя/телефон или PIN")
 
     token = create_access_token(user)
