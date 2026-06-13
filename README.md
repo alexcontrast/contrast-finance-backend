@@ -1,5 +1,12 @@
 # Contrast Finance v0.40.10
 
+## v0.40.32
+
+- Added admin emergency manual override for event item VAT and deductions in admin event edit mode.
+- Intended only for legacy/migration corrections where invoice item tax fields were imported as zero but payment method/BIN are locked by active payment requests.
+- Does not unlock payment method, BIN/IIN, paid amount, or deletion restrictions.
+
+
 Хотфикс статуса денег: индивидуальное «Деньги в кассе» по заявке больше не поднимает статус денег на всё мероприятие и не трогает соседние заявки. Массовое направление сохраняется только сверху вниз: кнопка «Деньги в кассе» на мероприятии помечает все его активные заявки.
 
 Новых миграций нет.

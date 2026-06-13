@@ -2234,6 +2234,38 @@ function injectManagerUxStyles() {
     }
 
 
+    #eventModalBackdrop.admin-event-edit-mode .admin-edit-tools-row {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 10px !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .admin-tax-override-btn.active {
+      background: rgba(255, 196, 77, .18) !important;
+      border-color: rgba(204, 126, 0, .32) !important;
+      color: #8a5600 !important;
+      font-weight: 900 !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .admin-tax-override-note {
+      margin: -6px 0 10px !important;
+      padding: 8px 10px !important;
+      border: 1px solid rgba(204, 126, 0, .24) !important;
+      background: rgba(255, 242, 205, .75) !important;
+      border-radius: 12px !important;
+      color: #6f4a00 !important;
+      font-size: 12px !important;
+      font-weight: 800 !important;
+    }
+
+    #eventModalBackdrop.admin-event-edit-mode .internal-estimate-table .manual-tax-input {
+      background: rgba(255,255,255,.92) !important;
+      border-color: rgba(204, 126, 0, .28) !important;
+      font-weight: 900 !important;
+    }
+
+
     /* v0.37.04: статус денег "Отменено" */
     .status.cancelled.request-money-badge,
     .request-money-badge.cancelled,
@@ -2532,6 +2564,7 @@ const state = {
   managerDraftEventsById: {},
   managerDraftTempSeq: 1,
   adminEventEditModeId: null,
+  adminManualTaxOverrideByEventId: {},
   adminData: null,
   departmentHeadData: null,
   users: [],
@@ -5039,6 +5072,7 @@ async function closeAdminEventEditMode(eventId, reloadModal = true) {
     delete state.managerDraftItemsByEventId[key];
     delete state.managerDraftDeletedByEventId[key];
   }
+  if (key && state.adminManualTaxOverrideByEventId) delete state.adminManualTaxOverrideByEventId[key];
   state.adminEventEditModeId = null;
   $("eventModalBackdrop")?.classList.remove("admin-event-edit-mode");
   if (reloadModal && eventId) {
@@ -6261,8 +6295,8 @@ function setDraftItemValue(eventId, itemId, field, value) {
     item.external_price = amount;
     item.external_quantity = 1;
     item.external_days = 1;
-  } else if (["external_price", "external_quantity", "external_days", "amount_fact"].includes(field)) {
-    item[field] = value === "" ? null : Math.round(normalizeNumberInput(value));
+  } else if (["external_price", "external_quantity", "external_days", "amount_fact", "vat_amount", "deduction_amount"].includes(field)) {
+    item[field] = value === "" ? 0 : Math.round(normalizeNumberInput(value));
   } else {
     item[field] = value;
   }
@@ -6503,10 +6537,12 @@ function attachDraftInputs(eventId) {
       const field = input.getAttribute("data-item-field");
       setDraftItemValue(eventId, itemId, field, input.value);
 
-      if (["external_price", "external_amount_admin", "amount_fact"].includes(field)) {
+      if (["external_price", "external_amount_admin", "amount_fact", "vat_amount", "deduction_amount"].includes(field)) {
         const items = getDraftItems(eventId);
         const item = items.find((candidate) => String(candidate.id) === String(itemId));
-        input.value = field === "amount_fact" ? internalFactDisplayValue(item) : formatInputNumber(field === "external_amount_admin" ? externalRowAmount(item) : item?.external_price);
+        input.value = field === "amount_fact"
+          ? internalFactDisplayValue(item)
+          : formatInputNumber(field === "external_amount_admin" ? externalRowAmount(item) : item?.[field]);
       }
 
       if (["external_quantity", "external_days"].includes(field)) {
@@ -6531,6 +6567,7 @@ function refreshDraftVisibleCalculations(eventId) {
   const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
   state.currentManagerSummary = summary;
 
+  const isAdminEditMode = state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(eventId || 0);
   const activeTab = isAdminEditMode ? "internal" : (state.managerEstimateTab || "external");
   if (activeTab === "internal") {
     const grid = document.querySelector(".manager-summary-grid-six");
@@ -6895,16 +6932,34 @@ function renderExternalEstimate(items, eventId, event = null) {
   `;
 }
 
+
+function isAdminEventEditModeFor(event) {
+  return state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(event?.id || 0);
+}
+
+function adminManualTaxOverrideEnabled(eventId) {
+  return Boolean(state.adminManualTaxOverrideByEventId?.[String(eventId || "")]);
+}
+
+function manualTaxInputHtml(value, field, itemId, enabled) {
+  if (!enabled) return `<strong>${formatMoney(value)}</strong>`;
+  return rowInput(formatInputNumber(value), `data-item-field="${field}" data-item-id="${itemId}" class="manual-tax-input" inputmode="numeric"`);
+}
+
 function renderInternalEstimate(items, event, summary = null) {
   const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
   const agency = internalAgencyCommissionAmount(shownItems, event, summary);
   const simplifiedMarkup = internalSimplifiedMarkupAmount(shownItems, event, summary);
   const managerSalary = summaryNumber(summary, "manager_salary");
+  const isAdminEditMode = isAdminEventEditModeFor(event);
+  const manualTaxEnabled = isAdminEditMode && adminManualTaxOverrideEnabled(event?.id);
 
   return `
-    <div class="manager-add-position-row">
+    <div class="manager-add-position-row admin-edit-tools-row">
       <button class="secondary" id="addInternalPositionBtn">+ Добавить позицию</button>
+      ${isAdminEditMode ? `<button class="ghost admin-tax-override-btn ${manualTaxEnabled ? "active" : ""}" data-admin-tax-override-toggle="${event.id}">${manualTaxEnabled ? "✓ Ручная правка налогов включена" : "⚠️ Ручная правка НДС/Вычетов"}</button>` : ""}
     </div>
+    ${manualTaxEnabled ? `<div class="admin-tax-override-note">Аварийный режим: можно вручную исправить только НДС и Вычеты. Способ оплаты, БИН/ИИН и оплаченные поля остаются зафиксированы.</div>` : ""}
 
     <div class="table-wrap estimate-table-wrap">
       <table class="estimate-table internal-estimate-table">
@@ -6980,8 +7035,8 @@ function renderInternalEstimate(items, event, summary = null) {
                     `}
                   ` : "—")}
                 </td>
-                <td class="vat-col"><strong>${formatMoney(internalVatValue(item))}</strong></td>
-                <td class="deduction-col"><strong>${formatMoney(internalDeductionValue(item))}</strong></td>
+                <td class="vat-col">${manualTaxInputHtml(internalVatValue(item), "vat_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
+                <td class="deduction-col">${manualTaxInputHtml(internalDeductionValue(item), "deduction_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
                 <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
                 <td>${deleteButtonHtmlForItem(item)}</td>
               </tr>
@@ -8606,6 +8661,23 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-admin-event-cancel-edit");
       await closeAdminEventEditMode(eventId, true);
+    });
+  });
+
+
+  document.querySelectorAll("[data-admin-tax-override-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const eventId = button.getAttribute("data-admin-tax-override-toggle");
+      if (!eventId) return;
+      if (!state.adminManualTaxOverrideByEventId) state.adminManualTaxOverrideByEventId = {};
+      const key = String(eventId);
+      const currentlyEnabled = Boolean(state.adminManualTaxOverrideByEventId[key]);
+      if (!currentlyEnabled) {
+        const ok = confirm("Включить аварийную ручную правку НДС и Вычетов? Используй только для исправления старых/битых данных после миграции.");
+        if (!ok) return;
+      }
+      state.adminManualTaxOverrideByEventId[key] = !currentlyEnabled;
+      rerenderCurrentManagerCard();
     });
   });
 
