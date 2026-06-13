@@ -10,3 +10,7 @@ Frontend fix for admin/department-head event modal estimate table colors.
   - Commission and Method columns stay neutral/gray like regular amount columns.
 - Added explicit method-col classes to event modal estimate header/body/top rows.
 - Frontend cache-bust updated to v0.40.24.
+
+
+## v0.40.27
+- Сортировка менеджеров в обзоре админки и главдепа по выполнению плана от большего к меньшему.

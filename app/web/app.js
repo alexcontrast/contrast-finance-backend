@@ -1431,6 +1431,22 @@ function injectManagerUxStyles() {
     }
 
 
+    .manager-champion-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      background: rgba(105, 255, 0, .18);
+      border: 1px solid rgba(105, 255, 0, .32);
+      font-size: 12px;
+      font-style: normal;
+      line-height: 1;
+      flex: 0 0 auto;
+    }
+
+
     /* v0.35.92: мероприятия окрашиваются по отделу, не по статусу */
     .admin-events-table tbody tr.admin-event-row td,
     .admin-events-table tbody tr.admin-event-row td strong {
@@ -3536,6 +3552,28 @@ function renderDepartmentHeadTabs() {
   });
 }
 
+
+function sortManagersByPlanProgress(rows = []) {
+  return [...(rows || [])].sort((a, b) => {
+    const percentDiff = asNumber(b.completion_percent ?? b.percent) - asNumber(a.completion_percent ?? a.percent);
+    if (Math.abs(percentDiff) > 0.0001) return percentDiff;
+
+    const factDiff = asNumber(b.fact_income_amount ?? b.income) - asNumber(a.fact_income_amount ?? a.income);
+    if (Math.abs(factDiff) > 0.0001) return factDiff;
+
+    const eventsDiff = asNumber(b.events_count ?? b.eventsCount) - asNumber(a.events_count ?? a.eventsCount);
+    if (Math.abs(eventsDiff) > 0.0001) return eventsDiff;
+
+    const aName = String(a.name || a.manager?.name || "");
+    const bName = String(b.name || b.manager?.name || "");
+    return aName.localeCompare(bName, "ru");
+  });
+}
+
+function championBadge(rank, percent) {
+  return rank === 0 && asNumber(percent) > 0 ? `<em class="manager-champion-badge" title="Чемпион месяца">🏆</em>` : "";
+}
+
 function renderDepartmentHeadManagerRows(managers = []) {
   if (!managers.length) return `<div class="empty-state">Активных менеджеров отдела пока нет.</div>`;
 
@@ -3546,13 +3584,14 @@ function renderDepartmentHeadManagerRows(managers = []) {
         <span class="muted">${managers.length} чел.</span>
       </div>
       <div class="department-head-manager-list">
-        ${managers.map((manager) => {
+        ${sortManagersByPlanProgress(managers).map((manager, index) => {
           const percent = asNumber(manager.completion_percent);
           const eventsCount = Number(manager.events_count || 0);
           return `
             <article class="department-head-manager-row">
               <div class="department-head-manager-main">
                 <strong>${escapeHtml(manager.name || "Менеджер")}</strong>
+                ${championBadge(index, percent)}
                 ${eventsCount > 0 ? `<span class="manager-events-badge" title="Мероприятий">${eventsCount}</span>` : ""}
               </div>
               <div class="department-head-manager-progress">
@@ -5047,7 +5086,7 @@ function renderAdminOverview(data) {
     <section class="overview-departments-grid">
       ${departments.map((dep) => {
         const depClass = departmentClassByName(dep.department_name);
-        const depManagers = managerStats.filter((row) => Number(row.departmentId) === Number(dep.department_id));
+        const depManagers = sortManagersByPlanProgress(managerStats.filter((row) => Number(row.departmentId) === Number(dep.department_id)));
 
         return `
           <article class="department-overview-card ${depClass}">
@@ -5065,11 +5104,12 @@ function renderAdminOverview(data) {
             ${progressLine(dep.completion_percent)}
 
             <div class="manager-progress-list">
-              ${depManagers.length ? depManagers.map((row) => `
+              ${depManagers.length ? depManagers.map((row, index) => `
                 <div class="manager-progress-row ${row.isInactive ? "is-inactive" : ""}">
                   <div class="manager-progress-main">
                     <strong class="manager-progress-name">
                       <span>${escapeHtml(row.manager.name)}</span>
+                      ${championBadge(index, row.percent)}
                       ${row.eventsCount ? `<em class="manager-events-count-badge">${row.eventsCount}</em>` : ""}
                       ${row.isInactive ? `<em class="manager-inactive-badge">до конца месяца</em>` : ""}
                     </strong>
