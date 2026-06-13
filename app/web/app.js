@@ -4781,7 +4781,7 @@ function adminEventModalActions(event, requests = []) {
   const deleteStatusAllowed = ["draft", "revision"].includes(event?.status);
   const hasActivePayments = normalizedRequests.some((request) => !["rejected", "cancelled"].includes(request.status));
   const eventCashReceived = eventMoneyStatus(event) === "cash_received";
-  const hasCashReceivedMoney = eventCashReceived || normalizedRequests.some((request) => requestMoneyStatus(request) === "cash_received");
+  const hasCashReceivedMoney = normalizedRequests.some((request) => requestMoneyStatus(request) === "cash_received");
   const deleteDisabledReason = eventCashReceived
     ? "Нельзя удалить: деньги уже в кассе"
     : hasActivePayments
@@ -4796,7 +4796,9 @@ function adminEventModalActions(event, requests = []) {
   const canAdminEdit = event?.status !== "cancelled";
 
   const showCashReceived = !["cancelled"].includes(event?.status);
-  const canCashReceived = showCashReceived && !hasCashReceivedMoney;
+  // Кнопка мероприятия должна оставаться активной при частичных деньгах в кассе:
+  // по нажатию она проставляет cash_received всем остальным активным заявкам и самому мероприятию.
+  const canCashReceived = showCashReceived && !eventCashReceived;
 
   return `
     <div class="event-modal-actions">
@@ -4805,7 +4807,7 @@ function adminEventModalActions(event, requests = []) {
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
       ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
       ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
-      ${showCashReceived ? `<button class="event-action-btn event-cash-btn ${canCashReceived ? "" : "is-disabled"}" ${canCashReceived ? "" : `disabled title="Деньги уже в кассе"`} data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
+      ${showCashReceived ? `<button class="event-action-btn event-cash-btn ${canCashReceived ? "" : "is-disabled"}" ${canCashReceived ? "" : `disabled title="Мероприятие уже отмечено как Деньги в кассе"`} data-admin-event-cash-received="${event.id}">Деньги в кассе</button>` : ""}
     </div>
   `;
 }
