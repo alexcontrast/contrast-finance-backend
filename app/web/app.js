@@ -5024,7 +5024,7 @@ async function openAdminEventEditMode(eventId) {
     title.textContent = `✏️ ${event.client_name || "Без заказчика"} · ${event.title || "Без названия"}`;
     content.innerHTML = renderManagerEventCard(draftEvent, draftItems, previewSummary);
     attachManagerCreateWorkspaceActions();
-    attachCustomerPaymentActions(holder);
+    attachCustomerPaymentActions(content);
     attachDraftEventInputs(eventId);
     attachDraftInputs(eventId);
   } catch (error) {

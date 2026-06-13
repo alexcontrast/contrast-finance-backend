@@ -12,5 +12,5 @@ Frontend fix for admin/department-head event modal estimate table colors.
 - Frontend cache-bust updated to v0.40.24.
 
 
-## v0.40.27
+## v0.40.28
 - Сортировка менеджеров в обзоре админки и главдепа по выполнению плана от большего к меньшему.

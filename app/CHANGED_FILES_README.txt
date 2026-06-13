@@ -1,4 +1,17 @@
-Contrast Finance v0.40.27
+Contrast Finance v0.40.28
+
+Changed:
+- app/web/app.js
+- app/web/index.html
+- app/core/config.py
+- app/app/core/config.py
+- app/telegram_bot/main.py
+
+Fix:
+- Admin event-level "Деньги в кассе" button no longer disables just because one payment request already has money_status=cash_received.
+- Button disables only when the event itself is already cash_received.
+
+Contrast Finance v0.40.28
 
 Изменено:
 - Во вкладке "Обзор" админки менеджеры внутри каждого отдела сортируются по выполнению личного плана: сверху самый высокий процент, затем факт дохода, затем количество мероприятий.
