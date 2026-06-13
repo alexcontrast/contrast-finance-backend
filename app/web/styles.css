@@ -3089,3 +3089,37 @@ body.login-mode #loginScreen .auth-title::before {
   padding-left: 8px !important;
   padding-right: 8px !important;
 }
+
+/* v0.40.29 — badges with total monthly event count in admin and department-head overview */
+.overview-subline-with-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.overview-events-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(50, 168, 82, .13);
+  border: 1px solid rgba(50, 168, 82, .20);
+  color: #277235;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.overview-company-card .overview-events-count-badge {
+  min-width: 26px;
+  height: 24px;
+  font-size: 13px;
+}

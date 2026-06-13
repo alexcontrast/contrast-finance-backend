@@ -3574,6 +3574,11 @@ function championBadge(rank, percent) {
   return rank === 0 && asNumber(percent) > 0 ? `<em class="manager-champion-badge" title="Чемпион месяца">🏆</em>` : "";
 }
 
+function overviewEventsBadge(count, title = "Мероприятий за месяц") {
+  const value = Number(count || 0);
+  return `<em class="overview-events-count-badge" title="${escapeHtml(title)}">${value}</em>`;
+}
+
 function renderDepartmentHeadManagerRows(managers = []) {
   if (!managers.length) return `<div class="empty-state">Активных менеджеров отдела пока нет.</div>`;
 
@@ -3622,7 +3627,7 @@ function renderDepartmentHeadOverview(data) {
       <div class="manager-plan-main">
         <div class="manager-plan-row">
           <strong>Факт: ${formatMoney(data.fact_income_amount)} ₸</strong>
-          <strong>Цель: ${formatMoney(data.plan_amount)} ₸</strong>
+          <strong class="overview-subline-with-badge">Цель: ${formatMoney(data.plan_amount)} ₸ ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}</strong>
           <strong>${percent}%</strong>
         </div>
         ${progressLine(percent)}
@@ -5071,6 +5076,7 @@ function renderAdminOverview(data) {
   const companyPlan = asNumber(data.company_plan_amount);
   const companyFact = asNumber(data.company_fact_income_amount);
   const companyPercent = companyPlan > 0 ? Math.round((companyFact / companyPlan) * 10000) / 100 : 0;
+  const companyEventCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
 
   return `
     <section class="overview-company-card">
@@ -5078,7 +5084,7 @@ function renderAdminOverview(data) {
         <div>
           <div class="overview-label">Общий план</div>
           <div class="overview-big-number">${formatMoney(companyFact)} ₸</div>
-          <div class="overview-subline">Цель: ${formatMoney(companyPlan)} ₸ · ${companyPercent}%</div>
+          <div class="overview-subline overview-subline-with-badge">Цель: ${formatMoney(companyPlan)} ₸ · ${companyPercent}% ${overviewEventsBadge(companyEventCount, "Всего мероприятий компании за выбранный месяц")}</div>
         </div>
         <div class="overview-company-title">Компания</div>
       </div>
@@ -5099,7 +5105,7 @@ function renderAdminOverview(data) {
               </div>
               <div class="department-total">
                 <div>${formatMoney(dep.fact_income_amount)} ₸</div>
-                <span>${dep.completion_percent}% · цель ${formatMoney(dep.plan_amount)} ₸</span>
+                <span class="overview-subline-with-badge">${dep.completion_percent}% · цель ${formatMoney(dep.plan_amount)} ₸ ${overviewEventsBadge(dep.events_count, `Мероприятий отдела ${dep.department_name} за выбранный месяц`)}</span>
               </div>
             </div>
 

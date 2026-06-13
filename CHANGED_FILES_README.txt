@@ -10,3 +10,8 @@ Contrast Finance v0.40.27
 - python3 -m compileall -q app
 - python3 -m py_compile app/telegram_bot/main.py
 - node --check app/web/app.js
+## v0.40.29
+
+- Admin overview now shows total monthly events as green badges for the whole company and separately for each department.
+- Department-head overview now shows the department monthly event count as a badge near the department plan.
+- Counts include all events returned for the selected month, including completed/archive events.
