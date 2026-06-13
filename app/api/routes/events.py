@@ -15,6 +15,8 @@ from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
 from app.services.auth import get_current_user
 from app.services.authorization import get_event_or_404, require_event_edit, require_event_view
+from app.models.event_item import EventItem
+from app.services.event_calculator import calculate_event_summary_values, q
 
 
 router = APIRouter(tags=["events"])
@@ -32,6 +34,9 @@ class EventActionManagerRead(BaseModel):
     department_id: int | None = None
     department_name: str | None = None
 
+
+class EventCustomerPaymentPayload(BaseModel):
+    amount: Decimal
 
 
 
@@ -179,6 +184,7 @@ def create_event(
         client_calc_type=payload.client_calc_type,
         manager_percent=payload.manager_percent,
         agency_commission_amount=payload.agency_commission_amount,
+        customer_paid_amount=getattr(payload, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00"),
         agency_commission_spread_enabled=payload.agency_commission_spread_enabled,
         simplified_bank_tax_percent=payload.simplified_bank_tax_percent,
     )
@@ -291,6 +297,48 @@ def send_event_to_revision(
     return event
 
 
+
+
+def _event_customer_turnover(db: Session, event: Event) -> Decimal:
+    items = db.execute(
+        select(EventItem)
+        .where(EventItem.event_id == event.id, EventItem.is_deleted == False)  # noqa: E712
+        .order_by(EventItem.sort_order, EventItem.id)
+    ).scalars().all()
+    values = calculate_event_summary_values(event, items)
+    return q(values["turnover_with_vat"])
+
+
+@router.post("/events/{event_id}/customer-payment", response_model=EventRead)
+def add_event_customer_payment(
+    event_id: int,
+    payload: EventCustomerPaymentPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    amount = q(payload.amount)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Сумма оплаты заказчика должна быть больше 0")
+
+    turnover = _event_customer_turnover(db, event)
+    current_paid = q(getattr(event, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00"))
+    new_paid = current_paid + amount
+    if turnover > 0 and new_paid > turnover:
+        new_paid = turnover
+
+    event.customer_paid_amount = q(new_paid)
+    if turnover > 0 and event.customer_paid_amount >= turnover:
+        event.money_status = "cash_received"
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
 @router.post("/events/{event_id}/cash-received", response_model=EventRead)
 def mark_event_cash_received(
     event_id: int,
@@ -319,6 +367,7 @@ def mark_event_cash_received(
 
     # Рабочий статус мероприятия не трогаем. Фиксируем только деньги клиента.
     event.money_status = "cash_received"
+    event.customer_paid_amount = _event_customer_turnover(db, event)
     event.updated_at = now
 
     db.add(event)

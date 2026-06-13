@@ -31,6 +31,12 @@ v0.40.17: added no-JavaScript fallback multipart validation/import page for lega
 
 ## v0.40.28
 - Сортировка менеджеров в обзоре админки и главдепа по выполнению плана от большего к меньшему.
+## v0.40.30
+- Added admin customer prepayment box in event modal and admin edit summary: paid/remaining against event turnover.
+- Added event.customer_paid_amount with Alembic migration 0009.
+- Admin can add customer prepayments from the event modal; amounts are accumulated and capped at turnover.
+- Event-level “Деньги в кассе” now fills customer paid amount to full turnover and remaining becomes 0.
+
 ## v0.40.29
 
 - Admin overview now shows total monthly events as green badges for the whole company and separately for each department.

@@ -2258,7 +2258,7 @@ function injectManagerUxStyles() {
     }
 
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards {
-      grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+      grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
       gap: 12px !important;
     }
 
@@ -3388,6 +3388,94 @@ function metric(label, value) {
 function renderSummary(cards) {
   $("summaryCards").innerHTML = cards.map(([label, value]) => metric(label, value)).join("");
 }
+
+
+function customerPaidAmount(event, summary) {
+  return asNumber(summary?.customer_paid_amount ?? event?.customer_paid_amount ?? 0);
+}
+
+function customerRemainingAmount(event, summary) {
+  const turnover = customerTurnoverAmount(summary);
+  const paid = customerPaidAmount(event, summary);
+  return Math.max(0, turnover - paid);
+}
+
+function customerPaymentMetric(event, summary, editable = true) {
+  const turnover = customerTurnoverAmount(summary);
+  const paid = Math.min(customerPaidAmount(event, summary), turnover > 0 ? turnover : customerPaidAmount(event, summary));
+  const remaining = Math.max(0, turnover - paid);
+  const completed = turnover > 0 && remaining <= 0;
+  const inputId = `customerPaymentInput_${event?.id || ""}`;
+  return `
+    <div class="card metric customer-paid-metric ${completed ? "is-complete" : ""}">
+      <div class="label">Оплачено</div>
+      <div class="value">${formatMoney(paid)}</div>
+      <div class="customer-paid-rest">Остаток: ${formatMoney(remaining)}</div>
+      ${editable ? `
+        <div class="customer-payment-add-row">
+          <input id="${inputId}" data-event-customer-payment-input="${event.id}" inputmode="numeric" placeholder="Сумма" />
+          <button class="icon-btn" data-event-customer-payment-add="${event.id}" title="Добавить оплату заказчика">✓</button>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+async function addEventCustomerPayment(eventId) {
+  const input = document.querySelector(`[data-event-customer-payment-input="${eventId}"]`);
+  if (!input) return;
+  const amount = normalizeNumberInput(input.value);
+  if (!amount || amount <= 0) {
+    alert("Введите сумму оплаты заказчика");
+    input.focus();
+    return;
+  }
+
+  await api(`/events/${eventId}/customer-payment`, {
+    method: "POST",
+    body: JSON.stringify({ amount }),
+  });
+
+  input.value = "";
+  if (Number(state.adminEventEditModeId || 0) === Number(eventId)) {
+    await openAdminEventEditMode(eventId);
+  } else {
+    await openEventModal(eventId);
+  }
+  await loadDashboard();
+}
+
+function attachCustomerPaymentActions(root = document) {
+  root.querySelectorAll("[data-event-customer-payment-add]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const eventId = button.getAttribute("data-event-customer-payment-add");
+      try {
+        button.disabled = true;
+        await addEventCustomerPayment(eventId);
+      } catch (error) {
+        alert(error.message || "Не удалось добавить оплату заказчика");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+
+  root.querySelectorAll("[data-event-customer-payment-input]").forEach((input) => {
+    input.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const eventId = input.getAttribute("data-event-customer-payment-input");
+      try {
+        await addEventCustomerPayment(eventId);
+      } catch (error) {
+        alert(error.message || "Не удалось добавить оплату заказчика");
+      }
+    });
+  });
+}
+
 
 function progressLine(percent) {
   const p = Math.max(0, Math.min(100, Number(percent || 0)));
@@ -4936,6 +5024,7 @@ async function openAdminEventEditMode(eventId) {
     title.textContent = `✏️ ${event.client_name || "Без заказчика"} · ${event.title || "Без названия"}`;
     content.innerHTML = renderManagerEventCard(draftEvent, draftItems, previewSummary);
     attachManagerCreateWorkspaceActions();
+    attachCustomerPaymentActions(holder);
     attachDraftEventInputs(eventId);
     attachDraftInputs(eventId);
   } catch (error) {
@@ -4993,6 +5082,7 @@ async function openEventModal(eventId) {
           <div class="label">Доход компании</div>
           <div class="value">${formatMoney(summary.final_company_income)}</div>
         </div>
+        ${customerPaymentMetric(event, summary, true)}
       </div>
 
       <div class="divider"></div>
@@ -5039,6 +5129,7 @@ async function openEventModal(eventId) {
     `;
 
     installAdminEventModalActions(event, requests || []);
+    attachCustomerPaymentActions($("eventModalContent"));
     attachPaymentRequestActions();
     attachEventModalRequestFilter(requests || []);
   } catch (error) {
@@ -5939,6 +6030,7 @@ async function renderManagerEventDetail(eventId, options = {}) {
 
     holder.innerHTML = renderManagerEventCard(draftEvent, draftItems, previewSummary);
     attachManagerCreateWorkspaceActions();
+    attachCustomerPaymentActions(holder);
     attachDraftEventInputs(eventId);
     attachDraftInputs(eventId);
   } catch (error) {
@@ -6453,7 +6545,9 @@ function refreshDraftVisibleCalculations(eventId) {
           <div class="label">Доход компании</div>
           <div class="value">${formatMoney(summary.final_company_income)}</div>
         </div>
+        ${customerPaymentMetric(state.currentManagerEvent, summary, state.bootstrap?.user?.role === "admin")}
       `;
+      attachCustomerPaymentActions(grid);
     }
   }
 
@@ -6990,6 +7084,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
             <div class="label">Доход компании</div>
             <div class="value">${formatMoney(summary.final_company_income)}</div>
           </div>
+          ${customerPaymentMetric(event, summary, isAdminEditMode)}
         </div>
       ` : ""}
 

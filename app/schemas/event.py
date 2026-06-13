@@ -17,6 +17,7 @@ class EventCreate(BaseModel):
 
     manager_percent: Decimal = Decimal("21.00")
     agency_commission_amount: Decimal = Decimal("0.00")
+    customer_paid_amount: Decimal = Decimal("0.00")
     agency_commission_spread_enabled: bool = False
     simplified_bank_tax_percent: Decimal | None = None
 
@@ -35,6 +36,7 @@ class EventRead(BaseModel):
     client_calc_type: str
     manager_percent: Decimal
     agency_commission_amount: Decimal
+    customer_paid_amount: Decimal = Decimal("0.00")
     agency_commission_spread_enabled: str
     simplified_bank_tax_percent: Decimal | None
     created_at: datetime

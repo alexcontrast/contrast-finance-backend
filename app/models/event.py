@@ -34,6 +34,7 @@ class Event(Base):
     manager_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("21.00"))
 
     agency_commission_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
+    customer_paid_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     agency_commission_spread_enabled: Mapped[str] = mapped_column(String(10), nullable=False, default="false")
 
     # Only for simplified calculation type: one combined line/field.

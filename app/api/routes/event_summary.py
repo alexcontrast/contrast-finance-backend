@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +48,8 @@ def get_event_summary(
         external_total=q(values["external_total"]),
         fact_total=q(values["fact_total"]),
         paid_total=q(values["paid_total"]),
+        customer_paid_amount=q(getattr(event, "customer_paid_amount", 0) or 0),
+        customer_remaining_amount=q(max(Decimal("0.00"), values["turnover_with_vat"] - (getattr(event, "customer_paid_amount", 0) or 0))),
 
         regular_external_total=q(values["regular_external_total"]),
         regular_fact_total=q(values["regular_fact_total"]),

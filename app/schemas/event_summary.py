@@ -13,6 +13,8 @@ class EventSummaryRead(BaseModel):
     external_total: Decimal
     fact_total: Decimal
     paid_total: Decimal
+    customer_paid_amount: Decimal = Decimal("0.00")
+    customer_remaining_amount: Decimal = Decimal("0.00")
 
     regular_external_total: Decimal
     regular_fact_total: Decimal
