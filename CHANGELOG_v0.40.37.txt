@@ -1,0 +1,18 @@
+v0.40.37 — admin payment request cancel button fix
+
+Base: v0.40.36.
+
+Changed:
+- app/web/app.js
+  - Returned the admin UI button "Отменить" for active unpaid payment requests with statuses new / to_pay / tax_check_needed.
+  - The existing cancel handler is reused: PATCH /payment-requests/{id}/status with status=rejected.
+  - Paid requests still do not show the cancel button.
+
+- app/api/routes/payment_requests.py
+  - Added backend protection: status=rejected is rejected if the previous status is paid.
+  - This enforces the rule that paid requests cannot be cancelled by anyone, even if the UI or Telegram button is bypassed.
+
+Checks passed:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js

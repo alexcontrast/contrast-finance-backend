@@ -599,6 +599,12 @@ def update_payment_request_status(
 
     previous_status = request.status
 
+    if payload.status == "rejected" and previous_status == "paid":
+        raise HTTPException(
+            status_code=400,
+            detail="Оплаченную заявку нельзя отменить",
+        )
+
     item = db.get(EventItem, request.event_item_id)
 
     if payload.status == "cash_received":

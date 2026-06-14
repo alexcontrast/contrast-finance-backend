@@ -4345,6 +4345,10 @@ function adminRequestActions(request, mode = "regular") {
     return buttons.join("");
   }
 
+  if (["new", "to_pay", "tax_check_needed"].includes(status)) {
+    buttons.push(`<button class="small danger" data-cancel-request="${request.id}">Отменить</button>`);
+  }
+
   if (status !== "paid" && !["rejected", "cancelled"].includes(status)) {
     buttons.push(`<button class="small" data-set-request-status="${request.id}:paid">Оплачено</button>`);
   }
