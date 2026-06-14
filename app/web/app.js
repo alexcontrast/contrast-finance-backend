@@ -6647,7 +6647,7 @@ function refreshDraftVisibleCalculations(eventId) {
           <div class="label">Доход компании</div>
           <div class="value">${formatMoney(summary.final_company_income)}</div>
         </div>
-        ${customerPaymentMetric(state.currentManagerEvent, summary, state.bootstrap?.user?.role === "admin")}
+        ${isAdminEditMode ? customerPaymentMetric(state.currentManagerEvent, summary, true) : ""}
       `;
       attachCustomerPaymentActions(grid);
     }
@@ -7204,7 +7204,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
             <div class="label">Доход компании</div>
             <div class="value">${formatMoney(summary.final_company_income)}</div>
           </div>
-          ${customerPaymentMetric(event, summary, isAdminEditMode)}
+          ${isAdminEditMode ? customerPaymentMetric(event, summary, true) : ""}
         </div>
       ` : ""}
 
