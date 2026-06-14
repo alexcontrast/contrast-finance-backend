@@ -52,7 +52,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import check_taxpayer
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.35_NEW_SITE"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.36_NEW_SITE"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -531,13 +531,19 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
     for item in items:
         if item.item_type == "manager_salary":
             continue
-        base_amount = item.amount_fact if item.amount_fact is not None else item.external_amount
+        plan_amount = item.external_amount or Decimal("0.00")
+        fact_amount = item.amount_fact if item.amount_fact is not None else item.external_amount
+        base_amount = fact_amount if fact_amount is not None else plan_amount
+        paid_amount = item.paid_amount or Decimal("0.00")
         fixed_method = fixed_payment_method_for_item(db, item)
         rows.append({
             "itemId": str(item.id),
             "positionName": item.external_name,
             "budgetAmount": str(base_amount or 0),
-            "paidAmount": str(item.paid_amount or 0),
+            "planAmount": str(plan_amount or 0),
+            "factAmount": str(fact_amount or 0),
+            "paidAmount": str(paid_amount or 0),
+            "remainingAmount": str(money(base_amount) - money(paid_amount)),
             "paymentMethod": item.payment_method,
             "fixedPaymentMethod": fixed_method,
             "paymentMethodLocked": bool(fixed_method),
@@ -557,7 +563,10 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
             "itemId": SALARY_ITEM_ID,
             "positionName": "ЗП менеджера",
             "budgetAmount": str(manager_salary),
+            "planAmount": str(manager_salary),
+            "factAmount": str(manager_salary),
             "paidAmount": str(paid_salary),
+            "remainingAmount": str(manager_salary - paid_salary),
             "paymentMethod": None,
             "fixedPaymentMethod": None,
             "paymentMethodLocked": False,
@@ -890,6 +899,8 @@ def request_dict_for_card(request: PaymentRequest, db: Session) -> Dict[str, Any
     contractor_name = request.contractor_name_snapshot
     if request.payment_method == "invoice" and not contractor_name:
         contractor_name = contractor_name_for_invoice(db, item)
+    if request.payment_method == "self_employed" and not contractor_name:
+        contractor_name = self_employed_surname_from_item(item) or str(request.comment or "").strip()
     return {
         "paymentId": request.id,
         "managerName": manager.name if manager else "",
@@ -905,6 +916,10 @@ def request_dict_for_card(request: PaymentRequest, db: Session) -> Dict[str, Any
         "taxStatus": request.tax_status_snapshot,
         "taxStatusLabel": tax_status_label(request.tax_status_snapshot),
         "requestAmount": request.amount_requested,
+        "itemAmountPlan": request.item_amount_plan_snapshot,
+        "itemAmountFact": request.item_amount_fact_snapshot,
+        "itemPaidAmount": request.item_paid_amount_snapshot,
+        "itemRemainingAmount": request.item_remaining_snapshot,
         "managerComment": request.comment,
         "status": request.status,
         "paymentStatusLabel": payment_status_label(request.status),
@@ -920,12 +935,24 @@ def payment_text_from_request(request: PaymentRequest, title: str = "🧾 Зая
         if req is None:
             return f"{esc(title)}\n\nЗаявка #{esc(request.id)} не найдена"
         data = request_dict_for_card(req, db)
+
     card_line = f"\nКарта: <code>{esc(format_card_number(data.get('cardNumber')))}</code>" if data.get("cardNumber") else ""
     tax_line = f"\nНалоговый режим: <b>{esc(data.get('taxStatusLabel'))}</b>" if data.get("taxStatusLabel") else ""
+    method_label = data.get("requestPaymentType") or ""
     contractor = data.get("contractorName") or ""
+    contractor_line = ""
+    if method_label in {"По счету", "Самозанятый"} and contractor:
+        contractor_line = f"Подрядчик: {esc(contractor)}\n"
     comment_line = f"\nКомментарий: {esc(data.get('managerComment'))}" if data.get("managerComment") else ""
     money_line = f"\nСтатус денег: <b>{esc(data.get('moneyStatusLabel'))}</b>" if data.get("moneyStatusLabel") else ""
     warning_line = "\n⚠️ Сумма больше остатка по позиции" if data.get("warningOverRemaining") else ""
+    details_lines = (
+        f"Сумма заявки: <b>{fmt_money(data.get('requestAmount'))}</b>\n"
+        f"Цена по смете: {fmt_money(data.get('itemAmountPlan'))}\n"
+        f"Факт: {fmt_money(data.get('itemAmountFact'))}\n"
+        f"Оплачено: {fmt_money(data.get('itemPaidAmount'))}\n"
+        f"Остаток: <b>{fmt_money(data.get('itemRemainingAmount'))}</b>"
+    )
     return (
         f"{esc(title)}\n\n"
         f"№: <b>{esc(data.get('paymentId'))}</b>\n"
@@ -934,13 +961,12 @@ def payment_text_from_request(request: PaymentRequest, title: str = "🧾 Зая
         f"Мероприятие: {esc(data.get('eventName'))}\n"
         f"Дата: {esc(data.get('eventDate'))}\n\n"
         f"Позиция: <b>{esc(data.get('positionName'))}</b>\n"
-        f"Подрядчик: {esc(contractor)}\n"
+        f"{contractor_line}"
         f"Способ оплаты: {esc(data.get('requestPaymentType'))}{card_line}{tax_line}\n"
-        f"Сумма заявки: <b>{fmt_money(data.get('requestAmount'))}</b>{comment_line}{warning_line}\n\n"
+        f"{details_lines}{comment_line}{warning_line}\n\n"
         f"Статус оплаты: <b>{esc(data.get('paymentStatusLabel'))}</b>"
         f"{money_line}"
     )
-
 
 def admin_keyboard(request: PaymentRequest) -> Optional[InlineKeyboardMarkup]:
     if request.status in {"new", "to_pay", "tax_check_needed"}:
@@ -1357,6 +1383,24 @@ async def choose_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
 
+def bot_item_amount_lines(item: Dict[str, Any] | None) -> str:
+    if not item:
+        return ""
+    fact = item.get("factAmount") or item.get("budgetAmount") or 0
+    paid = item.get("paidAmount") or 0
+    remaining = item.get("remainingAmount")
+    if remaining is None or remaining == "":
+        remaining = money(fact) - money(paid)
+    return (
+        f"\n\nФакт: {fmt_money(fact)}"
+        f"\nОплачено: {fmt_money(paid)}"
+        f"\nОстаток: {fmt_money(remaining)}"
+    )
+
+
+def amount_prompt_for_selected_item(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return "Введи сумму заявки:" + bot_item_amount_lines(context.user_data.get("selected_item") or {})
+
 async def choose_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Открываю позицию…")
@@ -1415,14 +1459,14 @@ async def choose_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
 
     if method == "invoice":
         if fixed_method == "invoice" and selected_item.get("iinBin") and selected_item.get("iinBinLocked"):
-            await query.edit_message_text("Способ оплаты По счету уже закреплён и БИН/ИИН проверен.\n\nВведи сумму заявки:")
+            await query.edit_message_text("Способ оплаты По счету уже закреплён и БИН/ИИН проверен.\n\n" + amount_prompt_for_selected_item(context))
             return AMOUNT
         await query.edit_message_text("Введи БИН/ИИН подрядчика. Ровно 12 цифр:")
         return BIN_IIN
     if method == "self_employed":
-        await query.edit_message_text("Самозанятый: НДС 0, вычеты 10%.\n\nВведи сумму заявки:")
+        await query.edit_message_text("Самозанятый: НДС 0, вычеты 10%.\n\n" + amount_prompt_for_selected_item(context))
         return AMOUNT
-    await query.edit_message_text("Введи сумму заявки:")
+    await query.edit_message_text(amount_prompt_for_selected_item(context))
     return AMOUNT
 
 
@@ -1434,7 +1478,7 @@ async def get_bin_iin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         track_message_id(context, msg.message_id)
         return BIN_IIN
     context.user_data["bin_iin"] = bin_iin
-    msg = await update.message.reply_text("⏳ Проверю БИН/ИИН при отправке заявки. Теперь введи сумму заявки:")
+    msg = await update.message.reply_text("⏳ Проверю БИН/ИИН при отправке заявки.\n\n" + amount_prompt_for_selected_item(context))
     track_message_id(context, msg.message_id)
     return AMOUNT
 
