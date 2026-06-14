@@ -1,5 +1,10 @@
 # Contrast Finance v0.40.10
 
+## v0.40.33
+- Compact event-modal payment request table/buttons so action buttons fit inside the modal.
+- Added admin-only emergency event delete endpoint/button for test/broken events: cancels the event and all its payment requests even if money was marked cash received.
+
+
 ## v0.40.32
 
 - Added admin emergency manual override for event item VAT and deductions in admin event edit mode.

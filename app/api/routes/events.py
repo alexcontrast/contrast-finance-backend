@@ -417,6 +417,45 @@ def delete_event(
     return {"ok": True, "event_id": event.id}
 
 
+@router.delete("/events/{event_id}/admin-force-delete")
+def admin_force_delete_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    now = datetime.utcnow()
+    requests = db.execute(
+        select(PaymentRequest).where(PaymentRequest.event_id == event.id)
+    ).scalars().all()
+
+    changed_request_ids: list[int] = []
+    for request in requests:
+        if request.status not in INACTIVE_PAYMENT_STATUSES or getattr(request, "money_status", None) != "cancelled":
+            request.status = "cancelled"
+            request.money_status = "cancelled"
+            request.rejected_at = request.rejected_at or now
+            request.updated_at = now
+            changed_request_ids.append(request.id)
+            db.add(request)
+
+    # Аварийное удаление для тестовых/ошибочных мероприятий: в текущей схеме events
+    # физически не удаляем, а полностью убираем из рабочих списков через cancelled.
+    event.status = "cancelled"
+    event.money_status = "cancelled"
+    event.cancelled_at = now
+    event.updated_at = now
+    clear_event_shares(db, event.id)
+    db.add(event)
+
+    mark_event_payment_requests_for_telegram_sync(db, changed_request_ids)
+    db.commit()
+
+    return {"ok": True, "event_id": event.id, "cancelled_requests": len(changed_request_ids)}
+
+
 @router.post("/events/{event_id}/transfer", response_model=EventRead)
 def transfer_event(
     event_id: int,

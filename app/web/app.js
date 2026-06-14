@@ -2380,6 +2380,55 @@ function injectManagerUxStyles() {
       font-size: 11px !important;
     }
 
+    /* v0.40.33: компактная таблица заявок внутри модалки мероприятия */
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table {
+      min-width: 0 !important;
+      width: 100% !important;
+      table-layout: fixed !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(1),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(1) { width: 11% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(2),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(2) { width: 14% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(3),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(3) { width: 12% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(4),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(4) { width: 10% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(5),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(5) { width: 12% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(6),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(6),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(7),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(7) { width: 10% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(8),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(8) { width: 21% !important; }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th,
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td {
+      padding: 7px 6px !important;
+      font-size: 11px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table .request-actions-row {
+      gap: 4px !important;
+      flex-wrap: nowrap !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table .request-actions-row button {
+      min-height: 26px !important;
+      padding: 5px 7px !important;
+      font-size: 10px !important;
+      line-height: 1 !important;
+      border-radius: 10px !important;
+    }
+
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table .status {
+      font-size: 9.5px !important;
+      padding-left: 6px !important;
+      padding-right: 6px !important;
+    }
+
     @media (max-width: 900px) {
       #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards {
         grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -3133,7 +3182,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
 
     ${filtered.length ? `
       <div class="table-wrap">
-        <table>
+        <table class="event-requests-table">
           <thead>
             <tr>
               <th>Менеджер</th>
@@ -4930,6 +4979,7 @@ function adminEventModalActions(event, requests = []) {
     <div class="event-modal-actions">
       ${canAdminEdit ? `<button class="event-action-btn event-edit-btn" data-admin-event-edit="${event.id}" title="Редактировать мероприятие">✏️</button>` : ""}
       ${deleteStatusAllowed ? `<button class="danger-btn event-action-btn event-delete-btn ${canDelete ? "" : "is-disabled"}" ${canDelete ? "" : `disabled title="${deleteDisabledReason}"`} data-admin-event-delete="${event.id}" ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>` : ""}
+      ${event?.status !== "cancelled" ? `<button class="danger-btn event-action-btn event-force-delete-btn" data-admin-event-force-delete="${event.id}" title="Аварийно удалить тестовое мероприятие вместе с заявками">Аварийно удалить</button>` : ""}
       ${canRevision ? `<button class="event-action-btn event-revision-btn" data-admin-event-revision="${event.id}">На доработку</button>` : ""}
       ${canReturnToWork ? `<button class="event-action-btn event-return-btn" data-admin-event-revision="${event.id}">Вернуть в работу</button>` : ""}
       ${showAccept ? `<button class="event-action-btn event-accept-btn ${canAccept ? "" : "is-disabled"}" ${canAccept ? "" : "disabled title=\"Мероприятие уже принято\""} data-admin-event-accept="${event.id}">Принять</button>` : ""}
@@ -4970,6 +5020,21 @@ function installAdminEventModalActions(event, requests = []) {
       if (!confirm("Удалить мероприятие?")) return;
 
       await api(`/events/${event.id}`, { method: "DELETE" });
+      $("eventModalBackdrop").classList.add("hidden");
+      await loadDashboard();
+    });
+  }
+
+  const forceDeleteBtn = holder.querySelector("[data-admin-event-force-delete]");
+  if (forceDeleteBtn) {
+    forceDeleteBtn.addEventListener("click", async (clickEvent) => {
+      clickEvent.stopPropagation();
+      const firstConfirm = confirm("Аварийно удалить мероприятие? Оно будет убрано из рабочих списков, а все его заявки будут отменены. Используй только для тестовых/ошибочных мероприятий.");
+      if (!firstConfirm) return;
+      const secondConfirm = confirm("Точно аварийно удалить это мероприятие? Действие нельзя быстро откатить кнопкой.");
+      if (!secondConfirm) return;
+
+      await api(`/events/${event.id}/admin-force-delete`, { method: "DELETE" });
       $("eventModalBackdrop").classList.add("hidden");
       await loadDashboard();
     });
