@@ -5181,7 +5181,7 @@ async function openEventModal(eventId) {
           <div class="label">Доход компании</div>
           <div class="value">${formatMoney(summary.final_company_income)}</div>
         </div>
-        ${customerPaymentMetric(event, summary, true)}
+        ${state.bootstrap?.user?.role === "admin" ? customerPaymentMetric(event, summary, true) : ""}
       </div>
 
       <div class="divider"></div>

@@ -1,11 +1,19 @@
-Contrast Finance v0.40.32 changed-only
+v0.40.34: hide customer paid metric from department-head event modal
 
-Fix:
-- Admin event edit mode now has an emergency manual override for VAT and deductions.
-- Intended for legacy/migration corrections where invoice payment method and BIN/IIN are locked by active payment requests, but imported item VAT/deductions are wrong or zero.
-- Does not unlock payment method, BIN/IIN, paid amount, or delete restrictions.
+Contrast Finance v0.40.27
 
-Deploy:
-- Upload changed-only over current backend.
-- Redeploy web service.
-- Hard refresh browser.
+Изменено:
+- Во вкладке "Обзор" админки менеджеры внутри каждого отдела сортируются по выполнению личного плана: сверху самый высокий процент, затем факт дохода, затем количество мероприятий.
+- Во вкладке "Обзор" главдепа менеджеры отдела сортируются по тому же принципу.
+- Для первого менеджера в списке добавлен компактный значок 🏆, если есть положительное выполнение плана.
+- Обновлены версии и cache-bust фронта.
+
+Проверки:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js
+## v0.40.29
+
+- Admin overview now shows total monthly events as green badges for the whole company and separately for each department.
+- Department-head overview now shows the department monthly event count as a badge near the department plan.
+- Counts include all events returned for the selected month, including completed/archive events.
