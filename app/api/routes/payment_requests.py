@@ -625,24 +625,16 @@ def update_payment_request_status(
     if payload.status == "paid" and previous_status != "paid":
         request.paid_at = datetime.utcnow()
 
-        if item is not None:
-            item.paid_amount = item.paid_amount + request.amount_requested
-            item.updated_at = datetime.utcnow()
-            db.add(item)
-
     if payload.status == "rejected":
         request.rejected_at = datetime.utcnow()
         request.money_status = "cancelled"
 
-        # Refund: if an already paid request is cancelled, remove it from paid amount.
-        if previous_status in {"paid"} and item is not None:
-            item.paid_amount = item.paid_amount - request.amount_requested
-            if item.paid_amount < 0:
-                item.paid_amount = 0
-            item.updated_at = datetime.utcnow()
-            db.add(item)
+        # paid_amount is recalculated from all paid requests below.
 
     db.add(request)
+    db.flush()
+    if item is not None:
+        sync_item_paid_amount_from_requests(db, item.id)
     mark_payment_request_for_telegram_sync(db, request.id)
     db.commit()
     db.refresh(request)

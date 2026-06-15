@@ -10,6 +10,7 @@ from app.models.event_item import EventItem
 from app.models.user import User
 from app.schemas.event_summary import EventSummaryRead
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.payment_totals import sync_event_paid_amounts_from_requests
 from app.services.auth import get_current_user
 from app.services.authorization import require_event_view
 
@@ -28,6 +29,9 @@ def get_event_summary(
         raise HTTPException(status_code=404, detail="Event not found")
 
     require_event_view(current_user, event, db)
+
+    sync_event_paid_amounts_from_requests(db, event_id)
+    db.commit()
 
     result = db.execute(
         select(EventItem)

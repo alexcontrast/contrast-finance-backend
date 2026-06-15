@@ -11,6 +11,7 @@ from app.models.payment_request import PaymentRequest
 from app.models.user import User
 from app.schemas.event_item import EventItemCreate, EventItemRead
 from app.services.auth import get_current_user
+from app.services.payment_totals import sync_event_paid_amounts_from_requests
 from app.services.authorization import (
     get_event_or_404,
     get_item_or_404,
@@ -57,6 +58,9 @@ def list_event_items(
 ):
     event = get_event_or_404(db, event_id)
     require_event_view(current_user, event, db)
+
+    sync_event_paid_amounts_from_requests(db, event_id)
+    db.commit()
 
     result = db.execute(
         select(EventItem)

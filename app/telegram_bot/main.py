@@ -1618,18 +1618,10 @@ def update_request_status_in_db(payment_id: int, action: str, actor: str) -> Pay
             if request.status != "paid":
                 request.status = "paid"
                 request.paid_at = now
-                if item is not None:
-                    item.paid_amount = money(item.paid_amount) + money(request.amount_requested)
-                    item.updated_at = now
-                    db.add(item)
         elif action == "reject":
             request.status = "rejected"
             request.money_status = "cancelled"
             request.rejected_at = now
-            if previous_status == "paid" and item is not None:
-                item.paid_amount = max(Decimal("0.00"), money(item.paid_amount) - money(request.amount_requested))
-                item.updated_at = now
-                db.add(item)
         elif action == "cashin":
             # Индивидуальная кнопка Telegram «Деньги в кассе» относится только к этой заявке.
             # Она не должна помечать всё мероприятие и соседние заявки.
@@ -1647,6 +1639,9 @@ def update_request_status_in_db(payment_id: int, action: str, actor: str) -> Pay
             raise RuntimeError("Неизвестное действие")
         request.updated_at = now
         db.add(request)
+        db.flush()
+        if item is not None:
+            sync_item_paid_amount_from_requests(db, item.id)
         db.commit()
         db.refresh(request)
         return request
