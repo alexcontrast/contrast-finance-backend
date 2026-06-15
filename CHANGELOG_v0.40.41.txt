@@ -1,0 +1,6 @@
+Contrast Finance v0.40.41
+
+- Website payment request modal: added optional field "Комментарий" for all payment methods.
+- Website-created payment requests now save this optional comment to payment_requests.comment.
+- Telegram cards already render "Комментарий" only when comment exists, so website comments now appear there too.
+- Self-employed surname is now sent separately from the optional manager comment for website requests, so contractor surname and comment no longer conflict.

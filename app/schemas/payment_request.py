@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class PaymentRequestCreate(BaseModel):
     amount_requested: Decimal = Field(description="Сумма заявки — главное поле карточки")
     comment: str | None = None
+    # Separate service field for website: surname is required for self-employed,
+    # while comment remains an optional manager comment for Telegram/card display.
+    self_employed_surname: str | None = None
 
     # Optional override. If empty, system uses payment_method from event item.
     payment_method: str | None = Field(default=None, description="invoice / card / cash / self_employed")

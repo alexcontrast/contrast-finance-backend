@@ -272,10 +272,11 @@ def validate_payment_request_rules(item: EventItem, payment_method: str, payload
             )
 
     if payment_method == "self_employed":
-        if not comment_has_surname(payload.comment):
+        surname = (getattr(payload, "self_employed_surname", None) or payload.comment or "").strip()
+        if not comment_has_surname(surname):
             raise HTTPException(
                 status_code=400,
-                detail="Для Самозанятого фамилия обязательна в комментарии",
+                detail="Для Самозанятого фамилия обязательна",
             )
 
     if payment_method not in {"invoice", "card", "cash", "self_employed"}:
@@ -451,7 +452,7 @@ def create_payment_request(
         ),
         contractor_name_snapshot=(
             invoice_contractor_name_from_item(db, item) if payment_method == "invoice"
-            else (payload.comment if payment_method == "self_employed" else None)
+            else (((getattr(payload, "self_employed_surname", None) or payload.comment or "").strip() or None) if payment_method == "self_employed" else None)
         ),
         iin_bin_snapshot=item.iin_bin if payment_method == "invoice" else None,
         tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
