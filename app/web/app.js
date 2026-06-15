@@ -2736,6 +2736,21 @@ function formatDateRu(value) {
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
 }
 
+function formatMonthListDay(value) {
+  if (!value) return "";
+  const parts = String(value).slice(0, 10).split("-");
+  if (parts.length !== 3) return value;
+  const day = Number(parts[2]);
+  if (!Number.isFinite(day) || day <= 0) return parts[2] || value;
+  return String(day);
+}
+
+function monthListDateCell(value) {
+  const fullDate = formatDateRu(value) || value || "";
+  const day = formatMonthListDay(value) || fullDate;
+  return `<td class="date-day-cell nowrap" title="${escapeHtml(fullDate)}">${escapeHtml(day)}</td>`;
+}
+
 function asNumber(value) {
   return Number(value || 0);
 }
@@ -3898,7 +3913,7 @@ function renderDepartmentHeadEventsTable(events = []) {
         <tbody>
           ${sortedEvents.map((event) => `
             <tr class="clickable-row admin-event-row ${event.is_shared ? "department-mixed" : departmentClassByName(dataSafeDepartmentName(event))}" data-event-id="${event.id}">
-              <td class="nowrap">${formatDateRu(event.event_date) || event.event_date || ""}</td>
+              ${monthListDateCell(event.event_date)}
               <td>${escapeHtml(event.manager_name || managerNameById(event.manager_id) || "")}</td>
               <td><strong>${escapeHtml(event.client_name || "")}</strong></td>
               <td>${escapeHtml(event.title || "")}${event.is_shared ? `<span class="mini-chip">соавт.</span>` : ""}</td>
@@ -4006,7 +4021,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
         <tbody>
           ${filtered.map((request) => `
             <tr>
-              <td>${formatDateRu(paymentRequestDateValue(request)) || paymentRequestDateValue(request) || ""}</td>
+              ${monthListDateCell(paymentRequestDateValue(request))}
               <td>${escapeHtml(request.manager_name || "")}</td>
               <td>${escapeHtml(paymentRequestClientName(request))}</td>
               <td>${escapeHtml(paymentRequestEventTitle(request))}</td>
@@ -4189,7 +4204,7 @@ function renderEventsTable(events, allowClick = false) {
         <tbody>
           ${sortedEvents.map((event) => `
             <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${adminEventDepartmentToneClass(event)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
-              <td class="nowrap">${formatDateRu(event.event_date) || event.event_date || ""}</td>
+              ${monthListDateCell(event.event_date)}
               <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
               <td><strong>${event.client_name || ""}</strong></td>
               <td>${event.title || ""}</td>
@@ -4590,7 +4605,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
           <tbody>
             ${filtered.map((request) => `
               <tr>
-                <td>${formatDateRu(paymentRequestDateValue(request)) || paymentRequestDateValue(request) || ""}</td>
+                ${monthListDateCell(paymentRequestDateValue(request))}
                 <td>${paymentRequestManagerName(request)}</td>
                 <td>${paymentRequestClientName(request)}</td>
                 <td>${paymentRequestEventTitle(request)}</td>
@@ -8137,6 +8152,10 @@ function renderManagerPaymentModal(eventId) {
 
       <div id="paymentExtraFields"></div>
 
+      <label>Комментарий
+        <textarea id="paymentCommentInput" rows="2" placeholder="Необязательно"></textarea>
+      </label>
+
       <div class="modal-actions">
         <button class="secondary" id="paymentCreateBtn" type="button">Создать заявку</button>
         <button class="ghost" id="paymentCancelBtn" type="button">Отмена</button>
@@ -8509,6 +8528,10 @@ function paymentPayloadAmount() {
   return Math.round(normalizeNumberInput(String($("paymentAmountInput")?.value || "").replace(/\s/g, "")));
 }
 
+function paymentPayloadComment() {
+  return String($("paymentCommentInput")?.value || "").trim() || null;
+}
+
 async function persistItemBeforePayment(eventId, item) {
   // Заявка на оплату не должна пытаться сохранить само мероприятие.
   // На статусах «На проверке»/«Принято» редактирование мероприятия закрыто,
@@ -8614,16 +8637,17 @@ async function submitManagerPayment(eventId) {
             amount_requested: amount,
             payment_method: method,
             card_number: card,
-            comment: "ЗП менеджера",
+            comment: paymentPayloadComment() || "ЗП менеджера",
           }),
         });
       } else {
-        let comment = null;
+        const managerComment = paymentPayloadComment();
+        let selfEmployedSurname = null;
 
         if (method === "invoice") {
-          comment = await prepareInvoicePaymentItem(eventId, item);
+          await prepareInvoicePaymentItem(eventId, item);
         } else if (method === "self_employed") {
-          comment = await prepareSelfEmployedPaymentItem(eventId, item);
+          selfEmployedSurname = await prepareSelfEmployedPaymentItem(eventId, item);
           item = selectedPaymentItem(eventId) || item;
         } else {
           item = await prepareSimplePaymentItem(eventId, item, method);
@@ -8641,7 +8665,8 @@ async function submitManagerPayment(eventId) {
             amount_requested: amount,
             payment_method: method,
             card_number: card,
-            comment,
+            comment: managerComment,
+            self_employed_surname: selfEmployedSurname,
           }),
         });
 
@@ -10016,6 +10041,22 @@ async function loadUsersForAdmin() {
   }
 }
 
+
+function renderDashboardLoading(role) {
+  const title = role === "admin" ? "Админка" : role === "department_head" ? "Кабинет отдела" : "Мои мероприятия";
+  const content = document.getElementById("dashboardContent");
+  if (document.getElementById("dashboardTitle")) document.getElementById("dashboardTitle").textContent = title;
+  if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "Загружаем данные месяца…";
+  if (content) {
+    content.innerHTML = `
+      <div class="card dashboard-loading-card">
+        <strong>Кабинет открыт</strong>
+        <p>Данные месяца подгружаются отдельно, чтобы вход не ждал весь отчёт.</p>
+      </div>
+    `;
+  }
+}
+
 async function loadDashboard() {
   const user = state.bootstrap.user;
   const month = selectedMonthValue();
@@ -10023,8 +10064,11 @@ async function loadDashboard() {
 
   if (user.role === "admin") {
     try {
-      await loadUsersForAdmin();
-      renderAdminDashboard(await api(`/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`));
+      const [usersResult, dashboard] = await Promise.all([
+        loadUsersForAdmin(),
+        api(`/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
+      ]);
+      renderAdminDashboard(dashboard);
     } catch (error) {
       console.warn("Не удалось загрузить admin-dashboard за период", month, error);
       renderAdminEmptyDashboard(month, error);
@@ -10073,7 +10117,13 @@ async function boot() {
     setupMonthYearSelectors();
     attachMonthYearSelectors();
 
-    await loadDashboard();
+    renderDashboardLoading(user.role);
+    loadDashboard().catch((error) => {
+      console.warn("Не удалось загрузить dashboard", error);
+      if (user.role === "admin") renderAdminEmptyDashboard(selectedMonthValue(), error);
+      else if (user.role === "manager") renderManagerDashboard(emptyManagerDashboard(selectedMonthValue()), []);
+      else if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "Не удалось загрузить данные";
+    });
   } catch (error) {
     console.warn(error);
     localStorage.removeItem("cf_token");
