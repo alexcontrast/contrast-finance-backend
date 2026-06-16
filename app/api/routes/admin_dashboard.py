@@ -1,9 +1,11 @@
 from datetime import date
 from decimal import Decimal
+import logging
+from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import extract, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.models.department import Department
@@ -27,6 +29,7 @@ from app.services.auth import require_roles
 
 
 router = APIRouter(tags=["admin_dashboard"])
+logger = logging.getLogger("contrast.performance")
 
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
 
@@ -172,7 +175,14 @@ def get_admin_dashboard(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
+    perf_total_started = perf_counter()
+    perf_marks: dict[str, float] = {}
+
+    def mark_perf(name: str) -> None:
+        perf_marks[name] = perf_counter()
+
     month_date = parse_month(month)
+    mark_perf("parse")
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
     # Админка не должна падать, если на выбранный месяц ещё не задан план.
@@ -198,16 +208,26 @@ def get_admin_dashboard(
     active_users = [user for user in all_users if user.is_active]
     user_by_id = {user.id: user for user in all_users}
     dept_by_id = {department.id: department for department in departments}
+    mark_perf("base_sql")
 
-    event_query = select(Event).where(
-        extract("year", Event.event_date) == month_date.year,
-        extract("month", Event.event_date) == month_date.month,
-        Event.status != "cancelled",
+    event_query = (
+        select(Event)
+        .options(
+            selectinload(Event.items),
+            selectinload(Event.payment_requests),
+            selectinload(Event.shares),
+        )
+        .where(
+            extract("year", Event.event_date) == month_date.year,
+            extract("month", Event.event_date) == month_date.month,
+            Event.status != "cancelled",
+        )
     )
     if not include_drafts:
         event_query = event_query.where(Event.status != "draft")
 
     events = db.execute(event_query.order_by(Event.event_date, Event.id)).scalars().all()
+    mark_perf("events_sql")
 
     event_rows = []
     department_fact_by_id = {department.id: Decimal("0.00") for department in departments}
@@ -215,19 +235,16 @@ def get_admin_dashboard(
     department_draft_event_ids_by_id = {department.id: set() for department in departments}
 
     for event in events:
-        items = db.execute(
-            select(EventItem)
-            .where(EventItem.event_id == event.id, EventItem.is_deleted == False)  # noqa: E712
-            .order_by(EventItem.sort_order, EventItem.id)
-        ).scalars().all()
+        items = sorted(
+            [item for item in (event.items or []) if item.is_deleted is False],
+            key=lambda item: (item.sort_order or 0, item.id or 0),
+        )
 
         summary = calculate_event_summary_values(event, items)
         full_final_income = money(summary["final_company_income"])
         full_manager_salary = money(summary["manager_salary"])
 
-        event_payment_requests = db.execute(
-            select(PaymentRequest).where(PaymentRequest.event_id == event.id)
-        ).scalars().all()
+        event_payment_requests = list(event.payment_requests or [])
 
         requests_count = len(event_payment_requests)
         active_requests_count = len([
@@ -273,6 +290,8 @@ def get_admin_dashboard(
                 )
             )
 
+    mark_perf("events_calc")
+
     department_rows = []
     company_fact = Decimal("0.00")
     company_expenses = Decimal("0.00")
@@ -303,6 +322,8 @@ def get_admin_dashboard(
             )
         )
 
+    mark_perf("departments_calc")
+
     if events:
         payment_query = (
             select(PaymentRequest)
@@ -313,6 +334,8 @@ def get_admin_dashboard(
         payment_requests = db.execute(payment_query).scalars().all()
     else:
         payment_requests = []
+
+    mark_perf("payments_sql")
 
     event_by_id = {event.id: event for event in events}
 
@@ -333,10 +356,16 @@ def get_admin_dashboard(
         )
         for request in payment_requests
     ]
+    mark_perf("payments_rows")
 
     closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
+    mark_perf("closing_sql")
 
-    return AdminDashboardRead(
+    items_count = sum(len([item for item in (event.items or []) if item.is_deleted is False]) for event in events)
+    requests_count = sum(len(event.payment_requests or []) for event in events)
+    shares_count = sum(len(event.shares or []) for event in events)
+
+    dashboard = AdminDashboardRead(
         month=month_date,
         include_drafts=include_drafts,
         company_plan_amount=q(plan.company_plan_amount),
@@ -349,3 +378,30 @@ def get_admin_dashboard(
         payment_requests=payment_rows,
         closing=build_closing(closing),
     )
+    mark_perf("response_model")
+
+    def delta(start_name: str, end_name: str) -> float:
+        return perf_marks[end_name] - perf_marks[start_name]
+
+    logger.warning(
+        "PERF admin-dashboard month=%s include_drafts=%s events=%s items=%s requests=%s shares=%s "
+        "base_sql=%.3fs events_sql=%.3fs events_calc=%.3fs departments_calc=%.3fs "
+        "payments_sql=%.3fs payments_rows=%.3fs closing_sql=%.3fs response_model=%.3fs total=%.3fs",
+        month,
+        include_drafts,
+        len(events),
+        items_count,
+        requests_count,
+        shares_count,
+        delta("parse", "base_sql"),
+        delta("base_sql", "events_sql"),
+        delta("events_sql", "events_calc"),
+        delta("events_calc", "departments_calc"),
+        delta("departments_calc", "payments_sql"),
+        delta("payments_sql", "payments_rows"),
+        delta("payments_rows", "closing_sql"),
+        delta("closing_sql", "response_model"),
+        perf_marks["response_model"] - perf_total_started,
+    )
+
+    return dashboard
