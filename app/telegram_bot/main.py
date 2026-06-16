@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import logging
 import os
 import re
 import time
@@ -53,7 +54,7 @@ from app.services.kgd.client import check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.42_BUTTONS_FIX"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.43_SAFE_ACTION_ROLLBACK"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -88,6 +89,17 @@ TELEGRAM_DIRTY_MARKER_AT = datetime(2000, 1, 1)
 # without saved Telegram message rows are not sent again automatically.
 BOT_STARTED_AT = datetime.utcnow()
 TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START = env_bool("TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START", False)
+
+
+logger = logging.getLogger(__name__)
+
+
+def admin_error_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Вернуть кнопки", callback_data=f"admin:restore:{request_id}")]])
+
+
+def manager_error_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Вернуть кнопку", callback_data=f"manager:restore:{request_id}")]])
 
 (
     BIND_PHONE,
@@ -1648,14 +1660,36 @@ def update_request_status_in_db(payment_id: int, action: str, actor: str) -> Pay
         return request
 
 
+async def restore_clicked_card(query, request_id: int, is_admin: bool) -> None:
+    with db_session() as db:
+        request = db.get(PaymentRequest, int(request_id))
+        if request is None:
+            raise RuntimeError("Заявка не найдена")
+    await query.edit_message_text(
+        text=payment_text_from_request(request),
+        parse_mode="HTML",
+        reply_markup=admin_keyboard(request) if is_admin else manager_keyboard(request),
+    )
+
+
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Обновляю статус…")
     if query.from_user.id != ADMIN_CHAT_ID:
         await query.answer("Эта кнопка только для админа.", show_alert=True)
         return
     _, action, payment_id = query.data.split(":", 2)
+    if action == "restore":
+        try:
+            await restore_clicked_card(query, int(payment_id), is_admin=True)
+            await query.answer("Кнопки восстановлены")
+        except Exception as err:
+            logger.exception("Failed to restore admin card for payment_request_id=%s", payment_id)
+            await query.answer(f"Не удалось восстановить карточку: {err}", show_alert=True)
+        return
+    await query.answer("Обновляю статус…")
     try:
+        # Сначала показываем пользователю, что действие принято, но не теряем исходные кнопки:
+        # при любой ошибке ниже карточка будет восстановлена из текущего состояния БД.
         await query.edit_message_reply_markup(reply_markup=None)
         request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), action, "admin")
         await sync_request_cards(
@@ -1666,16 +1700,40 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         await query.answer("Готово")
     except Exception as err:
-        await query.answer(str(err), show_alert=True)
+        logger.exception("Admin Telegram action failed: action=%s payment_request_id=%s", action, payment_id)
+        try:
+            await restore_clicked_card(query, int(payment_id), is_admin=True)
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"⚠️ Не удалось выполнить действие по заявке №{payment_id}: {err}\nКарточка восстановлена, можно попробовать ещё раз.",
+            )
+        except Exception:
+            logger.exception("Failed to restore admin card after action error: action=%s payment_request_id=%s", action, payment_id)
+            try:
+                await query.edit_message_text(
+                    f"⚠️ Не удалось выполнить действие по заявке №{payment_id}: {err}",
+                    reply_markup=admin_error_keyboard(int(payment_id)),
+                )
+            except Exception:
+                await query.answer(str(err), show_alert=True)
 
 
 async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Отменяю заявку…")
     _, action, payment_id = query.data.split(":", 2)
+    if action == "restore":
+        try:
+            await restore_clicked_card(query, int(payment_id), is_admin=False)
+            await query.answer("Кнопка восстановлена")
+        except Exception as err:
+            logger.exception("Failed to restore manager card for payment_request_id=%s", payment_id)
+            await query.answer(f"Не удалось восстановить карточку: {err}", show_alert=True)
+        return
     if action != "cancel":
         return
+    await query.answer("Отменяю заявку…")
     try:
+        await query.edit_message_reply_markup(reply_markup=None)
         request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), "cancel", "manager")
         await sync_request_cards(
             context.bot,
@@ -1685,10 +1743,22 @@ async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TY
         )
         await context.bot.send_message(chat_id=query.from_user.id, text="Заявка отменена.", reply_markup=MAIN_KEYBOARD)
     except Exception as err:
+        logger.exception("Manager Telegram action failed: action=%s payment_request_id=%s", action, payment_id)
         try:
-            await query.edit_message_text(f"Не удалось отменить заявку: {err}")
+            await restore_clicked_card(query, int(payment_id), is_admin=False)
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"⚠️ Не удалось отменить заявку №{payment_id}: {err}\nКарточка восстановлена, можно попробовать ещё раз.",
+            )
         except Exception:
-            await query.answer(str(err), show_alert=True)
+            logger.exception("Failed to restore manager card after action error: payment_request_id=%s", payment_id)
+            try:
+                await query.edit_message_text(
+                    f"⚠️ Не удалось отменить заявку №{payment_id}: {err}",
+                    reply_markup=manager_error_keyboard(int(payment_id)),
+                )
+            except Exception:
+                await query.answer(str(err), show_alert=True)
 
 
 async def poll_site_requests(context: ContextTypes.DEFAULT_TYPE):
