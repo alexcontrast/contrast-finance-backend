@@ -1698,7 +1698,9 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             "🧾 Заявка обновлена",
             extra_messages=[(query.message.chat_id, query.message.message_id)] if query.message else None,
         )
-        await query.answer("Готово")
+        # callback_query.answer() уже был вызван выше ("Обновляю статус…").
+        # Telegram callback query можно подтверждать только один раз; повторный answer
+        # после успешной обработки даёт ошибку "Query is too old...", хотя статус уже изменён.
     except Exception as err:
         logger.exception("Admin Telegram action failed: action=%s payment_request_id=%s", action, payment_id)
         try:
