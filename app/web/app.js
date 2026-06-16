@@ -2926,16 +2926,55 @@ function isButtonSoftLoadingAllowed(button) {
 }
 
 function setSoftButtonLoading(button, isLoading) {
-  if (!isButtonSoftLoadingAllowed(button)) return;
+  if (!isButtonSoftLoadingAllowed(button) && !(button?.dataset?.softLoadingActive === "true")) return;
 
   if (isLoading) {
+    button.dataset.softLoadingActive = "true";
+    button.dataset.softOriginalDisabled = button.disabled ? "true" : "false";
     button.classList.add("soft-loading");
     button.setAttribute("aria-busy", "true");
+    button.disabled = true;
     return;
   }
 
   button.classList.remove("soft-loading");
   button.removeAttribute("aria-busy");
+  if (button.dataset.softOriginalDisabled !== "true") {
+    button.disabled = false;
+  }
+  delete button.dataset.softOriginalDisabled;
+  delete button.dataset.softLoadingActive;
+}
+
+async function runPatchUpdateAction(button, action, onSuccess, options = {}) {
+  if (button?.disabled && button?.dataset?.softLoadingActive !== "true") return null;
+
+  const loadingText = options.loadingText || "…";
+  const errorPrefix = options.errorPrefix || "Не удалось выполнить действие";
+  const useTextLoading = options.useTextLoading !== false;
+
+  if (useTextLoading) {
+    setButtonLoading(button, true, loadingText);
+  } else {
+    setSoftButtonLoading(button, true);
+  }
+
+  try {
+    const result = await action();
+    if (typeof onSuccess === "function") {
+      await onSuccess(result, button);
+    }
+    return result;
+  } catch (error) {
+    alert(error?.message ? `${errorPrefix}: ${error.message}` : errorPrefix);
+    throw error;
+  } finally {
+    if (useTextLoading) {
+      setButtonLoading(button, false);
+    } else {
+      setSoftButtonLoading(button, false);
+    }
+  }
 }
 
 function installGlobalSoftButtonLoading() {
@@ -2953,10 +2992,6 @@ function installGlobalSoftButtonLoading() {
       const button = event?.target?.closest ? event.target.closest("button") : null;
       const shouldSoftLoad = isButtonSoftLoadingAllowed(button) && !button.classList.contains("is-loading");
 
-      if (shouldSoftLoad) {
-        setSoftButtonLoading(button, true);
-      }
-
       let result;
       try {
         result = listener.call(this, event);
@@ -2966,10 +3001,12 @@ function installGlobalSoftButtonLoading() {
       }
 
       if (result && typeof result.finally === "function") {
+        if (shouldSoftLoad) setSoftButtonLoading(button, true);
         result.finally(() => {
           if (shouldSoftLoad) setSoftButtonLoading(button, false);
         });
       } else if (shouldSoftLoad) {
+        setSoftButtonLoading(button, true);
         window.setTimeout(() => setSoftButtonLoading(button, false), 450);
       }
 
@@ -4733,15 +4770,15 @@ function attachPaymentRequestActions() {
       const id = button.getAttribute("data-cancel-request");
       if (!confirm(`Отменить заявку #${id}?`)) return;
 
-      try {
-        const updatedRequest = await api(`/payment-requests/${id}/status`, {
+      await runPatchUpdateAction(
+        button,
+        () => api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected" }),
-        });
-        await handlePaymentRequestActionCompleted(updatedRequest, button);
-      } catch (error) {
-        alert(error.message);
-      }
+        }),
+        handlePaymentRequestActionCompleted,
+        { loadingText: "…", errorPrefix: "Не удалось отменить заявку" }
+      );
     });
   });
 
@@ -4757,15 +4794,15 @@ function attachPaymentRequestActions() {
 
       if (!confirm(`Заявку #${id} ${labels[status] || "изменить"}?`)) return;
 
-      try {
-        const updatedRequest = await api(`/payment-requests/${id}/status`, {
+      await runPatchUpdateAction(
+        button,
+        () => api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status }),
-        });
-        await handlePaymentRequestActionCompleted(updatedRequest, button);
-      } catch (error) {
-        alert(error.message);
-      }
+        }),
+        handlePaymentRequestActionCompleted,
+        { loadingText: "…", errorPrefix: "Не удалось изменить статус заявки" }
+      );
     });
   });
 
@@ -4776,15 +4813,15 @@ function attachPaymentRequestActions() {
 
       if (!confirm(`Заявку #${id} отметить как “Деньги в кассе”?`)) return;
 
-      try {
-        const updatedRequest = await api(`/payment-requests/${id}/money-status`, {
+      await runPatchUpdateAction(
+        button,
+        () => api(`/payment-requests/${id}/money-status`, {
           method: "PATCH",
           body: JSON.stringify({ money_status }),
-        });
-        await handlePaymentRequestActionCompleted(updatedRequest, button);
-      } catch (error) {
-        alert(error.message);
-      }
+        }),
+        handlePaymentRequestActionCompleted,
+        { loadingText: "…", errorPrefix: "Не удалось изменить статус денег" }
+      );
     });
   });
 
@@ -4794,19 +4831,21 @@ function attachPaymentRequestActions() {
 
       if (!confirm(`Вернуть деньги по заявке #${id}? Статус оплаты станет “Отменено”, статус денег — “Отменено”.`)) return;
 
-      try {
-        await api(`/payment-requests/${id}/status`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: "rejected" }),
-        });
-        const updatedRequest = await api(`/payment-requests/${id}/money-status`, {
-          method: "PATCH",
-          body: JSON.stringify({ money_status: "cancelled" }),
-        });
-        await handlePaymentRequestActionCompleted(updatedRequest, button);
-      } catch (error) {
-        alert(error.message);
-      }
+      await runPatchUpdateAction(
+        button,
+        async () => {
+          await api(`/payment-requests/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "rejected" }),
+          });
+          return api(`/payment-requests/${id}/money-status`, {
+            method: "PATCH",
+            body: JSON.stringify({ money_status: "cancelled" }),
+          });
+        },
+        handlePaymentRequestActionCompleted,
+        { loadingText: "…", errorPrefix: "Не удалось вернуть заявку" }
+      );
     });
   });
 }
@@ -4929,6 +4968,24 @@ function customerEstimateVatTopAmount(event, summary, items, taxesAmount, agency
   return Math.max(0, Math.round(turnover - subtotal - asNumber(agencyAmount) - asNumber(taxesAmount)));
 }
 
+
+function adminManagerSalaryEstimateRow(summary) {
+  const managerSalary = asNumber(summary?.manager_salary ?? 0);
+  const managerSalaryPaid = asNumber(managerSalaryPaidValue(summary));
+
+  return `
+    <tr class="manager-salary-estimate-row">
+      <td><strong>Менеджер 21%</strong></td>
+      <td>${formatMoney(0)}</td>
+      <td>${formatMoney(managerSalary)}</td>
+      <td class="paid-col">${formatMoney(managerSalaryPaid)}</td>
+      <td class="commission-col">0</td>
+      <td class="vat-col">0</td>
+      <td class="deduction-col">0</td>
+      <td class="method-col">—</td>
+    </tr>
+  `;
+}
 
 function adminEstimateTopRows(event, summary, items, taxesAmount, vatAmount) {
   const bankTaxTopAmount = customerEstimateBankTaxTopAmount(summary);
@@ -5236,6 +5293,7 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
               <td class="method-col">${paymentMethodLabel(item.payment_method)}</td>
             </tr>
           `).join("")}
+          ${adminManagerSalaryEstimateRow(summary)}
           ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}
         </tbody>
       </table>

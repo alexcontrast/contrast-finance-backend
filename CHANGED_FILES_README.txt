@@ -1,4 +1,7 @@
-v0.40.48
-- Web: payment request actions inside event modal refresh only current modal payload, not full dashboard.
-- Web: added robust modal-open detection for request actions.
-- Cache bust updated to 0.40.48.
+v0.40.51 CHANGED_ONLY
+Заменить файлы из этой папки поверх проекта.
+Изменены:
+- app/web/app.js
+- app/web/index.html
+- app/core/config.py
+- app/app/core/config.py
