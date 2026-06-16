@@ -4734,11 +4734,11 @@ function attachPaymentRequestActions() {
       if (!confirm(`Отменить заявку #${id}?`)) return;
 
       try {
-        await api(`/payment-requests/${id}/status`, {
+        const updatedRequest = await api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected" }),
         });
-        await withLoading(loadDashboard, "Обновляем данные…");
+        await handlePaymentRequestActionCompleted(updatedRequest, button);
       } catch (error) {
         alert(error.message);
       }
@@ -4758,11 +4758,11 @@ function attachPaymentRequestActions() {
       if (!confirm(`Заявку #${id} ${labels[status] || "изменить"}?`)) return;
 
       try {
-        await api(`/payment-requests/${id}/status`, {
+        const updatedRequest = await api(`/payment-requests/${id}/status`, {
           method: "PATCH",
           body: JSON.stringify({ status }),
         });
-        await withLoading(loadDashboard, "Обновляем данные…");
+        await handlePaymentRequestActionCompleted(updatedRequest, button);
       } catch (error) {
         alert(error.message);
       }
@@ -4777,11 +4777,11 @@ function attachPaymentRequestActions() {
       if (!confirm(`Заявку #${id} отметить как “Деньги в кассе”?`)) return;
 
       try {
-        await api(`/payment-requests/${id}/money-status`, {
+        const updatedRequest = await api(`/payment-requests/${id}/money-status`, {
           method: "PATCH",
           body: JSON.stringify({ money_status }),
         });
-        await withLoading(loadDashboard, "Обновляем данные…");
+        await handlePaymentRequestActionCompleted(updatedRequest, button);
       } catch (error) {
         alert(error.message);
       }
@@ -4799,11 +4799,11 @@ function attachPaymentRequestActions() {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected" }),
         });
-        await api(`/payment-requests/${id}/money-status`, {
+        const updatedRequest = await api(`/payment-requests/${id}/money-status`, {
           method: "PATCH",
           body: JSON.stringify({ money_status: "cancelled" }),
         });
-        await withLoading(loadDashboard, "Обновляем данные…");
+        await handlePaymentRequestActionCompleted(updatedRequest, button);
       } catch (error) {
         alert(error.message);
       }
@@ -5164,6 +5164,150 @@ async function closeAdminEventEditMode(eventId, reloadModal = true) {
   }
 }
 
+async function loadEventModalPayload(eventId) {
+  const [event, summary, items, requests] = await Promise.all([
+    api(`/events/${eventId}`),
+    api(`/events/${eventId}/summary`),
+    api(`/events/${eventId}/items`),
+    api(`/events/${eventId}/payment-requests`),
+  ]);
+
+  return { event, summary, items, requests };
+}
+
+function renderEventModalPayload(payload, selectedRequestStatus = "all") {
+  const { event, summary, items, requests } = payload;
+  state.currentEventModalId = Number(event.id);
+  state.currentEventModalPayload = payload;
+
+  $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
+
+  const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
+  const taxesAmount = customerTaxesTopAmount(summary);
+  const vatAmount = customerVatTopAmount(summary);
+  const managerSalary = asNumber(summary.manager_salary);
+
+  $("eventModalContent").innerHTML = `
+    <div class="grid cards modal-metric-cards">
+      ${metric("Оборот", formatMoney(customerTurnoverAmount(summary)))}
+      ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)} к уплате`, formatMoney(taxesAmount))}
+      ${metric("НДС к уплате", formatMoney(vatAmount))}
+      <div class="card metric manager-salary-metric">
+        <div class="label">Менеджер 21%</div>
+        <div class="value">${formatMoney(managerSalary)}</div>
+      </div>
+      <div class="card metric income-metric">
+        <div class="label">Доход компании</div>
+        <div class="value">${formatMoney(summary.final_company_income)}</div>
+      </div>
+      ${state.bootstrap?.user?.role === "admin" ? customerPaymentMetric(event, summary, true) : ""}
+    </div>
+
+    <div class="divider"></div>
+
+    <h3>Смета</h3>
+    <div class="table-wrap estimate-table-wrap">
+      <table class="estimate-table event-modal-estimate-table">
+        <colgroup>
+          <col class="position-col" />
+          <col class="amount-col" />
+          <col class="amount-col" />
+          <col class="amount-col" />
+          <col class="commission-col" />
+          <col class="vat-col" />
+          <col class="deduction-col" />
+          <col class="method-col" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Позиция</th><th>Смета</th><th>Факт</th><th class="paid-col">Оплата</th><th class="commission-col">Комиссия</th><th class="vat-col">НДС</th><th class="deduction-col">Вычеты</th><th class="method-col">Способ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedItems.map((item) => `
+            <tr>
+              <td><strong>${item.external_name}</strong></td>
+              <td>${formatMoney(item.external_amount)}</td>
+              <td>${formatMoney(item.amount_fact)}</td>
+              <td class="paid-col">${formatMoney(item.paid_amount)}</td>
+              <td class="commission-col">${formatMoney(internalCommissionValue(item))}</td>
+              <td class="vat-col">${formatMoney(itemVatVisible(item))}</td>
+              <td class="deduction-col">${formatMoney(itemDeductionVisible(item))}</td>
+              <td class="method-col">${paymentMethodLabel(item.payment_method)}</td>
+            </tr>
+          `).join("")}
+          ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}
+        </tbody>
+      </table>
+    </div>
+
+    <div id="eventModalRequestsSection">
+      ${renderEventPaymentRequestsTable(requests || [], selectedRequestStatus)}
+    </div>
+  `;
+
+  installAdminEventModalActions(event, requests || []);
+  attachCustomerPaymentActions($("eventModalContent"));
+  attachPaymentRequestActions();
+  attachEventModalRequestFilter(requests || []);
+}
+
+async function refreshOpenEventModalAfterPaymentRequestChange(sourceElement = null) {
+  const backdrop = $("eventModalBackdrop");
+  const eventId = state.currentEventModalId;
+  if (!eventId || !backdrop || backdrop.classList.contains("hidden")) return false;
+
+  const selectedStatus = document.getElementById("eventModalRequestStatusFilter")?.value || "all";
+  const payload = await loadEventModalPayload(eventId);
+  renderEventModalPayload(payload, selectedStatus);
+  return true;
+}
+
+function patchPaymentRequestInList(list, updatedRequest) {
+  if (!Array.isArray(list) || !updatedRequest?.id) return false;
+  const index = list.findIndex((item) => Number(item.id) === Number(updatedRequest.id));
+  if (index < 0) return false;
+  list[index] = { ...list[index], ...updatedRequest };
+  return true;
+}
+
+function patchPaymentRequestState(updatedRequest) {
+  if (!updatedRequest?.id) return;
+  patchPaymentRequestInList(state.adminData?.payment_requests, updatedRequest);
+  patchPaymentRequestInList(state.departmentHeadData?.payment_requests, updatedRequest);
+  patchPaymentRequestInList(state.managerPaymentRequests, updatedRequest);
+  patchPaymentRequestInList(state.currentEventModalPayload?.requests, updatedRequest);
+}
+
+function isRegularEventModalOpenForRequest(updatedRequest = null, sourceElement = null) {
+  const backdrop = $("eventModalBackdrop");
+  if (!backdrop || backdrop.classList.contains("hidden")) return false;
+  if (!state.currentEventModalId) return false;
+
+  // Payment/create-payment and manager-specific modals have their own refresh logic.
+  if (backdrop.classList.contains("payment-modal-mode")) return false;
+  if (backdrop.classList.contains("manager-payments-modal")) return false;
+  if (backdrop.classList.contains("manager-requests-modal-mode")) return false;
+
+  if (sourceElement?.closest?.("#eventModalRequestsSection")) return true;
+  if (!updatedRequest?.event_id) return true;
+  return Number(updatedRequest.event_id) === Number(state.currentEventModalId);
+}
+
+async function handlePaymentRequestActionCompleted(updatedRequest, sourceElement = null) {
+  patchPaymentRequestState(updatedRequest);
+
+  // v0.40.48: if an event modal is open, do not reload the whole dashboard.
+  // Refresh only the currently open event payload: estimate, summary and requests.
+  // Telegram sync stays backend-driven because the same PATCH endpoint is still used.
+  if (isRegularEventModalOpenForRequest(updatedRequest, sourceElement)) {
+    const refreshedModal = await refreshOpenEventModalAfterPaymentRequestChange(sourceElement);
+    if (refreshedModal) return;
+  }
+
+  await withLoading(loadDashboard, "Обновляем данные…");
+}
+
 async function openEventModal(eventId) {
   resetEventModalModes();
   // openEventModal_resetSharedChrome_v03715
@@ -5173,83 +5317,8 @@ async function openEventModal(eventId) {
   $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
 
   try {
-    const [event, summary, items, requests] = await Promise.all([
-      api(`/events/${eventId}`),
-      api(`/events/${eventId}/summary`),
-      api(`/events/${eventId}/items`),
-      api(`/events/${eventId}/payment-requests`),
-    ]);
-
-    $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
-
-    const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
-    const taxesAmount = customerTaxesTopAmount(summary);
-    const vatAmount = customerVatTopAmount(summary);
-    const managerSalary = asNumber(summary.manager_salary);
-
-    $("eventModalContent").innerHTML = `
-      <div class="grid cards modal-metric-cards">
-        ${metric("Оборот", formatMoney(customerTurnoverAmount(summary)))}
-        ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)} к уплате`, formatMoney(taxesAmount))}
-        ${metric("НДС к уплате", formatMoney(vatAmount))}
-        <div class="card metric manager-salary-metric">
-          <div class="label">Менеджер 21%</div>
-          <div class="value">${formatMoney(managerSalary)}</div>
-        </div>
-        <div class="card metric income-metric">
-          <div class="label">Доход компании</div>
-          <div class="value">${formatMoney(summary.final_company_income)}</div>
-        </div>
-        ${state.bootstrap?.user?.role === "admin" ? customerPaymentMetric(event, summary, true) : ""}
-      </div>
-
-      <div class="divider"></div>
-
-      <h3>Смета</h3>
-      <div class="table-wrap estimate-table-wrap">
-        <table class="estimate-table event-modal-estimate-table">
-          <colgroup>
-            <col class="position-col" />
-            <col class="amount-col" />
-            <col class="amount-col" />
-            <col class="amount-col" />
-            <col class="commission-col" />
-            <col class="vat-col" />
-            <col class="deduction-col" />
-            <col class="method-col" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Позиция</th><th>Смета</th><th>Факт</th><th class="paid-col">Оплата</th><th class="commission-col">Комиссия</th><th class="vat-col">НДС</th><th class="deduction-col">Вычеты</th><th class="method-col">Способ</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${sortedItems.map((item) => `
-              <tr>
-                <td><strong>${item.external_name}</strong></td>
-                <td>${formatMoney(item.external_amount)}</td>
-                <td>${formatMoney(item.amount_fact)}</td>
-                <td class="paid-col">${formatMoney(item.paid_amount)}</td>
-                <td class="commission-col">${formatMoney(internalCommissionValue(item))}</td>
-                <td class="vat-col">${formatMoney(itemVatVisible(item))}</td>
-                <td class="deduction-col">${formatMoney(itemDeductionVisible(item))}</td>
-                <td class="method-col">${paymentMethodLabel(item.payment_method)}</td>
-              </tr>
-            `).join("")}
-            ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}
-          </tbody>
-        </table>
-      </div>
-
-      <div id="eventModalRequestsSection">
-        ${renderEventPaymentRequestsTable(requests || [], "all")}
-      </div>
-    `;
-
-    installAdminEventModalActions(event, requests || []);
-    attachCustomerPaymentActions($("eventModalContent"));
-    attachPaymentRequestActions();
-    attachEventModalRequestFilter(requests || []);
+    const payload = await loadEventModalPayload(eventId);
+    renderEventModalPayload(payload, "all");
   } catch (error) {
     $("eventModalContent").innerHTML = `<div class="error">${error.message}</div>`;
   }
