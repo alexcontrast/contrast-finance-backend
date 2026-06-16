@@ -23,6 +23,7 @@ from app.schemas.payment_request import (
 )
 from app.services.auth import get_current_user
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.payment_totals import sync_item_paid_amount_from_requests
 from app.services.authorization import (
     get_event_or_404,
     get_item_or_404,
