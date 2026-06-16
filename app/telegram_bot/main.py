@@ -54,7 +54,7 @@ from app.services.kgd.client import check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.43_SAFE_ACTION_ROLLBACK"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.45_BOT_HARDENING"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -93,6 +93,23 @@ TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START = env_bool("TELEGRAM_PUBLISH_EXISTIN
 
 logger = logging.getLogger(__name__)
 
+
+
+
+async def safe_query_answer(query, text: str | None = None, show_alert: bool = False) -> bool:
+    """Acknowledge Telegram callback without breaking the real action.
+
+    Telegram callback queries are short-lived and can be answered only once.
+    If a card is old, duplicated, or already acknowledged, query.answer() may raise
+    "Query is too old...". That must not roll back or fake-fail a successful status
+    update.
+    """
+    try:
+        await query.answer(text or "", show_alert=show_alert)
+        return True
+    except Exception as err:
+        logger.warning("Telegram callback answer ignored: %s", err)
+        return False
 
 def admin_error_keyboard(request_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Вернуть кнопки", callback_data=f"admin:restore:{request_id}")]])
@@ -1179,25 +1196,41 @@ async def publish_created_request_cards(bot, manager_chat_id: Any, request_id: i
             return
         creator = db.get(User, request.created_by_user_id)
         manager_tg = manager_chat_id or (creator.telegram_id if creator else None)
+    await dedupe_active_cards(bot, int(request_id))
+    with db_session() as db:
+        existing_admin = active_messages(db, int(request_id), "admin_payment_card")
+        existing_manager = [
+            m for m in active_messages(db, int(request_id), "manager_payment_card")
+            if manager_tg and str(m.chat_id) == str(manager_tg)
+        ]
+
     manager_msg = None
     if manager_tg:
-        manager_msg = await bot.send_message(
-            chat_id=int(manager_tg),
-            text=payment_text_from_request(request, title_for_manager),
+        if existing_manager:
+            await safe_edit(bot, existing_manager[0], request, title_for_manager, is_manager=True)
+        else:
+            manager_msg = await bot.send_message(
+                chat_id=int(manager_tg),
+                text=payment_text_from_request(request, title_for_manager),
+                parse_mode="HTML",
+                reply_markup=manager_keyboard(request),
+            )
+    admin_msg = None
+    if existing_admin:
+        await safe_edit(bot, existing_admin[0], request, "🧾 Новая заявка на оплату", is_admin=True)
+    else:
+        admin_msg = await bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=payment_text_from_request(request, "🧾 Новая заявка на оплату"),
             parse_mode="HTML",
-            reply_markup=manager_keyboard(request),
+            reply_markup=admin_keyboard(request),
         )
-    admin_msg = await bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
-        text=payment_text_from_request(request, "🧾 Новая заявка на оплату"),
-        parse_mode="HTML",
-        reply_markup=admin_keyboard(request),
-    )
     await sync_tatyana_message(bot, request, "🧾 Новая заявка по счету")
     with db_session() as db:
         req = db.get(PaymentRequest, request_id)
         if req is not None:
-            save_message(db, req.id, ADMIN_CHAT_ID, admin_msg.message_id, "admin_payment_card", None)
+            if admin_msg is not None:
+                save_message(db, req.id, ADMIN_CHAT_ID, admin_msg.message_id, "admin_payment_card", None)
             if manager_msg and manager_tg:
                 save_message(db, req.id, manager_tg, manager_msg.message_id, "manager_payment_card", req.created_by_user_id)
             db.commit()
@@ -1235,6 +1268,34 @@ async def delete_admin_manager_cards(bot, request: PaymentRequest, extra_message
         await safe_delete_raw(bot, chat_id, message_id)
 
 
+async def dedupe_active_cards(bot, request_id: int) -> None:
+    """Keep only one active Telegram card per request/type/chat.
+
+    Duplicates can appear after retries/redeploys: the user sees two identical cards
+    with the same request id, and both get edited together. Before every sync we
+    delete older duplicates and mark them deleted/failed in telegram_messages.
+    """
+    with db_session() as db:
+        messages = active_messages(db, int(request_id))
+
+    groups: Dict[tuple[str, str], List[TelegramMessage]] = {}
+    for message in messages:
+        if message.message_type not in {"admin_payment_card", "manager_payment_card", "tatyana_payment_card"}:
+            continue
+        groups.setdefault((str(message.message_type), str(message.chat_id)), []).append(message)
+
+    for group in groups.values():
+        if len(group) <= 1:
+            continue
+        ordered = sorted(
+            group,
+            key=lambda m: (m.created_at or datetime.min, int(m.id or 0)),
+            reverse=True,
+        )
+        for duplicate in ordered[1:]:
+            await safe_delete(bot, duplicate)
+
+
 async def sync_request_cards(
     bot,
     request: PaymentRequest,
@@ -1245,6 +1306,7 @@ async def sync_request_cards(
         await delete_admin_manager_cards(bot, request, extra_messages=extra_messages)
         await sync_tatyana_message(bot, request, "🧾 Заявка по счету обновлена")
         return
+    await dedupe_active_cards(bot, int(request.id))
     with db_session() as db:
         messages = active_messages(db, request.id)
     for message in messages:
@@ -1355,7 +1417,7 @@ async def new_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def choose_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Открываю месяц…")
+    await safe_query_answer(query, "Открываю месяц…")
     if query.data == "back:months":
         months = context.user_data.get("months", [])
         await query.edit_message_text("Выбери месяц мероприятия:", reply_markup=month_keyboard(months))
@@ -1373,7 +1435,7 @@ async def choose_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def choose_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Загружаю позиции…")
+    await safe_query_answer(query, "Загружаю позиции…")
     if query.data == "back:months":
         months = context.user_data.get("months", [])
         await query.edit_message_text("Выбери месяц мероприятия:", reply_markup=month_keyboard(months))
@@ -1416,7 +1478,7 @@ def amount_prompt_for_selected_item(context: ContextTypes.DEFAULT_TYPE) -> str:
 
 async def choose_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Открываю позицию…")
+    await safe_query_answer(query, "Открываю позицию…")
     if query.data == "back:events":
         await query.edit_message_text("Выбери мероприятие:", reply_markup=events_keyboard(context.user_data.get("events", [])))
         return CHOOSE_EVENT
@@ -1453,7 +1515,7 @@ async def extra_position_name(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def choose_payment_method(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("Выбран способ оплаты")
+    await safe_query_answer(query, "Выбран способ оплаты")
     method_label = query.data.replace("paymethod:", "")
     method = payment_method_code(method_label)
 
@@ -1461,7 +1523,7 @@ async def choose_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
     fixed_method = selected_item.get("fixedPaymentMethod")
     if fixed_method:
         if method != fixed_method:
-            await query.answer("Способ оплаты уже закреплён за этой позицией.", show_alert=True)
+            await safe_query_answer(query, "Способ оплаты уже закреплён за этой позицией.", show_alert=True)
             return PAYMENT_METHOD
         method_label = payment_method_label(fixed_method)
         method = fixed_method
@@ -1675,18 +1737,18 @@ async def restore_clicked_card(query, request_id: int, is_admin: bool) -> None:
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query.from_user.id != ADMIN_CHAT_ID:
-        await query.answer("Эта кнопка только для админа.", show_alert=True)
+        await safe_query_answer(query, "Эта кнопка только для админа.", show_alert=True)
         return
     _, action, payment_id = query.data.split(":", 2)
     if action == "restore":
         try:
             await restore_clicked_card(query, int(payment_id), is_admin=True)
-            await query.answer("Кнопки восстановлены")
+            await safe_query_answer(query, "Кнопки восстановлены")
         except Exception as err:
             logger.exception("Failed to restore admin card for payment_request_id=%s", payment_id)
-            await query.answer(f"Не удалось восстановить карточку: {err}", show_alert=True)
+            await safe_query_answer(query, f"Не удалось восстановить карточку: {err}", show_alert=True)
         return
-    await query.answer("Обновляю статус…")
+    await safe_query_answer(query, "Обновляю статус…")
     try:
         # Сначала показываем пользователю, что действие принято, но не теряем исходные кнопки:
         # при любой ошибке ниже карточка будет восстановлена из текущего состояния БД.
@@ -1717,7 +1779,7 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
                     reply_markup=admin_error_keyboard(int(payment_id)),
                 )
             except Exception:
-                await query.answer(str(err), show_alert=True)
+                await safe_query_answer(query, str(err), show_alert=True)
 
 
 async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1726,14 +1788,14 @@ async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TY
     if action == "restore":
         try:
             await restore_clicked_card(query, int(payment_id), is_admin=False)
-            await query.answer("Кнопка восстановлена")
+            await safe_query_answer(query, "Кнопка восстановлена")
         except Exception as err:
             logger.exception("Failed to restore manager card for payment_request_id=%s", payment_id)
-            await query.answer(f"Не удалось восстановить карточку: {err}", show_alert=True)
+            await safe_query_answer(query, f"Не удалось восстановить карточку: {err}", show_alert=True)
         return
     if action != "cancel":
         return
-    await query.answer("Отменяю заявку…")
+    await safe_query_answer(query, "Отменяю заявку…")
     try:
         await query.edit_message_reply_markup(reply_markup=None)
         request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), "cancel", "manager")
@@ -1760,7 +1822,7 @@ async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TY
                     reply_markup=manager_error_keyboard(int(payment_id)),
                 )
             except Exception:
-                await query.answer(str(err), show_alert=True)
+                await safe_query_answer(query, str(err), show_alert=True)
 
 
 async def poll_site_requests(context: ContextTypes.DEFAULT_TYPE):
@@ -1789,14 +1851,18 @@ async def poll_site_requests(context: ContextTypes.DEFAULT_TYPE):
         try:
             await publish_created_request_cards(context.bot, creator.telegram_id if creator else None, request.id, "🧾 Заявка создана на сайте")
         except Exception as err:
-            print(f"poll_site_requests publish failed for {request_id}: {err}")
+            logger.exception("poll_site_requests publish failed for payment_request_id=%s", request_id)
 
 
 async def poll_status_updates(context: ContextTypes.DEFAULT_TYPE):
     with db_session() as db:
         messages = db.execute(
             select(TelegramMessage)
-            .where(TelegramMessage.status == "active", TelegramMessage.payment_request_id.is_not(None))
+            .where(
+                TelegramMessage.status == "active",
+                TelegramMessage.payment_request_id.is_not(None),
+                TelegramMessage.updated_at <= TELEGRAM_DIRTY_MARKER_AT,
+            )
             .order_by(TelegramMessage.updated_at.asc())
             .limit(POLL_BATCH_LIMIT * 3)
         ).scalars().all()
@@ -1808,7 +1874,7 @@ async def poll_status_updates(context: ContextTypes.DEFAULT_TYPE):
         try:
             await sync_request_cards(context.bot, request, "🧾 Заявка обновлена")
         except Exception as err:
-            print(f"poll_status_updates failed for {request.id}: {err}")
+            logger.exception("poll_status_updates failed for payment_request_id=%s", request.id)
 
 
 async def bot_background_loop(application, worker, name: str, first: int, interval: int):
@@ -1817,7 +1883,7 @@ async def bot_background_loop(application, worker, name: str, first: int, interv
         try:
             await worker(type("Context", (), {"bot": application.bot})())
         except Exception as err:
-            print(f"{name} background error: {err}")
+            logger.exception("%s background error", name)
         await asyncio.sleep(max(5, interval))
 
 

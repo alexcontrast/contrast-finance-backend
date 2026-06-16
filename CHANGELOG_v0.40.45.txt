@@ -1,0 +1,13 @@
+Contrast Finance v0.40.45 — Telegram bot hardening / cleanup
+
+Changed:
+- Telegram callback acknowledgements are now safe: expired/duplicate callback query errors no longer break real actions.
+- Added active-card dedupe before publishing/syncing request cards. One request now keeps one active card per chat/type; older duplicates are deleted and marked accordingly.
+- Publishing from site no longer sends a second admin/manager card when an active card already exists; it edits the existing card instead.
+- Background status polling now processes only dirty Telegram cards marked by the web backend, instead of endlessly re-editing all active cards every poll cycle.
+- Replaced print-based background errors with logger.exception for proper Railway logs.
+- Updated BOT_VERSION to CONTRAST_FINANCE_BOT_V0.40.45_BOT_HARDENING.
+
+Checks:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
