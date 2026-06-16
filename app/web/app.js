@@ -3039,6 +3039,25 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function perfNow() {
+  return (window.performance && typeof window.performance.now === "function")
+    ? window.performance.now()
+    : Date.now();
+}
+
+function perfSeconds(startedAt) {
+  return ((perfNow() - startedAt) / 1000).toFixed(3);
+}
+
+async function timedApi(label, path, options = {}) {
+  const startedAt = perfNow();
+  try {
+    return await api(path, options);
+  } finally {
+    console.info(`PERF web ${label} ${path}=${perfSeconds(startedAt)}s`);
+  }
+}
+
 
 let loadingCounter = 0;
 
@@ -10189,7 +10208,7 @@ async function loadUsersForAdmin() {
   if (!user || user.role !== "admin") return;
 
   try {
-    state.users = await api("/users?include_inactive=true");
+    state.users = await timedApi("users", "/users?include_inactive=true");
   } catch (error) {
     console.warn("Не удалось загрузить пользователей", error);
     state.users = [];
@@ -10213,6 +10232,7 @@ function renderDashboardLoading(role) {
 }
 
 async function loadDashboard() {
+  const dashboardStartedAt = perfNow();
   const user = state.bootstrap.user;
   const month = selectedMonthValue();
   state.month = month;
@@ -10221,9 +10241,11 @@ async function loadDashboard() {
     try {
       const [usersResult, dashboard] = await Promise.all([
         loadUsersForAdmin(),
-        api(`/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
+        timedApi("admin-dashboard", `/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
       ]);
+      const renderStartedAt = perfNow();
       renderAdminDashboard(dashboard);
+      console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
     } catch (error) {
       console.warn("Не удалось загрузить admin-dashboard за период", month, error);
       renderAdminEmptyDashboard(month, error);
@@ -10232,15 +10254,15 @@ async function loadDashboard() {
   }
 
   if (user.role === "department_head") {
-    const dashboard = await api(`/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
+    const dashboard = await timedApi("department-head-dashboard", `/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
     renderDepartmentDashboard(dashboard);
     return;
   }
 
   try {
     const [dashboard, requests] = await Promise.all([
-      api(`/manager-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
-      api(`/payment-requests?_=${Date.now()}`),
+      timedApi("manager-dashboard", `/manager-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
+      timedApi("payment-requests", `/payment-requests?_=${Date.now()}`),
     ]);
     renderManagerDashboard(dashboard, requests);
   } catch (error) {
@@ -10256,8 +10278,10 @@ async function boot() {
   }
 
   try {
-    state.bootstrap = await api("/app/bootstrap");
+    const bootStartedAt = perfNow();
+    state.bootstrap = await timedApi("bootstrap", "/app/bootstrap");
     showDashboardShell();
+    console.info(`PERF web shell-after-bootstrap=${perfSeconds(bootStartedAt)}s`);
 
     const user = state.bootstrap.user;
     updateHeaderUserInfo(user);
@@ -10272,7 +10296,9 @@ async function boot() {
     setupMonthYearSelectors();
     attachMonthYearSelectors();
 
-    renderDashboardLoading(user.role);
+    if (document.getElementById("dashboardHint")) {
+      document.getElementById("dashboardHint").textContent = "Загружаем данные месяца…";
+    }
     loadDashboard().catch((error) => {
       console.warn("Не удалось загрузить dashboard", error);
       if (user.role === "admin") renderAdminEmptyDashboard(selectedMonthValue(), error);

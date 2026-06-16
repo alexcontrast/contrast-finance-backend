@@ -99,26 +99,43 @@ def expense_default_split_amounts(db: Session, expense: MonthlyExpense) -> tuple
 
 
 def get_department_expenses(db: Session, department_name: str, year: int, month: int) -> Decimal:
+    # Backward-compatible helper for old call sites. The admin dashboard uses
+    # preloaded monthly expenses via build_department_expenses_by_name() below
+    # to avoid repeating the same SQL work for every department.
     expenses = db.execute(
         select(MonthlyExpense).where(
             extract("year", MonthlyExpense.month) == year,
             extract("month", MonthlyExpense.month) == month,
         )
     ).scalars().all()
+    plan = db.execute(
+        select(MonthlyPlan).where(
+            extract("year", MonthlyPlan.month) == year,
+            extract("month", MonthlyPlan.month) == month,
+        )
+    ).scalar_one_or_none()
+    return build_department_expenses_by_name(expenses, plan).get(department_name, Decimal("0.00"))
 
-    total = Decimal("0.00")
+
+def build_department_expenses_by_name(
+    expenses: list[MonthlyExpense],
+    plan: MonthlyPlan | None,
+) -> dict[str, Decimal]:
+    sanzhar_percent = money(plan.sanzhar_share_percent) if plan is not None else Decimal("66.67")
+    totals = {"Санжар": Decimal("0.00"), "Рауфаль": Decimal("0.00")}
+
     for expense in expenses:
         if expense.allocation_type == "default_split":
-            sanzhar_amount, raufal_amount = expense_default_split_amounts(db, expense)
+            sanzhar_amount = q(money(expense.amount) * sanzhar_percent / Decimal("100"))
+            raufal_amount = q(money(expense.amount) - sanzhar_amount)
         else:
-            sanzhar_amount, raufal_amount = money(expense.sanzhar_amount), money(expense.raufal_amount)
+            sanzhar_amount = money(expense.sanzhar_amount)
+            raufal_amount = money(expense.raufal_amount)
 
-        if department_name == "Санжар":
-            total += sanzhar_amount
-        elif department_name == "Рауфаль":
-            total += raufal_amount
+        totals["Санжар"] += sanzhar_amount
+        totals["Рауфаль"] += raufal_amount
 
-    return q(total)
+    return {name: q(amount) for name, amount in totals.items()}
 
 
 def build_closing(closing: MonthlyClosing | None) -> AdminClosingRead:
@@ -208,6 +225,13 @@ def get_admin_dashboard(
     active_users = [user for user in all_users if user.is_active]
     user_by_id = {user.id: user for user in all_users}
     dept_by_id = {department.id: department for department in departments}
+    monthly_expenses = db.execute(
+        select(MonthlyExpense).where(
+            extract("year", MonthlyExpense.month) == month_date.year,
+            extract("month", MonthlyExpense.month) == month_date.month,
+        )
+    ).scalars().all()
+    department_expenses_by_name = build_department_expenses_by_name(monthly_expenses, plan)
     mark_perf("base_sql")
 
     event_query = (
@@ -299,7 +323,7 @@ def get_admin_dashboard(
     for department in departments:
         dept_fact = department_fact_by_id.get(department.id, Decimal("0.00"))
         dept_plan = department_plan_amount(plan, department.name)
-        dept_expenses = get_department_expenses(db, department.name, month_date.year, month_date.month)
+        dept_expenses = department_expenses_by_name.get(department.name, Decimal("0.00"))
         drafts_count = len(department_draft_event_ids_by_id.get(department.id, set()))
         managers_count = len([user for user in active_users if user.department_id == department.id])
         dept_events_count = len(department_event_ids_by_id.get(department.id, set()))
@@ -384,7 +408,7 @@ def get_admin_dashboard(
         return perf_marks[end_name] - perf_marks[start_name]
 
     logger.warning(
-        "PERF admin-dashboard month=%s include_drafts=%s events=%s items=%s requests=%s shares=%s "
+        "PERF admin-dashboard month=%s include_drafts=%s events=%s items=%s requests=%s shares=%s expenses=%s "
         "base_sql=%.3fs events_sql=%.3fs events_calc=%.3fs departments_calc=%.3fs "
         "payments_sql=%.3fs payments_rows=%.3fs closing_sql=%.3fs response_model=%.3fs total=%.3fs",
         month,
@@ -393,6 +417,7 @@ def get_admin_dashboard(
         items_count,
         requests_count,
         shares_count,
+        len(monthly_expenses),
         delta("parse", "base_sql"),
         delta("base_sql", "events_sql"),
         delta("events_sql", "events_calc"),
