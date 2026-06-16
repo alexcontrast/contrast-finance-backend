@@ -1,16 +1,12 @@
-Contrast Finance 2.0 — v0.40.54
+Contrast Finance v0.40.55
 
-Изменённые файлы:
-- app/web/app.js
-- app/web/index.html
-
-Что изменено:
-- Добавлен frontend cache для /users?include_inactive=true на 10 минут.
-- При повторной загрузке админки users берутся из памяти/localStorage, без лишнего запроса 1+ сек.
-- Убрана бесполезная карточка "Кабинет открыт" при первичной загрузке dashboard.
-- app.js cache-buster обновлён до v0.40.54.
+Изменения:
+- Исправлен дубль загрузок при переключении месяца в админке.
+- /users теперь не стартует повторный запрос, если первый ещё в процессе.
+- /admin-dashboard для одного месяца теперь переиспользует уже запущенный in-flight запрос.
+- app.js cache-buster обновлён до v0.40.55.
 
 Проверки:
-- node --check app/web/app.js
 - python3 -m compileall -q app
 - python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js

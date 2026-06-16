@@ -2618,6 +2618,8 @@ const state = {
   departmentHeadData: null,
   users: [],
   usersCacheLoadedAt: 0,
+  usersLoadingPromise: null,
+  adminDashboardLoadingByMonth: {},
   monthlyPlans: [],
   monthlyPlansYear: null,
   closingPanelData: null,
@@ -10249,16 +10251,46 @@ async function loadUsersForAdmin(options = {}) {
 
   if (!force && restoreUsersFromCache()) return state.users;
 
-  try {
-    state.users = await timedApi("users", "/users?include_inactive=true");
-    state.usersCacheLoadedAt = Date.now();
-    saveUsersToCache(state.users);
-    return state.users;
-  } catch (error) {
-    console.warn("Не удалось загрузить пользователей", error);
-    if (!state.users || !state.users.length) state.users = [];
-    return state.users;
+  if (!force && state.usersLoadingPromise) {
+    console.info("PERF web users in-flight reuse");
+    return state.usersLoadingPromise;
   }
+
+  state.usersLoadingPromise = (async () => {
+    try {
+      const users = await timedApi("users", "/users?include_inactive=true");
+      state.users = users;
+      state.usersCacheLoadedAt = Date.now();
+      saveUsersToCache(state.users);
+      return state.users;
+    } catch (error) {
+      console.warn("Не удалось загрузить пользователей", error);
+      if (!state.users || !state.users.length) state.users = [];
+      return state.users;
+    } finally {
+      state.usersLoadingPromise = null;
+    }
+  })();
+
+  return state.usersLoadingPromise;
+}
+
+async function loadAdminDashboardData(month) {
+  const key = String(month || "");
+  if (state.adminDashboardLoadingByMonth && state.adminDashboardLoadingByMonth[key]) {
+    console.info(`PERF web admin-dashboard in-flight reuse month=${key}`);
+    return state.adminDashboardLoadingByMonth[key];
+  }
+
+  if (!state.adminDashboardLoadingByMonth) state.adminDashboardLoadingByMonth = {};
+  state.adminDashboardLoadingByMonth[key] = timedApi(
+    "admin-dashboard",
+    `/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`,
+  ).finally(() => {
+    if (state.adminDashboardLoadingByMonth) delete state.adminDashboardLoadingByMonth[key];
+  });
+
+  return state.adminDashboardLoadingByMonth[key];
 }
 
 
@@ -10278,7 +10310,7 @@ async function loadDashboard() {
     try {
       const [usersResult, dashboard] = await Promise.all([
         loadUsersForAdmin(),
-        timedApi("admin-dashboard", `/admin-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
+        loadAdminDashboardData(month),
       ]);
       const renderStartedAt = perfNow();
       renderAdminDashboard(dashboard);
