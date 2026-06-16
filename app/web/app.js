@@ -5294,6 +5294,26 @@ function isRegularEventModalOpenForRequest(updatedRequest = null, sourceElement 
   return Number(updatedRequest.event_id) === Number(state.currentEventModalId);
 }
 
+function isAdminPaymentRequestsTabOpen() {
+  const user = state.bootstrap?.user;
+  return user?.role === "admin" && ["requests", "requests_archive"].includes(state.activeAdminTab);
+}
+
+function refreshAdminPaymentRequestsTab() {
+  if (!state.adminData) return false;
+
+  const content = $("dashboardContent");
+  if (!content) return false;
+
+  const mode = state.activeAdminTab === "requests_archive" ? "archive" : "regular";
+  const title = mode === "archive" ? "Архив заявок" : "Все заявки";
+
+  content.innerHTML = renderPaymentRequestsTable(state.adminData.payment_requests || [], title, mode);
+  attachPaymentRequestActions();
+  attachFilters();
+  return true;
+}
+
 async function handlePaymentRequestActionCompleted(updatedRequest, sourceElement = null) {
   patchPaymentRequestState(updatedRequest);
 
@@ -5303,6 +5323,14 @@ async function handlePaymentRequestActionCompleted(updatedRequest, sourceElement
   if (isRegularEventModalOpenForRequest(updatedRequest, sourceElement)) {
     const refreshedModal = await refreshOpenEventModalAfterPaymentRequestChange(sourceElement);
     if (refreshedModal) return;
+  }
+
+  // v0.40.49: actions inside admin payment tabs are local UI patches.
+  // The backend endpoint remains the single source of truth and still marks Telegram cards dirty.
+  // Here we only re-render the current payment table so status/action buttons move between
+  // active/archive filters without pulling the whole admin dashboard again.
+  if (isAdminPaymentRequestsTabOpen() && refreshAdminPaymentRequestsTab()) {
+    return;
   }
 
   await withLoading(loadDashboard, "Обновляем данные…");
