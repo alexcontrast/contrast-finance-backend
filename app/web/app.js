@@ -2617,6 +2617,7 @@ const state = {
   adminData: null,
   departmentHeadData: null,
   users: [],
+  usersCacheLoadedAt: 0,
   monthlyPlans: [],
   monthlyPlansYear: null,
   closingPanelData: null,
@@ -10203,32 +10204,68 @@ async function attachPlansModal() {
 }
 
 
-async function loadUsersForAdmin() {
+const USERS_CACHE_KEY = "cf_admin_users_cache_v1";
+const USERS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function restoreUsersFromCache() {
+  try {
+    const raw = localStorage.getItem(USERS_CACHE_KEY);
+    if (!raw) return false;
+    const cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.users) || !cached.saved_at) return false;
+    if (Date.now() - Number(cached.saved_at) > USERS_CACHE_TTL_MS) return false;
+    state.users = cached.users;
+    state.usersCacheLoadedAt = Number(cached.saved_at);
+    console.info(`PERF web users-cache hit count=${state.users.length}`);
+    return true;
+  } catch (error) {
+    console.warn("Не удалось прочитать кэш пользователей", error);
+    return false;
+  }
+}
+
+function saveUsersToCache(users) {
+  try {
+    localStorage.setItem(USERS_CACHE_KEY, JSON.stringify({ saved_at: Date.now(), users: users || [] }));
+  } catch (error) {
+    console.warn("Не удалось сохранить кэш пользователей", error);
+  }
+}
+
+async function loadUsersForAdmin(options = {}) {
   const user = state.bootstrap?.user;
   if (!user || user.role !== "admin") return;
 
+  const force = Boolean(options.force);
+  const memoryFresh = Array.isArray(state.users)
+    && state.users.length > 0
+    && state.usersCacheLoadedAt
+    && (Date.now() - state.usersCacheLoadedAt < USERS_CACHE_TTL_MS);
+
+  if (!force && memoryFresh) {
+    console.info(`PERF web users-memory-cache hit count=${state.users.length}`);
+    return state.users;
+  }
+
+  if (!force && restoreUsersFromCache()) return state.users;
+
   try {
     state.users = await timedApi("users", "/users?include_inactive=true");
+    state.usersCacheLoadedAt = Date.now();
+    saveUsersToCache(state.users);
+    return state.users;
   } catch (error) {
     console.warn("Не удалось загрузить пользователей", error);
-    state.users = [];
+    if (!state.users || !state.users.length) state.users = [];
+    return state.users;
   }
 }
 
 
 function renderDashboardLoading(role) {
   const title = role === "admin" ? "Админка" : role === "department_head" ? "Кабинет отдела" : "Мои мероприятия";
-  const content = document.getElementById("dashboardContent");
   if (document.getElementById("dashboardTitle")) document.getElementById("dashboardTitle").textContent = title;
-  if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "Загружаем данные месяца…";
-  if (content) {
-    content.innerHTML = `
-      <div class="card dashboard-loading-card">
-        <strong>Кабинет открыт</strong>
-        <p>Данные месяца подгружаются отдельно, чтобы вход не ждал весь отчёт.</p>
-      </div>
-    `;
-  }
+  if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "";
 }
 
 async function loadDashboard() {
