@@ -1,0 +1,13 @@
+v0.40.42
+
+Fix Telegram admin payment buttons after v0.40.40 paid_amount sync.
+
+Root cause:
+- app/telegram_bot/main.py started calling sync_item_paid_amount_from_requests() in update_request_status_in_db().
+- The function was defined in app/services/payment_totals.py but was not imported in the bot module.
+- Python compile checks did not catch it because the name is resolved only at runtime.
+- On Telegram button click the bot first removed inline buttons, then hit NameError and aborted the status update/sync.
+
+Fix:
+- Import sync_item_paid_amount_from_requests in app/telegram_bot/main.py.
+- Bump BOT_VERSION to CONTRAST_FINANCE_BOT_V0.40.42_BUTTONS_FIX.
