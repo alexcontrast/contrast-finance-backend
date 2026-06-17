@@ -353,7 +353,6 @@ def get_admin_dashboard(
             select(PaymentRequest)
             .where(PaymentRequest.event_id.in_([event.id for event in events]))
             .order_by(PaymentRequest.id.desc())
-            .limit(50)
         )
         payment_requests = db.execute(payment_query).scalars().all()
     else:

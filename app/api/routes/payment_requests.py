@@ -3,7 +3,7 @@ import time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, not_, or_, select
+from sqlalchemy import and_, extract, not_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -373,6 +373,7 @@ def event_scope_query_for_user(query, user: User):
 
 @router.get("/payment-requests", response_model=list[PaymentRequestRead])
 def list_payment_requests(
+    month: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -384,6 +385,19 @@ def list_payment_requests(
         .outerjoin(User, User.id == Event.manager_id)
         .order_by(PaymentRequest.id.desc())
     )
+
+    if month:
+        try:
+            year_part, month_part = month.split("-")[:2]
+            year_num = int(year_part)
+            month_num = int(month_part)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="month must be YYYY-MM") from exc
+
+        query = query.where(
+            extract("year", Event.event_date) == year_num,
+            extract("month", Event.event_date) == month_num,
+        )
 
     if current_user.role == "manager":
         query = query.where(Event.manager_id == current_user.id)
@@ -415,7 +429,7 @@ def list_payment_requests(
 
     print(
         "PERF payment-requests "
-        f"role={current_user.role} user_id={current_user.id} rows={len(data)} "
+        f"role={current_user.role} user_id={current_user.id} month={month or 'all'} rows={len(data)} "
         f"sql={sql_elapsed:.3f}s rows={rows_elapsed:.3f}s total={time.perf_counter() - started_at:.3f}s"
     )
     return data

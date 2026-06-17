@@ -2621,8 +2621,15 @@ const state = {
   usersLoadingPromise: null,
   adminDashboardLoadingByMonth: {},
   managerDashboardLoadingByMonth: {},
+  managerDashboardCacheByMonth: {},
   dashboardLoadingByKey: {},
-  managerPaymentRequestsLoadingPromise: null,
+  dashboardLoadingKey: null,
+  dashboardLoadingPromise: null,
+  managerPaymentRequestsLoadingByMonth: {},
+  managerPaymentRequestsCacheByMonth: {},
+  managerEventDetailLoadingById: {},
+  managerEventRequestsLoadingById: {},
+  monthYearChangeTimer: null,
   monthYearSelectorsAttached: false,
   monthlyPlans: [],
   monthlyPlansYear: null,
@@ -2690,7 +2697,7 @@ function attachMonthYearSelectors() {
   const monthSelect = $("monthSelect");
   const yearSelect = $("yearSelect");
 
-  const handler = async () => {
+  const handler = () => {
     const nextMonth = selectedMonthValue();
     if (state.month === nextMonth && state.lastLoadedDashboardMonth === nextMonth) return;
 
@@ -2704,7 +2711,12 @@ function attachMonthYearSelectors() {
     } else {
       clearDashboardForPeriodLoading();
     }
-    await withLoading(loadDashboard, "Загружаем кабинет…");
+
+    if (state.monthYearChangeTimer) window.clearTimeout(state.monthYearChangeTimer);
+    state.monthYearChangeTimer = window.setTimeout(() => {
+      state.monthYearChangeTimer = null;
+      withLoading(loadDashboard, "Загружаем кабинет…").catch((error) => alert(error.message));
+    }, 80);
   };
 
   [monthSelect, yearSelect].forEach((select) => {
@@ -3072,6 +3084,18 @@ async function timedApi(label, path, options = {}) {
   } finally {
     console.info(`PERF web ${label} ${path}=${perfSeconds(startedAt)}s`);
   }
+}
+
+function cachedValue(cache, key, ttlMs) {
+  const record = cache?.[key];
+  if (!record) return null;
+  if ((Date.now() - record.loadedAt) > ttlMs) return null;
+  return record.value;
+}
+
+function setCachedValue(cache, key, value) {
+  cache[key] = { value, loadedAt: Date.now() };
+  return value;
 }
 
 
@@ -6294,6 +6318,21 @@ function renderManagerEventList(data) {
 }
 
 async function renderManagerEventDetail(eventId, options = {}) {
+  const key = `${eventId || "none"}:${options.useDraft ? "draft" : "server"}`;
+  if (!options.useDraft && state.managerEventDetailLoadingById && state.managerEventDetailLoadingById[key]) {
+    console.info(`PERF web manager-event-detail in-flight reuse key=${key}`);
+    return state.managerEventDetailLoadingById[key];
+  }
+
+  if (!state.managerEventDetailLoadingById) state.managerEventDetailLoadingById = {};
+  const task = renderManagerEventDetailImpl(eventId, options).finally(() => {
+    if (state.managerEventDetailLoadingById) delete state.managerEventDetailLoadingById[key];
+  });
+  if (!options.useDraft) state.managerEventDetailLoadingById[key] = task;
+  return task;
+}
+
+async function renderManagerEventDetailImpl(eventId, options = {}) {
   const holder = document.getElementById("managerEventDetail");
   if (!holder) return;
 
@@ -8060,14 +8099,29 @@ function selfEmployedSurnameFromItem(item) {
 
 async function refreshManagerPaymentRequestsForEvent(eventId) {
   if (!eventId) return;
+  const key = String(eventId);
 
-  try {
-    const requests = await api(`/events/${eventId}/payment-requests`);
-    const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
-    state.managerPaymentRequests = [...(requests || []), ...otherRequests];
-  } catch (error) {
-    console.warn("Не удалось обновить заявки мероприятия", error);
+  if (state.managerEventRequestsLoadingById && state.managerEventRequestsLoadingById[key]) {
+    console.info(`PERF web event-payment-requests in-flight reuse event=${key}`);
+    return state.managerEventRequestsLoadingById[key];
   }
+
+  if (!state.managerEventRequestsLoadingById) state.managerEventRequestsLoadingById = {};
+  state.managerEventRequestsLoadingById[key] = (async () => {
+    try {
+      const requests = await api(`/events/${eventId}/payment-requests`);
+      const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
+      state.managerPaymentRequests = [...(requests || []), ...otherRequests];
+      return requests;
+    } catch (error) {
+      console.warn("Не удалось обновить заявки мероприятия", error);
+      return [];
+    } finally {
+      if (state.managerEventRequestsLoadingById) delete state.managerEventRequestsLoadingById[key];
+    }
+  })();
+
+  return state.managerEventRequestsLoadingById[key];
 }
 
 
@@ -10308,6 +10362,12 @@ async function loadAdminDashboardData(month) {
 
 async function loadManagerDashboardData(month) {
   const key = String(month || "");
+  const cached = cachedValue(state.managerDashboardCacheByMonth, key, 1500);
+  if (cached) {
+    console.info(`PERF web manager-dashboard cache month=${key}`);
+    return cached;
+  }
+
   if (state.managerDashboardLoadingByMonth && state.managerDashboardLoadingByMonth[key]) {
     console.info(`PERF web manager-dashboard in-flight reuse month=${key}`);
     return state.managerDashboardLoadingByMonth[key];
@@ -10317,27 +10377,35 @@ async function loadManagerDashboardData(month) {
   state.managerDashboardLoadingByMonth[key] = timedApi(
     "manager-dashboard",
     `/manager-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`,
-  ).finally(() => {
+  ).then((data) => setCachedValue(state.managerDashboardCacheByMonth, key, data)).finally(() => {
     if (state.managerDashboardLoadingByMonth) delete state.managerDashboardLoadingByMonth[key];
   });
 
   return state.managerDashboardLoadingByMonth[key];
 }
 
-async function loadManagerPaymentRequestsData() {
-  if (state.managerPaymentRequestsLoadingPromise) {
-    console.info("PERF web payment-requests in-flight reuse");
-    return state.managerPaymentRequestsLoadingPromise;
+async function loadManagerPaymentRequestsData(month) {
+  const key = String(month || state.month || "");
+  const cached = cachedValue(state.managerPaymentRequestsCacheByMonth, key, 1500);
+  if (cached) {
+    console.info(`PERF web payment-requests cache month=${key}`);
+    return cached;
   }
 
-  state.managerPaymentRequestsLoadingPromise = timedApi(
+  if (state.managerPaymentRequestsLoadingByMonth && state.managerPaymentRequestsLoadingByMonth[key]) {
+    console.info(`PERF web payment-requests in-flight reuse month=${key}`);
+    return state.managerPaymentRequestsLoadingByMonth[key];
+  }
+
+  if (!state.managerPaymentRequestsLoadingByMonth) state.managerPaymentRequestsLoadingByMonth = {};
+  state.managerPaymentRequestsLoadingByMonth[key] = timedApi(
     "payment-requests",
-    `/payment-requests?_=${Date.now()}`,
-  ).finally(() => {
-    state.managerPaymentRequestsLoadingPromise = null;
+    `/payment-requests?month=${encodeURIComponent(key)}&_=${Date.now()}`,
+  ).then((data) => setCachedValue(state.managerPaymentRequestsCacheByMonth, key, data)).finally(() => {
+    if (state.managerPaymentRequestsLoadingByMonth) delete state.managerPaymentRequestsLoadingByMonth[key];
   });
 
-  return state.managerPaymentRequestsLoadingPromise;
+  return state.managerPaymentRequestsLoadingByMonth[key];
 }
 
 
@@ -10352,56 +10420,61 @@ async function loadDashboard() {
   const month = selectedMonthValue();
   const loadKey = `${user.role}:${month}`;
 
-  if (!state.dashboardLoadingByKey) state.dashboardLoadingByKey = {};
-  if (state.dashboardLoadingByKey[loadKey]) {
+  if (state.dashboardLoadingPromise && state.dashboardLoadingKey === loadKey) {
     console.info(`PERF web loadDashboard in-flight reuse key=${loadKey}`);
-    return state.dashboardLoadingByKey[loadKey];
+    return state.dashboardLoadingPromise;
   }
 
-  state.dashboardLoadingByKey[loadKey] = (async () => {
+  state.dashboardLoadingKey = loadKey;
+  state.dashboardLoadingPromise = (async () => {
     const dashboardStartedAt = perfNow();
     state.month = month;
 
-  if (user.role === "admin") {
+    if (user.role === "admin") {
+      try {
+        const [usersResult, dashboard] = await Promise.all([
+          loadUsersForAdmin(),
+          loadAdminDashboardData(month),
+        ]);
+        const renderStartedAt = perfNow();
+        renderAdminDashboard(dashboard);
+        console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
+      } catch (error) {
+        console.warn("Не удалось загрузить admin-dashboard за период", month, error);
+        renderAdminEmptyDashboard(month, error);
+      }
+      state.lastLoadedDashboardMonth = month;
+      return;
+    }
+
+    if (user.role === "department_head") {
+      const dashboard = await timedApi("department-head-dashboard", `/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
+      renderDepartmentDashboard(dashboard);
+      state.lastLoadedDashboardMonth = month;
+      return;
+    }
+
     try {
-      const [usersResult, dashboard] = await Promise.all([
-        loadUsersForAdmin(),
-        loadAdminDashboardData(month),
+      const [dashboard, requests] = await Promise.all([
+        loadManagerDashboardData(month),
+        loadManagerPaymentRequestsData(month),
       ]);
       const renderStartedAt = perfNow();
-      renderAdminDashboard(dashboard);
-      console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
+      renderManagerDashboard(dashboard, requests);
+      console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
     } catch (error) {
-      console.warn("Не удалось загрузить admin-dashboard за период", month, error);
-      renderAdminEmptyDashboard(month, error);
+      console.warn("Не удалось загрузить manager-dashboard за период", month, error);
+      renderManagerDashboard(emptyManagerDashboard(month), []);
     }
-    return;
-  }
-
-  if (user.role === "department_head") {
-    const dashboard = await timedApi("department-head-dashboard", `/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
-    renderDepartmentDashboard(dashboard);
-    return;
-  }
-
-  try {
-    const [dashboard, requests] = await Promise.all([
-      loadManagerDashboardData(month),
-      loadManagerPaymentRequestsData(),
-    ]);
-    const renderStartedAt = perfNow();
-    renderManagerDashboard(dashboard, requests);
-    console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
-  } catch (error) {
-    console.warn("Не удалось загрузить manager-dashboard за период", month, error);
-    renderManagerDashboard(emptyManagerDashboard(month), []);
-  }
     state.lastLoadedDashboardMonth = month;
   })().finally(() => {
-    if (state.dashboardLoadingByKey) delete state.dashboardLoadingByKey[loadKey];
+    if (state.dashboardLoadingKey === loadKey) {
+      state.dashboardLoadingKey = null;
+      state.dashboardLoadingPromise = null;
+    }
   });
 
-  return state.dashboardLoadingByKey[loadKey];
+  return state.dashboardLoadingPromise;
 }
 
 async function boot() {
