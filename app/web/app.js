@@ -2622,6 +2622,10 @@ const state = {
   adminDashboardLoadingByMonth: {},
   managerDashboardLoadingByMonth: {},
   managerDashboardCacheByMonth: {},
+  managerDashboardBundleLoadingByMonth: {},
+  managerDashboardBundleCacheByMonth: {},
+  managerEventPayloadById: {},
+  managerEventPayloadMonth: null,
   dashboardLoadingByKey: {},
   dashboardLoadingKey: null,
   dashboardLoadingPromise: null,
@@ -5463,6 +5467,11 @@ function patchPaymentRequestState(updatedRequest) {
   patchPaymentRequestInList(state.departmentHeadData?.payment_requests, updatedRequest);
   patchPaymentRequestInList(state.managerPaymentRequests, updatedRequest);
   patchPaymentRequestInList(state.currentEventModalPayload?.requests, updatedRequest);
+
+  const cachedPayload = state.managerEventPayloadById?.[String(updatedRequest.event_id || "")];
+  if (cachedPayload?.requests) {
+    patchPaymentRequestInList(cachedPayload.requests, updatedRequest);
+  }
 }
 
 function isRegularEventModalOpenForRequest(updatedRequest = null, sourceElement = null) {
@@ -6422,21 +6431,37 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
     return;
   }
 
-  if (!options.noLoading) {
+  const cachedPayload = !options.useDraft ? cachedManagerEventPayload(eventId) : null;
+
+  if (!options.noLoading && !cachedPayload) {
     holder.dataset.loadedEventId = "";
     holder.innerHTML = `<div class="empty-state">Загрузка мероприятия...</div>`;
   }
 
   try {
-    const [event, items, summary] = options.useDraft && state.currentManagerEvent
-      ? [state.currentManagerEvent, state.currentManagerItems || [], state.currentManagerSummary]
-      : await Promise.all([
-          api(`/events/${eventId}`),
-          api(`/events/${eventId}/items`),
-          api(`/events/${eventId}/summary`),
-        ]);
+    let event;
+    let items;
+    let summary;
 
-    await refreshManagerPaymentRequestsForEvent(eventId);
+    if (options.useDraft && state.currentManagerEvent) {
+      [event, items, summary] = [state.currentManagerEvent, state.currentManagerItems || [], state.currentManagerSummary];
+    } else if (cachedPayload) {
+      event = cachedPayload.event;
+      items = cachedPayload.items || [];
+      summary = cachedPayload.summary;
+      if (Array.isArray(cachedPayload.requests)) {
+        const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
+        state.managerPaymentRequests = [...cachedPayload.requests, ...otherRequests];
+      }
+      console.info(`PERF web manager-event-detail cache event=${eventId}`);
+    } else {
+      [event, items, summary] = await Promise.all([
+        api(`/events/${eventId}`),
+        api(`/events/${eventId}/items`),
+        api(`/events/${eventId}/summary`),
+      ]);
+      await refreshManagerPaymentRequestsForEvent(eventId);
+    }
 
     const dashboardEvent = getManagerDashboardEvent(eventId);
     const draftEvent = getDraftEvent({ ...(event || {}), ...(dashboardEvent || {}) });
@@ -10490,6 +10515,58 @@ async function loadManagerPaymentRequestsData(month) {
   return state.managerPaymentRequestsLoadingByMonth[key];
 }
 
+function cacheManagerEventPayloads(eventPayloads, month = state.month) {
+  if (!eventPayloads || typeof eventPayloads !== "object") return;
+
+  if (state.managerEventPayloadMonth !== month) {
+    state.managerEventPayloadById = {};
+    state.managerEventPayloadMonth = month;
+  }
+
+  Object.entries(eventPayloads).forEach(([eventId, payload]) => {
+    if (!payload || !payload.event) return;
+    state.managerEventPayloadById[String(eventId)] = payload;
+
+    if (Array.isArray(payload.requests)) {
+      const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
+      state.managerPaymentRequests = [...payload.requests, ...otherRequests];
+    }
+  });
+}
+
+function cachedManagerEventPayload(eventId) {
+  if (state.managerEventPayloadMonth !== state.month) return null;
+  return state.managerEventPayloadById?.[String(eventId)] || null;
+}
+
+async function loadManagerDashboardBundleData(month) {
+  const key = String(month || "");
+  const cached = cachedValue(state.managerDashboardBundleCacheByMonth, key, 1500);
+  if (cached) {
+    console.info(`PERF web manager-dashboard-bundle cache month=${key}`);
+    cacheManagerEventPayloads(cached.event_payloads || {}, key);
+    return cached;
+  }
+
+  if (state.managerDashboardBundleLoadingByMonth && state.managerDashboardBundleLoadingByMonth[key]) {
+    console.info(`PERF web manager-dashboard-bundle in-flight reuse month=${key}`);
+    return state.managerDashboardBundleLoadingByMonth[key];
+  }
+
+  if (!state.managerDashboardBundleLoadingByMonth) state.managerDashboardBundleLoadingByMonth = {};
+  state.managerDashboardBundleLoadingByMonth[key] = timedApi(
+    "manager-dashboard-bundle",
+    `/manager-dashboard-bundle?month=${month}&include_drafts=true&_=${Date.now()}`,
+  ).then((data) => {
+    cacheManagerEventPayloads(data?.event_payloads || {}, key);
+    return setCachedValue(state.managerDashboardBundleCacheByMonth, key, data);
+  }).finally(() => {
+    if (state.managerDashboardBundleLoadingByMonth) delete state.managerDashboardBundleLoadingByMonth[key];
+  });
+
+  return state.managerDashboardBundleLoadingByMonth[key];
+}
+
 
 function renderDashboardLoading(role) {
   const title = role === "admin" ? "Админка" : role === "department_head" ? "Кабинет отдела" : "Мои мероприятия";
@@ -10570,14 +10647,14 @@ async function loadDashboard() {
     }
 
     try {
-      const [dashboard, requests] = await Promise.all([
-        loadManagerDashboardData(month),
-        loadManagerPaymentRequestsData(month),
-      ]);
+      const bundle = await loadManagerDashboardBundleData(month);
+      const dashboard = bundle?.dashboard || emptyManagerDashboard(month);
+      const requests = bundle?.payment_requests || [];
       if (isStale()) {
         console.info(`PERF web skip stale manager-dashboard render key=${loadKey}`);
         return;
       }
+      cacheManagerEventPayloads(bundle?.event_payloads || {}, month);
       const renderStartedAt = perfNow();
       renderManagerDashboard(dashboard, requests);
       console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
@@ -10601,7 +10678,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.60 loaded");
+  console.info("Contrast Finance web app v0.40.61 loaded");
   if (!state.token) {
     showLogin();
     return;

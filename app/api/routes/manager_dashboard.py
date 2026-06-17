@@ -15,7 +15,14 @@ from app.models.event_share import EventShare
 from app.models.monthly_plan import MonthlyPlan
 from app.models.payment_request import PaymentRequest
 from app.models.user import User
-from app.schemas.manager_dashboard import ManagerDashboardEventRead, ManagerDashboardRead
+from app.schemas.manager_dashboard import ManagerDashboardBundleRead, ManagerDashboardEventRead, ManagerDashboardRead, ManagerEventFullPayload
+
+from app.schemas.event import EventRead
+from app.schemas.event_item import EventItemRead
+from app.schemas.event_summary import EventSummaryRead
+from app.schemas.payment_request import PaymentRequestRead
+from app.services.payment_totals import sync_event_paid_amounts_from_requests
+from app.api.routes.payment_requests import enrich_payment_request_read_fast
 from app.services.auth import get_current_user
 from app.services.event_calculator import calculate_event_summary_values, q
 
@@ -292,3 +299,169 @@ def get_manager_dashboard(
     )
 
     return dashboard
+
+
+def build_event_summary_read_for_bundle(event: Event, items: list[EventItem]) -> EventSummaryRead:
+    values = calculate_event_summary_values(event, items)
+    customer_paid = getattr(event, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00")
+
+    return EventSummaryRead(
+        event_id=event.id,
+        client_name=event.client_name,
+        title=event.title,
+        status=event.status,
+        client_calc_type=event.client_calc_type,
+
+        external_total=q(values["external_total"]),
+        fact_total=q(values["fact_total"]),
+        paid_total=q(values["paid_total"]),
+        customer_paid_amount=q(customer_paid),
+        customer_remaining_amount=q(max(Decimal("0.00"), values["turnover_with_vat"] - customer_paid)),
+
+        regular_external_total=q(values["regular_external_total"]),
+        regular_fact_total=q(values["regular_fact_total"]),
+
+        coordinator_external_total=q(values["coordinator_external_total"]),
+        coordinator_fact_amount=q(values["coordinator_fact_amount"]),
+        coordinator_company_share=q(values["coordinator_company_share"]),
+
+        vat_total=q(values["vat_total"]),
+        deductions_total=q(values["deductions_total"]),
+
+        internal_tax_amount=q(values["internal_tax_amount"]),
+        simplified_bank_tax_amount=q(values["simplified_bank_tax_amount"]),
+
+        manager_salary_base=q(values["manager_salary_base"]),
+        manager_percent=q(values["manager_percent"]),
+        manager_salary=q(values["manager_salary"]),
+        manager_salary_paid=q(values["manager_salary_paid"]),
+
+        company_income_before_manager_salary=q(values["company_income_before_manager_salary"]),
+        company_income_after_manager_salary=q(values["company_income_after_manager_salary"]),
+        final_company_income=q(values["final_company_income"]),
+
+        turnover_with_vat=q(values["turnover_with_vat"]),
+        client_vat_amount=q(values["client_vat_amount"]),
+        contractor_vat_credit=q(values["contractor_vat_credit"]),
+        vat_to_pay=q(values["vat_to_pay"]),
+        tax_rate_percent=q(values["tax_rate_percent"]),
+        tax_base_amount=q(values["tax_base_amount"]),
+        taxes_total=q(values["taxes_total"]),
+    )
+
+
+@router.get("/manager-dashboard-bundle", response_model=ManagerDashboardBundleRead)
+def get_manager_dashboard_bundle(
+    month: str,
+    include_drafts: bool = True,
+    manager_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fast manager cabinet payload.
+
+    Loads the manager dashboard, all payment requests for the selected month and
+    full event details in one backend call. This intentionally keeps the "load all
+    current month data" behavior, but removes the extra round trips that made
+    switching between cards feel slow.
+    """
+    perf_total_started = perf_counter()
+    month_date = parse_month(month)
+    manager = resolve_manager(db, current_user, manager_id)
+
+    dashboard = get_manager_dashboard(
+        month=month,
+        include_drafts=include_drafts,
+        manager_id=manager_id,
+        db=db,
+        current_user=current_user,
+    )
+    event_ids = [int(event.id) for event in dashboard.events]
+
+    if not event_ids:
+        logger.warning(
+            "PERF manager-dashboard-bundle month=%s manager_id=%s events=0 requests=0 total=%.3fs",
+            month,
+            manager.id,
+            perf_counter() - perf_total_started,
+        )
+        return ManagerDashboardBundleRead(dashboard=dashboard, payment_requests=[], event_payloads={})
+
+    for event_id in event_ids:
+        sync_event_paid_amounts_from_requests(db, event_id)
+    db.commit()
+
+    events_started = perf_counter()
+    events = db.execute(
+        select(Event)
+        .options(
+            selectinload(Event.items),
+            selectinload(Event.payment_requests),
+            selectinload(Event.shares),
+        )
+        .where(Event.id.in_(event_ids))
+        .order_by(Event.event_date, Event.id)
+    ).scalars().unique().all()
+    events_elapsed = perf_counter() - events_started
+
+    needed_user_ids = {manager.id}
+    for event in events:
+        if event.manager_id:
+            needed_user_ids.add(event.manager_id)
+        for share in (event.shares or []):
+            if share.user_id:
+                needed_user_ids.add(share.user_id)
+
+    users_started = perf_counter()
+    users = db.execute(select(User).where(User.id.in_(needed_user_ids))).scalars().all() if needed_user_ids else []
+    user_by_id = {user.id: user for user in users}
+    users_elapsed = perf_counter() - users_started
+
+    payloads_started = perf_counter()
+    event_payloads: dict[int, ManagerEventFullPayload] = {}
+    payment_requests_by_id: dict[int, PaymentRequestRead] = {}
+
+    for event in events:
+        manager_name = user_by_id.get(event.manager_id).name if event.manager_id in user_by_id else None
+        items = sorted(
+            [item for item in (event.items or []) if item.is_deleted is False],
+            key=lambda item: (item.sort_order or 0, item.id or 0),
+        )
+        summary = build_event_summary_read_for_bundle(event, items)
+        requests = sorted(list(event.payment_requests or []), key=lambda request: request.id or 0, reverse=True)
+        request_reads = [
+            enrich_payment_request_read_fast(request, event.client_name, event.title, manager_name)
+            for request in requests
+        ]
+        for request_read in request_reads:
+            payment_requests_by_id[int(request_read.id)] = request_read
+
+        event_payloads[int(event.id)] = ManagerEventFullPayload(
+            event=EventRead.model_validate(event),
+            items=[EventItemRead.model_validate(item) for item in items],
+            summary=summary,
+            requests=request_reads,
+        )
+
+    payment_requests = sorted(payment_requests_by_id.values(), key=lambda request: request.id, reverse=True)
+    payloads_elapsed = perf_counter() - payloads_started
+
+    logger.warning(
+        "PERF manager-dashboard-bundle month=%s include_drafts=%s manager_id=%s events=%s requests=%s "
+        "events_sql=%.3fs users_sql=%.3fs payloads=%.3fs total=%.3fs",
+        month,
+        include_drafts,
+        manager.id,
+        len(events),
+        len(payment_requests),
+        events_elapsed,
+        users_elapsed,
+        payloads_elapsed,
+        perf_counter() - perf_total_started,
+    )
+
+    return ManagerDashboardBundleRead(
+        dashboard=dashboard,
+        payment_requests=payment_requests,
+        event_payloads=event_payloads,
+    )

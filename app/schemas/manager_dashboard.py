@@ -48,3 +48,22 @@ class ManagerDashboardRead(BaseModel):
     active_payment_requests_count: int
 
     events: list[ManagerDashboardEventRead]
+
+
+from app.schemas.event import EventRead
+from app.schemas.event_item import EventItemRead
+from app.schemas.event_summary import EventSummaryRead
+from app.schemas.payment_request import PaymentRequestRead
+
+
+class ManagerEventFullPayload(BaseModel):
+    event: EventRead
+    items: list[EventItemRead]
+    summary: EventSummaryRead
+    requests: list[PaymentRequestRead]
+
+
+class ManagerDashboardBundleRead(BaseModel):
+    dashboard: ManagerDashboardRead
+    payment_requests: list[PaymentRequestRead]
+    event_payloads: dict[int, ManagerEventFullPayload]
