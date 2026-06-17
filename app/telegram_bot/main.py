@@ -299,6 +299,7 @@ def tax_status_label(status: str | None) -> str:
         "simplified": "Упрощенка",
         "snr": "СНР",
         "self_employed": "Самозанятый",
+        "legacy_checked": "Проверен ранее",
         "not_found": "Не проверен",
     }.get(str(status or ""), str(status or ""))
 
@@ -792,6 +793,40 @@ def remaining_for_item(item: EventItem) -> Decimal:
     return money(base) - money(item.paid_amount)
 
 
+def ensure_bot_invoice_legacy_context(db: Session, item: EventItem) -> EventItem:
+    invoice_request = db.execute(
+        select(PaymentRequest)
+        .where(
+            PaymentRequest.event_item_id == item.id,
+            PaymentRequest.payment_method == "invoice",
+            PaymentRequest.status.notin_(["cancelled", "rejected"]),
+        )
+        .order_by(PaymentRequest.created_at.desc(), PaymentRequest.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    source_bin = item.iin_bin or (invoice_request.iin_bin_snapshot if invoice_request else None)
+    source_status = item.tax_check_status or (invoice_request.tax_status_snapshot if invoice_request else None)
+
+    if source_bin and (item.iin_bin_locked or (invoice_request and invoice_request.iin_bin_snapshot)):
+        item.payment_method = "invoice"
+        item.iin_bin = source_bin
+        item.iin_bin_locked = True
+        if not source_status or source_status in {"not_found", "error"}:
+            source_status = "legacy_checked"
+        item.tax_check_status = source_status
+        if invoice_request:
+            if not item.vat_amount:
+                item.vat_amount = invoice_request.vat_amount_snapshot or Decimal("0.00")
+            if not item.deduction_amount:
+                item.deduction_amount = invoice_request.deduction_amount_snapshot or Decimal("0.00")
+        item.updated_at = datetime.utcnow()
+        db.add(item)
+        db.flush()
+
+    return item
+
+
 def validate_bot_request(item: EventItem, method: str, amount: Decimal, card_number: str | None, comment: str | None) -> None:
     if method == "invoice":
         if not item.iin_bin or not item.iin_bin_locked or not item.tax_check_status or item.tax_check_status == "not_found":
@@ -857,8 +892,10 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             if method == "invoice":
                 if payload.get("bin_iin"):
                     apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin")))
-                elif not item_has_locked_invoice_payment(item):
-                    raise RuntimeError("Для По счету сначала проверь БИН/ИИН")
+                else:
+                    item = ensure_bot_invoice_legacy_context(db, item)
+                    if not item_has_locked_invoice_payment(item):
+                        raise RuntimeError("Для По счету сначала проверь БИН/ИИН")
             elif method == "self_employed":
                 base = item.amount_fact if item.amount_fact is not None else item.external_amount
                 item.tax_check_status = "self_employed"
@@ -906,7 +943,7 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             ),
             iin_bin_snapshot=item.iin_bin if method == "invoice" else None,
             tax_status_snapshot=item.tax_check_status if method == "invoice" else ("self_employed" if method == "self_employed" else None),
-            vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else ("no_vat" if method in {"invoice", "self_employed"} else None),
+            vat_status_snapshot="vat" if (item.tax_check_status == "our_vat" or (method == "invoice" and item.vat_amount and item.vat_amount > 0)) else ("no_vat" if method in {"invoice", "self_employed"} else None),
             vat_amount_snapshot=item.vat_amount if method == "invoice" else Decimal("0.00"),
             deduction_amount_snapshot=item.deduction_amount if method in {"invoice", "self_employed"} else Decimal("0.00"),
             tax_source_snapshot="event_item" if method in {"invoice", "self_employed"} else None,

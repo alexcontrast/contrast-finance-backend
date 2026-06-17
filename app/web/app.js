@@ -7126,6 +7126,7 @@ function taxStatusLabel(status) {
     simplified: "Упрощенка",
     snr: "СНР",
     self_employed: "Самозанятый",
+    legacy_checked: "Проверен ранее",
     not_found: "Не найдено",
     error: "Ошибка",
   };
@@ -8367,8 +8368,51 @@ function eventDeleteDisabledReason(event) {
 
 
 
+function activeInvoicePaymentRequestForItem(item) {
+  return activePaymentRequestsForItem(item).find((request) => request.payment_method === "invoice") || null;
+}
+
 function itemHasActiveInvoicePaymentRequest(item) {
-  return activePaymentRequestsForItem(item).some((request) => request.payment_method === "invoice");
+  return Boolean(activeInvoicePaymentRequestForItem(item));
+}
+
+function isValidInvoiceTaxStatus(status) {
+  return Boolean(status && !["not_found", "error"].includes(String(status)));
+}
+
+function invoiceContextFromItem(item) {
+  if (!item) return null;
+
+  const request = activeInvoicePaymentRequestForItem(item);
+  const bin = String(item.iin_bin || request?.iin_bin_snapshot || "").replace(/\D/g, "");
+  const locked = Boolean(item.iin_bin_locked || request?.iin_bin_snapshot);
+
+  if (!bin || !locked) return null;
+
+  const rawStatus = item.tax_check_status || request?.tax_status_snapshot || null;
+  return {
+    iin_bin: bin,
+    iin_bin_locked: true,
+    tax_check_status: isValidInvoiceTaxStatus(rawStatus) ? rawStatus : "legacy_checked",
+    contractor_name: item.contractor_name || request?.contractor_name_snapshot || null,
+    vat_amount: asNumber(item.vat_amount) || asNumber(request?.vat_amount_snapshot) || 0,
+    deduction_amount: asNumber(item.deduction_amount) || asNumber(request?.deduction_amount_snapshot) || 0,
+  };
+}
+
+function applyInvoiceContextToItem(item) {
+  const context = invoiceContextFromItem(item);
+  if (!context || !item) return null;
+
+  item.payment_method = "invoice";
+  item.iin_bin = context.iin_bin;
+  item.iin_bin_locked = true;
+  item.tax_check_status = context.tax_check_status;
+  item.vat_amount = context.vat_amount;
+  item.deduction_amount = context.deduction_amount;
+  if (context.contractor_name) item.contractor_name = context.contractor_name;
+
+  return context;
 }
 
 function itemHasActiveSelfEmployedPaymentRequest(item) {
@@ -8700,10 +8744,7 @@ function validatePaymentCardBeforeSubmit() {
 }
 
 function invoiceBinAlreadyFixedForPayment(item) {
-  return Boolean(
-    itemHasLockedInvoicePayment(item) ||
-    itemHasActiveInvoicePaymentRequest(item)
-  );
+  return Boolean(invoiceContextFromItem(item));
 }
 
 
@@ -8714,17 +8755,20 @@ function renderPaymentExtraFields(eventId) {
   if (!extra || !item) return;
 
   if (method === "invoice") {
-    const isLocked = invoiceBinAlreadyFixedForPayment(item);
+    const invoiceContext = invoiceContextFromItem(item);
+    const isLocked = Boolean(invoiceContext);
+    const invoiceBinValue = invoiceContext?.iin_bin || item.iin_bin || "";
+    const invoiceTaxStatus = invoiceContext?.tax_check_status || item.tax_check_status || null;
     extra.innerHTML = `
       <label>БИН / ИИН
         <div class="payment-bin-row">
-          <input id="paymentBinInput" inputmode="numeric" value="${item.iin_bin || ""}" placeholder="12 цифр" ${isLocked ? "disabled" : ""} />
+          <input id="paymentBinInput" inputmode="numeric" value="${invoiceBinValue}" placeholder="12 цифр" ${isLocked ? "disabled" : ""} />
           <button class="ghost payment-check-bin-btn ${isLocked ? "is-disabled" : ""}" id="paymentCheckBinBtn" type="button" ${isLocked ? "disabled aria-disabled=\"true\"" : ""}>Проверить</button>
         </div>
       </label>
       <div class="payment-extra-hint" id="paymentBinHint">${
         isLocked
-          ? `БИН уже проверен и закреплён за позицией${item.tax_check_status ? `: ${taxStatusLabel(item.tax_check_status)}` : ""}`
+          ? `БИН уже проверен и закреплён за позицией${invoiceTaxStatus ? `: ${taxStatusLabel(invoiceTaxStatus)}` : ""}`
           : "Сначала проверь БИН. После успешной проверки можно создать заявку."
       }</div>
     `;
@@ -8779,14 +8823,7 @@ function renderPaymentExtraFields(eventId) {
 
 
 function paymentItemHasCheckedBin(item) {
-  return Boolean(
-    item &&
-    item.payment_method === "invoice" &&
-    item.iin_bin &&
-    item.iin_bin_locked &&
-    item.tax_check_status &&
-    item.tax_check_status !== "not_found"
-  );
+  return Boolean(invoiceContextFromItem(item));
 }
 
 function updatePaymentInvoiceUiAfterCheck(eventId, item) {
@@ -9065,15 +9102,16 @@ async function persistItemBeforePayment(eventId, item) {
 }
 
 async function prepareInvoicePaymentItem(eventId, item) {
-  if (!paymentItemHasCheckedBin(item)) {
+  const invoiceContext = applyInvoiceContextToItem(item);
+  if (!invoiceContext) {
     throw new Error("Сначала проверь БИН. После успешной проверки можно создать заявку.");
   }
 
-  item.payment_method = "invoice";
   await persistItemBeforePayment(eventId, item);
 
-  return item.contractor_name || item.contractor_name_snapshot || item.internal_note || `БИН ${item.iin_bin}`;
+  return invoiceContext.contractor_name || item.contractor_name || item.contractor_name_snapshot || item.internal_note || `БИН ${item.iin_bin}`;
 }
+
 
 async function prepareSelfEmployedPaymentItem(eventId, item) {
   item = await materializePaymentItemIfNeeded(eventId, item, "self_employed");
@@ -10930,7 +10968,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.65 loaded");
+  console.info("Contrast Finance web app v0.40.66 loaded");
   if (!state.token) {
     showLogin();
     return;

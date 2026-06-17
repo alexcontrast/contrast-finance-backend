@@ -46,6 +46,7 @@ def tax_status_label(tax_status: str | None) -> str | None:
         "simplified": "Упрощенка",
         "snr": "СНР",
         "self_employed": "Самозанятый",
+        "legacy_checked": "Проверен ранее",
         "not_found": "Не проверен",
         None: None,
     }
@@ -228,6 +229,56 @@ def comment_has_surname(comment: str | None) -> bool:
 
     words = [word.strip(" ,.;:!?()[]{}") for word in comment.split()]
     return any(len(word) >= 2 and any(ch.isalpha() for ch in word) for word in words)
+
+
+def active_invoice_request_for_item(db: Session, item: EventItem) -> PaymentRequest | None:
+    return db.execute(
+        select(PaymentRequest)
+        .where(
+            PaymentRequest.event_item_id == item.id,
+            PaymentRequest.payment_method == "invoice",
+            PaymentRequest.status.notin_(["cancelled", "rejected"]),
+        )
+        .order_by(PaymentRequest.created_at.desc(), PaymentRequest.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def ensure_invoice_item_context_from_legacy(db: Session, item: EventItem) -> EventItem:
+    """
+    Старые/импортированные позиции иногда уже закреплены как По счету,
+    но в самой строке позиции нет полного tax_check_status.
+    Если БИН закреплен на позиции или есть активная invoice-заявка по этой позиции,
+    восстанавливаем контекст из позиции/последней заявки и не заставляем менеджера
+    повторно проверять БИН, который UI уже показывает как закрепленный.
+    """
+    invoice_request = active_invoice_request_for_item(db, item)
+
+    source_bin = item.iin_bin or (invoice_request.iin_bin_snapshot if invoice_request else None)
+    source_status = item.tax_check_status or (invoice_request.tax_status_snapshot if invoice_request else None)
+
+    if not source_bin:
+        return item
+
+    if item.iin_bin_locked or (invoice_request and invoice_request.iin_bin_snapshot):
+        item.payment_method = "invoice"
+        item.iin_bin = source_bin
+        item.iin_bin_locked = True
+        if not source_status or source_status in {"not_found", "error"}:
+            source_status = "legacy_checked"
+        item.tax_check_status = source_status
+
+        if invoice_request:
+            if not item.vat_amount:
+                item.vat_amount = invoice_request.vat_amount_snapshot or Decimal("0.00")
+            if not item.deduction_amount:
+                item.deduction_amount = invoice_request.deduction_amount_snapshot or Decimal("0.00")
+
+        item.updated_at = datetime.utcnow()
+        db.add(item)
+        db.flush()
+
+    return item
 
 
 def validate_payment_request_rules(item: EventItem, payment_method: str, payload: PaymentRequestCreate):
@@ -524,6 +575,9 @@ def create_payment_request(
             detail="У позиции не указан способ оплаты",
         )
 
+    if payment_method == "invoice":
+        item = ensure_invoice_item_context_from_legacy(db, item)
+
     validate_payment_request_rules(item, payment_method, payload)
 
     remaining = calculate_item_remaining(item)
@@ -562,7 +616,7 @@ def create_payment_request(
         tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
             "self_employed" if payment_method == "self_employed" else None
         ),
-        vat_status_snapshot="vat" if item.tax_check_status == "our_vat" else (
+        vat_status_snapshot="vat" if (item.tax_check_status == "our_vat" or (payment_method == "invoice" and item.vat_amount and item.vat_amount > 0)) else (
             "no_vat" if payment_method in {"invoice", "self_employed"} else None
         ),
         vat_amount_snapshot=item.vat_amount if payment_method == "invoice" else Decimal("0.00"),
