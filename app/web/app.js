@@ -2625,6 +2625,8 @@ const state = {
   dashboardLoadingByKey: {},
   dashboardLoadingKey: null,
   dashboardLoadingPromise: null,
+  dashboardRequestSeq: 0,
+  managerMonthReloadTimer: null,
   managerPaymentRequestsLoadingByMonth: {},
   managerPaymentRequestsCacheByMonth: {},
   managerEventDetailLoadingById: {},
@@ -2699,13 +2701,16 @@ function attachMonthYearSelectors() {
 
   const handler = () => {
     const nextMonth = selectedMonthValue();
-    if (state.month === nextMonth && state.lastLoadedDashboardMonth === nextMonth) return;
+    const user = state.bootstrap?.user;
+    const nextKey = `${user?.role || "guest"}:${nextMonth}`;
+
+    if (state.month === nextMonth && state.lastLoadedDashboardMonth === nextMonth && !cfGlobalMap("dashboardInflightByKey")[nextKey]) return;
 
     state.month = nextMonth;
     state.paymentCustomerFilter = "all";
     state.paymentManagerFilter = "all";
     state.eventCustomerFilter = "all";
-    const user = state.bootstrap?.user;
+
     if (user?.role === "manager") {
       clearManagerSelectedEventUi();
     } else {
@@ -2715,8 +2720,8 @@ function attachMonthYearSelectors() {
     if (state.monthYearChangeTimer) window.clearTimeout(state.monthYearChangeTimer);
     state.monthYearChangeTimer = window.setTimeout(() => {
       state.monthYearChangeTimer = null;
-      withLoading(loadDashboard, "Загружаем кабинет…").catch((error) => alert(error.message));
-    }, 80);
+      loadDashboard().catch((error) => alert(error.message));
+    }, 180);
   };
 
   [monthSelect, yearSelect].forEach((select) => {
@@ -3096,6 +3101,24 @@ function cachedValue(cache, key, ttlMs) {
 function setCachedValue(cache, key, value) {
   cache[key] = { value, loadedAt: Date.now() };
   return value;
+}
+
+function cfGlobalMap(name) {
+  const root = window;
+  const key = `__contrastFinance_${name}`;
+  if (!root[key]) root[key] = {};
+  return root[key];
+}
+
+function currentDashboardLoadKey() {
+  const user = state.bootstrap?.user;
+  const role = user?.role || "guest";
+  return `${role}:${selectedMonthValue()}`;
+}
+
+function clearDashboardInflightKey(key) {
+  const map = cfGlobalMap("dashboardInflightByKey");
+  if (map[key]) delete map[key];
 }
 
 
@@ -10419,16 +10442,29 @@ async function loadDashboard() {
   const user = state.bootstrap.user;
   const month = selectedMonthValue();
   const loadKey = `${user.role}:${month}`;
+  const globalInflight = cfGlobalMap("dashboardInflightByKey");
 
-  if (state.dashboardLoadingPromise && state.dashboardLoadingKey === loadKey) {
-    console.info(`PERF web loadDashboard in-flight reuse key=${loadKey}`);
-    return state.dashboardLoadingPromise;
+  if (globalInflight[loadKey]) {
+    console.info(`PERF web loadDashboard global in-flight reuse key=${loadKey}`);
+    return globalInflight[loadKey];
   }
 
+  if (state.dashboardLoadingByKey && state.dashboardLoadingByKey[loadKey]) {
+    console.info(`PERF web loadDashboard local in-flight reuse key=${loadKey}`);
+    return state.dashboardLoadingByKey[loadKey];
+  }
+
+  if (!state.dashboardLoadingByKey) state.dashboardLoadingByKey = {};
+
+  const requestSeq = (state.dashboardRequestSeq || 0) + 1;
+  state.dashboardRequestSeq = requestSeq;
   state.dashboardLoadingKey = loadKey;
-  state.dashboardLoadingPromise = (async () => {
+
+  const task = (async () => {
     const dashboardStartedAt = perfNow();
     state.month = month;
+
+    const isStale = () => selectedMonthValue() !== month || state.dashboardRequestSeq !== requestSeq;
 
     if (user.role === "admin") {
       try {
@@ -10436,21 +10472,31 @@ async function loadDashboard() {
           loadUsersForAdmin(),
           loadAdminDashboardData(month),
         ]);
+        if (isStale()) {
+          console.info(`PERF web skip stale admin-dashboard render key=${loadKey}`);
+          return;
+        }
         const renderStartedAt = perfNow();
         renderAdminDashboard(dashboard);
         console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
       } catch (error) {
-        console.warn("Не удалось загрузить admin-dashboard за период", month, error);
-        renderAdminEmptyDashboard(month, error);
+        if (!isStale()) {
+          console.warn("Не удалось загрузить admin-dashboard за период", month, error);
+          renderAdminEmptyDashboard(month, error);
+        }
       }
-      state.lastLoadedDashboardMonth = month;
+      if (!isStale()) state.lastLoadedDashboardMonth = month;
       return;
     }
 
     if (user.role === "department_head") {
       const dashboard = await timedApi("department-head-dashboard", `/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
-      renderDepartmentDashboard(dashboard);
-      state.lastLoadedDashboardMonth = month;
+      if (!isStale()) {
+        renderDepartmentDashboard(dashboard);
+        state.lastLoadedDashboardMonth = month;
+      } else {
+        console.info(`PERF web skip stale department-dashboard render key=${loadKey}`);
+      }
       return;
     }
 
@@ -10459,25 +10505,37 @@ async function loadDashboard() {
         loadManagerDashboardData(month),
         loadManagerPaymentRequestsData(month),
       ]);
+      if (isStale()) {
+        console.info(`PERF web skip stale manager-dashboard render key=${loadKey}`);
+        return;
+      }
       const renderStartedAt = perfNow();
       renderManagerDashboard(dashboard, requests);
       console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
     } catch (error) {
-      console.warn("Не удалось загрузить manager-dashboard за период", month, error);
-      renderManagerDashboard(emptyManagerDashboard(month), []);
+      if (!isStale()) {
+        console.warn("Не удалось загрузить manager-dashboard за период", month, error);
+        renderManagerDashboard(emptyManagerDashboard(month), []);
+      }
     }
-    state.lastLoadedDashboardMonth = month;
+    if (!isStale()) state.lastLoadedDashboardMonth = month;
   })().finally(() => {
+    if (state.dashboardLoadingByKey) delete state.dashboardLoadingByKey[loadKey];
     if (state.dashboardLoadingKey === loadKey) {
       state.dashboardLoadingKey = null;
       state.dashboardLoadingPromise = null;
     }
+    clearDashboardInflightKey(loadKey);
   });
 
-  return state.dashboardLoadingPromise;
+  state.dashboardLoadingByKey[loadKey] = task;
+  state.dashboardLoadingPromise = task;
+  globalInflight[loadKey] = task;
+  return task;
 }
 
 async function boot() {
+  console.info("Contrast Finance web app v0.40.59 loaded");
   if (!state.token) {
     showLogin();
     return;
