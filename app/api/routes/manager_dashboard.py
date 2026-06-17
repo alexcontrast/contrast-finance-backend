@@ -1,9 +1,11 @@
 from datetime import date
 from decimal import Decimal
+import logging
+from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import extract, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.models.department import Department
@@ -19,6 +21,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 
 
 router = APIRouter(tags=["manager_dashboard"])
+logger = logging.getLogger("contrast.performance")
 
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
 
@@ -115,8 +118,15 @@ def get_manager_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    perf_total_started = perf_counter()
+    perf_marks: dict[str, float] = {"start": perf_total_started}
+
+    def mark_perf(name: str) -> None:
+        perf_marks[name] = perf_counter()
+
     month_date = parse_month(month)
     manager = resolve_manager(db, current_user, manager_id)
+    mark_perf("parse")
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
     # Кабинет менеджера не должен падать, если на выбранный месяц ещё не задан план.
@@ -132,21 +142,44 @@ def get_manager_dashboard(
         )
 
     department = db.get(Department, manager.department_id) if manager.department_id else None
+    mark_perf("base_sql")
 
     shared_event_ids = select(EventShare.event_id).where(EventShare.user_id == manager.id)
-    query = select(Event).where(
-        or_(Event.manager_id == manager.id, Event.id.in_(shared_event_ids)),
-        extract("year", Event.event_date) == month_date.year,
-        extract("month", Event.event_date) == month_date.month,
-        Event.status != "cancelled",
+    query = (
+        select(Event)
+        .options(
+            selectinload(Event.items),
+            selectinload(Event.payment_requests),
+            selectinload(Event.shares),
+        )
+        .where(
+            or_(Event.manager_id == manager.id, Event.id.in_(shared_event_ids)),
+            extract("year", Event.event_date) == month_date.year,
+            extract("month", Event.event_date) == month_date.month,
+            Event.status != "cancelled",
+        )
     )
 
     if not include_drafts:
         query = query.where(Event.status != "draft")
 
     events = db.execute(query.order_by(Event.event_date, Event.id)).scalars().unique().all()
-    users = db.execute(select(User).where(User.is_active == True)).scalars().all()  # noqa: E712
+    mark_perf("events_sql")
+
+    needed_user_ids = {manager.id}
+    for event in events:
+        if event.manager_id:
+            needed_user_ids.add(event.manager_id)
+        for share in (event.shares or []):
+            if share.user_id:
+                needed_user_ids.add(share.user_id)
+
+    if needed_user_ids:
+        users = db.execute(select(User).where(User.id.in_(needed_user_ids))).scalars().all()
+    else:
+        users = []
     user_by_id = {user.id: user for user in users}
+    mark_perf("users_sql")
 
     event_rows: list[ManagerDashboardEventRead] = []
     fact_income = Decimal("0.00")
@@ -158,11 +191,10 @@ def get_manager_dashboard(
         if event.status == "draft":
             drafts_count += 1
 
-        items = db.execute(
-            select(EventItem)
-            .where(EventItem.event_id == event.id, EventItem.is_deleted == False)  # noqa: E712
-            .order_by(EventItem.sort_order, EventItem.id)
-        ).scalars().all()
+        items = sorted(
+            [item for item in (event.items or []) if item.is_deleted is False],
+            key=lambda item: (item.sort_order or 0, item.id or 0),
+        )
 
         summary = calculate_event_summary_values(event, items)
         full_final_income = money(summary["final_company_income"])
@@ -171,9 +203,7 @@ def get_manager_dashboard(
 
         fact_income += manager_final_income
 
-        payment_requests = db.execute(
-            select(PaymentRequest).where(PaymentRequest.event_id == event.id)
-        ).scalars().all()
+        payment_requests = list(event.payment_requests or [])
 
         requests_count = len(payment_requests)
         active_requests_count = len([
@@ -210,9 +240,10 @@ def get_manager_dashboard(
             )
         )
 
+    mark_perf("events_calc")
     personal_plan = manager_personal_plan_amount(plan)
 
-    return ManagerDashboardRead(
+    dashboard = ManagerDashboardRead(
         month=month_date,
         manager_id=manager.id,
         manager_name=manager.name,
@@ -232,3 +263,32 @@ def get_manager_dashboard(
 
         events=event_rows,
     )
+    mark_perf("response_model")
+
+    def delta(start_name: str, end_name: str) -> float:
+        return perf_marks[end_name] - perf_marks[start_name]
+
+    items_count = sum(len([item for item in (event.items or []) if item.is_deleted is False]) for event in events)
+    requests_count = sum(len(event.payment_requests or []) for event in events)
+    shares_count = sum(len(event.shares or []) for event in events)
+
+    logger.warning(
+        "PERF manager-dashboard month=%s include_drafts=%s manager_id=%s events=%s items=%s requests=%s shares=%s users=%s "
+        "base_sql=%.3fs events_sql=%.3fs users_sql=%.3fs events_calc=%.3fs response_model=%.3fs total=%.3fs",
+        month,
+        include_drafts,
+        manager.id,
+        len(events),
+        items_count,
+        requests_count,
+        shares_count,
+        len(users),
+        delta("parse", "base_sql"),
+        delta("base_sql", "events_sql"),
+        delta("events_sql", "users_sql"),
+        delta("users_sql", "events_calc"),
+        delta("events_calc", "response_model"),
+        perf_marks["response_model"] - perf_total_started,
+    )
+
+    return dashboard

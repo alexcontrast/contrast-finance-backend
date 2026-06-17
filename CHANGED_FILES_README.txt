@@ -1,10 +1,11 @@
-Contrast Finance v0.40.55
+Contrast Finance v0.40.56
 
 Изменения:
-- Исправлен дубль загрузок при переключении месяца в админке.
-- /users теперь не стартует повторный запрос, если первый ещё в процессе.
-- /admin-dashboard для одного месяца теперь переиспользует уже запущенный in-flight запрос.
-- app.js cache-buster обновлён до v0.40.55.
+- Кабинет менеджера: добавлена защита от дублей параллельных запросов manager-dashboard и payment-requests.
+- Кабинет менеджера: добавлены frontend PERF-логи render-manager-dashboard и in-flight reuse.
+- Backend /manager-dashboard: добавлены PERF-логи в Railway Logs.
+- Backend /manager-dashboard: список пользователей для соавторства теперь грузит только нужных пользователей, а не всех активных.
+- app.js cache-buster обновлён до v0.40.56.
 
 Проверки:
 - python3 -m compileall -q app

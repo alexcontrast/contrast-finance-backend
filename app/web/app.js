@@ -2620,6 +2620,8 @@ const state = {
   usersCacheLoadedAt: 0,
   usersLoadingPromise: null,
   adminDashboardLoadingByMonth: {},
+  managerDashboardLoadingByMonth: {},
+  managerPaymentRequestsLoadingPromise: null,
   monthlyPlans: [],
   monthlyPlansYear: null,
   closingPanelData: null,
@@ -10293,6 +10295,40 @@ async function loadAdminDashboardData(month) {
   return state.adminDashboardLoadingByMonth[key];
 }
 
+async function loadManagerDashboardData(month) {
+  const key = String(month || "");
+  if (state.managerDashboardLoadingByMonth && state.managerDashboardLoadingByMonth[key]) {
+    console.info(`PERF web manager-dashboard in-flight reuse month=${key}`);
+    return state.managerDashboardLoadingByMonth[key];
+  }
+
+  if (!state.managerDashboardLoadingByMonth) state.managerDashboardLoadingByMonth = {};
+  state.managerDashboardLoadingByMonth[key] = timedApi(
+    "manager-dashboard",
+    `/manager-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`,
+  ).finally(() => {
+    if (state.managerDashboardLoadingByMonth) delete state.managerDashboardLoadingByMonth[key];
+  });
+
+  return state.managerDashboardLoadingByMonth[key];
+}
+
+async function loadManagerPaymentRequestsData() {
+  if (state.managerPaymentRequestsLoadingPromise) {
+    console.info("PERF web payment-requests in-flight reuse");
+    return state.managerPaymentRequestsLoadingPromise;
+  }
+
+  state.managerPaymentRequestsLoadingPromise = timedApi(
+    "payment-requests",
+    `/payment-requests?_=${Date.now()}`,
+  ).finally(() => {
+    state.managerPaymentRequestsLoadingPromise = null;
+  });
+
+  return state.managerPaymentRequestsLoadingPromise;
+}
+
 
 function renderDashboardLoading(role) {
   const title = role === "admin" ? "Админка" : role === "department_head" ? "Кабинет отдела" : "Мои мероприятия";
@@ -10330,10 +10366,12 @@ async function loadDashboard() {
 
   try {
     const [dashboard, requests] = await Promise.all([
-      timedApi("manager-dashboard", `/manager-dashboard?month=${month}&include_drafts=true&_=${Date.now()}`),
-      timedApi("payment-requests", `/payment-requests?_=${Date.now()}`),
+      loadManagerDashboardData(month),
+      loadManagerPaymentRequestsData(),
     ]);
+    const renderStartedAt = perfNow();
     renderManagerDashboard(dashboard, requests);
+    console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
   } catch (error) {
     console.warn("Не удалось загрузить manager-dashboard за период", month, error);
     renderManagerDashboard(emptyManagerDashboard(month), []);
