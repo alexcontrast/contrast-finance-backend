@@ -7882,6 +7882,12 @@ function itemPayloadForSave(item) {
   };
 }
 
+function markDraftItemSaved(item, payload = null) {
+  if (!item) return item;
+  item.__saved_payload_key = comparablePayloadString(payload || itemPayloadForSave(item));
+  return item;
+}
+
 function originalItemForSave(eventId, itemId) {
   const payload = cachedManagerEventPayload(eventId);
   return (payload?.items || []).find((candidate) => String(candidate.id) === String(itemId)) || null;
@@ -7890,10 +7896,12 @@ function originalItemForSave(eventId, itemId) {
 function itemNeedsSave(eventId, item, payload = null) {
   if (!item) return false;
   if (item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
+  const nextPayload = payload || itemPayloadForSave(item);
+  const nextKey = comparablePayloadString(nextPayload);
+  if (item.__saved_payload_key && item.__saved_payload_key === nextKey) return false;
   const original = originalItemForSave(eventId, item.id);
   if (!original) return true;
-  const nextPayload = payload || itemPayloadForSave(item);
-  return comparablePayloadString(itemPayloadForSave(original)) !== comparablePayloadString(nextPayload);
+  return comparablePayloadString(itemPayloadForSave(original)) !== nextKey;
 }
 
 async function saveSingleDraftItem(eventId, item, options = {}) {
@@ -7930,6 +7938,7 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
     throw new Error("Не удалось сохранить позицию");
   }
 
+  markDraftItemSaved(item);
   patchManagerEventPayloadItems(eventId, items);
   return item;
 }
@@ -9107,6 +9116,9 @@ async function checkPaymentInvoiceBin(eventId) {
   // второй full-save здесь больше не нужен.
   // /tax/check уже записал iin_bin, iin_bin_locked, tax_check_status, НДС и вычеты в позицию на backend.
   // Повторное saveDraftItems() делало модалку заметно медленнее.
+  // После успешной live-проверки считаем текущую позицию синхронизированной,
+  // чтобы создание invoice-заявки не делало лишний PATCH той же позиции.
+  markDraftItemSaved(item);
 
   patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
   updateInternalRowCells(item.id);
@@ -11153,7 +11165,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.70 loaded");
+  console.info("Contrast Finance web app v0.40.71 loaded");
   if (!state.token) {
     showLogin();
     return;

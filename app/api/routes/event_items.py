@@ -4,7 +4,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -169,20 +169,6 @@ def bulk_delete_event_items(
     if not item_ids:
         return {"ok": True, "event_id": event_id, "deleted_item_ids": []}
 
-    items = db.execute(
-        select(EventItem).where(
-            EventItem.event_id == event_id,
-            EventItem.id.in_(item_ids),
-            EventItem.is_deleted == False,  # noqa: E712
-        )
-    ).scalars().all()
-    items_sql_sec = _sec(started_at) - auth_sec
-
-    found_ids = {item.id for item in items}
-    missing_ids = [item_id for item_id in item_ids if item_id not in found_ids]
-    if missing_ids:
-        raise HTTPException(status_code=404, detail=f"Позиции не найдены: {missing_ids}")
-
     active_item_ids = db.execute(
         select(PaymentRequest.event_item_id)
         .where(
@@ -191,32 +177,43 @@ def bulk_delete_event_items(
         )
         .distinct()
     ).scalars().all()
-    active_sql_sec = _sec(started_at) - auth_sec - items_sql_sec
+    active_sql_sec = _sec(started_at) - auth_sec
     if active_item_ids:
         raise HTTPException(
             status_code=400,
             detail="Нельзя удалить позицию: по ней есть активные заявки на оплату",
         )
 
-    now = datetime.utcnow()
-    for item in items:
-        item.is_deleted = True
-        item.updated_at = now
-        db.add(item)
+    update_started_at = time.perf_counter()
+    result = db.execute(
+        update(EventItem)
+        .where(
+            EventItem.event_id == event_id,
+            EventItem.id.in_(item_ids),
+            EventItem.is_deleted == False,  # noqa: E712
+        )
+        .values(is_deleted=True, updated_at=datetime.utcnow())
+    )
+    update_sec = time.perf_counter() - update_started_at
+    deleted_count = int(result.rowcount or 0)
+    if deleted_count != len(item_ids):
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Одна или несколько позиций не найдены")
 
+    commit_started_at = time.perf_counter()
     db.commit()
-    commit_sec = _sec(started_at) - auth_sec - items_sql_sec - active_sql_sec
+    commit_sec = time.perf_counter() - commit_started_at
 
     logger.warning(
-        "PERF event-items-bulk-delete event_id=%s user_id=%s role=%s requested=%s deleted=%s auth=%.3fs items_sql=%.3fs active_sql=%.3fs commit=%.3fs total=%.3fs",
+        "PERF event-items-bulk-delete event_id=%s user_id=%s role=%s requested=%s deleted=%s auth=%.3fs active_sql=%.3fs update=%.3fs commit=%.3fs total=%.3fs",
         event_id,
         getattr(current_user, "id", None),
         getattr(current_user, "role", None),
         len(item_ids),
-        len(items),
+        deleted_count,
         auth_sec,
-        items_sql_sec,
         active_sql_sec,
+        update_sec,
         commit_sec,
         _sec(started_at),
     )

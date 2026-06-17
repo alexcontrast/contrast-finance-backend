@@ -95,6 +95,37 @@ def invoice_contractor_name_from_item(db: Session, item: EventItem) -> str | Non
     return getattr(check, "name_result", None)
 
 
+def invoice_contractor_snapshot_from_item(db: Session, item: EventItem) -> tuple[int | None, str | None]:
+    if not item.iin_bin:
+        return None, None
+
+    contractor = db.execute(
+        select(Contractor.id, Contractor.name)
+        .where(Contractor.iin_bin == item.iin_bin)
+        .order_by(Contractor.id.desc())
+        .limit(1)
+    ).one_or_none()
+    if contractor:
+        contractor_id, contractor_name = contractor
+        if contractor_name:
+            return contractor_id, contractor_name
+        check = db.execute(
+            select(TaxpayerCheck.name_result)
+            .where(TaxpayerCheck.iin_bin == item.iin_bin)
+            .order_by(TaxpayerCheck.checked_at.desc(), TaxpayerCheck.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        return contractor_id, check
+
+    check = db.execute(
+        select(TaxpayerCheck.name_result)
+        .where(TaxpayerCheck.iin_bin == item.iin_bin)
+        .order_by(TaxpayerCheck.checked_at.desc(), TaxpayerCheck.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return None, check
+
+
 def mark_payment_request_for_telegram_sync(db: Session, request_id: int) -> None:
     """Make the Telegram worker pick this request first on the next poll.
 
@@ -575,7 +606,7 @@ def create_payment_request(
             detail="У позиции не указан способ оплаты",
         )
 
-    if payment_method == "invoice":
+    if payment_method == "invoice" and (not item.iin_bin_locked or not item.tax_check_status):
         item = ensure_invoice_item_context_from_legacy(db, item)
 
     validate_payment_request_rules(item, payment_method, payload)
@@ -588,8 +619,7 @@ def create_payment_request(
     contractor_elapsed = 0.0
     if payment_method == "invoice" and item.iin_bin:
         contractor_started_at = time.perf_counter()
-        contractor_id = db.execute(select(Contractor.id).where(Contractor.iin_bin == item.iin_bin).limit(1)).scalar_one_or_none()
-        contractor_name_snapshot = invoice_contractor_name_from_item(db, item)
+        contractor_id, contractor_name_snapshot = invoice_contractor_snapshot_from_item(db, item)
         contractor_elapsed = time.perf_counter() - contractor_started_at
     elif payment_method == "self_employed":
         contractor_name_snapshot = (getattr(payload, "self_employed_surname", None) or payload.comment or "").strip() or None
@@ -632,22 +662,26 @@ def create_payment_request(
     )
     build_elapsed = time.perf_counter() - build_started_at
 
-    commit_started_at = time.perf_counter()
+    flush_started_at = time.perf_counter()
     db.add(request)
-    db.commit()
-    db.refresh(request)
-    commit_elapsed = time.perf_counter() - commit_started_at
+    db.flush()
+    flush_elapsed = time.perf_counter() - flush_started_at
 
     response_started_at = time.perf_counter()
     response = enrich_payment_request_for_event_fast(request, event, db, current_user)
     response_elapsed = time.perf_counter() - response_started_at
 
+    commit_started_at = time.perf_counter()
+    db.commit()
+    commit_elapsed = time.perf_counter() - commit_started_at
+
     print(
         "PERF payment-request-create "
         f"role={current_user.role} user_id={current_user.id} item_id={item_id} method={payment_method} "
         f"item={item_elapsed:.3f}s auth={auth_elapsed:.3f}s build={build_elapsed:.3f}s "
-        f"contractor={contractor_elapsed:.3f}s commit={commit_elapsed:.3f}s "
-        f"response={response_elapsed:.3f}s total={time.perf_counter() - started_at:.3f}s"
+        f"contractor={contractor_elapsed:.3f}s flush={flush_elapsed:.3f}s "
+        f"response={response_elapsed:.3f}s commit={commit_elapsed:.3f}s "
+        f"total={time.perf_counter() - started_at:.3f}s"
     )
 
     return response

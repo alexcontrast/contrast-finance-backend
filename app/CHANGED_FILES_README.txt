@@ -1,13 +1,17 @@
-Contrast Finance v0.40.70
+Contrast Finance v0.40.71
 
 Changed files:
 - app/web/app.js
 - app/web/index.html
 - app/api/routes/event_items.py
+- app/api/routes/payment_requests.py
 
 Changes:
-- Draft save deletes event items through one bulk-delete request instead of multiple DELETE requests.
-- Added backend PERF logs for event item create/update/delete/bulk-delete.
-- Event item create/update/delete avoid extra db.refresh by returning a validated response built before commit.
-- Invoice payment creation skips redundant PATCH after successful KGD check when item is already saved and unchanged.
-- KGD stays live-only: no BIN cache was added.
+- Invoice payment after successful live KGD now marks the item as locally saved, so creating the invoice request does not send a redundant PATCH /event-items/{id}.
+- Draft item save uses a local saved-payload fingerprint to avoid false dirty states after backend-side KGD writes.
+- Bulk-delete now uses a direct SQL UPDATE instead of loading every deleted item into ORM first.
+- Bulk-delete PERF log now separates active_sql, update, commit and total.
+- Invoice payment request creation skips legacy invoice restoration for already checked/locked invoice items.
+- Contractor snapshot lookup for invoice requests now avoids a duplicate contractor query.
+- Invoice payment request creation avoids db.refresh(request) after commit; response is built from the flushed object.
+- KGD remains live-only: no BIN cache was added.
