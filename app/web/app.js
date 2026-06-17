@@ -2620,6 +2620,12 @@ const state = {
   usersCacheLoadedAt: 0,
   usersLoadingPromise: null,
   adminDashboardLoadingByMonth: {},
+  adminDashboardBundleLoadingByMonth: {},
+  adminDashboardBundleCacheByMonth: {},
+  departmentDashboardBundleLoadingByMonth: {},
+  departmentDashboardBundleCacheByMonth: {},
+  eventModalPayloadById: {},
+  eventModalPayloadMonth: null,
   managerDashboardLoadingByMonth: {},
   managerDashboardCacheByMonth: {},
   managerDashboardBundleLoadingByMonth: {},
@@ -5353,7 +5359,31 @@ async function closeAdminEventEditMode(eventId, reloadModal = true) {
   }
 }
 
+
+function cacheEventModalPayloads(eventPayloads, month = state.month) {
+  if (!eventPayloads || typeof eventPayloads !== "object") return;
+  if (state.eventModalPayloadMonth !== month) {
+    state.eventModalPayloadById = {};
+    state.eventModalPayloadMonth = month;
+  }
+  Object.entries(eventPayloads).forEach(([eventId, payload]) => {
+    if (!payload || !payload.event) return;
+    state.eventModalPayloadById[String(eventId)] = payload;
+  });
+}
+
+function cachedEventModalPayload(eventId) {
+  if (state.eventModalPayloadMonth !== state.month) return null;
+  return state.eventModalPayloadById?.[String(eventId)] || null;
+}
+
 async function loadEventModalPayload(eventId) {
+  const cachedPayload = cachedEventModalPayload(eventId);
+  if (cachedPayload) {
+    console.info(`PERF web event-modal-detail cache event=${eventId}`);
+    return cachedPayload;
+  }
+
   const [event, summary, items, requests] = await Promise.all([
     api(`/events/${eventId}`),
     api(`/events/${eventId}/summary`),
@@ -10568,6 +10598,63 @@ async function loadManagerDashboardBundleData(month) {
 }
 
 
+
+async function loadAdminDashboardBundleData(month) {
+  const key = String(month || "");
+  const cached = cachedValue(state.adminDashboardBundleCacheByMonth, key, 1500);
+  if (cached) {
+    console.info(`PERF web admin-dashboard-bundle cache month=${key}`);
+    cacheEventModalPayloads(cached.event_payloads || {}, key);
+    return cached;
+  }
+
+  if (state.adminDashboardBundleLoadingByMonth && state.adminDashboardBundleLoadingByMonth[key]) {
+    console.info(`PERF web admin-dashboard-bundle in-flight reuse month=${key}`);
+    return state.adminDashboardBundleLoadingByMonth[key];
+  }
+
+  if (!state.adminDashboardBundleLoadingByMonth) state.adminDashboardBundleLoadingByMonth = {};
+  state.adminDashboardBundleLoadingByMonth[key] = timedApi(
+    "admin-dashboard-bundle",
+    `/admin-dashboard-bundle?month=${month}&include_drafts=true&_=${Date.now()}`,
+  ).then((data) => {
+    cacheEventModalPayloads(data?.event_payloads || {}, key);
+    return setCachedValue(state.adminDashboardBundleCacheByMonth, key, data);
+  }).finally(() => {
+    if (state.adminDashboardBundleLoadingByMonth) delete state.adminDashboardBundleLoadingByMonth[key];
+  });
+
+  return state.adminDashboardBundleLoadingByMonth[key];
+}
+
+async function loadDepartmentDashboardBundleData(month, departmentId) {
+  const key = `${departmentId || ""}:${month || ""}`;
+  const cached = cachedValue(state.departmentDashboardBundleCacheByMonth, key, 1500);
+  if (cached) {
+    console.info(`PERF web department-dashboard-bundle cache key=${key}`);
+    cacheEventModalPayloads(cached.event_payloads || {}, month);
+    return cached;
+  }
+
+  if (state.departmentDashboardBundleLoadingByMonth && state.departmentDashboardBundleLoadingByMonth[key]) {
+    console.info(`PERF web department-dashboard-bundle in-flight reuse key=${key}`);
+    return state.departmentDashboardBundleLoadingByMonth[key];
+  }
+
+  if (!state.departmentDashboardBundleLoadingByMonth) state.departmentDashboardBundleLoadingByMonth = {};
+  state.departmentDashboardBundleLoadingByMonth[key] = timedApi(
+    "department-dashboard-bundle",
+    `/department-head-dashboard-bundle?department_id=${departmentId}&month=${month}&include_drafts=true&_=${Date.now()}`,
+  ).then((data) => {
+    cacheEventModalPayloads(data?.event_payloads || {}, month);
+    return setCachedValue(state.departmentDashboardBundleCacheByMonth, key, data);
+  }).finally(() => {
+    if (state.departmentDashboardBundleLoadingByMonth) delete state.departmentDashboardBundleLoadingByMonth[key];
+  });
+
+  return state.departmentDashboardBundleLoadingByMonth[key];
+}
+
 function renderDashboardLoading(role) {
   const title = role === "admin" ? "Админка" : role === "department_head" ? "Кабинет отдела" : "Мои мероприятия";
   if (document.getElementById("dashboardTitle")) document.getElementById("dashboardTitle").textContent = title;
@@ -10614,14 +10701,16 @@ async function loadDashboard() {
 
     if (user.role === "admin") {
       try {
-        const [usersResult, dashboard] = await Promise.all([
+        const [usersResult, bundle] = await Promise.all([
           loadUsersForAdmin(),
-          loadAdminDashboardData(month),
+          loadAdminDashboardBundleData(month),
         ]);
+        const dashboard = bundle?.dashboard || emptyAdminDashboard(month);
         if (isStale()) {
           console.info(`PERF web skip stale admin-dashboard render key=${loadKey}`);
           return;
         }
+        cacheEventModalPayloads(bundle?.event_payloads || {}, month);
         const renderStartedAt = perfNow();
         renderAdminDashboard(dashboard);
         console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
@@ -10636,12 +10725,23 @@ async function loadDashboard() {
     }
 
     if (user.role === "department_head") {
-      const dashboard = await timedApi("department-head-dashboard", `/department-head-dashboard?department_id=${user.department_id}&month=${month}&include_drafts=true&_=${Date.now()}`);
-      if (!isStale()) {
-        renderDepartmentDashboard(dashboard);
-        state.lastLoadedDashboardMonth = month;
-      } else {
-        console.info(`PERF web skip stale department-dashboard render key=${loadKey}`);
+      try {
+        const bundle = await loadDepartmentDashboardBundleData(month, user.department_id);
+        const dashboard = bundle?.dashboard || {};
+        if (!isStale()) {
+          cacheEventModalPayloads(bundle?.event_payloads || {}, month);
+          const renderStartedAt = perfNow();
+          renderDepartmentDashboard(dashboard);
+          console.info(`PERF web render-department-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
+          state.lastLoadedDashboardMonth = month;
+        } else {
+          console.info(`PERF web skip stale department-dashboard render key=${loadKey}`);
+        }
+      } catch (error) {
+        if (!isStale()) {
+          console.warn("Не удалось загрузить department-dashboard за период", month, error);
+          renderDepartmentDashboard({ month, department_id: user.department_id, department_name: "", events: [], payment_requests: [], managers: [], expenses: [] });
+        }
       }
       return;
     }
@@ -10678,7 +10778,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.62 loaded");
+  console.info("Contrast Finance web app v0.40.63 loaded");
   if (!state.token) {
     showLogin();
     return;

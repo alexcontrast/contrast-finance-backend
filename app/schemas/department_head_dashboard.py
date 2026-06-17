@@ -99,3 +99,11 @@ class DepartmentHeadDashboardRead(BaseModel):
     payment_requests: list[DepartmentHeadPaymentRequestRead] = []
     expenses: list[DepartmentHeadExpenseRead] = []
     calculation: DepartmentHeadCalculationRead
+
+
+from app.schemas.manager_dashboard import ManagerEventFullPayload
+
+
+class DepartmentHeadDashboardBundleRead(BaseModel):
+    dashboard: DepartmentHeadDashboardRead
+    event_payloads: dict[int, ManagerEventFullPayload]

@@ -78,3 +78,11 @@ class AdminDashboardRead(BaseModel):
     events: list[AdminEventRowRead]
     payment_requests: list[AdminPaymentRequestRowRead]
     closing: AdminClosingRead
+
+
+from app.schemas.manager_dashboard import ManagerEventFullPayload
+
+
+class AdminDashboardBundleRead(BaseModel):
+    dashboard: AdminDashboardRead
+    event_payloads: dict[int, ManagerEventFullPayload]
