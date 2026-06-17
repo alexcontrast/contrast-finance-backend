@@ -2621,7 +2621,9 @@ const state = {
   usersLoadingPromise: null,
   adminDashboardLoadingByMonth: {},
   managerDashboardLoadingByMonth: {},
+  dashboardLoadingByKey: {},
   managerPaymentRequestsLoadingPromise: null,
+  monthYearSelectorsAttached: false,
   monthlyPlans: [],
   monthlyPlansYear: null,
   closingPanelData: null,
@@ -2688,21 +2690,30 @@ function attachMonthYearSelectors() {
   const monthSelect = $("monthSelect");
   const yearSelect = $("yearSelect");
 
+  const handler = async () => {
+    const nextMonth = selectedMonthValue();
+    if (state.month === nextMonth && state.lastLoadedDashboardMonth === nextMonth) return;
+
+    state.month = nextMonth;
+    state.paymentCustomerFilter = "all";
+    state.paymentManagerFilter = "all";
+    state.eventCustomerFilter = "all";
+    const user = state.bootstrap?.user;
+    if (user?.role === "manager") {
+      clearManagerSelectedEventUi();
+    } else {
+      clearDashboardForPeriodLoading();
+    }
+    await withLoading(loadDashboard, "Загружаем кабинет…");
+  };
+
   [monthSelect, yearSelect].forEach((select) => {
     if (!select) return;
-    select.addEventListener("change", async () => {
-      state.month = selectedMonthValue();
-      state.paymentCustomerFilter = "all";
-      state.paymentManagerFilter = "all";
-      state.eventCustomerFilter = "all";
-      const user = state.bootstrap?.user;
-      if (user?.role === "manager") {
-        clearManagerSelectedEventUi();
-      } else {
-        clearDashboardForPeriodLoading();
-      }
-      await withLoading(loadDashboard, "Загружаем кабинет…");
-    });
+    // Safari/SPA hot reload and repeated boot() could attach the same handler several times.
+    // Cloning the select keeps current value/options, but removes stale listeners.
+    const cleanSelect = select.cloneNode(true);
+    select.parentNode.replaceChild(cleanSelect, select);
+    cleanSelect.addEventListener("change", handler);
   });
 }
 
@@ -10337,10 +10348,19 @@ function renderDashboardLoading(role) {
 }
 
 async function loadDashboard() {
-  const dashboardStartedAt = perfNow();
   const user = state.bootstrap.user;
   const month = selectedMonthValue();
-  state.month = month;
+  const loadKey = `${user.role}:${month}`;
+
+  if (!state.dashboardLoadingByKey) state.dashboardLoadingByKey = {};
+  if (state.dashboardLoadingByKey[loadKey]) {
+    console.info(`PERF web loadDashboard in-flight reuse key=${loadKey}`);
+    return state.dashboardLoadingByKey[loadKey];
+  }
+
+  state.dashboardLoadingByKey[loadKey] = (async () => {
+    const dashboardStartedAt = perfNow();
+    state.month = month;
 
   if (user.role === "admin") {
     try {
@@ -10376,6 +10396,12 @@ async function loadDashboard() {
     console.warn("Не удалось загрузить manager-dashboard за период", month, error);
     renderManagerDashboard(emptyManagerDashboard(month), []);
   }
+    state.lastLoadedDashboardMonth = month;
+  })().finally(() => {
+    if (state.dashboardLoadingByKey) delete state.dashboardLoadingByKey[loadKey];
+  });
+
+  return state.dashboardLoadingByKey[loadKey];
 }
 
 async function boot() {

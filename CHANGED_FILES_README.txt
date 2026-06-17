@@ -1,13 +1,11 @@
-Contrast Finance v0.40.56
+Contrast Finance v0.40.57
 
-Изменения:
-- Кабинет менеджера: добавлена защита от дублей параллельных запросов manager-dashboard и payment-requests.
-- Кабинет менеджера: добавлены frontend PERF-логи render-manager-dashboard и in-flight reuse.
-- Backend /manager-dashboard: добавлены PERF-логи в Railway Logs.
-- Backend /manager-dashboard: список пользователей для соавторства теперь грузит только нужных пользователей, а не всех активных.
-- app.js cache-buster обновлён до v0.40.56.
-
-Проверки:
-- python3 -m compileall -q app
-- python3 -m py_compile app/telegram_bot/main.py
-- node --check app/web/app.js
+Changed files:
+- app/web/app.js
+  * Removed duplicate month-switch/dashboard loads by cleaning stale month/year listeners.
+  * Added loadDashboard in-flight guard by role+month.
+- app/web/index.html
+  * Updated app.js cache-buster to v0.40.57.
+- app/api/routes/payment_requests.py
+  * Optimized GET /payment-requests: one joined SQL query instead of per-row db.get(Event/User).
+  * Added PERF payment-requests log.

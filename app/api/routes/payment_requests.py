@@ -1,4 +1,5 @@
 from datetime import datetime
+import time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -305,6 +306,21 @@ def enrich_payment_request_read(request: PaymentRequest, db: Session | None = No
     return data
 
 
+def enrich_payment_request_read_fast(
+    request: PaymentRequest,
+    client_name: str | None = None,
+    event_title: str | None = None,
+    manager_name: str | None = None,
+) -> PaymentRequestRead:
+    data = PaymentRequestRead.model_validate(request)
+    data.tax_status_label = tax_status_label(request.tax_status_snapshot)
+    data.position = request.item_name_snapshot
+    data.client_name = client_name
+    data.event_title = event_title
+    data.manager_name = manager_name
+    return data
+
+
 def build_payment_request_card(request: PaymentRequest) -> PaymentRequestCardRead:
     return PaymentRequestCardRead(
         id=request.id,
@@ -360,11 +376,49 @@ def list_payment_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(PaymentRequest).order_by(PaymentRequest.id.desc())
-    query = event_scope_query_for_user(query, current_user)
+    started_at = time.perf_counter()
 
-    result = db.execute(query)
-    return [enrich_payment_request_read(request, db) for request in result.scalars().all()]
+    query = (
+        select(PaymentRequest, Event.client_name, Event.title, User.name)
+        .join(Event, Event.id == PaymentRequest.event_id)
+        .outerjoin(User, User.id == Event.manager_id)
+        .order_by(PaymentRequest.id.desc())
+    )
+
+    if current_user.role == "manager":
+        query = query.where(Event.manager_id == current_user.id)
+    elif current_user.role == "department_head":
+        shared_event_ids = select(EventShare.event_id).join(
+            User, User.id == EventShare.user_id
+        ).where(User.department_id == current_user.department_id)
+        event_has_shares = select(EventShare.id).where(EventShare.event_id == Event.id).exists()
+        primary_manager_in_department = select(User.department_id).where(User.id == Event.manager_id).scalar_subquery() == current_user.department_id
+        query = query.where(
+            or_(
+                Event.id.in_(shared_event_ids),
+                and_(not_(event_has_shares), primary_manager_in_department),
+            )
+        )
+    elif current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    sql_started_at = time.perf_counter()
+    rows = db.execute(query).all()
+    sql_elapsed = time.perf_counter() - sql_started_at
+
+    rows_started_at = time.perf_counter()
+    data = [
+        enrich_payment_request_read_fast(request, client_name, event_title, manager_name)
+        for request, client_name, event_title, manager_name in rows
+    ]
+    rows_elapsed = time.perf_counter() - rows_started_at
+
+    print(
+        "PERF payment-requests "
+        f"role={current_user.role} user_id={current_user.id} rows={len(data)} "
+        f"sql={sql_elapsed:.3f}s rows={rows_elapsed:.3f}s total={time.perf_counter() - started_at:.3f}s"
+    )
+    return data
 
 
 @router.get("/payment-requests/{request_id}", response_model=PaymentRequestRead)
