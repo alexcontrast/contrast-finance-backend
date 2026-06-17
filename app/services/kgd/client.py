@@ -1,4 +1,6 @@
 import json
+import logging
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -6,6 +8,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import get_settings
+
+
+logger = logging.getLogger(__name__)
+
+
+def _mask_iin_bin(value: str) -> str:
+    digits = normalize_iin_bin(value or "")
+    if len(digits) <= 4:
+        return "***"
+    return f"***{digits[-4:]}"
 
 
 @dataclass
@@ -20,6 +32,7 @@ class KgdTaxpayerResult:
     vat_status: str | None = None
     vat_credit_allowed: bool = False
     raw_response: dict | None = None
+    perf: dict | None = None
 
 
 def normalize_iin_bin(value: str) -> str:
@@ -83,6 +96,7 @@ def check_taxpayer_stub(iin_bin: str) -> KgdTaxpayerResult:
 
 
 def _fetch_json(label: str, url: str, headers: dict[str, str], timeout_seconds: int = 20) -> dict:
+    started_at = time.perf_counter()
     request = urllib.request.Request(url=url, headers=headers, method="GET")
 
     try:
@@ -97,6 +111,8 @@ def _fetch_json(label: str, url: str, headers: dict[str, str], timeout_seconds: 
             "status_code": exc.code,
             "body": _safe_json_parse(text),
             "text": text[:2000],
+            "text_len": len(text or ""),
+            "elapsed_sec": time.perf_counter() - started_at,
             "error": f"HTTP {exc.code}",
         }
     except Exception as exc:
@@ -106,6 +122,8 @@ def _fetch_json(label: str, url: str, headers: dict[str, str], timeout_seconds: 
             "status_code": None,
             "body": None,
             "text": "",
+            "text_len": 0,
+            "elapsed_sec": time.perf_counter() - started_at,
             "error": str(exc),
         }
 
@@ -116,6 +134,8 @@ def _fetch_json(label: str, url: str, headers: dict[str, str], timeout_seconds: 
         "status_code": status_code,
         "body": body,
         "text": text[:2000],
+        "text_len": len(text or ""),
+        "elapsed_sec": time.perf_counter() - started_at,
         "error": None if 200 <= int(status_code) < 300 else f"HTTP {status_code}",
     }
 
@@ -283,6 +303,7 @@ def _detect_vat_status(vat_body: Any) -> dict:
 
 
 def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
+    started_at = time.perf_counter()
     settings = get_settings()
 
     if not settings.KGD_API_KEY:
@@ -292,6 +313,7 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
             message="KGD_API_KEY is not configured",
             source="kgd_live",
             raw_response={"error": "KGD_API_KEY is not configured"},
+            perf={"total_sec": time.perf_counter() - started_at, "configured": False},
         )
 
     host = (settings.KGD_BASE_URL or "https://portal.kgd.gov.kz").rstrip("/")
@@ -301,9 +323,13 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     snr_url = f"{host}/services/isnaportalsync/public/snr-search/search?uin={encoded}"
     vat_url = f"{host}/services/isnaportalsync/public/search-payer-data?taxpayerCode={encoded}"
 
+    fetch_started_at = time.perf_counter()
     snr = _fetch_json("SNR налоговый режим", snr_url, headers)
+    snr_done_at = time.perf_counter()
     vat = _fetch_json("VAT НДС статус", vat_url, headers)
+    vat_done_at = time.perf_counter()
 
+    detect_started_at = time.perf_counter()
     snr_detected = _detect_snr_regime(snr.get("body") if snr.get("ok") else None)
     vat_detected = _detect_vat_status(vat.get("body") if vat.get("ok") else None)
 
@@ -322,6 +348,38 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     message_parts.append(snr_detected["regime"])
     message_parts.append(vat_detected["vat_status"])
     message = " / ".join(part for part in message_parts if part)
+
+    detect_done_at = time.perf_counter()
+    total_sec = detect_done_at - started_at
+    perf = {
+        "configured": True,
+        "snr_http_sec": float(snr.get("elapsed_sec") or (snr_done_at - fetch_started_at)),
+        "vat_http_sec": float(vat.get("elapsed_sec") or (vat_done_at - snr_done_at)),
+        "http_total_sec": vat_done_at - fetch_started_at,
+        "detect_sec": detect_done_at - detect_started_at,
+        "total_sec": total_sec,
+        "snr_ok": bool(snr.get("ok")),
+        "vat_ok": bool(vat.get("ok")),
+        "snr_status_code": snr.get("status_code"),
+        "vat_status_code": vat.get("status_code"),
+        "snr_text_len": int(snr.get("text_len") or 0),
+        "vat_text_len": int(vat.get("text_len") or 0),
+    }
+    logger.warning(
+        "PERF kgd-client iin_bin=%s source=kgd_live tax_status=%s snr_ok=%s vat_ok=%s "
+        "snr_status=%s vat_status=%s snr_http=%.3fs vat_http=%.3fs http_total=%.3fs detect=%.3fs total=%.3fs",
+        _mask_iin_bin(iin_bin),
+        tax_status,
+        perf["snr_ok"],
+        perf["vat_ok"],
+        perf["snr_status_code"],
+        perf["vat_status_code"],
+        perf["snr_http_sec"],
+        perf["vat_http_sec"],
+        perf["http_total_sec"],
+        perf["detect_sec"],
+        perf["total_sec"],
+    )
 
     return KgdTaxpayerResult(
         iin_bin=iin_bin,
@@ -349,6 +407,7 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
                 "ndsDeregistrationDate": vat_detected.get("nds_deregistration_date") or "",
             },
         },
+        perf=perf,
     )
 
 

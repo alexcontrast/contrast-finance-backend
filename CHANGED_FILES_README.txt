@@ -1,13 +1,13 @@
-Contrast Finance 2.0 — v0.40.67
+Contrast Finance v0.40.68 — KGD performance diagnostics
 
-Изменения:
-- Исправлено обновление кнопок статусов мероприятия в админской модалке в реальном времени.
-- После действий "Принять", "На доработку/Вернуть в работу", "Деньги в кассе" больше не используется старый кэш модалки.
-- Статус мероприятия патчится в локальном состоянии/кэше, и модалка сразу перерисовывает кнопки под новый статус.
-- Для "Деньги в кассе" локально обновляются money_status активных заявок мероприятия, чтобы кнопки и плашки не ждали перезагрузки.
-- Добавлен локальный lock/индикатор на кнопки статусов через общий runPatchUpdateAction.
+Changed files:
+- app/api/routes/tax.py
+- app/services/kgd/client.py
+- app/web/app.js
+- app/web/index.html
 
-Проверки:
-python3 -m compileall -q app
-python3 -m py_compile app/telegram_bot/main.py
-node --check app/web/app.js
+Purpose:
+- Add detailed backend PERF logs for /event-items/{id}/tax/check.
+- Add detailed backend PERF logs inside KGD client: SNR request, VAT request, parsing/detection, total.
+- Add frontend PERF logs for KGD checks from payment modal and estimate row.
+- Update frontend cache-buster/version to v0.40.68.

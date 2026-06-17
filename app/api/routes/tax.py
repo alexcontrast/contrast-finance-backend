@@ -1,5 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
+import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -18,6 +20,18 @@ from app.services.authorization import require_item_event_edit
 
 
 router = APIRouter(tags=["tax"])
+logger = logging.getLogger(__name__)
+
+
+def _perf_delta(marks: dict[str, float], start_name: str, end_name: str) -> float:
+    return marks[end_name] - marks[start_name]
+
+
+def _mask_iin_bin(value: str | None) -> str:
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    if len(digits) <= 4:
+        return "***"
+    return f"***{digits[-4:]}"
 
 
 def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal, Decimal]:
@@ -158,16 +172,37 @@ def check_event_item_tax(
     KGD_MODE=live:
     - реальные запросы в КГД через X-Portal-Token
     """
+    perf_started_at = time.perf_counter()
+    perf_marks = {"start": perf_started_at}
+
+    def mark_perf(name: str) -> None:
+        perf_marks[name] = time.perf_counter()
+
     item = db.get(EventItem, item_id)
+    mark_perf("item_sql")
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
 
     require_item_event_edit(db, current_user, item)
+    mark_perf("auth")
 
     try:
         kgd_result = check_taxpayer(payload.iin_bin)
     except ValueError as exc:
+        mark_perf("kgd_error")
+        logger.warning(
+            "PERF kgd-tax-check item_id=%s user_id=%s role=%s iin_bin=%s error=validation item_sql=%.3fs auth=%.3fs kgd=%.3fs total=%.3fs",
+            item_id,
+            getattr(current_user, "id", None),
+            getattr(current_user, "role", None),
+            _mask_iin_bin(payload.iin_bin),
+            _perf_delta(perf_marks, "start", "item_sql"),
+            _perf_delta(perf_marks, "item_sql", "auth"),
+            _perf_delta(perf_marks, "auth", "kgd_error"),
+            perf_marks["kgd_error"] - perf_started_at,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    mark_perf("kgd_check")
 
     before = {
         "iin_bin": item.iin_bin,
@@ -179,6 +214,7 @@ def check_event_item_tax(
 
     amount_base = get_amount_base(item)
     vat_amount, deduction_amount = calculate_tax_values(amount_base, kgd_result.tax_status)
+    mark_perf("tax_values")
 
     if kgd_result.tax_status == "not_found":
         item.iin_bin = kgd_result.iin_bin
@@ -235,6 +271,8 @@ def check_event_item_tax(
         "deduction_amount": str(item.deduction_amount),
     }
 
+    mark_perf("db_prepare")
+
     write_audit_log(
         db=db,
         user_id=None,
@@ -244,10 +282,42 @@ def check_event_item_tax(
         before_json=before,
         after_json=after,
     )
+    mark_perf("audit")
 
     db.add(item)
     db.commit()
+    mark_perf("commit")
     db.refresh(item)
+    mark_perf("refresh")
+
+    kgd_perf = getattr(kgd_result, "perf", None) or {}
+    logger.warning(
+        "PERF kgd-tax-check item_id=%s user_id=%s role=%s iin_bin=%s source=%s tax_status=%s "
+        "item_sql=%.3fs auth=%.3fs kgd=%.3fs tax_values=%.3fs db_prepare=%.3fs audit=%.3fs commit=%.3fs refresh=%.3fs total=%.3fs "
+        "client_total=%.3fs snr_http=%.3fs vat_http=%.3fs http_total=%.3fs detect=%.3fs snr_ok=%s vat_ok=%s",
+        item.id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        _mask_iin_bin(kgd_result.iin_bin),
+        kgd_result.source,
+        kgd_result.tax_status,
+        _perf_delta(perf_marks, "start", "item_sql"),
+        _perf_delta(perf_marks, "item_sql", "auth"),
+        _perf_delta(perf_marks, "auth", "kgd_check"),
+        _perf_delta(perf_marks, "kgd_check", "tax_values"),
+        _perf_delta(perf_marks, "tax_values", "db_prepare"),
+        _perf_delta(perf_marks, "db_prepare", "audit"),
+        _perf_delta(perf_marks, "audit", "commit"),
+        _perf_delta(perf_marks, "commit", "refresh"),
+        perf_marks["refresh"] - perf_started_at,
+        float(kgd_perf.get("total_sec") or 0),
+        float(kgd_perf.get("snr_http_sec") or 0),
+        float(kgd_perf.get("vat_http_sec") or 0),
+        float(kgd_perf.get("http_total_sec") or 0),
+        float(kgd_perf.get("detect_sec") or 0),
+        kgd_perf.get("snr_ok"),
+        kgd_perf.get("vat_ok"),
+    )
 
     return TaxResult(
         item_id=item.id,

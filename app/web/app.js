@@ -8040,6 +8040,7 @@ function syncDraftItemFromRowBeforeTax(itemId) {
 }
 
 async function checkTaxForItem(itemId) {
+  const kgdStartedAt = perfNow();
   const originalItemId = String(itemId);
   let item = syncDraftItemFromRowBeforeTax(itemId);
 
@@ -8073,8 +8074,8 @@ async function checkTaxForItem(itemId) {
     // КГД должен работать только с настоящим database id.
     // Поэтому сначала сохраняем текущую смету. Если строка была tmp,
     // saveDraftItems() меняет id прямо у этой же ссылки item.
-    await saveDraftEvent(state.selectedManagerEventId);
-    await saveDraftItems(state.selectedManagerEventId);
+    await timedAction("kgd-estimate-event-save", () => saveDraftEvent(state.selectedManagerEventId));
+    await timedAction("kgd-estimate-items-save", () => saveDraftItems(state.selectedManagerEventId));
 
     if (String(item.id).startsWith("tmp-")) {
       throw new Error("Не удалось сохранить позицию перед проверкой КГД");
@@ -8082,7 +8083,7 @@ async function checkTaxForItem(itemId) {
 
     itemId = item.id;
 
-    const result = await api(`/event-items/${itemId}/tax/check`, {
+    const result = await timedApi("kgd-estimate-check-api", `/event-items/${itemId}/tax/check`, {
       method: "POST",
       body: JSON.stringify({ iin_bin: normalized }),
     });
@@ -8113,6 +8114,8 @@ async function checkTaxForItem(itemId) {
     }
 
     alert(error.message || "КГД не ответил");
+  } finally {
+    console.info(`PERF web kgd-estimate-check total=${perfSeconds(kgdStartedAt)}s item=${originalItemId}`);
   }
 }
 
@@ -8970,6 +8973,7 @@ function updatePaymentInvoiceUiAfterCheck(eventId, item) {
 }
 
 async function checkPaymentInvoiceBin(eventId) {
+  const kgdStartedAt = perfNow();
   let item = selectedPaymentItem(eventId);
   if (!item || item.item_type === "manager_salary") {
     throw new Error("Выбери позицию из сметы");
@@ -8978,7 +8982,7 @@ async function checkPaymentInvoiceBin(eventId) {
   const amountInput = $("paymentAmountInput");
   const amountValueBeforeCheck = amountInput?.value || "";
 
-  item = await materializePaymentItemIfNeeded(eventId, item, "invoice");
+  item = await timedAction("kgd-payment-materialize-item", () => materializePaymentItemIfNeeded(eventId, item, "invoice"));
 
   const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
   if (bin.length !== 12) {
@@ -8993,9 +8997,9 @@ async function checkPaymentInvoiceBin(eventId) {
   // Перед КГД сохраняем смету один раз:
   // - для новой позиции это создаёт строку в БД
   // - для существующей позиции это сохраняет актуальный Факт, чтобы вычеты считались от правильной базы
-  await persistItemBeforePayment(eventId, item);
+  await timedAction("kgd-payment-persist-item", () => persistItemBeforePayment(eventId, item));
 
-  const taxResult = await api(`/event-items/${item.id}/tax/check`, {
+  const taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
     method: "POST",
     body: JSON.stringify({ iin_bin: bin }),
   });
@@ -11077,7 +11081,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.67 loaded");
+  console.info("Contrast Finance web app v0.40.68 loaded");
   if (!state.token) {
     showLogin();
     return;
