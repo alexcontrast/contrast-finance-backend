@@ -1,13 +1,15 @@
-Contrast Finance v0.40.68 — KGD performance diagnostics
+v0.40.69
 
-Changed files:
-- app/api/routes/tax.py
-- app/services/kgd/client.py
-- app/web/app.js
-- app/web/index.html
+Изменения:
+- КГД-проверка в смете больше не сохраняет всё мероприятие и всю смету ради одной строки.
+- КГД-проверка в модалке оплаты для новой позиции создаёт позицию сразу с BIN и пропускает лишний повторный PATCH.
+- Кэш КГД не добавлялся: каждая проверка по-прежнему ходит в live-КГД.
+- Сохранение черновика теперь отправляет только изменённые строки сметы и удалённые позиции, а не всю смету целиком.
+- Сохранение мероприятия пропускает PATCH /events/{id}, если поля мероприятия фактически не менялись.
+- Backend КГД больше не делает лишний db.refresh(item) после commit; ответ собирается из уже известных данных.
+- Добавлены/сохранены PERF-логи по изменённым участкам.
 
-Purpose:
-- Add detailed backend PERF logs for /event-items/{id}/tax/check.
-- Add detailed backend PERF logs inside KGD client: SNR request, VAT request, parsing/detection, total.
-- Add frontend PERF logs for KGD checks from payment modal and estimate row.
-- Update frontend cache-buster/version to v0.40.68.
+Проверки:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js

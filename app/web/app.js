@@ -6915,25 +6915,45 @@ function attachDraftEventInputs(eventId) {
   });
 }
 
-async function saveDraftEvent(eventId) {
+function eventPayloadForSave(draftEvent) {
+  return {
+    client_name: draftEvent.client_name,
+    title: draftEvent.title,
+    event_date: eventDateForInput(draftEvent.event_date),
+    department_id: draftEvent.department_id,
+    manager_id: draftEvent.manager_id,
+    status: draftEvent.status,
+    client_calc_type: draftEvent.client_calc_type,
+    manager_percent: draftEvent.manager_percent,
+    agency_commission_amount: draftEvent.agency_commission_amount,
+    agency_commission_spread_enabled: draftEvent.agency_commission_spread_enabled,
+    simplified_bank_tax_percent: draftEvent.client_calc_type === "simplified" ? draftEvent.simplified_bank_tax_percent : 0,
+  };
+}
+
+function comparablePayloadString(payload) {
+  return JSON.stringify(payload || {});
+}
+
+function eventNeedsSave(eventId, payload) {
+  const cachedEvent = cachedManagerEventPayload(eventId)?.event || null;
+  if (!cachedEvent) return true;
+  return comparablePayloadString(eventPayloadForSave(cachedEvent)) !== comparablePayloadString(payload);
+}
+
+async function saveDraftEvent(eventId, options = {}) {
   const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
   if (!draftEvent) return null;
 
+  const payload = eventPayloadForSave(draftEvent);
+  if (!options.force && !eventNeedsSave(eventId, payload)) {
+    console.info(`PERF web manager-event-save-skip event=${eventId}`);
+    return draftEvent;
+  }
+
   const savedEvent = await api(`/events/${eventId}`, {
     method: "PATCH",
-    body: JSON.stringify({
-      client_name: draftEvent.client_name,
-      title: draftEvent.title,
-      event_date: eventDateForInput(draftEvent.event_date),
-      department_id: draftEvent.department_id,
-      manager_id: draftEvent.manager_id,
-      status: draftEvent.status,
-      client_calc_type: draftEvent.client_calc_type,
-      manager_percent: draftEvent.manager_percent,
-      agency_commission_amount: draftEvent.agency_commission_amount,
-      agency_commission_spread_enabled: draftEvent.agency_commission_spread_enabled,
-      simplified_bank_tax_percent: draftEvent.client_calc_type === "simplified" ? draftEvent.simplified_bank_tax_percent : 0,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (savedEvent) {
@@ -7862,6 +7882,58 @@ function itemPayloadForSave(item) {
   };
 }
 
+function originalItemForSave(eventId, itemId) {
+  const payload = cachedManagerEventPayload(eventId);
+  return (payload?.items || []).find((candidate) => String(candidate.id) === String(itemId)) || null;
+}
+
+function itemNeedsSave(eventId, item, payload = null) {
+  if (!item) return false;
+  if (item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
+  const original = originalItemForSave(eventId, item.id);
+  if (!original) return true;
+  const nextPayload = payload || itemPayloadForSave(item);
+  return comparablePayloadString(itemPayloadForSave(original)) !== comparablePayloadString(nextPayload);
+}
+
+async function saveSingleDraftItem(eventId, item, options = {}) {
+  if (!item) throw new Error("Не выбрана позиция");
+
+  const items = getDraftItems(eventId);
+  items.forEach((candidate, index) => {
+    candidate.sort_order = candidate.item_type === "coordinator" ? -100 : index;
+  });
+
+  const payload = itemPayloadForSave(item);
+  const wasTemp = item.is_temp || String(item.id || "").startsWith("tmp-");
+
+  if (!wasTemp && !options.force && !itemNeedsSave(eventId, item, payload)) {
+    console.info(`PERF web manager-item-save-skip item=${item.id}`);
+    return item;
+  }
+
+  if (wasTemp) {
+    const created = await api(`/events/${eventId}/items`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    Object.assign(item, created, { is_temp: false });
+  } else {
+    const updated = await api(`/event-items/${item.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    Object.assign(item, updated, { is_temp: false });
+  }
+
+  if (String(item.id || "").startsWith("tmp-")) {
+    throw new Error("Не удалось сохранить позицию");
+  }
+
+  patchManagerEventPayloadItems(eventId, items);
+  return item;
+}
+
 async function saveDraftItems(eventId) {
   const items = getDraftItems(eventId);
   items.forEach((item, index) => {
@@ -7869,28 +7941,17 @@ async function saveDraftItems(eventId) {
   });
   const deletedIds = getDraftDeletedIds(eventId);
 
-  await Promise.all(deletedIds
+  const deleteTasks = deletedIds
     .filter((itemId) => !String(itemId).startsWith("tmp-"))
-    .map((itemId) => api(`/event-items/${itemId}`, { method: "DELETE" }))
-  );
+    .map((itemId) => api(`/event-items/${itemId}`, { method: "DELETE" }));
 
-  await Promise.all(items.map(async (item) => {
-    const payload = itemPayloadForSave(item);
-    if (String(item.id).startsWith("tmp-")) {
-      const created = await api(`/events/${eventId}/items`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      item.id = created.id;
-      item.is_temp = false;
-      return created;
-    }
+  const saveTasks = items
+    .filter((item) => itemNeedsSave(eventId, item))
+    .map((item) => saveSingleDraftItem(eventId, item, { force: true }));
 
-    return api(`/event-items/${item.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
-  }));
+  console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${deleteTasks.length} total=${items.length}`);
+
+  await Promise.all([...deleteTasks, ...saveTasks]);
 
   state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = [];
   patchManagerEventPayloadItems(eventId, items);
@@ -8070,12 +8131,11 @@ async function checkTaxForItem(itemId) {
   item.payment_method = "invoice";
 
   try {
-    // Ключевой фикс:
-    // КГД должен работать только с настоящим database id.
-    // Поэтому сначала сохраняем текущую смету. Если строка была tmp,
-    // saveDraftItems() меняет id прямо у этой же ссылки item.
-    await timedAction("kgd-estimate-event-save", () => saveDraftEvent(state.selectedManagerEventId));
-    await timedAction("kgd-estimate-items-save", () => saveDraftItems(state.selectedManagerEventId));
+    // Для КГД нужна только текущая строка с реальным database id.
+    // Раньше ради одной проверки сохранялись всё мероприятие и вся смета.
+    // Это давало 5–8 секунд лишнего ожидания.
+    const wasTemp = item.is_temp || String(item.id || "").startsWith("tmp-");
+    await timedAction("kgd-estimate-item-save", () => saveSingleDraftItem(state.selectedManagerEventId, item, { force: true }));
 
     if (String(item.id).startsWith("tmp-")) {
       throw new Error("Не удалось сохранить позицию перед проверкой КГД");
@@ -8096,8 +8156,12 @@ async function checkTaxForItem(itemId) {
     item.payment_method = "invoice";
 
     // После сохранения tmp→real id DOM обязан получить новые data-item-id.
-    // Поэтому не пытаемся точечно обновлять старую tmp-строку, а перерисовываем карточку.
-    rerenderCurrentManagerCard();
+    // Для существующей строки достаточно точечного обновления.
+    if (wasTemp) {
+      rerenderCurrentManagerCard();
+    } else {
+      updateTaxUiInPlace(itemId);
+    }
     updateCurrentManagerMiniCardLive();
     showDraftSavedHint();
   } catch (error) {
@@ -8762,10 +8826,13 @@ function createDraftItemFromPaymentModal(eventId, method) {
   return item;
 }
 
-async function materializePaymentItemIfNeeded(eventId, item, method) {
+async function materializePaymentItemIfNeeded(eventId, item, method, initialPatch = null) {
   if (!item?.is_new_payment_position) return item;
 
   const created = createDraftItemFromPaymentModal(eventId, method);
+  if (initialPatch && typeof initialPatch === "object") {
+    Object.assign(created, initialPatch);
+  }
   await persistItemBeforePayment(eventId, created);
 
   const items = getDraftItems(eventId);
@@ -8982,22 +9049,31 @@ async function checkPaymentInvoiceBin(eventId) {
   const amountInput = $("paymentAmountInput");
   const amountValueBeforeCheck = amountInput?.value || "";
 
-  item = await timedAction("kgd-payment-materialize-item", () => materializePaymentItemIfNeeded(eventId, item, "invoice"));
-
   const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
   if (bin.length !== 12) {
     throw new Error("Для оплаты по счету укажи БИН/ИИН из 12 цифр");
   }
+
+  const wasNewPaymentPosition = Boolean(item.is_new_payment_position);
+  item = await timedAction("kgd-payment-materialize-item", () => materializePaymentItemIfNeeded(eventId, item, "invoice", {
+    payment_method: "invoice",
+    iin_bin: bin,
+    iin_bin_locked: false,
+    tax_check_status: null,
+  }));
 
   item.payment_method = "invoice";
   item.iin_bin = bin;
   item.iin_bin_locked = false;
   item.tax_check_status = null;
 
-  // Перед КГД сохраняем смету один раз:
-  // - для новой позиции это создаёт строку в БД
-  // - для существующей позиции это сохраняет актуальный Факт, чтобы вычеты считались от правильной базы
-  await timedAction("kgd-payment-persist-item", () => persistItemBeforePayment(eventId, item));
+  // Перед КГД сохраняем только выбранную позицию.
+  // Если это новая позиция, она уже была создана сразу с BIN на materialize-шаге.
+  if (wasNewPaymentPosition) {
+    console.info(`PERF web kgd-payment-persist-item-skip new-item=${item.id}`);
+  } else {
+    await timedAction("kgd-payment-persist-item", () => persistItemBeforePayment(eventId, item));
+  }
 
   const taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
     method: "POST",
@@ -9184,34 +9260,7 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
 async function persistItemBeforePayment(eventId, item) {
   // Для создания заявки сохраняем только выбранную позицию.
   // Старый вариант сохранял всю смету и из-за этого создание оплаты могло тянуться долго.
-  if (!item) throw new Error("Не выбрана позиция для заявки");
-
-  const items = getDraftItems(eventId);
-  items.forEach((candidate, index) => {
-    candidate.sort_order = candidate.item_type === "coordinator" ? -100 : index;
-  });
-
-  const payload = itemPayloadForSave(item);
-  if (String(item.id).startsWith("tmp-")) {
-    const created = await api(`/events/${eventId}/items`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-    Object.assign(item, created, { is_temp: false });
-  } else {
-    const updated = await api(`/event-items/${item.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
-    Object.assign(item, updated, { is_temp: false });
-  }
-
-  if (String(item.id).startsWith("tmp-")) {
-    throw new Error("Не удалось сохранить позицию перед заявкой");
-  }
-
-  patchManagerEventPayloadItems(eventId, items);
-  return item;
+  return saveSingleDraftItem(eventId, item, { force: true });
 }
 
 async function prepareInvoicePaymentItem(eventId, item) {
@@ -11081,7 +11130,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.68 loaded");
+  console.info("Contrast Finance web app v0.40.69 loaded");
   if (!state.token) {
     showLogin();
     return;
