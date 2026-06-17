@@ -1,5 +1,5 @@
-v0.40.59
-- Усилен global single-flight для загрузки dashboard по ключу роль+месяц.
-- Убрана гонка устаревших рендеров при переключении месяца.
-- Переключение месяца больше не запускает полноэкранный loading overlay.
-- app.js cache-buster обновлён до v0.40.59.
+v0.40.60
+- frontend GET single-flight: duplicate GET requests are coalesced even if cache-buster differs
+- safety month injection for /payment-requests GET requests
+- stronger dashboard in-flight placeholder before async work starts
+- manager event detail auto-open avoids repeated reload of the same already opened card

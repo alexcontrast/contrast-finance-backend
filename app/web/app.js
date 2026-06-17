@@ -3054,22 +3054,66 @@ installGlobalSoftButtonLoading();
 
 
 
+function normalizeInflightGetPath(path) {
+  const raw = String(path || "");
+  try {
+    const url = new URL(raw, window.location.origin);
+    url.searchParams.delete("_");
+    const query = url.searchParams.toString();
+    return `${url.pathname}${query ? `?${query}` : ""}`;
+  } catch (_) {
+    return raw.replace(/([?&])_=\d+(&?)/, (match, prefix, suffix) => suffix ? prefix : "").replace(/[?&]$/, "");
+  }
+}
+
+function withCurrentMonthIfNeeded(path) {
+  const raw = String(path || "");
+  if (!raw.startsWith("/payment-requests?")) return raw;
+  if (raw.includes("month=")) return raw;
+
+  const separator = raw.includes("?") ? "&" : "?";
+  const month = selectedMonthValue();
+  return `${raw}${separator}month=${encodeURIComponent(month)}`;
+}
+
 async function api(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const safePath = method === "GET" ? withCurrentMonthIfNeeded(path) : path;
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
 
-  const response = await fetch(path, { ...options, headers });
+  const isGet = method === "GET" && !options.body;
+  const inflightKey = isGet ? normalizeInflightGetPath(safePath) : null;
+  const inflightMap = isGet ? cfGlobalMap("apiGetInflightByKey") : null;
 
-  if (!response.ok) {
-    let detail = `Ошибка ${response.status}`;
-    try {
-      const data = await response.json();
-      detail = data.detail || JSON.stringify(data);
-    } catch (_) {}
-    throw new Error(detail);
+  if (isGet && inflightMap[inflightKey]) {
+    console.info(`PERF web api GET in-flight reuse ${inflightKey}`);
+    return inflightMap[inflightKey];
   }
 
-  return response.json();
+  const requestPromise = (async () => {
+    const response = await fetch(safePath, { ...options, method, headers });
+
+    if (!response.ok) {
+      let detail = `Ошибка ${response.status}`;
+      try {
+        const data = await response.json();
+        detail = data.detail || JSON.stringify(data);
+      } catch (_) {}
+      throw new Error(detail);
+    }
+
+    return response.json();
+  })();
+
+  if (!isGet) return requestPromise;
+
+  const wrappedPromise = requestPromise.finally(() => {
+    if (inflightMap[inflightKey] === wrappedPromise) delete inflightMap[inflightKey];
+  });
+  inflightMap[inflightKey] = wrappedPromise;
+
+  return wrappedPromise;
 }
 
 function perfNow() {
@@ -3084,10 +3128,12 @@ function perfSeconds(startedAt) {
 
 async function timedApi(label, path, options = {}) {
   const startedAt = perfNow();
+  const method = String(options.method || "GET").toUpperCase();
+  const loggedPath = method === "GET" ? withCurrentMonthIfNeeded(path) : path;
   try {
     return await api(path, options);
   } finally {
-    console.info(`PERF web ${label} ${path}=${perfSeconds(startedAt)}s`);
+    console.info(`PERF web ${label} ${loggedPath}=${perfSeconds(startedAt)}s`);
   }
 }
 
@@ -6365,6 +6411,7 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
   }
 
   if (!eventId) {
+    holder.dataset.loadedEventId = "";
     holder.innerHTML = `
       <div class="manager-empty-detail">
         <div class="empty-icon">▦</div>
@@ -6376,6 +6423,7 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
   }
 
   if (!options.noLoading) {
+    holder.dataset.loadedEventId = "";
     holder.innerHTML = `<div class="empty-state">Загрузка мероприятия...</div>`;
   }
 
@@ -6399,11 +6447,13 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
     state.currentManagerItems = draftItems;
 
     holder.innerHTML = renderManagerEventCard(draftEvent, draftItems, previewSummary);
+    holder.dataset.loadedEventId = String(eventId);
     attachManagerCreateWorkspaceActions();
     attachCustomerPaymentActions(holder);
     attachDraftEventInputs(eventId);
     attachDraftInputs(eventId);
   } catch (error) {
+    holder.dataset.loadedEventId = "";
     holder.innerHTML = `<div class="error">${error.message}</div>`;
   }
 }
@@ -9551,8 +9601,17 @@ function renderManagerDashboard(data, paymentRequests = []) {
   const holder = $("managerEventDetail");
 
   if (selected) {
-    state.selectedManagerEventId = selected.id;
-    renderManagerEventDetail(selected.id);
+    const selectedId = Number(selected.id);
+    const alreadyShowingSelected = Number(state.selectedManagerEventId) === selectedId
+      && Number(state.currentManagerEvent?.id || 0) === selectedId
+      && document.getElementById("managerEventDetail")?.dataset?.loadedEventId === String(selectedId);
+
+    state.selectedManagerEventId = selectedId;
+    if (!alreadyShowingSelected) {
+      renderManagerEventDetail(selectedId);
+    } else {
+      refreshManagerMiniCardSelection();
+    }
   } else {
     state.selectedManagerEventId = null;
     state.currentManagerEvent = null;
@@ -10460,7 +10519,17 @@ async function loadDashboard() {
   state.dashboardRequestSeq = requestSeq;
   state.dashboardLoadingKey = loadKey;
 
-  const task = (async () => {
+  let resolveTask;
+  let rejectTask;
+  const task = new Promise((resolve, reject) => {
+    resolveTask = resolve;
+    rejectTask = reject;
+  });
+  state.dashboardLoadingByKey[loadKey] = task;
+  state.dashboardLoadingPromise = task;
+  globalInflight[loadKey] = task;
+
+  (async () => {
     const dashboardStartedAt = perfNow();
     state.month = month;
 
@@ -10519,7 +10588,7 @@ async function loadDashboard() {
       }
     }
     if (!isStale()) state.lastLoadedDashboardMonth = month;
-  })().finally(() => {
+  })().then(resolveTask, rejectTask).finally(() => {
     if (state.dashboardLoadingByKey) delete state.dashboardLoadingByKey[loadKey];
     if (state.dashboardLoadingKey === loadKey) {
       state.dashboardLoadingKey = null;
@@ -10528,14 +10597,11 @@ async function loadDashboard() {
     clearDashboardInflightKey(loadKey);
   });
 
-  state.dashboardLoadingByKey[loadKey] = task;
-  state.dashboardLoadingPromise = task;
-  globalInflight[loadKey] = task;
   return task;
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.59 loaded");
+  console.info("Contrast Finance web app v0.40.60 loaded");
   if (!state.token) {
     showLogin();
     return;
