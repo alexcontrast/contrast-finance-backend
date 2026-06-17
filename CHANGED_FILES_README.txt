@@ -1,13 +1,16 @@
-Contrast Finance v0.40.64
+Contrast Finance v0.40.65 — CHANGED ONLY
 
-Changed files:
+Заменить файлы:
 - app/web/app.js
 - app/web/index.html
+- app/api/routes/payment_requests.py
 
-Purpose:
-- Optimized manager internal actions: payment request creation, save draft, send to Sasha/review.
-- Payment creation no longer saves the whole estimate and no longer reloads the whole dashboard after success.
-- Save draft/send review no longer do an extra status PATCH and full dashboard reload.
-- Estimate item saving is parallelized for draft/review actions.
-- Added frontend PERF logs for manager payment/create and save/review subtasks.
-- Web cache-buster updated to v0.40.64.
+Изменения:
+- Ускорено создание обычных заявок На карту/Налик: лишний PATCH позиции пропускается, если позиция уже сохранена и поля оплаты не меняются.
+- Добавлен PERF web manager-payment-prepare-simple-skip-persist.
+- Backend create payment request возвращает ответ быстрее и пишет PERF payment-request-create.
+
+Проверки:
+python3 -m compileall -q app
+python3 -m py_compile app/telegram_bot/main.py
+node --check app/web/app.js

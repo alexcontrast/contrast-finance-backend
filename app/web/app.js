@@ -9102,11 +9102,30 @@ async function prepareSelfEmployedPaymentItem(eventId, item) {
   return surname;
 }
 
+function simplePaymentItemNeedsPersist(item, finalMethod) {
+  if (!item) return true;
+  if (item.is_new_payment_position || item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
+
+  if (item.payment_method !== finalMethod) return true;
+
+  if (finalMethod === "cash" || finalMethod === "card") {
+    if (item.iin_bin) return true;
+    if (item.iin_bin_locked) return true;
+    if (item.tax_check_status) return true;
+    if (asNumber(item.vat_amount) !== 0) return true;
+    if (asNumber(item.deduction_amount) !== 0) return true;
+  }
+
+  return false;
+}
+
 async function prepareSimplePaymentItem(eventId, item, method) {
   item = await materializePaymentItemIfNeeded(eventId, item, method);
 
   const fixed = fixedPaymentMethodForItem(item);
   const finalMethod = fixed || method;
+
+  const needsPersist = simplePaymentItemNeedsPersist(item, finalMethod);
 
   item.payment_method = finalMethod;
 
@@ -9118,7 +9137,13 @@ async function prepareSimplePaymentItem(eventId, item, method) {
     item.deduction_amount = 0;
   }
 
-  await persistItemBeforePayment(eventId, item);
+  if (needsPersist) {
+    await persistItemBeforePayment(eventId, item);
+  } else {
+    patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+    console.info(`PERF web manager-payment-prepare-simple-skip-persist item=${item.id}`);
+  }
+
   return item;
 }
 
@@ -10905,7 +10930,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.64 loaded");
+  console.info("Contrast Finance web app v0.40.65 loaded");
   if (!state.token) {
     showLogin();
     return;

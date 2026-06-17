@@ -340,6 +340,29 @@ def build_payment_request_card(request: PaymentRequest) -> PaymentRequestCardRea
     )
 
 
+def manager_name_for_event_fast(db: Session, event: Event, current_user: User) -> str | None:
+    if event.manager_id and current_user.id == event.manager_id:
+        return current_user.name
+    if not event.manager_id:
+        return None
+    manager = db.get(User, event.manager_id)
+    return manager.name if manager else None
+
+
+def enrich_payment_request_for_event_fast(
+    request: PaymentRequest,
+    event: Event,
+    db: Session,
+    current_user: User,
+) -> PaymentRequestRead:
+    return enrich_payment_request_read_fast(
+        request,
+        event.client_name,
+        event.title,
+        manager_name_for_event_fast(db, event, current_user),
+    )
+
+
 def event_scope_query_for_user(query, user: User):
     """
     Adds event-based visibility for payment requests:
@@ -481,11 +504,18 @@ def create_payment_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = get_item_or_404(db, item_id)
+    started_at = time.perf_counter()
 
+    item_started_at = time.perf_counter()
+    item = get_item_or_404(db, item_id)
+    item_elapsed = time.perf_counter() - item_started_at
+
+    auth_started_at = time.perf_counter()
     # Admin can create; manager only for own event; department_head is read-only.
     event = require_item_event_edit(db, current_user, item)
+    auth_elapsed = time.perf_counter() - auth_started_at
 
+    build_started_at = time.perf_counter()
     payment_method = normalize_payment_method(payload.payment_method) or normalize_payment_method(item.payment_method)
 
     if not payment_method:
@@ -498,6 +528,17 @@ def create_payment_request(
 
     remaining = calculate_item_remaining(item)
     warning_over_remaining = payload.amount_requested > remaining
+
+    contractor_id = None
+    contractor_name_snapshot = None
+    contractor_elapsed = 0.0
+    if payment_method == "invoice" and item.iin_bin:
+        contractor_started_at = time.perf_counter()
+        contractor_id = db.execute(select(Contractor.id).where(Contractor.iin_bin == item.iin_bin).limit(1)).scalar_one_or_none()
+        contractor_name_snapshot = invoice_contractor_name_from_item(db, item)
+        contractor_elapsed = time.perf_counter() - contractor_started_at
+    elif payment_method == "self_employed":
+        contractor_name_snapshot = (getattr(payload, "self_employed_surname", None) or payload.comment or "").strip() or None
 
     request = PaymentRequest(
         event_id=event.id,
@@ -515,14 +556,8 @@ def create_payment_request(
         item_paid_amount_snapshot=item.paid_amount,
         item_remaining_snapshot=remaining,
 
-        contractor_id=(
-            db.execute(select(Contractor.id).where(Contractor.iin_bin == item.iin_bin).limit(1)).scalar_one_or_none()
-            if payment_method == "invoice" and item.iin_bin else None
-        ),
-        contractor_name_snapshot=(
-            invoice_contractor_name_from_item(db, item) if payment_method == "invoice"
-            else (((getattr(payload, "self_employed_surname", None) or payload.comment or "").strip() or None) if payment_method == "self_employed" else None)
-        ),
+        contractor_id=contractor_id,
+        contractor_name_snapshot=contractor_name_snapshot,
         iin_bin_snapshot=item.iin_bin if payment_method == "invoice" else None,
         tax_status_snapshot=item.tax_check_status if payment_method == "invoice" else (
             "self_employed" if payment_method == "self_employed" else None
@@ -541,12 +576,27 @@ def create_payment_request(
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
+    build_elapsed = time.perf_counter() - build_started_at
 
+    commit_started_at = time.perf_counter()
     db.add(request)
     db.commit()
     db.refresh(request)
+    commit_elapsed = time.perf_counter() - commit_started_at
 
-    return enrich_payment_request_read(request, db)
+    response_started_at = time.perf_counter()
+    response = enrich_payment_request_for_event_fast(request, event, db, current_user)
+    response_elapsed = time.perf_counter() - response_started_at
+
+    print(
+        "PERF payment-request-create "
+        f"role={current_user.role} user_id={current_user.id} item_id={item_id} method={payment_method} "
+        f"item={item_elapsed:.3f}s auth={auth_elapsed:.3f}s build={build_elapsed:.3f}s "
+        f"contractor={contractor_elapsed:.3f}s commit={commit_elapsed:.3f}s "
+        f"response={response_elapsed:.3f}s total={time.perf_counter() - started_at:.3f}s"
+    )
+
+    return response
 
 
 
@@ -626,7 +676,7 @@ def create_manager_salary_payment_request(
     db.commit()
     db.refresh(request)
 
-    return enrich_payment_request_read(request, db)
+    return enrich_payment_request_for_event_fast(request, event, db, current_user)
 
 
 @router.patch("/payment-requests/{request_id}/status", response_model=PaymentRequestRead)
