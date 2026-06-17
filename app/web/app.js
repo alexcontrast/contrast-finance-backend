@@ -3147,6 +3147,15 @@ async function timedApi(label, path, options = {}) {
   }
 }
 
+async function timedAction(label, task) {
+  const startedAt = perfNow();
+  try {
+    return await task();
+  } finally {
+    console.info(`PERF web ${label}=${perfSeconds(startedAt)}s`);
+  }
+}
+
 function cachedValue(cache, key, ttlMs) {
   const record = cache?.[key];
   if (!record) return null;
@@ -6799,7 +6808,7 @@ function attachDraftEventInputs(eventId) {
 
 async function saveDraftEvent(eventId) {
   const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
-  if (!draftEvent) return;
+  if (!draftEvent) return null;
 
   const savedEvent = await api(`/events/${eventId}`, {
     method: "PATCH",
@@ -6821,7 +6830,10 @@ async function saveDraftEvent(eventId) {
   if (savedEvent) {
     state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
     state.managerDraftEventsById[String(eventId)] = { ...state.currentManagerEvent };
+    patchManagerEventLocal(eventId, savedEvent);
   }
+
+  return savedEvent;
 }
 
 
@@ -7747,13 +7759,12 @@ async function saveDraftItems(eventId) {
   });
   const deletedIds = getDraftDeletedIds(eventId);
 
-  for (const itemId of deletedIds) {
-    if (!String(itemId).startsWith("tmp-")) {
-      await api(`/event-items/${itemId}`, { method: "DELETE" });
-    }
-  }
+  await Promise.all(deletedIds
+    .filter((itemId) => !String(itemId).startsWith("tmp-"))
+    .map((itemId) => api(`/event-items/${itemId}`, { method: "DELETE" }))
+  );
 
-  for (const item of items) {
+  await Promise.all(items.map(async (item) => {
     const payload = itemPayloadForSave(item);
     if (String(item.id).startsWith("tmp-")) {
       const created = await api(`/events/${eventId}/items`, {
@@ -7762,17 +7773,18 @@ async function saveDraftItems(eventId) {
       });
       item.id = created.id;
       item.is_temp = false;
-    } else {
-      await api(`/event-items/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
+      return created;
     }
-  }
 
-  // Не очищаем локальный черновик сразу после сохранения, чтобы карточка не мигала.
-  // Полная синхронизация с backend произойдёт при следующем открытии карточки.
+    return api(`/event-items/${item.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }));
+
   state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = [];
+  patchManagerEventPayloadItems(eventId, items);
+  return items;
 }
 
 async function addExternalPosition(eventId) {
@@ -8904,15 +8916,152 @@ function paymentPayloadComment() {
   return String($("paymentCommentInput")?.value || "").trim() || null;
 }
 
+function managerMonthCacheRecord(month = state.month) {
+  return state.managerDashboardBundleCacheByMonth?.[String(month || "")] || null;
+}
+
+function patchManagerEventLocal(eventId, patch = {}) {
+  const id = Number(eventId);
+  if (!id || !patch) return;
+
+  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === id) {
+    state.currentManagerEvent = { ...state.currentManagerEvent, ...patch };
+    state.managerDraftEventsById[String(id)] = { ...(state.managerDraftEventsById[String(id)] || {}), ...state.currentManagerEvent };
+  }
+
+  const dashboardEvent = getManagerDashboardEvent(id);
+  if (dashboardEvent) Object.assign(dashboardEvent, patch);
+
+  const payload = state.managerEventPayloadById?.[String(id)];
+  if (payload?.event) Object.assign(payload.event, patch);
+
+  const bundle = managerMonthCacheRecord()?.value;
+  const bundleEvent = (bundle?.dashboard?.events || []).find((event) => Number(event.id) === id);
+  if (bundleEvent) Object.assign(bundleEvent, patch);
+  if (bundle?.event_payloads?.[String(id)]?.event) Object.assign(bundle.event_payloads[String(id)].event, patch);
+}
+
+function patchManagerEventPayloadItems(eventId, items) {
+  const id = String(eventId);
+  const clonedItems = (items || []).map(cloneItem);
+
+  const payload = state.managerEventPayloadById?.[id];
+  if (payload) payload.items = clonedItems.map(cloneItem);
+
+  const bundle = managerMonthCacheRecord()?.value;
+  if (bundle?.event_payloads?.[id]) {
+    bundle.event_payloads[id].items = clonedItems.map(cloneItem);
+  }
+}
+
+function addPaymentRequestToArray(requests, createdRequest) {
+  if (!createdRequest) return requests || [];
+  return [createdRequest, ...(requests || []).filter((request) => Number(request.id) !== Number(createdRequest.id))];
+}
+
+function patchManagerPaymentRequestCreated(eventId, createdRequest) {
+  if (!createdRequest) return;
+  const id = String(eventId || createdRequest.event_id || "");
+  const month = String(state.month || selectedMonthValue());
+
+  state.managerPaymentRequests = addPaymentRequestToArray(state.managerPaymentRequests, createdRequest);
+
+  const requestsCache = state.managerPaymentRequestsCacheByMonth?.[month];
+  if (requestsCache?.value) {
+    requestsCache.value = addPaymentRequestToArray(requestsCache.value, createdRequest);
+  }
+
+  const payload = state.managerEventPayloadById?.[id];
+  if (payload) {
+    payload.requests = addPaymentRequestToArray(payload.requests, createdRequest);
+  }
+
+  const bundleRecord = managerMonthCacheRecord(month);
+  const bundle = bundleRecord?.value;
+  if (bundle) {
+    bundle.payment_requests = addPaymentRequestToArray(bundle.payment_requests, createdRequest);
+    if (bundle.event_payloads?.[id]) {
+      bundle.event_payloads[id].requests = addPaymentRequestToArray(bundle.event_payloads[id].requests, createdRequest);
+    }
+  }
+
+  const incrementCounts = (event) => {
+    if (!event) return;
+    event.payment_requests_count = asNumber(event.payment_requests_count) + 1;
+    event.active_payment_requests_count = asNumber(event.active_payment_requests_count) + 1;
+  };
+
+  incrementCounts(getManagerDashboardEvent(id));
+  incrementCounts(payload?.event);
+  const bundleEvent = (bundle?.dashboard?.events || []).find((event) => Number(event.id) === Number(id));
+  incrementCounts(bundleEvent);
+  incrementCounts(bundle?.event_payloads?.[id]?.event);
+}
+
+async function saveManagerEventQuick(eventId, targetStatus, button, successMessage) {
+  if (!eventId) return;
+  const startedAt = perfNow();
+  const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
+  if (!draftEvent) return;
+
+  setButtonLoading(button, true, targetStatus === "review" ? "Отправляем…" : "Сохраняем…");
+  try {
+    draftEvent.status = targetStatus;
+    if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+      state.currentManagerEvent.status = targetStatus;
+    }
+
+    await timedAction(`manager-${targetStatus}-items-save`, () => saveDraftItems(eventId));
+    const savedEvent = await timedAction(`manager-${targetStatus}-event-save`, () => saveDraftEvent(eventId));
+    patchManagerEventLocal(eventId, savedEvent || draftEvent);
+
+    const items = getDraftItems(eventId);
+    const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+    state.currentManagerSummary = summary;
+    state.currentManagerItems = items;
+    patchManagerEventPayloadItems(eventId, items);
+
+    updateCurrentManagerMiniCardLive();
+    rerenderCurrentManagerCard();
+    showDraftSavedHint();
+    if (successMessage) showToast(successMessage);
+  } finally {
+    setButtonLoading(button, false);
+    console.info(`PERF web manager-${targetStatus}-action total=${perfSeconds(startedAt)}s`);
+  }
+}
+
 async function persistItemBeforePayment(eventId, item) {
-  // Заявка на оплату не должна пытаться сохранить само мероприятие.
-  // На статусах «На проверке»/«Принято» редактирование мероприятия закрыто,
-  // но создание оплаты/допрасхода по факту разрешено.
-  await saveDraftItems(eventId);
+  // Для создания заявки сохраняем только выбранную позицию.
+  // Старый вариант сохранял всю смету и из-за этого создание оплаты могло тянуться долго.
+  if (!item) throw new Error("Не выбрана позиция для заявки");
+
+  const items = getDraftItems(eventId);
+  items.forEach((candidate, index) => {
+    candidate.sort_order = candidate.item_type === "coordinator" ? -100 : index;
+  });
+
+  const payload = itemPayloadForSave(item);
+  if (String(item.id).startsWith("tmp-")) {
+    const created = await api(`/events/${eventId}/items`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    Object.assign(item, created, { is_temp: false });
+  } else {
+    const updated = await api(`/event-items/${item.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    Object.assign(item, updated, { is_temp: false });
+  }
 
   if (String(item.id).startsWith("tmp-")) {
     throw new Error("Не удалось сохранить позицию перед заявкой");
   }
+
+  patchManagerEventPayloadItems(eventId, items);
+  return item;
 }
 
 async function prepareInvoicePaymentItem(eventId, item) {
@@ -8976,6 +9125,7 @@ async function prepareSimplePaymentItem(eventId, item, method) {
 async function submitManagerPayment(eventId) {
   const message = $("paymentMessage");
   const button = $("paymentCreateBtn");
+  const startedAt = perfNow();
   if (message) message.textContent = "";
 
   let item = selectedPaymentItem(eventId);
@@ -8992,72 +9142,75 @@ async function submitManagerPayment(eventId) {
     validatePaymentCardBeforeSubmit();
   }
 
-  await withLoading(async () => {
-    setButtonLoading(button, true, "Создаём…");
+  setButtonLoading(button, true, "Создаём…");
 
-    try {
-      if (item.item_type === "manager_salary") {
-        if (!["cash", "card"].includes(method)) {
-          throw new Error("ЗП менеджера можно оформить только налом или на карту");
-        }
+  try {
+    let createdRequest = null;
 
-        const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
+    if (item.item_type === "manager_salary") {
+      if (!["cash", "card"].includes(method)) {
+        throw new Error("ЗП менеджера можно оформить только налом или на карту");
+      }
 
-        await api(`/events/${eventId}/manager-salary/payment-requests`, {
-          method: "POST",
-          body: JSON.stringify({
-            amount_requested: amount,
-            payment_method: method,
-            card_number: card,
-            comment: paymentPayloadComment() || "ЗП менеджера",
-          }),
-        });
+      const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
+
+      createdRequest = await timedAction("manager-payment-create-salary-api", () => api(`/events/${eventId}/manager-salary/payment-requests`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount_requested: amount,
+          payment_method: method,
+          card_number: card,
+          comment: paymentPayloadComment() || "ЗП менеджера",
+        }),
+      }));
+    } else {
+      const managerComment = paymentPayloadComment();
+      let selfEmployedSurname = null;
+
+      if (method === "invoice") {
+        await timedAction("manager-payment-prepare-invoice", () => prepareInvoicePaymentItem(eventId, item));
+      } else if (method === "self_employed") {
+        selfEmployedSurname = await timedAction("manager-payment-prepare-self-employed", () => prepareSelfEmployedPaymentItem(eventId, item));
+        item = selectedPaymentItem(eventId) || item;
       } else {
-        const managerComment = paymentPayloadComment();
-        let selfEmployedSurname = null;
-
-        if (method === "invoice") {
-          await prepareInvoicePaymentItem(eventId, item);
-        } else if (method === "self_employed") {
-          selfEmployedSurname = await prepareSelfEmployedPaymentItem(eventId, item);
-          item = selectedPaymentItem(eventId) || item;
-        } else {
-          item = await prepareSimplePaymentItem(eventId, item, method);
-        }
-
-        const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
-
-        if (item?.is_new_payment_position || String(item.id).startsWith("tmp-")) {
-          throw new Error("Не удалось создать позицию перед заявкой");
-        }
-
-        const createdRequest = await api(`/event-items/${item.id}/payment-requests`, {
-          method: "POST",
-          body: JSON.stringify({
-            amount_requested: amount,
-            payment_method: method,
-            card_number: card,
-            comment: managerComment,
-            self_employed_surname: selfEmployedSurname,
-          }),
-        });
-
-        state.managerPaymentRequests = [createdRequest, ...(state.managerPaymentRequests || [])];
-        updateInternalRowCells(item.id);
-        updateInternalSummaryCards();
+        item = await timedAction("manager-payment-prepare-simple", () => prepareSimplePaymentItem(eventId, item, method));
       }
 
-      $("eventModalBackdrop")?.classList.add("hidden");
-      $("eventModalBackdrop")?.classList.remove("payment-modal-mode");
-      showToast("Заявка отправлена");
-      await loadDashboard();
-      if (Number(state.selectedManagerEventId) === Number(eventId)) {
-        await renderManagerEventDetail(eventId);
+      const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
+
+      if (item?.is_new_payment_position || String(item.id).startsWith("tmp-")) {
+        throw new Error("Не удалось создать позицию перед заявкой");
       }
-    } finally {
-      setButtonLoading(button, false);
+
+      createdRequest = await timedAction("manager-payment-create-request-api", () => api(`/event-items/${item.id}/payment-requests`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount_requested: amount,
+          payment_method: method,
+          card_number: card,
+          comment: managerComment,
+          self_employed_surname: selfEmployedSurname,
+        }),
+      }));
+
+      updateInternalRowCells(item.id);
+      updateInternalSummaryCards();
     }
-  }, "Создаём заявку…");
+
+    patchManagerPaymentRequestCreated(eventId, createdRequest);
+    updateCurrentManagerMiniCardLive();
+
+    $("eventModalBackdrop")?.classList.add("hidden");
+    $("eventModalBackdrop")?.classList.remove("payment-modal-mode");
+    showToast("Заявка отправлена");
+
+    if (Number(state.selectedManagerEventId) === Number(eventId)) {
+      await renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+    }
+  } finally {
+    setButtonLoading(button, false);
+    console.info(`PERF web manager-payment-create total=${perfSeconds(startedAt)}s`);
+  }
 }
 
 function openManagerPaymentModal(eventId) {
@@ -9206,13 +9359,7 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", async () => {
       if (button.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       const eventId = button.getAttribute("data-manager-event-save-draft");
-      await withLoading(async () => {
-        await saveDraftEvent(eventId);
-        await saveDraftItems(eventId);
-        await updateManagerEventStatus(eventId, "draft");
-        showDraftSavedHint();
-        await loadDashboard();
-      }, "Сохраняем черновик…");
+      await saveManagerEventQuick(eventId, "draft", button, "Черновик сохранён");
     });
   });
 
@@ -9223,14 +9370,7 @@ function attachManagerCreateWorkspaceActions() {
       if (button.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       const eventId = button.getAttribute("data-manager-event-send-review");
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
-
-      await withLoading(async () => {
-        await saveDraftEvent(eventId);
-        await saveDraftItems(eventId);
-        await updateManagerEventStatus(eventId, "review");
-        showDraftSavedHint();
-        await loadDashboard();
-      }, "Отправляем на проверку…");
+      await saveManagerEventQuick(eventId, "review", button, "Отправлено Саше");
     });
   });
 
@@ -9550,13 +9690,7 @@ function attachManagerDashboardActions() {
   document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-save-draft");
-      await withLoading(async () => {
-        await saveDraftEvent(eventId);
-        await saveDraftItems(eventId);
-        await updateManagerEventStatus(eventId, "draft");
-        showDraftSavedHint();
-        await loadDashboard();
-      }, "Сохраняем черновик…");
+      await saveManagerEventQuick(eventId, "draft", button, "Черновик сохранён");
     });
   });
 
@@ -9564,14 +9698,7 @@ function attachManagerDashboardActions() {
     button.addEventListener("click", async () => {
       const eventId = button.getAttribute("data-manager-event-send-review");
       if (!confirm("Отправить мероприятие Саше на проверку?")) return;
-
-      await withLoading(async () => {
-        await saveDraftEvent(eventId);
-        await saveDraftItems(eventId);
-        await updateManagerEventStatus(eventId, "review");
-        showDraftSavedHint();
-        await loadDashboard();
-      }, "Отправляем на проверку…");
+      await saveManagerEventQuick(eventId, "review", button, "Отправлено Саше");
     });
   });
 
@@ -10778,7 +10905,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.63 loaded");
+  console.info("Contrast Finance web app v0.40.64 loaded");
   if (!state.token) {
     showLogin();
     return;

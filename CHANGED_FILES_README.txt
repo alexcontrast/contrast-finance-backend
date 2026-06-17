@@ -1,13 +1,13 @@
-v0.40.63
+Contrast Finance v0.40.64
 
-Изменения:
-- Добавлен /admin-dashboard-bundle: админка получает dashboard + полные payload'ы мероприятий одним запросом.
-- Добавлен /department-head-dashboard-bundle: главдепы получают dashboard + полные payload'ы мероприятий одним запросом.
-- В админке и кабинете главдепа модалка мероприятия теперь открывается из локального кэша, если данные уже приехали в bundle.
-- Добавлены PERF-логи для admin-dashboard-bundle и department-head-dashboard-bundle.
-- Версия web app обновлена до v0.40.63.
+Changed files:
+- app/web/app.js
+- app/web/index.html
 
-Проверки:
-- python3 -m compileall -q app
-- python3 -m py_compile app/telegram_bot/main.py
-- node --check app/web/app.js
+Purpose:
+- Optimized manager internal actions: payment request creation, save draft, send to Sasha/review.
+- Payment creation no longer saves the whole estimate and no longer reloads the whole dashboard after success.
+- Save draft/send review no longer do an extra status PATCH and full dashboard reload.
+- Estimate item saving is parallelized for draft/review actions.
+- Added frontend PERF logs for manager payment/create and save/review subtasks.
+- Web cache-buster updated to v0.40.64.
