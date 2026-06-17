@@ -1,9 +1,12 @@
 from datetime import datetime
 from decimal import Decimal
+import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.models.event_item import EventItem
@@ -23,6 +26,7 @@ from app.services.authorization import (
 
 
 router = APIRouter(tags=["event_items"])
+logger = logging.getLogger(__name__)
 
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
 
@@ -37,6 +41,14 @@ def money(value) -> Decimal:
 
 def calculate_external_amount(payload: EventItemCreate) -> Decimal:
     return money(payload.external_price) * money(payload.external_quantity or Decimal("1.00")) * money(payload.external_days or Decimal("1.00"))
+
+
+class EventItemBulkDeletePayload(BaseModel):
+    item_ids: list[int]
+
+
+def _sec(started_at: float) -> float:
+    return time.perf_counter() - started_at
 
 
 def active_item_payment_requests_count(db: Session, item_id: int) -> int:
@@ -77,8 +89,10 @@ def create_event_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    started_at = time.perf_counter()
     event = get_event_or_404(db, event_id)
     require_event_edit(current_user, event)
+    auth_sec = _sec(started_at)
 
     item = EventItem(
         event_id=event_id,
@@ -103,11 +117,110 @@ def create_event_item(
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
+    build_sec = _sec(started_at) - auth_sec
 
     db.add(item)
+    db.flush()
+    flush_sec = _sec(started_at) - auth_sec - build_sec
+    result = EventItemRead.model_validate(item)
+    response_sec = _sec(started_at) - auth_sec - build_sec - flush_sec
     db.commit()
-    db.refresh(item)
-    return item
+    commit_sec = _sec(started_at) - auth_sec - build_sec - flush_sec - response_sec
+
+    logger.warning(
+        "PERF event-item-create event_id=%s item_id=%s user_id=%s role=%s auth=%.3fs build=%.3fs flush=%.3fs response=%.3fs commit=%.3fs total=%.3fs",
+        event_id,
+        item.id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        auth_sec,
+        build_sec,
+        flush_sec,
+        response_sec,
+        commit_sec,
+        _sec(started_at),
+    )
+    return result
+
+
+@router.post("/events/{event_id}/items/bulk-delete")
+def bulk_delete_event_items(
+    event_id: int,
+    payload: EventItemBulkDeletePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    started_at = time.perf_counter()
+    event = get_event_or_404(db, event_id)
+    require_event_edit(current_user, event)
+    auth_sec = _sec(started_at)
+
+    item_ids = []
+    seen: set[int] = set()
+    for raw_id in payload.item_ids or []:
+        try:
+            item_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if item_id > 0 and item_id not in seen:
+            seen.add(item_id)
+            item_ids.append(item_id)
+
+    if not item_ids:
+        return {"ok": True, "event_id": event_id, "deleted_item_ids": []}
+
+    items = db.execute(
+        select(EventItem).where(
+            EventItem.event_id == event_id,
+            EventItem.id.in_(item_ids),
+            EventItem.is_deleted == False,  # noqa: E712
+        )
+    ).scalars().all()
+    items_sql_sec = _sec(started_at) - auth_sec
+
+    found_ids = {item.id for item in items}
+    missing_ids = [item_id for item_id in item_ids if item_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"Позиции не найдены: {missing_ids}")
+
+    active_item_ids = db.execute(
+        select(PaymentRequest.event_item_id)
+        .where(
+            PaymentRequest.event_item_id.in_(item_ids),
+            PaymentRequest.status.notin_(list(INACTIVE_PAYMENT_STATUSES)),
+        )
+        .distinct()
+    ).scalars().all()
+    active_sql_sec = _sec(started_at) - auth_sec - items_sql_sec
+    if active_item_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить позицию: по ней есть активные заявки на оплату",
+        )
+
+    now = datetime.utcnow()
+    for item in items:
+        item.is_deleted = True
+        item.updated_at = now
+        db.add(item)
+
+    db.commit()
+    commit_sec = _sec(started_at) - auth_sec - items_sql_sec - active_sql_sec
+
+    logger.warning(
+        "PERF event-items-bulk-delete event_id=%s user_id=%s role=%s requested=%s deleted=%s auth=%.3fs items_sql=%.3fs active_sql=%.3fs commit=%.3fs total=%.3fs",
+        event_id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        len(item_ids),
+        len(items),
+        auth_sec,
+        items_sql_sec,
+        active_sql_sec,
+        commit_sec,
+        _sec(started_at),
+    )
+    return {"ok": True, "event_id": event_id, "deleted_item_ids": item_ids}
 
 
 @router.get("/event-items/{item_id}", response_model=EventItemRead)
@@ -128,8 +241,11 @@ def update_event_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    started_at = time.perf_counter()
     item = get_item_or_404(db, item_id)
+    item_sql_sec = _sec(started_at)
     require_item_event_edit(db, current_user, item)
+    auth_sec = _sec(started_at) - item_sql_sec
 
     item.item_type = payload.item_type
     item.external_name = payload.external_name
@@ -149,11 +265,31 @@ def update_event_item(
     item.internal_note = payload.internal_note
     item.sort_order = payload.sort_order
     item.updated_at = datetime.utcnow()
+    build_sec = _sec(started_at) - item_sql_sec - auth_sec
 
     db.add(item)
+    db.flush()
+    flush_sec = _sec(started_at) - item_sql_sec - auth_sec - build_sec
+    result = EventItemRead.model_validate(item)
+    response_sec = _sec(started_at) - item_sql_sec - auth_sec - build_sec - flush_sec
     db.commit()
-    db.refresh(item)
-    return item
+    commit_sec = _sec(started_at) - item_sql_sec - auth_sec - build_sec - flush_sec - response_sec
+
+    logger.warning(
+        "PERF event-item-update item_id=%s event_id=%s user_id=%s role=%s item_sql=%.3fs auth=%.3fs build=%.3fs flush=%.3fs response=%.3fs commit=%.3fs total=%.3fs",
+        item_id,
+        item.event_id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        item_sql_sec,
+        auth_sec,
+        build_sec,
+        flush_sec,
+        response_sec,
+        commit_sec,
+        _sec(started_at),
+    )
+    return result
 
 
 @router.delete("/event-items/{item_id}", response_model=EventItemRead)
@@ -162,10 +298,14 @@ def delete_event_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    started_at = time.perf_counter()
     item = get_item_or_404(db, item_id)
+    item_sql_sec = _sec(started_at)
     require_item_event_edit(db, current_user, item)
+    auth_sec = _sec(started_at) - item_sql_sec
 
     active_requests_count = active_item_payment_requests_count(db, item.id)
+    active_sql_sec = _sec(started_at) - item_sql_sec - auth_sec
     if active_requests_count > 0:
         raise HTTPException(
             status_code=400,
@@ -176,6 +316,25 @@ def delete_event_item(
     item.updated_at = datetime.utcnow()
 
     db.add(item)
+    db.flush()
+    flush_sec = _sec(started_at) - item_sql_sec - auth_sec - active_sql_sec
+    result = EventItemRead.model_validate(item)
+    response_sec = _sec(started_at) - item_sql_sec - auth_sec - active_sql_sec - flush_sec
     db.commit()
-    db.refresh(item)
-    return item
+    commit_sec = _sec(started_at) - item_sql_sec - auth_sec - active_sql_sec - flush_sec - response_sec
+
+    logger.warning(
+        "PERF event-item-delete item_id=%s event_id=%s user_id=%s role=%s item_sql=%.3fs auth=%.3fs active_sql=%.3fs flush=%.3fs response=%.3fs commit=%.3fs total=%.3fs",
+        item_id,
+        item.event_id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        item_sql_sec,
+        auth_sec,
+        active_sql_sec,
+        flush_sec,
+        response_sec,
+        commit_sec,
+        _sec(started_at),
+    )
+    return result

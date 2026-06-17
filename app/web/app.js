@@ -7941,15 +7941,23 @@ async function saveDraftItems(eventId) {
   });
   const deletedIds = getDraftDeletedIds(eventId);
 
-  const deleteTasks = deletedIds
+  const persistedDeletedIds = deletedIds
     .filter((itemId) => !String(itemId).startsWith("tmp-"))
-    .map((itemId) => api(`/event-items/${itemId}`, { method: "DELETE" }));
+    .map((itemId) => Number(itemId))
+    .filter((itemId) => Number.isFinite(itemId) && itemId > 0);
+
+  const deleteTasks = persistedDeletedIds.length
+    ? [api(`/events/${eventId}/items/bulk-delete`, {
+        method: "POST",
+        body: JSON.stringify({ item_ids: persistedDeletedIds }),
+      })]
+    : [];
 
   const saveTasks = items
     .filter((item) => itemNeedsSave(eventId, item))
     .map((item) => saveSingleDraftItem(eventId, item, { force: true }));
 
-  console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${deleteTasks.length} total=${items.length}`);
+  console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${persistedDeletedIds.length} delete_requests=${deleteTasks.length} total=${items.length}`);
 
   await Promise.all([...deleteTasks, ...saveTasks]);
 
@@ -8154,6 +8162,7 @@ async function checkTaxForItem(itemId) {
     item.vat_amount = Math.round(asNumber(result.vat_amount));
     item.deduction_amount = Math.round(asNumber(result.deduction_amount));
     item.payment_method = "invoice";
+    patchManagerEventPayloadItems(state.selectedManagerEventId, getDraftItems(state.selectedManagerEventId));
 
     // После сохранения tmp→real id DOM обязан получить новые data-item-id.
     // Для существующей строки достаточно точечного обновления.
@@ -9099,6 +9108,7 @@ async function checkPaymentInvoiceBin(eventId) {
   // /tax/check уже записал iin_bin, iin_bin_locked, tax_check_status, НДС и вычеты в позицию на backend.
   // Повторное saveDraftItems() делало модалку заметно медленнее.
 
+  patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
   updateCurrentManagerMiniCardLive();
@@ -9263,13 +9273,26 @@ async function persistItemBeforePayment(eventId, item) {
   return saveSingleDraftItem(eventId, item, { force: true });
 }
 
+function invoicePaymentItemNeedsPersist(eventId, item) {
+  if (!item) return true;
+  if (item.is_new_payment_position || item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
+  if (item.payment_method !== "invoice") return true;
+  if (!invoiceContextFromItem(item)) return true;
+  return itemNeedsSave(eventId, item);
+}
+
 async function prepareInvoicePaymentItem(eventId, item) {
   const invoiceContext = applyInvoiceContextToItem(item);
   if (!invoiceContext) {
     throw new Error("Сначала проверь БИН. После успешной проверки можно создать заявку.");
   }
 
-  await persistItemBeforePayment(eventId, item);
+  if (invoicePaymentItemNeedsPersist(eventId, item)) {
+    await persistItemBeforePayment(eventId, item);
+  } else {
+    patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+    console.info(`PERF web manager-payment-prepare-invoice-skip-persist item=${item.id}`);
+  }
 
   return invoiceContext.contractor_name || item.contractor_name || item.contractor_name_snapshot || item.internal_note || `БИН ${item.iin_bin}`;
 }
@@ -11130,7 +11153,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.69 loaded");
+  console.info("Contrast Finance web app v0.40.70 loaded");
   if (!state.token) {
     showLogin();
     return;

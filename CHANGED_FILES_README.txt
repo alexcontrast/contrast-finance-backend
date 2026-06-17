@@ -1,15 +1,13 @@
-v0.40.69
+Contrast Finance v0.40.70
 
-Изменения:
-- КГД-проверка в смете больше не сохраняет всё мероприятие и всю смету ради одной строки.
-- КГД-проверка в модалке оплаты для новой позиции создаёт позицию сразу с BIN и пропускает лишний повторный PATCH.
-- Кэш КГД не добавлялся: каждая проверка по-прежнему ходит в live-КГД.
-- Сохранение черновика теперь отправляет только изменённые строки сметы и удалённые позиции, а не всю смету целиком.
-- Сохранение мероприятия пропускает PATCH /events/{id}, если поля мероприятия фактически не менялись.
-- Backend КГД больше не делает лишний db.refresh(item) после commit; ответ собирается из уже известных данных.
-- Добавлены/сохранены PERF-логи по изменённым участкам.
+Changed files:
+- app/web/app.js
+- app/web/index.html
+- app/api/routes/event_items.py
 
-Проверки:
-- python3 -m compileall -q app
-- python3 -m py_compile app/telegram_bot/main.py
-- node --check app/web/app.js
+Changes:
+- Draft save deletes event items through one bulk-delete request instead of multiple DELETE requests.
+- Added backend PERF logs for event item create/update/delete/bulk-delete.
+- Event item create/update/delete avoid extra db.refresh by returning a validated response built before commit.
+- Invoice payment creation skips redundant PATCH after successful KGD check when item is already saved and unchanged.
+- KGD stays live-only: no BIN cache was added.
