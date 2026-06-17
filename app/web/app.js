@@ -5267,12 +5267,17 @@ function installAdminEventModalActions(event, requests = []) {
   if (revisionBtn) {
     revisionBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
-      await api(`/events/${event.id}/revision`, { method: "POST" });
-      if (eventIsMoneyArchive(event)) {
-        state.activeAdminTab = "events";
-      }
-      await openEventModal(event.id);
-      await loadDashboard();
+      await runPatchUpdateAction(
+        revisionBtn,
+        () => api(`/events/${event.id}/revision`, { method: "POST" }),
+        async (updatedEvent) => {
+          if (eventIsMoneyArchive(event)) {
+            state.activeAdminTab = "events";
+          }
+          await handleAdminEventStatusActionCompleted(updatedEvent);
+        },
+        { loadingText: "Меняем…", errorPrefix: "Не удалось отправить мероприятие на доработку" },
+      );
     });
   }
 
@@ -5281,9 +5286,14 @@ function installAdminEventModalActions(event, requests = []) {
     acceptBtn.addEventListener("click", async (clickEvent) => {
       clickEvent.stopPropagation();
       if (acceptBtn.disabled || acceptBtn.classList.contains("is-disabled")) return;
-      await api(`/events/${event.id}/accept`, { method: "POST" });
-      await openEventModal(event.id);
-      await loadDashboard();
+      await runPatchUpdateAction(
+        acceptBtn,
+        () => api(`/events/${event.id}/accept`, { method: "POST" }),
+        async (updatedEvent) => {
+          await handleAdminEventStatusActionCompleted(updatedEvent);
+        },
+        { loadingText: "Принимаем…", errorPrefix: "Не удалось принять мероприятие" },
+      );
     });
   }
 
@@ -5294,9 +5304,14 @@ function installAdminEventModalActions(event, requests = []) {
       if (cashBtn.disabled || cashBtn.classList.contains("is-disabled")) return;
       if (!confirm("Отметить все оплаты мероприятия как “Деньги в кассе”?")) return;
 
-      await api(`/events/${event.id}/cash-received`, { method: "POST" });
-      await openEventModal(event.id);
-      await loadDashboard();
+      await runPatchUpdateAction(
+        cashBtn,
+        () => api(`/events/${event.id}/cash-received`, { method: "POST" }),
+        async (updatedEvent) => {
+          await handleAdminEventStatusActionCompleted(updatedEvent, { cashReceived: true });
+        },
+        { loadingText: "Отмечаем…", errorPrefix: "Не удалось отметить деньги в кассе" },
+      );
     });
   }
 }
@@ -5408,6 +5423,11 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
   state.currentEventModalId = Number(event.id);
   state.currentEventModalPayload = payload;
 
+  if (payload?.event?.id) {
+    if (!state.eventModalPayloadById) state.eventModalPayloadById = {};
+    state.eventModalPayloadById[String(payload.event.id)] = payload;
+  }
+
   $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
 
   const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
@@ -5498,6 +5518,95 @@ function patchPaymentRequestInList(list, updatedRequest) {
   if (index < 0) return false;
   list[index] = { ...list[index], ...updatedRequest };
   return true;
+}
+
+function patchEventInList(list, updatedEvent) {
+  if (!Array.isArray(list) || !updatedEvent?.id) return false;
+  const index = list.findIndex((item) => Number(item.id) === Number(updatedEvent.id));
+  if (index < 0) return false;
+  list[index] = { ...list[index], ...updatedEvent };
+  return true;
+}
+
+function patchEventInDashboardBundleCache(updatedEvent) {
+  if (!updatedEvent?.id) return;
+  const patchBundleMap = (map) => {
+    if (!map || typeof map !== "object") return;
+    Object.values(map).forEach((entry) => {
+      const bundle = entry?.value || entry;
+      if (!bundle) return;
+      patchEventInList(bundle.dashboard?.events, updatedEvent);
+      const payload = bundle.event_payloads?.[String(updatedEvent.id)];
+      if (payload?.event) payload.event = { ...payload.event, ...updatedEvent };
+    });
+  };
+  patchBundleMap(state.adminDashboardBundleCacheByMonth);
+  patchBundleMap(state.departmentDashboardBundleCacheByMonth);
+  patchBundleMap(state.managerDashboardBundleCacheByMonth);
+}
+
+function patchEventState(updatedEvent, options = {}) {
+  if (!updatedEvent?.id) return null;
+  const eventId = String(updatedEvent.id);
+
+  patchEventInList(state.adminData?.events, updatedEvent);
+  patchEventInList(state.departmentHeadData?.events, updatedEvent);
+  patchEventInList(state.managerDashboardData?.events, updatedEvent);
+  patchEventInList(state.managerDashboard?.events, updatedEvent);
+  patchEventInDashboardBundleCache(updatedEvent);
+
+  const modalPayload = state.currentEventModalPayload?.event?.id && String(state.currentEventModalPayload.event.id) === eventId
+    ? state.currentEventModalPayload
+    : state.eventModalPayloadById?.[eventId];
+
+  if (modalPayload?.event) {
+    modalPayload.event = { ...modalPayload.event, ...updatedEvent };
+    if (options.cashReceived && Array.isArray(modalPayload.requests)) {
+      modalPayload.requests = modalPayload.requests.map((request) => {
+        if (["cancelled", "rejected"].includes(request.status)) return request;
+        return { ...request, money_status: "cash_received" };
+      });
+    }
+  }
+
+  if (state.eventModalPayloadById?.[eventId] && modalPayload) {
+    state.eventModalPayloadById[eventId] = modalPayload;
+  }
+  if (state.currentEventModalPayload?.event?.id && String(state.currentEventModalPayload.event.id) === eventId && modalPayload) {
+    state.currentEventModalPayload = modalPayload;
+  }
+
+  if (options.cashReceived) {
+    const markRequests = (requests) => {
+      if (!Array.isArray(requests)) return;
+      requests.forEach((request) => {
+        if (Number(request.event_id) === Number(updatedEvent.id) && !["cancelled", "rejected"].includes(request.status)) {
+          request.money_status = "cash_received";
+        }
+      });
+    };
+    markRequests(state.adminData?.payment_requests);
+    markRequests(state.departmentHeadData?.payment_requests);
+    markRequests(state.managerPaymentRequests);
+  }
+
+  return modalPayload;
+}
+
+function rerenderCurrentEventModalFromPatchedPayload(selectedRequestStatus = null) {
+  const payload = state.currentEventModalPayload;
+  const backdrop = $("eventModalBackdrop");
+  if (!payload?.event || !backdrop || backdrop.classList.contains("hidden")) return false;
+  const selectedStatus = selectedRequestStatus || document.getElementById("eventModalRequestStatusFilter")?.value || "all";
+  renderEventModalPayload(payload, selectedStatus);
+  return true;
+}
+
+async function handleAdminEventStatusActionCompleted(updatedEvent, options = {}) {
+  const selectedStatus = document.getElementById("eventModalRequestStatusFilter")?.value || "all";
+  patchEventState(updatedEvent, options);
+  if (rerenderCurrentEventModalFromPatchedPayload(selectedStatus)) return;
+  await openEventModal(updatedEvent.id);
 }
 
 function patchPaymentRequestState(updatedRequest) {
@@ -10968,7 +11077,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.66 loaded");
+  console.info("Contrast Finance web app v0.40.67 loaded");
   if (!state.token) {
     showLogin();
     return;
