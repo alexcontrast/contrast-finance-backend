@@ -4,6 +4,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -14,13 +15,31 @@ from app.models.event_item import EventItem
 from app.models.taxpayer_check import TaxpayerCheck
 from app.models.user import User
 from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
+from app.schemas.event_item import EventItemCreate, EventItemRead
 from app.services.kgd.client import check_taxpayer
 from app.services.auth import get_current_user
-from app.services.authorization import require_item_event_edit
+from app.services.authorization import get_event_or_404, require_event_edit, require_item_event_edit
 
 
 router = APIRouter(tags=["tax"])
 logger = logging.getLogger(__name__)
+
+
+class EventItemTaxCheckCreatePayload(BaseModel):
+    item: EventItemCreate
+    iin_bin: str
+
+
+class EventItemTaxCheckCreateResult(BaseModel):
+    item: EventItemRead
+    tax: TaxResult
+
+
+def calculate_external_amount_from_item_payload(payload: EventItemCreate) -> Decimal:
+    price = payload.external_price or Decimal("0.00")
+    quantity = payload.external_quantity or Decimal("1.00")
+    days = payload.external_days or Decimal("1.00")
+    return price * quantity * days
 
 
 def _perf_delta(marks: dict[str, float], start_name: str, end_name: str) -> float:
@@ -332,6 +351,86 @@ def check_event_item_tax(
     )
 
     return result_payload
+
+
+@router.post("/events/{event_id}/items/tax/check", response_model=EventItemTaxCheckCreateResult)
+def create_event_item_and_check_tax(
+    event_id: int,
+    payload: EventItemTaxCheckCreatePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Создаёт новую позицию и сразу делает live-проверку КГД одним запросом.
+
+    Важно: это НЕ кэш. КГД всё равно вызывается live каждый раз.
+    Экономия только на том, что фронт больше не делает два отдельных round-trip:
+    POST /events/{id}/items + POST /event-items/{id}/tax/check.
+    """
+    started_at = time.perf_counter()
+
+    event = get_event_or_404(db, event_id)
+    require_event_edit(current_user, event)
+    auth_sec = time.perf_counter() - started_at
+
+    item_payload = payload.item
+    normalized_iin_bin = "".join(ch for ch in (payload.iin_bin or item_payload.iin_bin or "") if ch.isdigit())
+    if len(normalized_iin_bin) != 12:
+        raise HTTPException(status_code=400, detail="BIN / ИИН должен содержать 12 цифр")
+
+    item = EventItem(
+        event_id=event_id,
+        item_type=item_payload.item_type,
+        external_name=item_payload.external_name,
+        external_price=item_payload.external_price,
+        external_quantity=item_payload.external_quantity,
+        external_days=item_payload.external_days,
+        external_amount=calculate_external_amount_from_item_payload(item_payload),
+        external_note=item_payload.external_note,
+        amount_fact=item_payload.amount_fact,
+        paid_amount=item_payload.paid_amount,
+        payment_method="invoice",
+        iin_bin=normalized_iin_bin,
+        iin_bin_locked=False,
+        tax_check_status=None,
+        vat_amount=Decimal("0.00"),
+        deduction_amount=Decimal("0.00"),
+        internal_note=item_payload.internal_note,
+        sort_order=item_payload.sort_order,
+        is_deleted=False,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+
+    db.add(item)
+    db.flush()
+    create_flush_sec = time.perf_counter() - started_at - auth_sec
+
+    tax_started_at = time.perf_counter()
+    tax_result = check_event_item_tax(
+        item.id,
+        TaxCheckRequest(iin_bin=normalized_iin_bin),
+        db,
+        current_user,
+    )
+    tax_sec = time.perf_counter() - tax_started_at
+
+    # check_event_item_tax уже сделал commit; item содержит актуальные tax-поля.
+    item_read = EventItemRead.model_validate(item)
+
+    logger.warning(
+        "PERF event-item-create-tax-check event_id=%s item_id=%s user_id=%s role=%s auth=%.3fs create_flush=%.3fs tax_total=%.3fs total=%.3fs",
+        event_id,
+        item.id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        auth_sec,
+        create_flush_sec,
+        tax_sec,
+        time.perf_counter() - started_at,
+    )
+
+    return EventItemTaxCheckCreateResult(item=item_read, tax=tax_result)
 
 
 @router.patch("/event-items/{item_id}/tax/manual", response_model=TaxResult)

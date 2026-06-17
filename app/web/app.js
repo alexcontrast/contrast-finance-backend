@@ -6860,6 +6860,10 @@ function setDraftItemValue(eventId, itemId, field, value) {
     item[field] = value;
   }
 
+  // Любое ручное изменение строки после live-КГД снова делает её черновой.
+  // Иначе можно случайно пропустить нужный PATCH перед заявкой.
+  delete item.__tax_checked_backend_synced;
+
   if (field === "payment_method") {
     if (value !== "self_employed") {
       clearDraftSelfEmployedFields(item);
@@ -8148,30 +8152,36 @@ async function checkTaxForItem(itemId) {
   item.payment_method = "invoice";
 
   try {
-    // Для КГД нужна только текущая строка с реальным database id.
-    // Раньше ради одной проверки сохранялись всё мероприятие и вся смета.
-    // Это давало 5–8 секунд лишнего ожидания.
+    // Для новой строки создаём позицию и проверяем live-КГД одним запросом.
+    // Кэш КГД не используется: экономим только лишний HTTP round-trip.
     const wasTemp = item.is_temp || String(item.id || "").startsWith("tmp-");
-    await timedAction("kgd-estimate-item-save", () => saveSingleDraftItem(state.selectedManagerEventId, item, { force: true }));
+    let result = null;
 
-    if (String(item.id).startsWith("tmp-")) {
-      throw new Error("Не удалось сохранить позицию перед проверкой КГД");
+    if (wasTemp) {
+      const combined = await createDraftItemAndCheckTax(
+        state.selectedManagerEventId,
+        item,
+        normalized,
+        "kgd-estimate-create-check-api"
+      );
+      item = combined.item;
+      result = combined.taxResult;
+    } else {
+      await timedAction("kgd-estimate-item-save", () => saveSingleDraftItem(state.selectedManagerEventId, item, { force: false }));
+
+      if (String(item.id).startsWith("tmp-")) {
+        throw new Error("Не удалось сохранить позицию перед проверкой КГД");
+      }
+
+      result = await timedApi("kgd-estimate-check-api", `/event-items/${item.id}/tax/check`, {
+        method: "POST",
+        body: JSON.stringify({ iin_bin: normalized }),
+      });
+      applyTaxResultToDraftItem(item, result, normalized);
+      patchManagerEventPayloadItems(state.selectedManagerEventId, getDraftItems(state.selectedManagerEventId));
     }
 
     itemId = item.id;
-
-    const result = await timedApi("kgd-estimate-check-api", `/event-items/${itemId}/tax/check`, {
-      method: "POST",
-      body: JSON.stringify({ iin_bin: normalized }),
-    });
-
-    item.iin_bin = result.iin_bin || normalized;
-    item.iin_bin_locked = Boolean(result.iin_bin_locked);
-    item.tax_check_status = result.tax_status || result.tax_check_status || null;
-    item.vat_amount = Math.round(asNumber(result.vat_amount));
-    item.deduction_amount = Math.round(asNumber(result.deduction_amount));
-    item.payment_method = "invoice";
-    patchManagerEventPayloadItems(state.selectedManagerEventId, getDraftItems(state.selectedManagerEventId));
 
     // После сохранения tmp→real id DOM обязан получить новые data-item-id.
     // Для существующей строки достаточно точечного обновления.
@@ -9057,6 +9067,67 @@ function updatePaymentInvoiceUiAfterCheck(eventId, item) {
   if (message) message.textContent = "БИН проверен и зафиксирован в смете";
 }
 
+
+function applyTaxResultToDraftItem(item, taxResult, fallbackBin = null) {
+  if (!item || !taxResult) return item;
+  const checkedStatus = taxResult.tax_check_status || taxResult.tax_status || null;
+  item.iin_bin = taxResult.iin_bin || fallbackBin || item.iin_bin || null;
+  item.iin_bin_locked = taxResult.iin_bin_locked === undefined ? true : Boolean(taxResult.iin_bin_locked);
+  item.tax_check_status = checkedStatus;
+  item.vat_amount = taxResult.vat_amount || 0;
+  item.deduction_amount = taxResult.deduction_amount || 0;
+  item.payment_method = "invoice";
+  if (taxResult.contractor_name || taxResult.name) item.contractor_name = taxResult.contractor_name || taxResult.name;
+  item.__tax_checked_backend_synced = true;
+  markDraftItemSaved(item);
+  return item;
+}
+
+function ensurePaymentSelectOptionForItem(item) {
+  const select = $("paymentItemSelect");
+  if (!select || !item?.id) return;
+
+  const itemId = String(item.id);
+  let option = [...select.options].find((candidate) => candidate.value === itemId);
+  if (!option) {
+    option = document.createElement("option");
+    option.value = itemId;
+    const newOption = [...select.options].find((candidate) => candidate.value === "__new_position");
+    select.insertBefore(option, newOption || null);
+  }
+  option.textContent = paymentPositionLabel(item);
+  select.value = itemId;
+}
+
+async function createDraftItemAndCheckTax(eventId, item, normalizedBin, perfLabel) {
+  if (!item) throw new Error("Не выбрана позиция");
+  item.payment_method = "invoice";
+  item.iin_bin = normalizedBin;
+  item.iin_bin_locked = false;
+  item.tax_check_status = null;
+  item.vat_amount = 0;
+  item.deduction_amount = 0;
+
+  const combined = await timedApi(perfLabel, `/events/${eventId}/items/tax/check`, {
+    method: "POST",
+    body: JSON.stringify({
+      item: itemPayloadForSave(item),
+      iin_bin: normalizedBin,
+    }),
+  });
+
+  const createdItem = combined?.item || null;
+  const taxResult = combined?.tax || combined || null;
+  if (!createdItem?.id || !taxResult) {
+    throw new Error("Не удалось создать позицию и проверить КГД");
+  }
+
+  Object.assign(item, createdItem, { is_temp: false, is_new_payment_position: false });
+  applyTaxResultToDraftItem(item, taxResult, normalizedBin);
+  patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+  return { item, taxResult };
+}
+
 async function checkPaymentInvoiceBin(eventId) {
   const kgdStartedAt = perfNow();
   let item = selectedPaymentItem(eventId);
@@ -9073,30 +9144,38 @@ async function checkPaymentInvoiceBin(eventId) {
   }
 
   const wasNewPaymentPosition = Boolean(item.is_new_payment_position);
-  item = await timedAction("kgd-payment-materialize-item", () => materializePaymentItemIfNeeded(eventId, item, "invoice", {
-    payment_method: "invoice",
-    iin_bin: bin,
-    iin_bin_locked: false,
-    tax_check_status: null,
-  }));
+  let taxResult = null;
 
-  item.payment_method = "invoice";
-  item.iin_bin = bin;
-  item.iin_bin_locked = false;
-  item.tax_check_status = null;
-
-  // Перед КГД сохраняем только выбранную позицию.
-  // Если это новая позиция, она уже была создана сразу с BIN на materialize-шаге.
   if (wasNewPaymentPosition) {
-    console.info(`PERF web kgd-payment-persist-item-skip new-item=${item.id}`);
+    const created = createDraftItemFromPaymentModal(eventId, "invoice");
+    const combined = await timedAction("kgd-payment-create-check", () => createDraftItemAndCheckTax(
+      eventId,
+      Object.assign(created, {
+        payment_method: "invoice",
+        iin_bin: bin,
+        iin_bin_locked: false,
+        tax_check_status: null,
+      }),
+      bin,
+      "kgd-payment-create-check-api"
+    ));
+    item = combined.item;
+    taxResult = combined.taxResult;
+    ensurePaymentSelectOptionForItem(item);
   } else {
-    await timedAction("kgd-payment-persist-item", () => persistItemBeforePayment(eventId, item));
-  }
+    item.payment_method = "invoice";
+    item.iin_bin = bin;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
 
-  const taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
-    method: "POST",
-    body: JSON.stringify({ iin_bin: bin }),
-  });
+    await timedAction("kgd-payment-persist-item", () => saveSingleDraftItem(eventId, item, { force: false }));
+
+    taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
+      method: "POST",
+      body: JSON.stringify({ iin_bin: bin }),
+    });
+    applyTaxResultToDraftItem(item, taxResult, bin);
+  }
 
   const checkedStatus = taxResult?.tax_check_status || taxResult?.tax_status;
 
@@ -9104,13 +9183,7 @@ async function checkPaymentInvoiceBin(eventId) {
     throw new Error(taxResult?.message || "КГД не подтвердил БИН/ИИН");
   }
 
-  item.iin_bin = taxResult.iin_bin || bin;
-  item.iin_bin_locked = taxResult.iin_bin_locked === undefined ? true : Boolean(taxResult.iin_bin_locked);
-  item.tax_check_status = checkedStatus;
-  item.vat_amount = taxResult.vat_amount || 0;
-  item.deduction_amount = taxResult.deduction_amount || 0;
-  item.payment_method = "invoice";
-  item.contractor_name = taxResult.contractor_name || taxResult.name || null;
+  applyTaxResultToDraftItem(item, taxResult, bin);
 
   // ВАЖНО:
   // второй full-save здесь больше не нужен.
@@ -9118,8 +9191,6 @@ async function checkPaymentInvoiceBin(eventId) {
   // Повторное saveDraftItems() делало модалку заметно медленнее.
   // После успешной live-проверки считаем текущую позицию синхронизированной,
   // чтобы создание invoice-заявки не делало лишний PATCH той же позиции.
-  markDraftItemSaved(item);
-
   patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
@@ -9290,6 +9361,7 @@ function invoicePaymentItemNeedsPersist(eventId, item) {
   if (item.is_new_payment_position || item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
   if (item.payment_method !== "invoice") return true;
   if (!invoiceContextFromItem(item)) return true;
+  if (item.__tax_checked_backend_synced) return false;
   return itemNeedsSave(eventId, item);
 }
 
@@ -11165,7 +11237,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.71 loaded");
+  console.info("Contrast Finance web app v0.40.72 loaded");
   if (!state.token) {
     showLogin();
     return;
