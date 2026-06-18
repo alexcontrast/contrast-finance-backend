@@ -58,7 +58,7 @@ from app.services.kgd.client import check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.85_ADMIN_IDS_QUICK_EXPENSES"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.86_ADMIN_IDS_QUICK_EXPENSES"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")

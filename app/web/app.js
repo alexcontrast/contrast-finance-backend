@@ -4097,6 +4097,16 @@ function championBadge(rank, percent) {
   return rank === 0 && asNumber(percent) > 0 ? `<em class="manager-champion-badge" title="Чемпион месяца">🏆</em>` : "";
 }
 
+function pluralizeRu(value, one, few, many) {
+  const n = Math.abs(Number(value || 0));
+  const n100 = n % 100;
+  const n10 = n % 10;
+  if (n100 >= 11 && n100 <= 14) return many;
+  if (n10 === 1) return one;
+  if (n10 >= 2 && n10 <= 4) return few;
+  return many;
+}
+
 function overviewEventsBadge(count, title = "Мероприятий за месяц") {
   const value = Number(count || 0);
   const label = pluralizeRu(value, "мероприятие", "мероприятия", "мероприятий");
@@ -11499,7 +11509,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.85 loaded");
+  console.info("Contrast Finance web app v0.40.86 loaded");
   if (!state.token) {
     showLogin();
     return;
