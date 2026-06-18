@@ -13,9 +13,11 @@ import html
 import logging
 import os
 import re
+import secrets
 import time
 from contextlib import contextmanager
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -44,6 +46,8 @@ from app.models.contractor import Contractor
 from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.event_share import EventShare
+from app.models.monthly_expense import MonthlyExpense
+from app.models.monthly_plan import MonthlyPlan
 from app.models.payment_request import PaymentRequest
 from app.models.taxpayer_check import TaxpayerCheck
 from app.models.telegram_message import TelegramMessage
@@ -54,7 +58,7 @@ from app.services.kgd.client import check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.45_BOT_HARDENING"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.83_QUICK_EXPENSES"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -138,6 +142,12 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
     one_time_keyboard=False,
 )
 
+ADMIN_KEYBOARD = ReplyKeyboardMarkup(
+    [["➕ Расход"], ["Привязать аккаунт"], ["Отменить"]],
+    resize_keyboard=True,
+    one_time_keyboard=False,
+)
+
 PAYMENT_METHODS = ["По счету", "Самозанятый", "На карту", "Нал"]
 EXTRA_ITEM_ID = "extra"
 SALARY_ITEM_ID = "salary"
@@ -146,6 +156,9 @@ BOUND_USER_CACHE: Dict[str, Dict[str, Any]] = {}
 BOUND_USER_CACHE_TTL_SECONDS = 24 * 60 * 60
 RECENTLY_PUBLISHED: Dict[str, float] = {}
 RECENTLY_PUBLISHED_TTL_SECONDS = 10 * 60
+PENDING_EXPENSES: Dict[str, Dict[str, Any]] = {}
+PENDING_EXPENSE_TTL_SECONDS = 30 * 60
+ASTANA_TZ = ZoneInfo("Asia/Almaty")
 
 RU_MONTHS = {
     1: "Январь",
@@ -257,6 +270,15 @@ def month_label(month: date) -> str:
     return f"{RU_MONTHS.get(month.month, month.month)} {month.year}"
 
 
+def current_astana_month() -> date:
+    now = datetime.now(ASTANA_TZ)
+    return date(now.year, now.month, 1)
+
+
+def role_keyboard(role: str | None) -> ReplyKeyboardMarkup:
+    return ADMIN_KEYBOARD if str(role or "").strip() == "admin" else MAIN_KEYBOARD
+
+
 def month_key_from_event_date(value: date) -> str:
     return f"{int(value.year):04d}-{int(value.month):02d}"
 
@@ -362,11 +384,30 @@ def comment_has_surname(value: Any) -> bool:
     return any(len(word) >= 2 and any(ch.isalpha() for ch in word) for word in words)
 
 
+def get_active_user_by_telegram_id(db: Session, telegram_id: Any) -> Optional[User]:
+    return db.execute(
+        select(User).where(
+            User.telegram_id == str(telegram_id),
+            User.is_active == True,  # noqa: E712
+        )
+    ).scalars().first()
+
+
 def get_user_by_telegram_id(db: Session, telegram_id: Any) -> Optional[User]:
     return db.execute(
         select(User).where(
             User.telegram_id == str(telegram_id),
             User.role == "manager",
+            User.is_active == True,  # noqa: E712
+        )
+    ).scalars().first()
+
+
+def get_admin_by_telegram_id(db: Session, telegram_id: Any) -> Optional[User]:
+    return db.execute(
+        select(User).where(
+            User.telegram_id == str(telegram_id),
+            User.role == "admin",
             User.is_active == True,  # noqa: E712
         )
     ).scalars().first()
@@ -388,19 +429,20 @@ def set_cached_bound_user(user: User) -> None:
         return
     BOUND_USER_CACHE[str(user.telegram_id)] = {
         "ts": time.time(),
-        "user": {"id": user.id, "name": user.name, "department_id": user.department_id},
+        "user": {"id": user.id, "name": user.name, "department_id": user.department_id, "role": user.role},
     }
 
 
 def bind_user_by_phone_pin(db: Session, telegram_user, phone_digits: str, pin: str) -> User:
     users = db.execute(
         select(User).where(
-            User.role == "manager",
+            User.role.in_(["manager", "admin"]),
             User.is_active == True,  # noqa: E712
         )
     ).scalars().all()
-    user = next((u for u in users if normalize_phone(u.phone or "") == phone_digits), None)
-    if user is None or not verify_pin(user, pin):
+    candidates = [u for u in users if normalize_phone(u.phone or "") == phone_digits]
+    user = next((u for u in candidates if verify_pin(u, pin)), None)
+    if user is None:
         raise RuntimeError("Неверный телефон или PIN")
     user.telegram_id = str(telegram_user.id)
     user.telegram_username = telegram_user.username or user.telegram_username
@@ -464,6 +506,170 @@ def load_manager_flow(telegram_id: Any) -> Dict[str, Any]:
             "eventsByMonth": {month_label(parse_month_key(key)): value for key, value in months_map.items()},
         }
 
+
+
+EXPENSE_SPLIT_ALIASES = {
+    "санжар": "sanzhar_only",
+    "sanzhar": "sanzhar_only",
+    "рауфаль": "raufal_only",
+    "рауфал": "raufal_only",
+    "raufal": "raufal_only",
+    "по плану": "default_split",
+    "план": "default_split",
+}
+
+
+def default_expense_split_percentages(db: Session, month: date) -> tuple[Decimal, Decimal]:
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month)).scalar_one_or_none()
+    if plan is None:
+        return Decimal("66.67"), Decimal("33.33")
+    sanzhar_percent = money(plan.sanzhar_share_percent)
+    raufal_percent = money(plan.raufal_share_percent)
+    if sanzhar_percent < 0 or raufal_percent < 0 or q(sanzhar_percent + raufal_percent) == Decimal("0.00"):
+        return Decimal("66.67"), Decimal("33.33")
+    return sanzhar_percent, raufal_percent
+
+
+def calculate_expense_split(
+    db: Session,
+    month: date,
+    amount: Decimal,
+    allocation_type: str,
+    custom_percentages: tuple[int, int] | None = None,
+) -> tuple[Decimal, Decimal, str]:
+    amount = q(amount)
+    if allocation_type == "sanzhar_only":
+        return amount, Decimal("0.00"), "Санжар"
+    if allocation_type == "raufal_only":
+        return Decimal("0.00"), amount, "Рауфаль"
+    if allocation_type == "custom" and custom_percentages:
+        left, right = custom_percentages
+        total = left + right
+        if total <= 0:
+            raise RuntimeError("Некорректное деление расхода")
+        sanzhar = q(amount * Decimal(left) / Decimal(total))
+        return sanzhar, q(amount - sanzhar), f"{left}/{right}"
+    sanzhar_percent, raufal_percent = default_expense_split_percentages(db, month)
+    sanzhar = q(amount * sanzhar_percent / Decimal("100"))
+    return sanzhar, q(amount - sanzhar), f"по плану {sanzhar_percent:g}/{raufal_percent:g}%"
+
+
+def parse_quick_expense_text(raw_text: str) -> Optional[Dict[str, Any]]:
+    text = str(raw_text or "").strip()
+    if not text:
+        return None
+    lowered = text.lower().strip()
+    if lowered.startswith("/expense"):
+        text = text[len("/expense"):].strip()
+        lowered = text.lower().strip()
+    if lowered.startswith("расход "):
+        text = text[7:].strip()
+        lowered = text.lower().strip()
+    if lowered in {"➕ расход", "расход", "/expense"}:
+        return {"help": True}
+
+    text = re.sub(r"\s*(₸|тг|тенге|kzt)\s*$", "", text, flags=re.IGNORECASE).strip()
+    lowered = text.lower().strip()
+
+    allocation_type = "default_split"
+    custom_percentages: tuple[int, int] | None = None
+
+    split_match = re.search(r"\s+(\d{1,3})\s*/\s*(\d{1,3})\s*$", text)
+    if split_match:
+        left, right = int(split_match.group(1)), int(split_match.group(2))
+        if left <= 0 or right < 0 or left + right <= 0:
+            return None
+        allocation_type = "custom"
+        custom_percentages = (left, right)
+        text = text[: split_match.start()].strip()
+        lowered = text.lower().strip()
+    else:
+        for alias, value in sorted(EXPENSE_SPLIT_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
+            if lowered.endswith(" " + alias) or lowered == alias:
+                allocation_type = value
+                text = text[: len(text) - len(alias)].strip()
+                lowered = text.lower().strip()
+                break
+
+    match = re.match(r"^(?P<title>.+?)\s+(?P<amount>\d[\d\s.,]*\d|\d)\s*$", text)
+    if not match:
+        return None
+    title = re.sub(r"\s+", " ", match.group("title").strip(" -—:;,."))
+    amount = money_number(match.group("amount"))
+    if not title or len(title) < 2 or not amount:
+        return None
+    return {
+        "title": title[:255],
+        "amount": Decimal(amount),
+        "allocation_type": allocation_type,
+        "custom_percentages": custom_percentages,
+        "month": current_astana_month(),
+    }
+
+
+def cleanup_pending_expenses() -> None:
+    now = time.time()
+    for token, payload in list(PENDING_EXPENSES.items()):
+        if now - float(payload.get("ts", 0)) > PENDING_EXPENSE_TTL_SECONDS:
+            PENDING_EXPENSES.pop(token, None)
+
+
+def expense_confirmation_text(payload: Dict[str, Any], sanzhar_amount: Decimal, raufal_amount: Decimal, split_label: str) -> str:
+    return (
+        "Добавить расход?\n\n"
+        f"{payload['title']} — {fmt_money(payload['amount'])}\n"
+        f"Месяц: {month_label(payload['month'])}\n"
+        f"Деление: {split_label}\n\n"
+        f"Санжар: {fmt_money(sanzhar_amount)}\n"
+        f"Рауфаль: {fmt_money(raufal_amount)}"
+    )
+
+
+def create_monthly_expense_from_telegram(telegram_id: Any, payload: Dict[str, Any]) -> MonthlyExpense:
+    with db_session() as db:
+        admin = get_admin_by_telegram_id(db, telegram_id)
+        if admin is None:
+            raise RuntimeError("Расходы через Telegram доступны только администратору")
+        month = payload["month"]
+        amount = q(money(payload["amount"]))
+        sanzhar_amount, raufal_amount, _ = calculate_expense_split(
+            db,
+            month,
+            amount,
+            payload.get("allocation_type") or "default_split",
+            payload.get("custom_percentages"),
+        )
+        expense = MonthlyExpense(
+            month=month,
+            title=payload["title"],
+            amount=amount,
+            allocation_type=payload.get("allocation_type") or "default_split",
+            sanzhar_amount=sanzhar_amount,
+            raufal_amount=raufal_amount,
+            comment="Добавлено через Telegram",
+            created_by_user_id=admin.id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(expense)
+        db.commit()
+        db.refresh(expense)
+        return expense
+
+
+def delete_monthly_expense_from_telegram(telegram_id: Any, expense_id: int) -> str:
+    with db_session() as db:
+        admin = get_admin_by_telegram_id(db, telegram_id)
+        if admin is None:
+            raise RuntimeError("Расходы через Telegram доступны только администратору")
+        expense = db.get(MonthlyExpense, int(expense_id))
+        if expense is None:
+            raise RuntimeError("Расход уже не найден")
+        title = expense.title
+        amount = expense.amount
+        db.delete(expense)
+        db.commit()
+        return f"{title} — {fmt_money(amount)}"
 
 
 ACTIVE_PAYMENT_STATUSES_FOR_LOCK = {"new", "to_pay", "paid", "tax_check_needed"}
@@ -1361,13 +1567,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     cached = get_cached_bound_user(update.effective_user.id)
     if cached:
-        await update.message.reply_text(f"✅ Аккаунт найден: {cached.get('name', 'менеджер')}\nГлавное меню:", reply_markup=MAIN_KEYBOARD)
+        await update.message.reply_text(
+            f"✅ Аккаунт найден: {cached.get('name', 'пользователь')}\nГлавное меню:",
+            reply_markup=role_keyboard(cached.get("role")),
+        )
         return ConversationHandler.END
-    user = ensure_manager_from_telegram(update.effective_user.id)
+    with db_session() as db:
+        user = get_active_user_by_telegram_id(db, update.effective_user.id)
+        if user:
+            set_cached_bound_user(user)
     if user:
-        await update.message.reply_text(f"✅ Аккаунт найден: {user.name}\nГлавное меню:", reply_markup=MAIN_KEYBOARD)
+        await update.message.reply_text(f"✅ Аккаунт найден: {user.name}\nГлавное меню:", reply_markup=role_keyboard(user.role))
         return ConversationHandler.END
-    await update.message.reply_text("Telegram пока не привязан к аккаунту менеджера.\nНажми «Привязать аккаунт» и введи телефон + PIN от сайта.", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("Telegram пока не привязан к аккаунту.\nНажми «Привязать аккаунт» и введи телефон + PIN от сайта.", reply_markup=MAIN_KEYBOARD)
     return ConversationHandler.END
 
 
@@ -1771,6 +1983,130 @@ async def restore_clicked_card(query, request_id: int, is_admin: bool) -> None:
     )
 
 
+async def expense_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None:
+        return
+    with db_session() as db:
+        admin = get_admin_by_telegram_id(db, update.effective_user.id)
+        active_user = get_active_user_by_telegram_id(db, update.effective_user.id)
+    if admin is None:
+        if active_user is None:
+            await update.message.reply_text("Сначала привяжи аккаунт кнопкой «Привязать аккаунт».", reply_markup=MAIN_KEYBOARD)
+        else:
+            await update.message.reply_text("Добавление расходов через Telegram доступно только администратору.", reply_markup=role_keyboard(active_user.role))
+        return
+    await update.message.reply_text(
+        "Напиши расход одним сообщением:\n\n"
+        "Кофе 54900\n"
+        "Интернет 28 205\n"
+        "СММ 250000 Санжар\n"
+        "Таргет 100000 Рауфаль\n"
+        "Facebook 291000 по плану\n"
+        "Закуп 30000 50/50",
+        reply_markup=ADMIN_KEYBOARD,
+    )
+
+
+async def quick_expense_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None:
+        return
+    text = " ".join(context.args or [])
+    if not text:
+        await expense_help(update, context)
+        return
+    await process_quick_expense_text(update, context, f"/expense {text}")
+
+
+async def quick_expense_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None:
+        return
+    await process_quick_expense_text(update, context, update.message.text or "")
+
+
+async def process_quick_expense_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    if update.message is None:
+        return
+    parsed = parse_quick_expense_text(text)
+    if not parsed:
+        return
+    if parsed.get("help"):
+        await expense_help(update, context)
+        return
+
+    with db_session() as db:
+        active_user = get_active_user_by_telegram_id(db, update.effective_user.id)
+        admin = active_user if active_user and active_user.role == "admin" else None
+        if admin is not None:
+            sanzhar_amount, raufal_amount, split_label = calculate_expense_split(
+                db,
+                parsed["month"],
+                money(parsed["amount"]),
+                parsed.get("allocation_type") or "default_split",
+                parsed.get("custom_percentages"),
+            )
+
+    if active_user is None:
+        await update.message.reply_text("Сначала привяжи аккаунт кнопкой «Привязать аккаунт».", reply_markup=MAIN_KEYBOARD)
+        return
+    if admin is None:
+        await update.message.reply_text("Эта команда доступна только администратору.", reply_markup=role_keyboard(active_user.role))
+        return
+
+    cleanup_pending_expenses()
+    token = secrets.token_urlsafe(8)
+    parsed["ts"] = time.time()
+    PENDING_EXPENSES[token] = parsed
+    await update.message.reply_text(
+        expense_confirmation_text(parsed, sanzhar_amount, raufal_amount, split_label),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Добавить", callback_data=f"expense:add:{token}")],
+            [InlineKeyboardButton("❌ Отмена", callback_data=f"expense:cancel:{token}")],
+        ]),
+    )
+
+
+async def handle_expense_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query is None:
+        return
+    parts = (query.data or "").split(":", 2)
+    if len(parts) < 3:
+        return
+    _, action, token = parts
+    await safe_query_answer(query, "Обрабатываю…")
+
+    if action == "cancel":
+        PENDING_EXPENSES.pop(token, None)
+        await query.edit_message_text("Расход отменён.")
+        return
+
+    if action == "add":
+        cleanup_pending_expenses()
+        payload = PENDING_EXPENSES.pop(token, None)
+        if not payload:
+            await query.edit_message_text("Этот расход уже устарел. Отправь сообщение ещё раз.")
+            return
+        try:
+            expense = await asyncio.to_thread(create_monthly_expense_from_telegram, query.from_user.id, payload)
+            await query.edit_message_text(
+                f"✅ Расход добавлен:\n{expense.title} — {fmt_money(expense.amount)}\nМесяц: {month_label(expense.month)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Удалить расход", callback_data=f"expense:delete:{expense.id}")]]),
+            )
+        except Exception as err:
+            logger.exception("Telegram quick expense add failed")
+            await query.edit_message_text(f"⚠️ Не удалось добавить расход: {err}")
+        return
+
+    if action == "delete":
+        try:
+            deleted = await asyncio.to_thread(delete_monthly_expense_from_telegram, query.from_user.id, int(token))
+            await query.edit_message_text(f"↩️ Расход удалён:\n{deleted}")
+        except Exception as err:
+            logger.exception("Telegram quick expense delete failed")
+            await query.edit_message_text(f"⚠️ Не удалось удалить расход: {err}")
+        return
+
+
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query.from_user.id != ADMIN_CHAT_ID:
@@ -1933,7 +2269,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         track_message_id(context, update.message.message_id)
         await cleanup_flow_messages(context, update.effective_chat.id)
-        await update.message.reply_text("Действие отменено.", reply_markup=MAIN_KEYBOARD)
+        cached = get_cached_bound_user(update.effective_user.id)
+        await update.message.reply_text("Действие отменено.", reply_markup=role_keyboard((cached or {}).get("role")))
     return ConversationHandler.END
 
 
@@ -1945,14 +2282,15 @@ async def version(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None:
         return
-    user = ensure_manager_from_telegram(update.effective_user.id)
+    with db_session() as db:
+        user = get_active_user_by_telegram_id(db, update.effective_user.id)
     if user:
         await update.message.reply_text(
             "WHOAMI ✅\n"
             f"BOT VERSION: {BOT_VERSION}\n"
             f"telegramId: {update.effective_user.id}\n"
             f"username: @{update.effective_user.username or ''}\n"
-            f"manager: {user.name}\n"
+            f"user: {user.name}\n"
             f"userId: {user.id}\n"
             f"department_id: {user.department_id}\n"
             f"role: {user.role}"
@@ -2008,10 +2346,14 @@ def main():
     app.add_handler(bind_conversation)
     app.add_handler(request_conversation)
     app.add_handler(MessageHandler(filters.Regex("^Мои заявки$"), my_requests))
+    app.add_handler(MessageHandler(filters.Regex("^➕ Расход$"), expense_help))
+    app.add_handler(CommandHandler("expense", quick_expense_command))
     app.add_handler(MessageHandler(filters.Regex("^Отменить$"), cancel))
     app.add_handler(CallbackQueryHandler(handle_admin_action, pattern="^admin:"))
     app.add_handler(CallbackQueryHandler(handle_manager_action, pattern="^manager:"))
+    app.add_handler(CallbackQueryHandler(handle_expense_action, pattern="^expense:"))
     app.add_handler(CommandHandler("cancel", cancel))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, quick_expense_message))
 
     app.run_polling()
 
