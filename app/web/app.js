@@ -2779,6 +2779,27 @@ function formatDateRu(value) {
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
 }
 
+function formatDateTimeRu(value) {
+  if (!value) return "";
+  const raw = String(value || "").trim();
+  const parsed = new Date(raw);
+  const pad = (part) => String(part).padStart(2, "0");
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return `${pad(parsed.getDate())}-${pad(parsed.getMonth() + 1)}-${parsed.getFullYear()} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  }
+
+  const date = formatDateRu(raw);
+  const match = raw.match(/[T\s](\d{2}):(\d{2})/);
+  return `${date || raw}${match ? ` ${match[1]}:${match[2]}` : ""}`.trim();
+}
+
+function paymentRequestCreatedAtCell(request) {
+  const value = paymentRequestDateValue(request);
+  const text = formatDateTimeRu(value) || formatDateRu(value) || value || "";
+  return `<td class="nowrap request-created-at-cell" title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
+}
+
 function formatMonthListDay(value) {
   if (!value) return "";
   const parts = String(value).slice(0, 10).split("-");
@@ -3384,6 +3405,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
         <table class="event-requests-table">
           <thead>
             <tr>
+              <th>Создана</th>
               <th>Менеджер</th>
               <th>Позиция</th>
               <th>Сумма заявки</th>
@@ -3397,6 +3419,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
           <tbody>
             ${filtered.map((request) => `
               <tr>
+                ${paymentRequestCreatedAtCell(request)}
                 <td>${managerNameForRequest(request)}</td>
                 <td>${request.position || request.item_name_snapshot || ""}</td>
                 <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
@@ -4082,6 +4105,7 @@ function renderDepartmentHeadEventsTable(events = []) {
         <thead>
           <tr>
             <th>Дата</th>
+            <th>Создана</th>
             <th>Менеджер</th>
             <th>Заказчик</th>
             <th>Мероприятие</th>
@@ -4192,6 +4216,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
         <thead>
           <tr>
             <th>Дата</th>
+            <th>Создана</th>
             <th>Менеджер</th>
             <th>Заказчик</th>
             <th>Мероприятие</th>
@@ -4206,6 +4231,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
           ${filtered.map((request) => `
             <tr>
               ${monthListDateCell(paymentRequestDateValue(request))}
+              ${paymentRequestCreatedAtCell(request)}
               <td>${escapeHtml(request.manager_name || "")}</td>
               <td>${escapeHtml(paymentRequestClientName(request))}</td>
               <td>${escapeHtml(paymentRequestEventTitle(request))}</td>
@@ -4775,6 +4801,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
           <thead>
             <tr>
               <th>Дата</th>
+              <th>Создана</th>
               <th>Менеджер</th>
               <th>Заказчик</th>
               <th>Мероприятие</th>
@@ -4790,6 +4817,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
             ${filtered.map((request) => `
               <tr>
                 ${monthListDateCell(paymentRequestDateValue(request))}
+                ${paymentRequestCreatedAtCell(request)}
                 <td>${paymentRequestManagerName(request)}</td>
                 <td>${paymentRequestClientName(request)}</td>
                 <td>${paymentRequestEventTitle(request)}</td>
@@ -5401,8 +5429,8 @@ function cachedEventModalPayload(eventId) {
   return state.eventModalPayloadById?.[String(eventId)] || null;
 }
 
-async function loadEventModalPayload(eventId) {
-  const cachedPayload = cachedEventModalPayload(eventId);
+async function loadEventModalPayload(eventId, options = {}) {
+  const cachedPayload = options.force ? null : cachedEventModalPayload(eventId);
   if (cachedPayload) {
     console.info(`PERF web event-modal-detail cache event=${eventId}`);
     return cachedPayload;
@@ -5507,7 +5535,10 @@ async function refreshOpenEventModalAfterPaymentRequestChange(sourceElement = nu
   if (!eventId || !backdrop || backdrop.classList.contains("hidden")) return false;
 
   const selectedStatus = document.getElementById("eventModalRequestStatusFilter")?.value || "all";
-  const payload = await loadEventModalPayload(eventId);
+  // После действий по заявке нельзя брать старый bundle/cache: статус оплаты уже изменился,
+  // а кнопки должны пересобраться сразу по свежим данным.
+  if (state.eventModalPayloadById) delete state.eventModalPayloadById[String(eventId)];
+  const payload = await loadEventModalPayload(eventId, { force: true });
   renderEventModalPayload(payload, selectedStatus);
   return true;
 }
@@ -11237,7 +11268,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.72 loaded");
+  console.info("Contrast Finance web app v0.40.73 loaded");
   if (!state.token) {
     showLogin();
     return;
