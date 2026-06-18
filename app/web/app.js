@@ -5624,6 +5624,18 @@ function patchEventState(updatedEvent, options = {}) {
   return modalPayload;
 }
 
+
+function rerenderAdminEventListIfOpen() {
+  const user = state.bootstrap?.user;
+  if (!user || user.role !== "admin") return;
+  if (!["events", "events_archive"].includes(state.activeAdminTab)) return;
+  const content = $("dashboardContent");
+  if (!content || !state.adminData) return;
+  content.innerHTML = renderAdminEvents(state.adminData, state.activeAdminTab === "events_archive" ? "archive" : "active");
+  attachFilters();
+  attachEventRows();
+}
+
 function rerenderCurrentEventModalFromPatchedPayload(selectedRequestStatus = null) {
   const payload = state.currentEventModalPayload;
   const backdrop = $("eventModalBackdrop");
@@ -5636,6 +5648,7 @@ function rerenderCurrentEventModalFromPatchedPayload(selectedRequestStatus = nul
 async function handleAdminEventStatusActionCompleted(updatedEvent, options = {}) {
   const selectedStatus = document.getElementById("eventModalRequestStatusFilter")?.value || "all";
   patchEventState(updatedEvent, options);
+  rerenderAdminEventListIfOpen();
   if (rerenderCurrentEventModalFromPatchedPayload(selectedStatus)) return;
   await openEventModal(updatedEvent.id);
 }
@@ -11268,7 +11281,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.73 loaded");
+  console.info("Contrast Finance web app v0.40.74 loaded");
   if (!state.token) {
     showLogin();
     return;
