@@ -662,16 +662,11 @@ def create_payment_request(
     )
     build_elapsed = time.perf_counter() - build_started_at
 
-    flush_started_at = time.perf_counter()
+    commit_started_at = time.perf_counter()
     db.add(request)
     db.flush()
-    flush_elapsed = time.perf_counter() - flush_started_at
-
-    response_started_at = time.perf_counter()
     response = enrich_payment_request_for_event_fast(request, event, db, current_user)
-    response_elapsed = time.perf_counter() - response_started_at
-
-    commit_started_at = time.perf_counter()
+    response_elapsed = 0.0
     db.commit()
     commit_elapsed = time.perf_counter() - commit_started_at
 
@@ -679,9 +674,8 @@ def create_payment_request(
         "PERF payment-request-create "
         f"role={current_user.role} user_id={current_user.id} item_id={item_id} method={payment_method} "
         f"item={item_elapsed:.3f}s auth={auth_elapsed:.3f}s build={build_elapsed:.3f}s "
-        f"contractor={contractor_elapsed:.3f}s flush={flush_elapsed:.3f}s "
-        f"response={response_elapsed:.3f}s commit={commit_elapsed:.3f}s "
-        f"total={time.perf_counter() - started_at:.3f}s"
+        f"contractor={contractor_elapsed:.3f}s commit={commit_elapsed:.3f}s "
+        f"response={response_elapsed:.3f}s total={time.perf_counter() - started_at:.3f}s"
     )
 
     return response
@@ -849,6 +843,55 @@ def update_payment_request_status(
 
     return enrich_payment_request_read(request, db)
 
+
+@router.post("/payment-requests/{request_id}/refund", response_model=PaymentRequestRead)
+def refund_paid_payment_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Admin-only refund action for paid requests.
+
+    This is intentionally separate from ordinary cancellation: managers still cannot
+    cancel paid requests, while admin archive button can reverse a paid request,
+    remove it from item paid_amount and mark both statuses as cancelled.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Возврат оплаты доступен только администратору")
+
+    t0 = time.perf_counter()
+    request = get_request_or_404(db, request_id)
+
+    if request.status != "paid":
+        raise HTTPException(
+            status_code=400,
+            detail="Вернуть можно только оплаченную заявку",
+        )
+
+    item_id = request.event_item_id
+    now = datetime.utcnow()
+    request.status = "rejected"
+    request.money_status = "cancelled"
+    request.rejected_at = now
+    request.updated_at = now
+
+    db.add(request)
+    db.flush()
+
+    if item_id is not None:
+        sync_item_paid_amount_from_requests(db, item_id)
+
+    mark_payment_request_for_telegram_sync(db, request.id)
+    db.commit()
+
+    total = time.perf_counter() - t0
+    print(
+        "PERF payment-request-refund "
+        f"request_id={request_id} user_id={current_user.id} item_id={item_id} total={total:.3f}s",
+        flush=True,
+    )
+
+    return enrich_payment_request_read(request, db)
 
 @router.patch("/payment-requests/{request_id}/money-status", response_model=PaymentRequestRead)
 def update_payment_request_money_status(

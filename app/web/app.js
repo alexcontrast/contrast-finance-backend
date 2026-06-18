@@ -5060,16 +5060,9 @@ function attachPaymentRequestActions() {
 
       await runPatchUpdateAction(
         button,
-        async () => {
-          await api(`/payment-requests/${id}/status`, {
-            method: "PATCH",
-            body: JSON.stringify({ status: "rejected" }),
-          });
-          return api(`/payment-requests/${id}/money-status`, {
-            method: "PATCH",
-            body: JSON.stringify({ money_status: "cancelled" }),
-          });
-        },
+        () => api(`/payment-requests/${id}/refund`, {
+          method: "POST",
+        }),
         handlePaymentRequestActionCompleted,
         { loadingText: "…", errorPrefix: "Не удалось вернуть заявку" }
       );
@@ -11367,7 +11360,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.77 loaded");
+  console.info("Contrast Finance web app v0.40.78 loaded");
   if (!state.token) {
     showLogin();
     return;
