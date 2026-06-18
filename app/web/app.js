@@ -6905,7 +6905,7 @@ function setDraftItemValue(eventId, itemId, field, value) {
     return;
   }
 
-  if (field === "iin_bin" && itemHasActiveInvoicePaymentRequest(item)) {
+  if (field === "iin_bin" && itemHasActiveInvoicePaymentRequest(item) && !isAdminEditingCurrentEvent()) {
     return;
   }
 
@@ -6918,6 +6918,14 @@ function setDraftItemValue(eventId, itemId, field, value) {
     item[field] = value === "" ? 0 : Math.round(normalizeNumberInput(value));
   } else {
     item[field] = value;
+  }
+
+  if (field === "iin_bin") {
+    item.iin_bin = value ? String(value).replace(/\D/g, "") : null;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
   }
 
   // Любое ручное изменение строки после live-КГД снова делает её черновой.
@@ -7085,9 +7093,11 @@ function updateInternalRowCells(itemId) {
   }
 
   const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
+  const effectivePaymentMethodForAdmin = activeMethod || item.payment_method;
+  const adminCanEditBin = adminCanOverrideItemBin(item, effectivePaymentMethodForAdmin);
   if (binInput) {
     binInput.value = item.iin_bin || "";
-    binInput.disabled = Boolean(item.iin_bin_locked || itemHasActiveInvoicePaymentRequest(item));
+    binInput.disabled = adminCanEditBin ? false : Boolean(item.iin_bin_locked || itemHasActiveInvoicePaymentRequest(item));
   }
 
   const oldCheckButton = row.querySelector(`[data-check-tax-item="${itemId}"]`);
@@ -7095,9 +7105,11 @@ function updateInternalRowCells(itemId) {
   const oldButton = oldCheckButton || oldUnlockButton;
   if (oldButton) {
     const lockedByRequest = itemHasActiveInvoicePaymentRequest(item);
-    oldButton.outerHTML = item.iin_bin_locked
-      ? `<button class="icon-btn" data-unlock-tax-item="${itemId}" title="${lockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${lockedByRequest ? "disabled" : ""}>✎</button>`
-      : `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД">✓</button>`;
+    oldButton.outerHTML = adminCanEditBin
+      ? `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД заново">✓</button>`
+      : (item.iin_bin_locked
+        ? `<button class="icon-btn" data-unlock-tax-item="${itemId}" title="${lockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${lockedByRequest ? "disabled" : ""}>✎</button>`
+        : `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД">✓</button>`);
   }
 
   row.classList.toggle("tax-problem-row", isTaxProblem(item));
@@ -7584,6 +7596,14 @@ function isAdminEventEditModeFor(event) {
   return state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(event?.id || 0);
 }
 
+function isAdminEditingCurrentEvent() {
+  return state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(state.selectedManagerEventId || 0);
+}
+
+function adminCanOverrideItemBin(item, effectivePaymentMethod = null) {
+  return isAdminEditingCurrentEvent() && !isCoordinatorItem(item) && (effectivePaymentMethod || paymentMethodFromActiveRequest(item) || item?.payment_method) === "invoice";
+}
+
 function adminManualTaxOverrideEnabled(eventId) {
   return Boolean(state.adminManualTaxOverrideByEventId?.[String(eventId || "")]);
 }
@@ -7606,7 +7626,7 @@ function renderInternalEstimate(items, event, summary = null) {
       <button class="secondary" id="addInternalPositionBtn">+ Добавить позицию</button>
       ${isAdminEditMode ? `<button class="ghost admin-tax-override-btn ${manualTaxEnabled ? "active" : ""}" data-admin-tax-override-toggle="${event.id}">${manualTaxEnabled ? "✓ Ручная правка налогов включена" : "⚠️ Ручная правка НДС/Вычетов"}</button>` : ""}
     </div>
-    ${manualTaxEnabled ? `<div class="admin-tax-override-note">Аварийный режим: можно вручную исправить только НДС и Вычеты. Способ оплаты, БИН/ИИН и оплаченные поля остаются зафиксированы.</div>` : ""}
+    ${manualTaxEnabled ? `<div class="admin-tax-override-note">Аварийный режим: можно вручную исправить НДС и Вычеты. БИН/ИИН в режиме редактирования админом можно перезабить и заново проверить через КГД.</div>` : ""}
 
     <div class="table-wrap estimate-table-wrap">
       <table class="estimate-table internal-estimate-table">
@@ -7647,7 +7667,9 @@ function renderInternalEstimate(items, event, summary = null) {
             const effectivePaymentMethod = activeMethod || item.payment_method;
             const paymentLocked = itemPaymentMethodLocked(item);
             const invoiceLockedByRequest = itemHasActiveInvoicePaymentRequest(item);
+            const adminCanEditBin = adminCanOverrideItemBin(item, effectivePaymentMethod);
             const binDisabled = isCoordinatorItem(item) || effectivePaymentMethod !== "invoice";
+            const binInputDisabled = binDisabled || (!adminCanEditBin && (item.iin_bin_locked || invoiceLockedByRequest));
             return `
               <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
                 <td class="drag-col">${draggableHandle(item)}</td>
@@ -7672,14 +7694,16 @@ function renderInternalEstimate(items, event, summary = null) {
                     </select>
                   `}
                 </td>
-                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}" ${(item.iin_bin_locked || invoiceLockedByRequest) ? "disabled" : ""}`}`)}</td>
+                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" ${binInputDisabled ? "disabled" : `data-item-field="iin_bin" data-item-id="${item.id}"`}`)}</td>
                 <td class="kgd-col">
                   ${isCoordinatorItem(item) ? "—" : (effectivePaymentMethod === "invoice" ? `
-                    ${item.iin_bin_locked ? `
+                    ${adminCanEditBin ? `
+                      <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="Проверить КГД заново">✓</button>
+                    ` : (item.iin_bin_locked ? `
                       <button class="icon-btn" data-unlock-tax-item="${item.id}" title="${invoiceLockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${invoiceLockedByRequest ? "disabled" : ""}>✎</button>
                     ` : `
                       <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="Проверить КГД">✓</button>
-                    `}
+                    `)}
                   ` : "—")}
                 </td>
                 <td class="vat-col">${manualTaxInputHtml(internalVatValue(item), "vat_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
@@ -8122,7 +8146,7 @@ function unlockTaxForItem(itemId) {
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
   if (!item) return;
 
-  if (itemHasActiveInvoicePaymentRequest(item)) {
+  if (itemHasActiveInvoicePaymentRequest(item) && !adminCanOverrideItemBin(item)) {
     alert("БИН нельзя изменить, пока по этой позиции есть активная заявка. Сначала отмени заявку.");
     return;
   }
@@ -8160,8 +8184,18 @@ function syncDraftItemFromRowBeforeTax(itemId) {
   const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
   const factInput = row.querySelector(`[data-item-field="amount_fact"][data-item-id="${itemId}"]`);
 
-  if (paymentSelect && !itemPaymentMethodLocked(item)) item.payment_method = paymentSelect.value || null;
-  if (binInput && !itemHasActiveInvoicePaymentRequest(item)) item.iin_bin = binInput.value ? binInput.value.replace(/\D/g, "") : null;
+  const activeMethod = paymentMethodFromActiveRequest(item);
+  if (paymentSelect && !itemPaymentMethodLocked(item)) {
+    item.payment_method = paymentSelect.value || null;
+  } else if (activeMethod) {
+    item.payment_method = activeMethod;
+  }
+
+  if (binInput && (!itemHasActiveInvoicePaymentRequest(item) || adminCanOverrideItemBin(item, item.payment_method))) {
+    item.iin_bin = binInput.value ? binInput.value.replace(/\D/g, "") : null;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+  }
   if (factInput && factInput.value !== "") item.amount_fact = Math.round(normalizeNumberInput(factInput.value));
 
   if (item.payment_method !== "invoice") {
@@ -11297,7 +11331,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.75 loaded");
+  console.info("Contrast Finance web app v0.40.76 loaded");
   if (!state.token) {
     showLogin();
     return;
