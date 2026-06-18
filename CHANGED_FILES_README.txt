@@ -1,2 +1,11 @@
-Contrast Finance v0.40.79
-Changed: admin overview monthly finance card with turnover/VAT/tax totals; backend monthly total fields.
+Contrast Finance 2.0 v0.40.81 CHANGED_ONLY
+
+Заменить только эти файлы поверх v0.40.80.
+
+Файлы:
+- app/api/routes/admin_dashboard.py
+- app/web/app.js
+
+Изменения:
+- исправлено падение/пустота админского bundle после добавления верхнего блока итогов;
+- месячные итоги админки считаются из уже рассчитанных summary мероприятий, без отдельного повторного прохода.

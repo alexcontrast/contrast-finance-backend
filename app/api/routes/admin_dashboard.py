@@ -25,7 +25,7 @@ from app.schemas.admin_dashboard import (
     AdminEventRowRead,
     AdminPaymentRequestRowRead,
 )
-from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.event_calculator import calculate_event_summary_values, q, q0
 
 from app.schemas.event import EventRead
 from app.schemas.event_item import EventItemRead
@@ -193,44 +193,49 @@ def allocated_amount(value: Decimal, share_percent: Decimal) -> Decimal:
 
 
 
-def build_monthly_tax_totals(events: list[Event]) -> dict[str, Decimal]:
+def empty_monthly_tax_totals() -> dict[str, Decimal]:
+    return {
+        "turnover": Decimal("0.00"),
+        "client_vat": Decimal("0.00"),
+        "contractor_vat_credit": Decimal("0.00"),
+        "ip_contrast_tax": Decimal("0.00"),
+        "tax_deductions": Decimal("0.00"),
+    }
+
+
+def add_event_to_monthly_tax_totals(
+    totals: dict[str, Decimal],
+    event: Event,
+    summary: dict,
+) -> None:
     """
-    Общие показатели для админского обзора месяца.
+    Добавляет мероприятие в верхний блок админки, не пересчитывая смету второй раз.
 
-    Правила от бизнеса:
-    - Оборот: полный клиентский оборот всех мероприятий месяца.
-    - НДС к уплате: клиентский НДС по всем сметам минус НДС подрядчиков из всех мероприятий.
-      Не режем вычеты внутри отдельного мероприятия: зачёт может прийти из ОУР без НДС, упрощёнки или нала.
-    - Налоги к уплате: берём внутренний налог только по ИП Contrast Event и минусуем налоговые вычеты
-      подрядчиков/самозанятых из всех мероприятий.
+    v0.40.79 пыталась считать эти показатели отдельным вторым проходом по мероприятиям.
+    Если на одном старом/импортном мероприятии расчёт падал, ломался весь admin-dashboard-bundle
+    и админка оставалась пустой. Теперь используем summary, который уже успешно посчитан
+    для основной таблицы мероприятий, и не даём верхнему информеру уронить все вкладки.
     """
-    turnover = Decimal("0.00")
-    client_vat = Decimal("0.00")
-    contractor_vat_credit = Decimal("0.00")
-    ip_contrast_tax = Decimal("0.00")
-    tax_deductions = Decimal("0.00")
+    totals["turnover"] += money(summary.get("turnover_with_vat") or summary.get("external_total"))
+    totals["client_vat"] += money(summary.get("client_vat_amount"))
+    totals["contractor_vat_credit"] += money(summary.get("contractor_vat_credit"))
+    totals["tax_deductions"] += money(summary.get("deductions_total"))
 
-    for event in events:
-        items = [item for item in (event.items or []) if item.is_deleted is False]
-        summary = calculate_event_summary_values(event, items)
-        turnover += money(summary.get("turnover_with_vat") or summary.get("external_total"))
-        client_vat += money(summary.get("client_vat_amount"))
-        contractor_vat_credit += money(summary.get("contractor_vat_credit"))
-        tax_deductions += money(summary.get("deductions_total"))
+    if event.client_calc_type == "ip_contrast_event":
+        totals["ip_contrast_tax"] += money(summary.get("internal_tax_amount"))
 
-        if event.client_calc_type == "ip_contrast_event":
-            ip_contrast_tax += money(summary.get("internal_tax_amount"))
 
-    vat_to_pay = q0(client_vat - contractor_vat_credit)
+def finalize_monthly_tax_totals(totals: dict[str, Decimal]) -> dict[str, Decimal]:
+    vat_to_pay = q0(money(totals.get("client_vat")) - money(totals.get("contractor_vat_credit")))
     if vat_to_pay < 0:
         vat_to_pay = Decimal("0.00")
 
-    tax_to_pay = q0(ip_contrast_tax - tax_deductions)
+    tax_to_pay = q0(money(totals.get("ip_contrast_tax")) - money(totals.get("tax_deductions")))
     if tax_to_pay < 0:
         tax_to_pay = Decimal("0.00")
 
     return {
-        "turnover": q0(turnover),
+        "turnover": q0(money(totals.get("turnover"))),
         "vat_to_pay": q0(vat_to_pay),
         "tax_to_pay": q0(tax_to_pay),
     }
@@ -308,6 +313,7 @@ def get_admin_dashboard(
     department_fact_by_id = {department.id: Decimal("0.00") for department in departments}
     department_event_ids_by_id = {department.id: set() for department in departments}
     department_draft_event_ids_by_id = {department.id: set() for department in departments}
+    monthly_tax_raw_totals = empty_monthly_tax_totals()
 
     for event in events:
         items = sorted(
@@ -316,6 +322,7 @@ def get_admin_dashboard(
         )
 
         summary = calculate_event_summary_values(event, items)
+        add_event_to_monthly_tax_totals(monthly_tax_raw_totals, event, summary)
         full_final_income = money(summary["final_company_income"])
         full_manager_salary = money(summary["manager_salary"])
 
@@ -439,7 +446,7 @@ def get_admin_dashboard(
     requests_count = sum(len(event.payment_requests or []) for event in events)
     shares_count = sum(len(event.shares or []) for event in events)
 
-    monthly_tax_totals = build_monthly_tax_totals(events)
+    monthly_tax_totals = finalize_monthly_tax_totals(monthly_tax_raw_totals)
 
     dashboard = AdminDashboardRead(
         month=month_date,
@@ -589,6 +596,7 @@ def get_admin_dashboard_bundle(
     department_fact_by_id = {department.id: Decimal("0.00") for department in departments}
     department_event_ids_by_id = {department.id: set() for department in departments}
     department_draft_event_ids_by_id = {department.id: set() for department in departments}
+    monthly_tax_raw_totals = empty_monthly_tax_totals()
     event_payloads: dict[int, ManagerEventFullPayload] = {}
     payment_requests_by_id: dict[int, PaymentRequest] = {}
 
@@ -598,6 +606,7 @@ def get_admin_dashboard_bundle(
             key=lambda item: (item.sort_order or 0, item.id or 0),
         )
         summary = calculate_event_summary_values(event, items)
+        add_event_to_monthly_tax_totals(monthly_tax_raw_totals, event, summary)
         full_final_income = money(summary["final_company_income"])
         full_manager_salary = money(summary["manager_salary"])
         event_payment_requests = sorted(list(event.payment_requests or []), key=lambda request: request.id or 0, reverse=True)
@@ -706,7 +715,7 @@ def get_admin_dashboard_bundle(
     ]
     mark_perf("payments_rows")
 
-    monthly_tax_totals = build_monthly_tax_totals(events)
+    monthly_tax_totals = finalize_monthly_tax_totals(monthly_tax_raw_totals)
 
     dashboard = AdminDashboardRead(
         month=month_date,
