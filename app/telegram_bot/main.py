@@ -58,7 +58,7 @@ from app.services.kgd.client import check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.83_QUICK_EXPENSES"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.84_ADMIN_IDS_QUICK_EXPENSES"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -82,6 +82,41 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def env_id_set(*names: str) -> set[str]:
+    ids: set[str] = set()
+    for name in names:
+        raw = str(os.getenv(name) or "").strip()
+        if not raw:
+            continue
+        for part in re.split(r"[\s,;]+", raw):
+            value = part.strip()
+            if not value:
+                continue
+            # Telegram user ids are positive. Negative ids are groups/channels and
+            # must not grant personal admin rights for quick expenses.
+            try:
+                if int(value) > 0:
+                    ids.add(str(int(value)))
+            except Exception:
+                continue
+    return ids
+
+
+def build_admin_telegram_ids() -> set[str]:
+    ids = env_id_set(
+        "TELEGRAM_ADMIN_USER_IDS",
+        "TELEGRAM_ADMIN_IDS",
+        "ADMIN_TELEGRAM_IDS",
+        "ADMIN_TELEGRAM_USER_IDS",
+    )
+    try:
+        if int(ADMIN_CHAT_ID or 0) > 0:
+            ids.add(str(int(ADMIN_CHAT_ID)))
+    except Exception:
+        pass
+    return ids
+
+
 # Telegram should not surface old legacy/test events in the payment flow.
 # By default managers see events from the current calendar year and later.
 # If an import/migration needs another year temporarily, set TELEGRAM_MIN_EVENT_YEAR.
@@ -93,6 +128,13 @@ TELEGRAM_DIRTY_MARKER_AT = datetime(2000, 1, 1)
 # without saved Telegram message rows are not sent again automatically.
 BOT_STARTED_AT = datetime.utcnow()
 TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START = env_bool("TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START", False)
+
+# Admin quick-expense access can be granted in two ways:
+# 1) User.telegram_id is linked to an active admin user in PostgreSQL;
+# 2) Telegram user id is listed in Railway secrets/env. This supports the
+#    existing admin setup where admin access is stored in Telegram secrets,
+#    without requiring a phone number on the admin account.
+ADMIN_TELEGRAM_IDS = build_admin_telegram_ids()
 
 
 logger = logging.getLogger(__name__)
@@ -413,6 +455,43 @@ def get_admin_by_telegram_id(db: Session, telegram_id: Any) -> Optional[User]:
     ).scalars().first()
 
 
+def is_env_admin_telegram_id(telegram_id: Any) -> bool:
+    try:
+        key = str(int(str(telegram_id or "").strip()))
+    except Exception:
+        key = str(telegram_id or "").strip()
+    return bool(key and key in ADMIN_TELEGRAM_IDS)
+
+
+def get_primary_active_admin(db: Session) -> Optional[User]:
+    return db.execute(
+        select(User)
+        .where(
+            User.role == "admin",
+            User.is_active == True,  # noqa: E712
+        )
+        .order_by(User.id.asc())
+    ).scalars().first()
+
+
+def get_quick_expense_admin_by_telegram_id(db: Session, telegram_id: Any) -> Optional[User]:
+    admin = get_admin_by_telegram_id(db, telegram_id)
+    if admin is not None:
+        return admin
+    if not is_env_admin_telegram_id(telegram_id):
+        return None
+    return get_primary_active_admin(db)
+
+
+def get_effective_active_user_by_telegram_id(db: Session, telegram_id: Any) -> Optional[User]:
+    user = get_active_user_by_telegram_id(db, telegram_id)
+    if user is not None:
+        return user
+    if is_env_admin_telegram_id(telegram_id):
+        return get_primary_active_admin(db)
+    return None
+
+
 def get_cached_bound_user(telegram_id: Any) -> Optional[Dict[str, Any]]:
     key = str(telegram_id or "").strip()
     item = BOUND_USER_CACHE.get(key)
@@ -627,7 +706,7 @@ def expense_confirmation_text(payload: Dict[str, Any], sanzhar_amount: Decimal, 
 
 def create_monthly_expense_from_telegram(telegram_id: Any, payload: Dict[str, Any]) -> MonthlyExpense:
     with db_session() as db:
-        admin = get_admin_by_telegram_id(db, telegram_id)
+        admin = get_quick_expense_admin_by_telegram_id(db, telegram_id)
         if admin is None:
             raise RuntimeError("Расходы через Telegram доступны только администратору")
         month = payload["month"]
@@ -659,7 +738,7 @@ def create_monthly_expense_from_telegram(telegram_id: Any, payload: Dict[str, An
 
 def delete_monthly_expense_from_telegram(telegram_id: Any, expense_id: int) -> str:
     with db_session() as db:
-        admin = get_admin_by_telegram_id(db, telegram_id)
+        admin = get_quick_expense_admin_by_telegram_id(db, telegram_id)
         if admin is None:
             raise RuntimeError("Расходы через Telegram доступны только администратору")
         expense = db.get(MonthlyExpense, int(expense_id))
@@ -1576,8 +1655,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = get_active_user_by_telegram_id(db, update.effective_user.id)
         if user:
             set_cached_bound_user(user)
+        elif is_env_admin_telegram_id(update.effective_user.id):
+            user = get_primary_active_admin(db)
     if user:
-        await update.message.reply_text(f"✅ Аккаунт найден: {user.name}\nГлавное меню:", reply_markup=role_keyboard(user.role))
+        admin_note = "\nАдмин-доступ подтверждён через Telegram ID из секретов." if is_env_admin_telegram_id(update.effective_user.id) and not user.telegram_id else ""
+        await update.message.reply_text(f"✅ Аккаунт найден: {user.name}{admin_note}\nГлавное меню:", reply_markup=role_keyboard(user.role))
         return ConversationHandler.END
     await update.message.reply_text("Telegram пока не привязан к аккаунту.\nНажми «Привязать аккаунт» и введи телефон + PIN от сайта.", reply_markup=MAIN_KEYBOARD)
     return ConversationHandler.END
@@ -1987,8 +2069,8 @@ async def expense_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None:
         return
     with db_session() as db:
-        admin = get_admin_by_telegram_id(db, update.effective_user.id)
-        active_user = get_active_user_by_telegram_id(db, update.effective_user.id)
+        admin = get_quick_expense_admin_by_telegram_id(db, update.effective_user.id)
+        active_user = get_effective_active_user_by_telegram_id(db, update.effective_user.id)
     if admin is None:
         if active_user is None:
             await update.message.reply_text("Сначала привяжи аккаунт кнопкой «Привязать аккаунт».", reply_markup=MAIN_KEYBOARD)
@@ -2034,8 +2116,8 @@ async def process_quick_expense_text(update: Update, context: ContextTypes.DEFAU
         return
 
     with db_session() as db:
-        active_user = get_active_user_by_telegram_id(db, update.effective_user.id)
-        admin = active_user if active_user and active_user.role == "admin" else None
+        active_user = get_effective_active_user_by_telegram_id(db, update.effective_user.id)
+        admin = get_quick_expense_admin_by_telegram_id(db, update.effective_user.id)
         if admin is not None:
             sanzhar_amount, raufal_amount, split_label = calculate_expense_split(
                 db,
@@ -2284,6 +2366,8 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     with db_session() as db:
         user = get_active_user_by_telegram_id(db, update.effective_user.id)
+        env_admin = is_env_admin_telegram_id(update.effective_user.id)
+        effective_admin = get_quick_expense_admin_by_telegram_id(db, update.effective_user.id) if env_admin else None
     if user:
         await update.message.reply_text(
             "WHOAMI ✅\n"
@@ -2293,14 +2377,26 @@ async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"user: {user.name}\n"
             f"userId: {user.id}\n"
             f"department_id: {user.department_id}\n"
-            f"role: {user.role}"
+            f"role: {user.role}\n"
+            f"env_admin: {env_admin}"
+        )
+    elif effective_admin:
+        await update.message.reply_text(
+            "WHOAMI ✅ ENV ADMIN\n"
+            f"BOT VERSION: {BOT_VERSION}\n"
+            f"telegramId: {update.effective_user.id}\n"
+            f"username: @{update.effective_user.username or ''}\n"
+            f"effective_admin: {effective_admin.name}\n"
+            f"effectiveAdminUserId: {effective_admin.id}\n"
+            "role: admin"
         )
     else:
         await update.message.reply_text(
             "WHOAMI ⚠️ USER NOT FOUND\n"
             f"BOT VERSION: {BOT_VERSION}\n"
             f"telegramId: {update.effective_user.id}\n"
-            f"username: @{update.effective_user.username or ''}"
+            f"username: @{update.effective_user.username or ''}\n"
+            f"env_admin: {env_admin}"
         )
 
 

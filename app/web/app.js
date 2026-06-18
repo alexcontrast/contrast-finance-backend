@@ -11403,7 +11403,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.83 loaded");
+  console.info("Contrast Finance web app v0.40.84 loaded");
   if (!state.token) {
     showLogin();
     return;

@@ -1,10 +1,9 @@
-Contrast Finance v0.40.83
+Contrast Finance v0.40.84
 
-Telegram quick expenses:
-- Admins can add monthly expenses from Telegram with one message, e.g. "Кофе 54900".
-- Access is checked by linked Telegram user in PostgreSQL: only active users with role=admin can create/delete expenses.
-- Managers and department heads cannot create expenses through Telegram.
-- Bot supports confirmation before saving and an undo/delete button after saving.
-- Admin binding by phone + PIN is allowed, while manager payment-flow access still remains manager-only.
-- Expense month uses Astana timezone (Asia/Almaty), current month by default.
-- No KGD/cache/payment logic changed.
+Telegram quick expense admin access fix:
+- Quick expenses no longer require admin binding by phone.
+- Admin access is allowed if Telegram user id is listed in Railway secrets/env: TELEGRAM_ADMIN_USER_IDS / TELEGRAM_ADMIN_IDS / ADMIN_TELEGRAM_IDS, or positive TELEGRAM_ADMIN_CHAT_ID.
+- If env Telegram id matches, the bot uses the first active admin user from PostgreSQL as created_by_user_id.
+- Existing linked admin via users.telegram_id still works.
+- Managers and department heads are still blocked from quick expenses.
+- No site/KGD/payment logic changed.
