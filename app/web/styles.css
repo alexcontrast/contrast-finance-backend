@@ -3172,3 +3172,169 @@ body.login-mode #loginScreen .auth-title::before {
     grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
   }
 }
+
+/* v0.40.38 — month lists show only day number; dates never wrap */
+.date-day-cell {
+  width: 44px;
+  min-width: 44px;
+  max-width: 52px;
+  text-align: center;
+  font-weight: 800;
+  white-space: nowrap !important;
+}
+
+.admin-events-table th:first-child,
+.admin-events-table td:first-child,
+.department-head-events-table th:first-child,
+.department-head-events-table td:first-child,
+.department-head-requests-table th:first-child,
+.department-head-requests-table td:first-child,
+table td.date-day-cell {
+  white-space: nowrap !important;
+}
+
+/* v0.40.50: lightweight local button lock during patch-update actions */
+button.soft-loading,
+button.is-loading {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+button.soft-loading::after {
+  content: "";
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-left: 0.45em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: cfButtonSpin 0.7s linear infinite;
+}
+
+@keyframes cfButtonSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* v0.40.75 compact request tables: one-line cells with native hover tooltips */
+.request-compact-table {
+  table-layout: fixed;
+  min-width: 1120px;
+  font-size: 12px;
+}
+
+.request-compact-table th,
+.request-compact-table td {
+  padding: 8px 7px;
+  line-height: 1.12;
+  vertical-align: middle;
+}
+
+.request-compact-table th {
+  font-size: 10px;
+  letter-spacing: .07em;
+}
+
+.request-compact-table .clip-cell {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-compact-table .request-main-amount,
+.request-compact-table strong {
+  font-size: 13px;
+  line-height: 1.05;
+}
+
+.request-compact-table .status {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 7px;
+  font-size: 10.5px;
+}
+
+.request-compact-table .request-actions-cell {
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.request-compact-table .request-actions-row {
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.request-compact-table .request-actions-row button,
+.request-compact-table button.small {
+  padding: 7px 9px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.admin-requests-table th:nth-child(1),
+.admin-requests-table td:nth-child(1) { width: 4%; }
+.admin-requests-table th:nth-child(2),
+.admin-requests-table td:nth-child(2) { width: 11%; }
+.admin-requests-table th:nth-child(3),
+.admin-requests-table td:nth-child(3) { width: 8%; }
+.admin-requests-table th:nth-child(4),
+.admin-requests-table td:nth-child(4) { width: 8%; }
+.admin-requests-table th:nth-child(5),
+.admin-requests-table td:nth-child(5) { width: 10%; }
+.admin-requests-table th:nth-child(6),
+.admin-requests-table td:nth-child(6) { width: 15%; }
+.admin-requests-table th:nth-child(7),
+.admin-requests-table td:nth-child(7) { width: 7%; }
+.admin-requests-table th:nth-child(8),
+.admin-requests-table td:nth-child(8) { width: 8%; }
+.admin-requests-table th:nth-child(9),
+.admin-requests-table td:nth-child(9) { width: 8%; }
+.admin-requests-table th:nth-child(10),
+.admin-requests-table td:nth-child(10) { width: 8%; }
+.admin-requests-table th:nth-child(11),
+.admin-requests-table td:nth-child(11) { width: 13%; }
+
+.event-modal-requests-table th:nth-child(1),
+.event-modal-requests-table td:nth-child(1) { width: 12%; }
+.event-modal-requests-table th:nth-child(2),
+.event-modal-requests-table td:nth-child(2) { width: 10%; }
+.event-modal-requests-table th:nth-child(3),
+.event-modal-requests-table td:nth-child(3) { width: 19%; }
+.event-modal-requests-table th:nth-child(4),
+.event-modal-requests-table td:nth-child(4) { width: 10%; }
+.event-modal-requests-table th:nth-child(5),
+.event-modal-requests-table td:nth-child(5) { width: 10%; }
+.event-modal-requests-table th:nth-child(6),
+.event-modal-requests-table td:nth-child(6) { width: 11%; }
+.event-modal-requests-table th:nth-child(7),
+.event-modal-requests-table td:nth-child(7) { width: 9%; }
+.event-modal-requests-table th:nth-child(8),
+.event-modal-requests-table td:nth-child(8) { width: 9%; }
+.event-modal-requests-table th:nth-child(9),
+.event-modal-requests-table td:nth-child(9) { width: 10%; }
+
+.department-head-requests-table.request-compact-table th:nth-child(1),
+.department-head-requests-table.request-compact-table td:nth-child(1) { width: 5%; }
+.department-head-requests-table.request-compact-table th:nth-child(2),
+.department-head-requests-table.request-compact-table td:nth-child(2) { width: 12%; }
+.department-head-requests-table.request-compact-table th:nth-child(3),
+.department-head-requests-table.request-compact-table td:nth-child(3) { width: 10%; }
+.department-head-requests-table.request-compact-table th:nth-child(4),
+.department-head-requests-table.request-compact-table td:nth-child(4) { width: 11%; }
+.department-head-requests-table.request-compact-table th:nth-child(5),
+.department-head-requests-table.request-compact-table td:nth-child(5) { width: 13%; }
+.department-head-requests-table.request-compact-table th:nth-child(6),
+.department-head-requests-table.request-compact-table td:nth-child(6) { width: 17%; }
+.department-head-requests-table.request-compact-table th:nth-child(7),
+.department-head-requests-table.request-compact-table td:nth-child(7) { width: 9%; }
+.department-head-requests-table.request-compact-table th:nth-child(8),
+.department-head-requests-table.request-compact-table td:nth-child(8) { width: 9%; }
+.department-head-requests-table.request-compact-table th:nth-child(9),
+.department-head-requests-table.request-compact-table td:nth-child(9) { width: 7%; }
+.department-head-requests-table.request-compact-table th:nth-child(10),
+.department-head-requests-table.request-compact-table td:nth-child(10) { width: 7%; }

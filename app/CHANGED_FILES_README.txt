@@ -1,9 +1,13 @@
-Contrast Finance v0.40.74
+Contrast Finance v0.40.75
 
-Changed files:
-- app/web/app.js
+Изменения:
+- Таблицы заявок переведены в компактный однострочный режим.
+- Длинные значения в заявках теперь обрезаются многоточием.
+- При наведении на обрезанные поля показывается полное значение через стандартный tooltip браузера.
+- Уменьшен шрифт и отступы в таблицах заявок админки, архива заявок, модалки мероприятия и кабинета главдепа.
+- Web app version log updated to v0.40.75.
 
-Changes:
-- After admin event status actions inside event modal (accept/revision/cash received), the Events / Event Archive tab list is re-rendered from patched local state immediately.
-- Fixes stale status badges in the events list behind the modal without full dashboard reload.
-- Web app version log updated to v0.40.74.
+Проверки:
+- python3 -m compileall -q app
+- python3 -m py_compile app/telegram_bot/main.py
+- node --check app/web/app.js

@@ -2797,7 +2797,7 @@ function formatDateTimeRu(value) {
 function paymentRequestCreatedAtCell(request) {
   const value = paymentRequestDateValue(request);
   const text = formatDateTimeRu(value) || formatDateRu(value) || value || "";
-  return `<td class="nowrap request-created-at-cell" title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
+  return `<td class="nowrap request-created-at-cell clip-cell" title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
 }
 
 function formatMonthListDay(value) {
@@ -2812,7 +2812,7 @@ function formatMonthListDay(value) {
 function monthListDateCell(value) {
   const fullDate = formatDateRu(value) || value || "";
   const day = formatMonthListDay(value) || fullDate;
-  return `<td class="date-day-cell nowrap" title="${escapeHtml(fullDate)}">${escapeHtml(day)}</td>`;
+  return `<td class="date-day-cell nowrap clip-cell" title="${escapeHtml(fullDate)}">${escapeHtml(day)}</td>`;
 }
 
 function asNumber(value) {
@@ -3402,7 +3402,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
 
     ${filtered.length ? `
       <div class="table-wrap">
-        <table class="event-requests-table">
+        <table class="event-requests-table request-compact-table event-modal-requests-table">
           <thead>
             <tr>
               <th>Создана</th>
@@ -3420,14 +3420,14 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
             ${filtered.map((request) => `
               <tr>
                 ${paymentRequestCreatedAtCell(request)}
-                <td>${managerNameForRequest(request)}</td>
-                <td>${request.position || request.item_name_snapshot || ""}</td>
-                <td><div class="request-main-amount">${formatMoney(request.amount_requested)}</div></td>
-                <td>${paymentMethodLabel(request.payment_method)}</td>
-                <td>${request.tax_status || request.tax_status_label || ""}</td>
-                <td><span class="status ${request.status} event-request-status-badge">${statusLabel(request.status)}</span></td>
-                <td><span class="status ${requestMoneyStatus(request)} event-request-status-badge request-money-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
-                <td>
+                ${requestTextCell(managerNameForRequest(request), "request-manager-cell")}
+                ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
+                ${requestHtmlCell(`<div class="request-main-amount">${formatMoney(request.amount_requested)}</div>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
+                ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
+                ${requestTextCell(request.tax_status || request.tax_status_label || "", "request-tax-cell")}
+                ${requestHtmlCell(`<span class="status ${request.status} event-request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
+                ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} event-request-status-badge request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
+                <td class="request-actions-cell">
                   <div class="inline-actions request-actions-row">
                     ${adminRequestActions(request, "regular")}
                     ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
@@ -4212,7 +4212,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
     </div>
     ${filtered.length ? `
     <div class="table-wrap department-head-table-wrap">
-      <table class="department-head-requests-table">
+      <table class="department-head-requests-table request-compact-table">
         <thead>
           <tr>
             <th>Дата</th>
@@ -4232,14 +4232,14 @@ function renderDepartmentHeadRequestsTable(requests = []) {
             <tr>
               ${monthListDateCell(paymentRequestDateValue(request))}
               ${paymentRequestCreatedAtCell(request)}
-              <td>${escapeHtml(request.manager_name || "")}</td>
-              <td>${escapeHtml(paymentRequestClientName(request))}</td>
-              <td>${escapeHtml(paymentRequestEventTitle(request))}</td>
-              <td>${escapeHtml(request.position || request.item_name_snapshot || "")}</td>
-              <td><strong>${formatMoney(request.amount_requested)}</strong></td>
-              <td>${paymentMethodLabel(request.payment_method)}</td>
-              <td><span class="status ${request.status} request-status-badge">${statusLabel(request.status)}</span></td>
-              <td><span class="status ${requestMoneyStatus(request)} request-money-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
+              ${requestTextCell(request.manager_name || "", "request-manager-cell")}
+              ${requestTextCell(paymentRequestClientName(request), "request-customer-cell")}
+              ${requestTextCell(paymentRequestEventTitle(request), "request-event-cell")}
+              ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
+              ${requestHtmlCell(`<strong>${formatMoney(request.amount_requested)}</strong>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
+              ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
+              ${requestHtmlCell(`<span class="status ${request.status} request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
+              ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
             </tr>
           `).join("")}
         </tbody>
@@ -4482,6 +4482,22 @@ function escapeHtml(value) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function titleText(value) {
+  return escapeHtml(String(value ?? "").trim());
+}
+
+function requestTextCell(value, className = "") {
+  const text = String(value ?? "").trim();
+  const classes = ["clip-cell", className].filter(Boolean).join(" ");
+  return `<td class="${classes}" title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
+}
+
+function requestHtmlCell(html, title = "", className = "") {
+  const classes = [className].filter(Boolean).join(" ");
+  const classAttr = classes ? ` class="${classes}"` : "";
+  return `<td${classAttr} title="${escapeHtml(String(title ?? "").trim())}">${html}</td>`;
 }
 
 function uniqueSortedValues(values) {
@@ -4797,7 +4813,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
 
     ${filtered.length ? `
       <div class="table-wrap">
-        <table>
+        <table class="request-compact-table admin-requests-table">
           <thead>
             <tr>
               <th>Дата</th>
@@ -4818,15 +4834,15 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
               <tr>
                 ${monthListDateCell(paymentRequestDateValue(request))}
                 ${paymentRequestCreatedAtCell(request)}
-                <td>${paymentRequestManagerName(request)}</td>
-                <td>${paymentRequestClientName(request)}</td>
-                <td>${paymentRequestEventTitle(request)}</td>
-                <td>${request.position || request.item_name_snapshot || ""}</td>
-                <td><strong>${formatMoney(request.amount_requested)}</strong></td>
-                <td>${paymentMethodLabel(request.payment_method)}</td>
-                <td><span class="status ${request.status} request-status-badge">${statusLabel(request.status)}</span></td>
-                <td><span class="status ${requestMoneyStatus(request)} request-money-badge">${statusLabel(requestMoneyStatus(request))}</span></td>
-                <td>
+                ${requestTextCell(paymentRequestManagerName(request), "request-manager-cell")}
+                ${requestTextCell(paymentRequestClientName(request), "request-customer-cell")}
+                ${requestTextCell(paymentRequestEventTitle(request), "request-event-cell")}
+                ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
+                ${requestHtmlCell(`<strong>${formatMoney(request.amount_requested)}</strong>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
+                ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
+                ${requestHtmlCell(`<span class="status ${request.status} request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
+                ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
+                <td class="request-actions-cell">
                   <div class="inline-actions request-actions-row">
                     ${adminRequestActions(request, mode)}
                     ${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}
@@ -11281,7 +11297,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.74 loaded");
+  console.info("Contrast Finance web app v0.40.75 loaded");
   if (!state.token) {
     showLogin();
     return;
