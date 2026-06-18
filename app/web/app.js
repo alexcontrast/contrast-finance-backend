@@ -2779,13 +2779,27 @@ function formatDateRu(value) {
   return `${parts[2]}-${parts[1]}-${parts[0]}`;
 }
 
+function parseBackendDateTime(value) {
+  if (!value) return null;
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  // Backend timestamps for requests can arrive as UTC without explicit timezone.
+  // Treat ISO datetime without an offset as UTC, then format it for Astana.
+  const hasTime = /[T\s]\d{2}:\d{2}/.test(raw);
+  const hasTimezone = /(Z|[+-]\d{2}:?\d{2})$/.test(raw);
+  const normalized = hasTime && !hasTimezone ? `${raw.replace(" ", "T")}Z` : raw;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function formatDateTimeRu(value) {
   if (!value) return "";
   const raw = String(value || "").trim();
-  const parsed = new Date(raw);
+  const parsed = parseBackendDateTime(raw);
   const pad = (part) => String(part).padStart(2, "0");
 
-  if (!Number.isNaN(parsed.getTime())) {
+  if (parsed) {
     return `${pad(parsed.getDate())}-${pad(parsed.getMonth() + 1)}-${parsed.getFullYear()} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
   }
 
@@ -2794,9 +2808,31 @@ function formatDateTimeRu(value) {
   return `${date || raw}${match ? ` ${match[1]}:${match[2]}` : ""}`.trim();
 }
 
+function formatDateTimeAstana(value) {
+  if (!value) return "";
+  const raw = String(value || "").trim();
+  const parsed = parseBackendDateTime(raw);
+  if (!parsed) return formatDateTimeRu(raw) || formatDateRu(raw) || raw;
+
+  const parts = new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Almaty",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(parsed).reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute}`;
+}
+
 function paymentRequestCreatedAtCell(request) {
   const value = paymentRequestDateValue(request);
-  const text = formatDateTimeRu(value) || formatDateRu(value) || value || "";
+  const text = formatDateTimeAstana(value) || value || "";
   return `<td class="nowrap request-created-at-cell clip-cell" title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
 }
 
@@ -3868,7 +3904,7 @@ function filteredPaymentRequests(requests, mode = "regular") {
   }
 
   if (state.paymentManagerFilter && state.paymentManagerFilter !== "all") {
-    list = list.filter((request) => String(request.manager_name || "") === String(state.paymentManagerFilter));
+    list = list.filter((request) => String(managerNameForRequest(request)) === String(state.paymentManagerFilter));
   }
 
   return list;
@@ -11331,7 +11367,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.76 loaded");
+  console.info("Contrast Finance web app v0.40.77 loaded");
   if (!state.token) {
     showLogin();
     return;
