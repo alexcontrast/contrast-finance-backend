@@ -2583,6 +2583,101 @@ function injectManagerUxStyles() {
       gap: 6px !important;
       flex-wrap: nowrap !important;
     }
+
+    /* v0.40.85: главдеп — корректная ширина таблицы мероприятий, бейдж количества и золотой лидер */
+    .department-head-overview-name {
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 10px !important;
+      flex-wrap: wrap !important;
+    }
+
+    .department-head-events-word-badge {
+      min-width: 0 !important;
+      height: 24px !important;
+      padding: 0 10px !important;
+      font-size: 12px !important;
+      font-weight: 950 !important;
+      background: rgba(50, 168, 82, .13) !important;
+      border: 1px solid rgba(50, 168, 82, .20) !important;
+      color: #277235 !important;
+    }
+
+    .department-head-manager-row.department-head-leader-row {
+      background: linear-gradient(90deg, rgba(255, 244, 194, .94), rgba(255, 250, 232, .88)) !important;
+      border-color: rgba(214, 164, 28, .38) !important;
+      box-shadow: 0 10px 28px rgba(171, 122, 9, .10) !important;
+    }
+
+    .department-head-manager-row.department-head-leader-row .manager-champion-badge {
+      background: rgba(255, 207, 64, .32) !important;
+      border-color: rgba(207, 148, 14, .42) !important;
+    }
+
+    .department-head-events-table {
+      table-layout: fixed !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      font-size: 11px !important;
+    }
+
+    .department-head-events-table th,
+    .department-head-events-table td {
+      padding: 7px 7px !important;
+      font-size: 11px !important;
+      line-height: 1.08 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      vertical-align: middle !important;
+    }
+
+    .department-head-events-table th {
+      font-size: 9px !important;
+      letter-spacing: .035em !important;
+    }
+
+    .department-head-events-table th:nth-child(1),
+    .department-head-events-table td:nth-child(1) { width: 46px !important; min-width: 46px !important; max-width: 46px !important; text-align: center !important; }
+    .department-head-events-table th:nth-child(2),
+    .department-head-events-table td:nth-child(2) { width: 12% !important; min-width: 0 !important; }
+    .department-head-events-table th:nth-child(3),
+    .department-head-events-table td:nth-child(3) { width: 13% !important; min-width: 0 !important; }
+    .department-head-events-table th:nth-child(4),
+    .department-head-events-table td:nth-child(4) { width: 14% !important; min-width: 0 !important; }
+    .department-head-events-table th:nth-child(5),
+    .department-head-events-table td:nth-child(5) { width: 14% !important; min-width: 0 !important; }
+    .department-head-events-table th:nth-child(6),
+    .department-head-events-table td:nth-child(6) { width: 76px !important; min-width: 76px !important; max-width: 76px !important; }
+    .department-head-events-table th:nth-child(7),
+    .department-head-events-table td:nth-child(7) { width: 94px !important; min-width: 94px !important; max-width: 94px !important; }
+    .department-head-events-table th:nth-child(8),
+    .department-head-events-table td:nth-child(8),
+    .department-head-events-table th:nth-child(9),
+    .department-head-events-table td:nth-child(9),
+    .department-head-events-table th:nth-child(10),
+    .department-head-events-table td:nth-child(10) { width: 78px !important; min-width: 78px !important; max-width: 78px !important; text-align: right !important; }
+    .department-head-events-table th:nth-child(11),
+    .department-head-events-table td:nth-child(11) { width: 58px !important; min-width: 58px !important; max-width: 58px !important; text-align: center !important; }
+    .department-head-events-table th:nth-child(12),
+    .department-head-events-table td:nth-child(12) { width: 54px !important; min-width: 54px !important; max-width: 54px !important; text-align: center !important; }
+
+    .department-head-table-wrap,
+    .department-head-table-wrap .admin-events-table-wrap {
+      width: 100% !important;
+      max-width: 100% !important;
+      overflow-x: visible !important;
+    }
+
+    .department-head-events-table .status {
+      max-width: 100% !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      font-size: 9.5px !important;
+      padding: 4px 6px !important;
+    }
+
 `;
   document.head.appendChild(style);
 }
@@ -4004,7 +4099,8 @@ function championBadge(rank, percent) {
 
 function overviewEventsBadge(count, title = "Мероприятий за месяц") {
   const value = Number(count || 0);
-  return `<em class="overview-events-count-badge" title="${escapeHtml(title)}">${value}</em>`;
+  const label = pluralizeRu(value, "мероприятие", "мероприятия", "мероприятий");
+  return `<em class="overview-events-count-badge department-head-events-word-badge" title="${escapeHtml(title)}">${value} ${label}</em>`;
 }
 
 function renderDepartmentHeadManagerRows(managers = []) {
@@ -4021,7 +4117,7 @@ function renderDepartmentHeadManagerRows(managers = []) {
           const percent = asNumber(manager.completion_percent);
           const eventsCount = Number(manager.events_count || 0);
           return `
-            <article class="department-head-manager-row">
+            <article class="department-head-manager-row ${index === 0 && percent > 0 ? "department-head-leader-row" : ""}">
               <div class="department-head-manager-main">
                 <strong>${escapeHtml(manager.name || "Менеджер")}</strong>
                 ${championBadge(index, percent)}
@@ -4050,12 +4146,12 @@ function renderDepartmentHeadOverview(data) {
     <section class="manager-plan-panel department-head-plan-panel ${departmentClassByName(data.department_name)}">
       <div>
         <div class="overview-label">План отдела</div>
-        <h3>${escapeHtml(data.department_name || "Отдел")}</h3>
+        <h3 class="department-head-overview-name">${escapeHtml(data.department_name || "Отдел")} ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}</h3>
       </div>
       <div class="manager-plan-main">
         <div class="manager-plan-row">
           <strong>Факт: ${formatMoney(data.fact_income_amount)} ₸</strong>
-          <strong class="overview-subline-with-badge">Цель: ${formatMoney(data.plan_amount)} ₸ ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}</strong>
+          <strong class="overview-subline-with-badge">Цель: ${formatMoney(data.plan_amount)} ₸</strong>
           <strong>${percent}%</strong>
         </div>
         ${progressLine(percent)}
@@ -11403,7 +11499,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.84 loaded");
+  console.info("Contrast Finance web app v0.40.85 loaded");
   if (!state.token) {
     showLogin();
     return;
