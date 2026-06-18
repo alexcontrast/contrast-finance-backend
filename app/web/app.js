@@ -2642,27 +2642,24 @@ function injectManagerUxStyles() {
     .department-head-events-table th:nth-child(2),
     .department-head-events-table td:nth-child(2) { width: 12% !important; min-width: 0 !important; }
     .department-head-events-table th:nth-child(3),
-    .department-head-events-table td:nth-child(3) { width: 13% !important; min-width: 0 !important; }
+    .department-head-events-table td:nth-child(3) { width: 14% !important; min-width: 0 !important; }
     .department-head-events-table th:nth-child(4),
-    .department-head-events-table td:nth-child(4) { width: 14% !important; min-width: 0 !important; }
+    .department-head-events-table td:nth-child(4) { width: 16% !important; min-width: 0 !important; }
     .department-head-events-table th:nth-child(5),
-    .department-head-events-table td:nth-child(5) { width: 14% !important; min-width: 0 !important; }
+    .department-head-events-table td:nth-child(5) { width: 76px !important; min-width: 76px !important; max-width: 76px !important; }
     .department-head-events-table th:nth-child(6),
-    .department-head-events-table td:nth-child(6) { width: 76px !important; min-width: 76px !important; max-width: 76px !important; }
+    .department-head-events-table td:nth-child(6) { width: 94px !important; min-width: 94px !important; max-width: 94px !important; }
     .department-head-events-table th:nth-child(7),
-    .department-head-events-table td:nth-child(7) { width: 94px !important; min-width: 94px !important; max-width: 94px !important; }
+    .department-head-events-table td:nth-child(7),
     .department-head-events-table th:nth-child(8),
     .department-head-events-table td:nth-child(8),
     .department-head-events-table th:nth-child(9),
-    .department-head-events-table td:nth-child(9),
+    .department-head-events-table td:nth-child(9) { width: 82px !important; min-width: 82px !important; max-width: 82px !important; text-align: right !important; }
     .department-head-events-table th:nth-child(10),
-    .department-head-events-table td:nth-child(10) { width: 78px !important; min-width: 78px !important; max-width: 78px !important; text-align: right !important; }
+    .department-head-events-table td:nth-child(10) { width: 64px !important; min-width: 64px !important; max-width: 64px !important; text-align: center !important; }
     .department-head-events-table th:nth-child(11),
-    .department-head-events-table td:nth-child(11) { width: 58px !important; min-width: 58px !important; max-width: 58px !important; text-align: center !important; }
-    .department-head-events-table th:nth-child(12),
-    .department-head-events-table td:nth-child(12) { width: 54px !important; min-width: 54px !important; max-width: 54px !important; text-align: center !important; }
+    .department-head-events-table td:nth-child(11) { width: 54px !important; min-width: 54px !important; max-width: 54px !important; text-align: center !important; }
 
-    .department-head-table-wrap,
     .department-head-table-wrap .admin-events-table-wrap {
       width: 100% !important;
       max-width: 100% !important;
@@ -4247,7 +4244,6 @@ function renderDepartmentHeadEventsTable(events = []) {
         <thead>
           <tr>
             <th>Дата</th>
-            <th>Создана</th>
             <th>Менеджер</th>
             <th>Заказчик</th>
             <th>Мероприятие</th>
@@ -11509,7 +11505,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.86 loaded");
+  console.info("Contrast Finance web app v0.40.87 loaded");
   if (!state.token) {
     showLogin();
     return;

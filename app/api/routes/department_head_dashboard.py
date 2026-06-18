@@ -263,17 +263,13 @@ def get_department_head_dashboard(
         department_income = allocated_amount(full_final_income, share_percent)
         dept_fact += department_income
 
+        # event_share_allocations() already returns the owner with 100% for non-shared events.
+        # Do not add a second fallback block here: that doubles personal manager facts
+        # in the department-head cabinet while the department total remains correct.
         for allocated_manager, allocation_percent in event_share_allocations(event, user_by_id):
             if allocated_manager and allocated_manager.department_id == department_id:
                 manager_fact_by_id[allocated_manager.id] = manager_fact_by_id.get(allocated_manager.id, Decimal("0.00")) + allocated_amount(full_final_income, allocation_percent)
                 manager_event_ids_by_id.setdefault(allocated_manager.id, set()).add(event.id)
-
-        if not event.shares:
-            owner = user_by_id.get(event.manager_id)
-            owner_dept = owner.department_id if owner and owner.department_id else event.department_id
-            if owner_dept == department_id:
-                manager_fact_by_id[event.manager_id] = manager_fact_by_id.get(event.manager_id, Decimal("0.00")) + full_final_income
-                manager_event_ids_by_id.setdefault(event.manager_id, set()).add(event.id)
 
         event_rows.append(
             DepartmentHeadEventRead(
@@ -544,16 +540,12 @@ def get_department_head_dashboard_bundle(
         department_income = allocated_amount(full_final_income, share_percent)
         dept_fact += department_income
 
+        # event_share_allocations() already returns the owner with 100% for non-shared events.
+        # Keep manager personal facts from a single allocation source to match admin totals.
         for allocated_manager, allocation_percent in event_share_allocations(event, user_by_id):
             if allocated_manager and allocated_manager.department_id == department_id:
                 manager_fact_by_id[allocated_manager.id] = manager_fact_by_id.get(allocated_manager.id, Decimal("0.00")) + allocated_amount(full_final_income, allocation_percent)
                 manager_event_ids_by_id.setdefault(allocated_manager.id, set()).add(event.id)
-        if not event.shares:
-            owner = user_by_id.get(event.manager_id)
-            owner_dept = owner.department_id if owner and owner.department_id else event.department_id
-            if owner_dept == department_id:
-                manager_fact_by_id[event.manager_id] = manager_fact_by_id.get(event.manager_id, Decimal("0.00")) + full_final_income
-                manager_event_ids_by_id.setdefault(event.manager_id, set()).add(event.id)
 
         event_rows.append(
             DepartmentHeadEventRead(
