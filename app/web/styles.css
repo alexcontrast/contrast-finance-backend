@@ -3338,3 +3338,88 @@ button.soft-loading::after {
 .department-head-requests-table.request-compact-table td:nth-child(9) { width: 7%; }
 .department-head-requests-table.request-compact-table th:nth-child(10),
 .department-head-requests-table.request-compact-table td:nth-child(10) { width: 7%; }
+
+/* v0.40.79 admin overview: separate monthly finance card */
+.overview-top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3.15fr) minmax(260px, 1fr);
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.overview-top-grid .overview-company-card {
+  margin-bottom: 0;
+}
+
+.overview-company-card-main {
+  min-width: 0;
+}
+
+.overview-month-finance-card {
+  background: linear-gradient(180deg, rgba(248, 250, 252, .96), rgba(255,255,255,.94));
+  border: 1px solid rgba(148, 163, 184, .28);
+  border-radius: 24px;
+  padding: 22px 22px;
+  box-shadow: 0 18px 42px rgba(32, 56, 15, .075);
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+}
+
+.overview-finance-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.overview-finance-card-title {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.overview-finance-list {
+  display: grid;
+  gap: 10px;
+}
+
+.overview-finance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 16px;
+  background: rgba(255,255,255,.72);
+}
+
+.overview-finance-row span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-finance-row strong {
+  color: var(--text);
+  font-size: clamp(17px, 1.35vw, 22px);
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: -.04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 1080px) {
+  .overview-top-grid {
+    grid-template-columns: 1fr;
+  }
+}

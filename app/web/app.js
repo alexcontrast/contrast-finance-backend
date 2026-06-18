@@ -5815,18 +5815,44 @@ function renderAdminOverview(data) {
   const companyFact = asNumber(data.company_fact_income_amount);
   const companyPercent = companyPlan > 0 ? Math.round((companyFact / companyPlan) * 10000) / 100 : 0;
   const companyEventCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
+  const monthTurnover = asNumber(data.company_turnover_amount || 0);
+  const monthVatToPay = asNumber(data.company_vat_to_pay_amount || 0);
+  const monthTaxToPay = asNumber(data.company_tax_to_pay_amount || 0);
 
   return `
-    <section class="overview-company-card">
-      <div class="overview-card-top">
-        <div>
-          <div class="overview-label">Общий план</div>
-          <div class="overview-big-number">${formatMoney(companyFact)} ₸</div>
-          <div class="overview-subline overview-subline-with-badge">Цель: ${formatMoney(companyPlan)} ₸ · ${companyPercent}% ${overviewEventsBadge(companyEventCount, "Всего мероприятий компании за выбранный месяц")}</div>
+    <section class="overview-top-grid">
+      <article class="overview-company-card overview-company-card-main">
+        <div class="overview-card-top">
+          <div>
+            <div class="overview-label">Общий план</div>
+            <div class="overview-big-number">${formatMoney(companyFact)} ₸</div>
+            <div class="overview-subline overview-subline-with-badge">Цель: ${formatMoney(companyPlan)} ₸ · ${companyPercent}% ${overviewEventsBadge(companyEventCount, "Всего мероприятий компании за выбранный месяц")}</div>
+          </div>
+          <div class="overview-company-title">Компания</div>
         </div>
-        <div class="overview-company-title">Компания</div>
-      </div>
-      ${progressLine(companyPercent)}
+        ${progressLine(companyPercent)}
+      </article>
+
+      <aside class="overview-month-finance-card" title="Показатели по всем мероприятиям выбранного месяца">
+        <div class="overview-finance-card-head">
+          <div class="overview-label">Итого за месяц</div>
+          <div class="overview-finance-card-title">Компания</div>
+        </div>
+        <div class="overview-finance-list">
+          <div class="overview-finance-row">
+            <span>Оборот</span>
+            <strong>${formatMoney(monthTurnover)} ₸</strong>
+          </div>
+          <div class="overview-finance-row">
+            <span>НДС к уплате</span>
+            <strong>${formatMoney(monthVatToPay)} ₸</strong>
+          </div>
+          <div class="overview-finance-row">
+            <span>Налоги к уплате</span>
+            <strong>${formatMoney(monthTaxToPay)} ₸</strong>
+          </div>
+        </div>
+      </aside>
     </section>
 
     <section class="overview-departments-grid">
@@ -6317,6 +6343,9 @@ function emptyAdminDashboard(month) {
     company_completion_percent: 0,
     company_remaining_to_plan: 0,
     company_expenses_amount: 0,
+    company_turnover_amount: 0,
+    company_vat_to_pay_amount: 0,
+    company_tax_to_pay_amount: 0,
     departments: [],
     events: [],
     payment_requests: [],
@@ -11360,7 +11389,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.78 loaded");
+  console.info("Contrast Finance web app v0.40.79 loaded");
   if (!state.token) {
     showLogin();
     return;

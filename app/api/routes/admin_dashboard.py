@@ -192,6 +192,50 @@ def allocated_amount(value: Decimal, share_percent: Decimal) -> Decimal:
 
 
 
+
+def build_monthly_tax_totals(events: list[Event]) -> dict[str, Decimal]:
+    """
+    Общие показатели для админского обзора месяца.
+
+    Правила от бизнеса:
+    - Оборот: полный клиентский оборот всех мероприятий месяца.
+    - НДС к уплате: клиентский НДС по всем сметам минус НДС подрядчиков из всех мероприятий.
+      Не режем вычеты внутри отдельного мероприятия: зачёт может прийти из ОУР без НДС, упрощёнки или нала.
+    - Налоги к уплате: берём внутренний налог только по ИП Contrast Event и минусуем налоговые вычеты
+      подрядчиков/самозанятых из всех мероприятий.
+    """
+    turnover = Decimal("0.00")
+    client_vat = Decimal("0.00")
+    contractor_vat_credit = Decimal("0.00")
+    ip_contrast_tax = Decimal("0.00")
+    tax_deductions = Decimal("0.00")
+
+    for event in events:
+        items = [item for item in (event.items or []) if item.is_deleted is False]
+        summary = calculate_event_summary_values(event, items)
+        turnover += money(summary.get("turnover_with_vat") or summary.get("external_total"))
+        client_vat += money(summary.get("client_vat_amount"))
+        contractor_vat_credit += money(summary.get("contractor_vat_credit"))
+        tax_deductions += money(summary.get("deductions_total"))
+
+        if event.client_calc_type == "ip_contrast_event":
+            ip_contrast_tax += money(summary.get("internal_tax_amount"))
+
+    vat_to_pay = q0(client_vat - contractor_vat_credit)
+    if vat_to_pay < 0:
+        vat_to_pay = Decimal("0.00")
+
+    tax_to_pay = q0(ip_contrast_tax - tax_deductions)
+    if tax_to_pay < 0:
+        tax_to_pay = Decimal("0.00")
+
+    return {
+        "turnover": q0(turnover),
+        "vat_to_pay": q0(vat_to_pay),
+        "tax_to_pay": q0(tax_to_pay),
+    }
+
+
 @router.get("/admin-dashboard", response_model=AdminDashboardRead)
 def get_admin_dashboard(
     month: str,
@@ -395,6 +439,8 @@ def get_admin_dashboard(
     requests_count = sum(len(event.payment_requests or []) for event in events)
     shares_count = sum(len(event.shares or []) for event in events)
 
+    monthly_tax_totals = build_monthly_tax_totals(events)
+
     dashboard = AdminDashboardRead(
         month=month_date,
         include_drafts=include_drafts,
@@ -402,6 +448,9 @@ def get_admin_dashboard(
         company_fact_income_amount=q(company_fact),
         company_completion_percent=completion_percent(company_fact, money(plan.company_plan_amount)),
         company_expenses_amount=q(company_expenses),
+        company_turnover_amount=monthly_tax_totals["turnover"],
+        company_vat_to_pay_amount=monthly_tax_totals["vat_to_pay"],
+        company_tax_to_pay_amount=monthly_tax_totals["tax_to_pay"],
         manager_personal_plan_amount=manager_personal_plan_amount(plan),
         departments=department_rows,
         events=event_rows,
@@ -657,6 +706,8 @@ def get_admin_dashboard_bundle(
     ]
     mark_perf("payments_rows")
 
+    monthly_tax_totals = build_monthly_tax_totals(events)
+
     dashboard = AdminDashboardRead(
         month=month_date,
         include_drafts=include_drafts,
@@ -664,6 +715,9 @@ def get_admin_dashboard_bundle(
         company_fact_income_amount=q(company_fact),
         company_completion_percent=completion_percent(company_fact, money(plan.company_plan_amount)),
         company_expenses_amount=q(company_expenses),
+        company_turnover_amount=monthly_tax_totals["turnover"],
+        company_vat_to_pay_amount=monthly_tax_totals["vat_to_pay"],
+        company_tax_to_pay_amount=monthly_tax_totals["tax_to_pay"],
         manager_personal_plan_amount=manager_personal_plan_amount(plan),
         departments=department_rows,
         events=event_rows,
