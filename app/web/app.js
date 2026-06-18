@@ -6172,6 +6172,10 @@ function renderClosingExpenseRows(expenses) {
     return `<div class="empty-state closing-empty">Расходов за месяц пока нет.</div>`;
   }
 
+  const totalAmount = expenses.reduce((sum, item) => sum + asNumber(item.amount), 0);
+  const totalSanzhar = expenses.reduce((sum, item) => sum + asNumber(item.sanzhar_amount), 0);
+  const totalRaufal = expenses.reduce((sum, item) => sum + asNumber(item.raufal_amount), 0);
+
   return `
     <div class="closing-table-wrap">
       <table class="closing-table closing-expenses-table">
@@ -6223,6 +6227,16 @@ function renderClosingExpenseRows(expenses) {
             `;
           }).join("")}
         </tbody>
+        <tfoot>
+          <tr class="closing-expenses-total-row">
+            <td>ИТОГО</td>
+            <td>${formatMoney(totalAmount)}</td>
+            <td></td>
+            <td>${formatMoney(totalSanzhar)}</td>
+            <td>${formatMoney(totalRaufal)}</td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   `;
@@ -11389,7 +11403,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.81 loaded");
+  console.info("Contrast Finance web app v0.40.82 loaded");
   if (!state.token) {
     showLogin();
     return;

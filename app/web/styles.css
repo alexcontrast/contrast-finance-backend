@@ -2356,6 +2356,26 @@ button[data-manager-event-save-draft]:hover {
   background: rgba(110, 245, 0, .045);
 }
 
+.closing-table tfoot td {
+  background: rgba(110, 245, 0, .08);
+  border-top: 1px solid rgba(110, 245, 0, .28);
+  border-bottom: 1px solid rgba(110, 245, 0, .28);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.closing-table tfoot td:first-child {
+  color: var(--green-strong);
+  letter-spacing: .08em;
+}
+
+.closing-table tfoot td:nth-child(2),
+.closing-table tfoot td:nth-child(4),
+.closing-table tfoot td:nth-child(5) {
+  font-size: 13px;
+}
+
 .closing-edit-amount-input {
   width: 92px;
   height: 28px;
