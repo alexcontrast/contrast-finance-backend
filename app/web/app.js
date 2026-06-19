@@ -7262,7 +7262,9 @@ function updateInternalRowCells(itemId) {
   const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
   const activeMethod = paymentMethodFromActiveRequest(item);
   if (paymentSelect) {
-    paymentSelect.value = activeMethod || item.payment_method || "";
+    const activeSimpleMethods = activePaymentRequestMethodsForItem(item).filter(isSimplePaymentMethod);
+    const fallbackSimple = activeSimpleMethods[0] || "cash";
+    paymentSelect.value = activeMethod || item.payment_method || (itemCanSwitchCashCardMethod(item) ? fallbackSimple : "");
     paymentSelect.disabled = itemPaymentMethodLocked(item);
   }
 
@@ -7787,6 +7789,24 @@ function manualTaxInputHtml(value, field, itemId, enabled) {
   return rowInput(formatInputNumber(value), `data-item-field="${field}" data-item-id="${itemId}" class="manual-tax-input" inputmode="numeric"`);
 }
 
+function internalPaymentMethodOptionsHtml(item, effectivePaymentMethod) {
+  const options = itemCanSwitchCashCardMethod(item)
+    ? simplePaymentMethodOptions()
+    : [
+      ["", "—"],
+      ["cash", "Налик"],
+      ["card", "На карту"],
+      ["self_employed", "Самозанятый"],
+      ["invoice", "По счету"],
+    ];
+  const selectedValue = itemCanSwitchCashCardMethod(item)
+    ? selectedSimplePaymentMethodForItem(item, effectivePaymentMethod)
+    : (effectivePaymentMethod || "");
+  return options.map(([value, label]) => `
+    <option value="${value}" ${selectedValue === value ? "selected" : ""}>${label}</option>
+  `).join("");
+}
+
 function renderInternalEstimate(items, event, summary = null) {
   const shownItems = sortItemsCoordinatorFirst(items || []).filter((item) => item.item_type !== "manager_salary");
   const agency = internalAgencyCommissionAmount(shownItems, event, summary);
@@ -7838,7 +7858,7 @@ function renderInternalEstimate(items, event, summary = null) {
           ${shownItems.map((item) => {
             ensureSelfEmployedItemTax(item);
             const activeMethod = paymentMethodFromActiveRequest(item);
-            const effectivePaymentMethod = activeMethod || item.payment_method;
+            const effectivePaymentMethod = activeMethod || item.payment_method || (itemCanSwitchCashCardMethod(item) ? selectedSimplePaymentMethodForItem(item) : null);
             const paymentLocked = itemPaymentMethodLocked(item);
             const invoiceLockedByRequest = itemHasActiveInvoicePaymentRequest(item);
             const adminCanEditBin = adminCanOverrideItemBin(item, effectivePaymentMethod);
@@ -7848,7 +7868,7 @@ function renderInternalEstimate(items, event, summary = null) {
               <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
                 <td class="drag-col">${draggableHandle(item)}</td>
                 <td>${rowInput(item.external_name || "", `placeholder="Новая позиция" data-item-field="external_name" data-item-id="${item.id}"`)}</td>
-                <td>${state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(event?.id || 0)
+                <td>${canEditManagerEvent(event)
                   ? rowInput(formatInputNumber(externalRowAmount(item)), `data-item-field="external_amount_admin" data-item-id="${item.id}"`)
                   : `<strong>${formatMoney(externalRowAmount(item))}</strong>`}</td>
                 <td>${rowInput(internalFactDisplayValue(item), `data-item-field="amount_fact" data-item-id="${item.id}" ${item.item_type === "coordinator" ? "disabled" : ""}`)}</td>
@@ -7860,11 +7880,7 @@ function renderInternalEstimate(items, event, summary = null) {
                     </select>
                   ` : `
                     <select data-item-field="payment_method" data-item-id="${item.id}" ${paymentLocked ? "disabled" : ""}>
-                      <option value="" ${!effectivePaymentMethod ? "selected" : ""}>—</option>
-                      <option value="cash" ${effectivePaymentMethod === "cash" ? "selected" : ""}>Налик</option>
-                      <option value="card" ${effectivePaymentMethod === "card" ? "selected" : ""}>На карту</option>
-                      <option value="self_employed" ${effectivePaymentMethod === "self_employed" ? "selected" : ""}>Самозанятый</option>
-                      <option value="invoice" ${effectivePaymentMethod === "invoice" ? "selected" : ""}>По счету</option>
+                      ${internalPaymentMethodOptionsHtml(item, effectivePaymentMethod)}
                     </select>
                   `}
                 </td>
@@ -8891,16 +8907,45 @@ function itemHasActiveSelfEmployedPaymentRequest(item) {
   return activePaymentRequestsForItem(item).some((request) => request.payment_method === "self_employed");
 }
 
+function isSimplePaymentMethod(method) {
+  return ["cash", "card"].includes(String(method || ""));
+}
+
+function activePaymentRequestMethodsForItem(item) {
+  return activePaymentRequestsForItem(item)
+    .map((request) => String(request.payment_method || ""))
+    .filter(Boolean);
+}
+
+function activeNonSimplePaymentRequestMethodForItem(item) {
+  return activePaymentRequestMethodsForItem(item).find((method) => !isSimplePaymentMethod(method)) || null;
+}
+
+function itemHasOnlyActiveSimplePaymentRequests(item) {
+  const methods = activePaymentRequestMethodsForItem(item);
+  return methods.length > 0 && methods.every(isSimplePaymentMethod);
+}
+
+function itemCanSwitchCashCardMethod(item) {
+  if (!item) return false;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return false;
+  if (itemHasLockedInvoicePayment(item) || itemHasActiveSelfEmployedPaymentRequest(item)) return false;
+  return itemHasOnlyActiveSimplePaymentRequests(item);
+}
+
 function itemPaymentMethodLocked(item) {
   if (!item) return false;
   if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
   if (itemHasLockedInvoicePayment(item)) return true;
+  if (itemCanSwitchCashCardMethod(item)) return false;
   return itemHasActivePaymentRequest(item);
 }
 
 function paymentMethodFromActiveRequest(item) {
-  const method = activePaymentRequestMethodForItem(item);
-  return method || null;
+  // Налик и На карту считаются взаимозаменяемыми: активная заявка с одним
+  // из этих способов не должна принудительно фиксировать селект на этом способе.
+  const nonSimpleMethod = activeNonSimplePaymentRequestMethodForItem(item);
+  return nonSimpleMethod || null;
 }
 
 
@@ -8917,6 +8962,7 @@ function paymentMethodIsFixed(item) {
   if (item.is_new_payment_position) return false;
   if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
   if (itemHasLockedInvoicePayment(item)) return true;
+  if (itemCanSwitchCashCardMethod(item)) return false;
   if (itemHasActivePaymentRequest(item)) return true;
   if (itemHasLockedSelfEmployedPayment(item)) return true;
   return false;
@@ -8993,7 +9039,18 @@ function paymentPositionLabel(item) {
   return `${item.external_name || "Позиция"}${type}`;
 }
 
+function simplePaymentMethodOptions() {
+  return [
+    ["cash", "Нал"],
+    ["card", "На карту"],
+  ];
+}
+
 function paymentMethodOptionsForItem(item) {
+  if (itemCanSwitchCashCardMethod(item)) {
+    return simplePaymentMethodOptions();
+  }
+
   const fixed = fixedPaymentMethodForItem(item);
   if (fixed) {
     const labels = {
@@ -9013,10 +9070,19 @@ function paymentMethodOptionsForItem(item) {
   ];
 }
 
+function selectedSimplePaymentMethodForItem(item, selected = null) {
+  if (isSimplePaymentMethod(selected)) return selected;
+  if (isSimplePaymentMethod(item?.payment_method)) return item.payment_method;
+  const activeSimple = activePaymentRequestMethodsForItem(item).find(isSimplePaymentMethod);
+  return activeSimple || "cash";
+}
+
 function renderPaymentMethodOptions(item, selected) {
   const options = paymentMethodOptionsForItem(item);
   const fixed = fixedPaymentMethodForItem(item);
-  const selectedValue = fixed || selected || item?.payment_method || "cash";
+  const selectedValue = itemCanSwitchCashCardMethod(item)
+    ? selectedSimplePaymentMethodForItem(item, selected)
+    : (fixed || selected || item?.payment_method || "cash");
   return options.map(([value, label]) => `
     <option value="${value}" ${selectedValue === value ? "selected" : ""}>${label}</option>
   `).join("");
@@ -9174,13 +9240,17 @@ function renderPaymentPositionState(eventId) {
       <div><span>Оплачено</span><strong>${formatMoney(paid)}</strong></div>
       <div><span>Остаток</span><strong>${formatMoney(remaining)}</strong></div>
     </div>
-    ${paymentMethodIsFixed(item) ? `<div class="payment-extra-hint payment-fixed-hint">Способ оплаты уже закреплён за этой позицией.</div>` : ""}
+    ${itemCanSwitchCashCardMethod(item)
+      ? `<div class="payment-extra-hint payment-fixed-hint">По этой позиции уже есть Нал/Карта. Можно менять только между этими двумя способами.</div>`
+      : (paymentMethodIsFixed(item) ? `<div class="payment-extra-hint payment-fixed-hint">Способ оплаты уже закреплён за этой позицией.</div>` : "")}
   `;
 
   amountInput.value = "";
   amountInput.placeholder = item.is_new_payment_position ? "Сумма новой позиции" : formatMoney(remaining);
 
-  const currentMethod = fixedPaymentMethodForItem(item) || item.payment_method || "cash";
+  const currentMethod = itemCanSwitchCashCardMethod(item)
+    ? selectedSimplePaymentMethodForItem(item)
+    : (fixedPaymentMethodForItem(item) || item.payment_method || "cash");
   methodSelect.innerHTML = renderPaymentMethodOptions(item, currentMethod);
   methodSelect.value = currentMethod;
   methodSelect.disabled = paymentMethodIsFixed(item);
@@ -9225,7 +9295,9 @@ function invoiceBinAlreadyFixedForPayment(item) {
 
 function renderPaymentExtraFields(eventId) {
   const item = selectedPaymentItem(eventId);
-  const method = fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash";
+  const method = itemCanSwitchCashCardMethod(item)
+    ? ($("paymentMethodSelect")?.value || selectedSimplePaymentMethodForItem(item))
+    : (fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash");
   const extra = $("paymentExtraFields");
   if (!extra || !item) return;
 
@@ -9731,7 +9803,9 @@ async function submitManagerPayment(eventId) {
   let item = selectedPaymentItem(eventId);
   if (!item) throw new Error("Выбери позицию");
 
-  const method = fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash";
+  const method = itemCanSwitchCashCardMethod(item)
+    ? ($("paymentMethodSelect")?.value || selectedSimplePaymentMethodForItem(item))
+    : (fixedPaymentMethodForItem(item) || $("paymentMethodSelect")?.value || "cash");
   const amount = paymentPayloadAmount();
 
   if (!amount || amount <= 0) {
@@ -11505,7 +11579,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.87 loaded");
+  console.info("Contrast Finance web app v0.40.88 loaded");
   if (!state.token) {
     showLogin();
     return;
