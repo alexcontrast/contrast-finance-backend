@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal
-from app.services.google_sheets_archive_export import build_year_export_payload, post_to_apps_script
+from app.services.google_sheets_archive_export import build_year_export_payloads, post_payload_sequence
 
 logger = logging.getLogger("contrast.performance")
 ARCHIVE_TZ = ZoneInfo("Asia/Qyzylorda")
@@ -35,8 +35,8 @@ def run_daily_google_sheets_export_once() -> dict:
     current_year = datetime.now(ARCHIVE_TZ).year
     db = SessionLocal()
     try:
-        payload = build_year_export_payload(db, current_year, None)
-        return post_to_apps_script(payload)
+        payloads = build_year_export_payloads(db, current_year, None)
+        return post_payload_sequence(payloads)
     finally:
         db.close()
 

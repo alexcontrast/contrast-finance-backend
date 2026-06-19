@@ -1,7 +1,6 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.6.2: highlights completed plans in annual statistics and hides empty monthly sheets.
- *         Keeps v0.6.1 VAT/tax, department income, clean founder income, compact yearly view.
+ * v0.6.3: wider annual statistics, supports phased yearly exports, keeps plan highlights and hidden empty months.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -642,14 +641,14 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
   }
 
   var lastRow = Math.max(salaryStartRow + 2 + salaryRows.length, managerStartRow + 2 + managerRows.length, 14);
-  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(8).setVerticalAlignment('middle').setWrap(false);
-  sheet.getRange(1, 1, 1, lastCol).setFontSize(14);
+  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(9).setVerticalAlignment('middle').setWrap(false);
+  sheet.getRange(1, 1, 1, lastCol).setFontSize(16);
   sheet.getRange(2, 1, Math.max(1, lastRow - 1), lastCol).setBorder(true, true, true, true, true, true, '#e4eadf', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(2, 1, 1, lastCol).setBorder(true, true, true, true, true, true, '#9ebd8d', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(1, 1, 1, lastCol).setBorder(true, true, true, true, false, false, '#4b88ff', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  sheet.setColumnWidth(1, 150);
-  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 90 : 62);
+  sheet.setColumnWidth(1, 195);
+  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 115 : 80);
   sheet.getRange(2, 2, Math.max(1, lastRow - 1), lastCol - 1).setHorizontalAlignment('right');
   sheet.getRange(2, 1, Math.max(1, lastRow - 1), 1).setHorizontalAlignment('left');
 }
