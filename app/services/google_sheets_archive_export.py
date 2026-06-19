@@ -124,10 +124,12 @@ def build_monthly_tax_totals(events_payload: list[dict]) -> dict:
     turnover = sum(row["summary"]["turnover"] for row in events_payload)
     vat_to_pay = sum(row["summary"]["vat_to_pay"] for row in events_payload)
     tax_to_pay = sum(row["summary"]["tax_to_pay"] for row in events_payload)
+    company_income = sum(row["summary"].get("final_company_income", 0) for row in events_payload)
     return {
         "turnover": int(turnover),
         "vat_to_pay": int(vat_to_pay),
         "tax_to_pay": int(tax_to_pay),
+        "company_income": int(company_income),
     }
 
 
@@ -149,6 +151,7 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
         select(Event)
         .where(extract("year", Event.event_date) == year)
         .where(extract("month", Event.event_date) == month_num)
+        .where(Event.status != "cancelled")
         .options(
             selectinload(Event.manager),
             selectinload(Event.department),
@@ -240,7 +243,7 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
     monthly_totals["expenses"] = sum(decimal_to_int(expense.amount) for expense in expenses)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.5.1",
+        "schema_version": "contrast_google_archive_v0.5.2",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
         "requested_by": {"id": current_admin.id, "name": current_admin.name},
         "month": f"{year}-{month_num:02d}",

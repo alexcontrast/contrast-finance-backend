@@ -6539,7 +6539,7 @@ function renderGoogleSheetsExportPanel(data) {
         <div>
           <div class="overview-label">Google Sheets архив</div>
           <h3>Выгрузка за ${escapeHtml(month)}</h3>
-          <p class="muted">Этап v0.5.1: обновляем месячный лист и красивый лист “Заявки на оплату”. Технические листы не выгружаются.</p>
+          <p class="muted">Этап v0.5.2: месячный лист ближе к старому формату, заявки компактные, удалённые мероприятия не выгружаются.</p>
         </div>
         <div class="google-export-stats">
           <span>${eventsCount} мероприятий</span>
@@ -11651,7 +11651,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.1 loaded");
+  console.info("Contrast Finance web app v0.5.2 loaded");
   if (!state.token) {
     showLogin();
     return;
