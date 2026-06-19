@@ -1,0 +1,11 @@
+Contrast Finance 2.0 — v0.40.49
+
+Google Sheets annual statistics corrections:
+- Annual statistics now highlights completed plan cells with green fill:
+  - company income cells when company income >= company plan;
+  - department income cells when department income >= department plan;
+  - manager income cells when manager income >= personal manager plan.
+- Backend annual export payload now includes department monthly plans and manager personal monthly plans.
+- Empty monthly sheets are automatically hidden from the Google Sheets bottom tab bar after export.
+- Non-empty monthly sheets are automatically shown again if events appear later.
+- Apps Script exporter bumped to v0.6.2.

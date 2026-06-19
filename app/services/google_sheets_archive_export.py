@@ -387,11 +387,20 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
 
     monthly_totals = build_monthly_tax_totals(events_payload)
     monthly_totals["plan"] = decimal_to_int(plan.company_plan_amount) if plan else 0
+    monthly_totals["manager_personal_plan"] = (
+        decimal_to_int(money(plan.company_plan_amount) * money(plan.manager_personal_plan_percent) / Decimal("100"))
+        if plan
+        else 0
+    )
     monthly_totals["events_count"] = len(events_payload)
 
     base_expenses = sum((money(expense.amount) for expense in expenses), Decimal("0.00"))
     department_expenses = split_monthly_expenses(expenses, plan)
     department_income = {name: decimal_to_int(amount) for name, amount in sorted(department_income_dec.items())}
+    department_plans = {
+        "Санжар": decimal_to_int(department_plan_amount(plan, "Санжар")),
+        "Рауфаль": decimal_to_int(department_plan_amount(plan, "Рауфаль")),
+    }
 
     sanzhar_income = department_income_dec.get("Санжар", Decimal("0.00"))
     raufal_income = department_income_dec.get("Рауфаль", Decimal("0.00"))
@@ -437,6 +446,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
         "manager_income": manager_income,
         "manager_salary": manager_salary,
         "department_income": department_income,
+        "department_plans": department_plans,
     }
 
 
@@ -459,19 +469,24 @@ def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
     }
     totals["remaining"] = totals["plan"] - totals["company_income"]
 
-    department_names: set[str] = set()
+    department_names: set[str] = {"Санжар", "Рауфаль"}
     for section in month_sections:
         department_names.update(section.get("department_income", {}).keys())
+        department_names.update(section.get("department_plans", {}).keys())
 
     department_rows = []
     for department_name in sorted(department_names):
         income_by_month = {}
+        plan_by_month = {}
         for key, section in zip(month_keys, month_sections):
             income_by_month[key] = int(section.get("department_income", {}).get(department_name, 0))
+            plan_by_month[key] = int(section.get("department_plans", {}).get(department_name, 0))
         department_rows.append({
             "department": department_name,
             "income_by_month": income_by_month,
+            "plan_by_month": plan_by_month,
             "income_total": sum(income_by_month.values()),
+            "plan_total": sum(plan_by_month.values()),
         })
 
     manager_names: set[str] = set()
@@ -483,15 +498,20 @@ def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
     for manager_name in sorted(manager_names):
         income_by_month = {}
         salary_by_month = {}
+        plan_by_month = {}
         for key, section in zip(month_keys, month_sections):
+            annual_month = section.get("annual_month", {})
             income_by_month[key] = int(section.get("manager_income", {}).get(manager_name, 0))
             salary_by_month[key] = int(section.get("manager_salary", {}).get(manager_name, 0))
+            plan_by_month[key] = int(annual_month.get("manager_personal_plan", 0))
         manager_rows.append({
             "manager": manager_name,
             "income_by_month": income_by_month,
             "salary_by_month": salary_by_month,
+            "plan_by_month": plan_by_month,
             "income_total": sum(income_by_month.values()),
             "salary_total": sum(salary_by_month.values()),
+            "plan_total": sum(plan_by_month.values()),
         })
 
     return {
@@ -510,7 +530,7 @@ def build_export_payload(db: Session, month: str, current_admin: User | None) ->
     sections = build_month_export_sections(db, month_date)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.6.1",
+        "schema_version": "contrast_google_archive_v0.6.2",
         "export_type": "month",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
         "requested_by": requested_by_payload(current_admin),
@@ -549,7 +569,7 @@ def build_year_export_payload(db: Session, year: int | str, current_admin: User 
     events_count = sum(len(sheet.get("events") or []) for sheet in monthly_sheets)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.6.1",
+        "schema_version": "contrast_google_archive_v0.6.2",
         "export_type": "year",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
         "requested_by": requested_by_payload(current_admin),

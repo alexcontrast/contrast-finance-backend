@@ -1,7 +1,7 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.6.1: annual statistics shows VAT/taxes to pay, department income, clean founder income,
- *         and compact one-screen widths. Keeps v0.5.9 monthly event table logic.
+ * v0.6.2: highlights completed plans in annual statistics and hides empty monthly sheets.
+ *         Keeps v0.6.1 VAT/tax, department income, clean founder income, compact yearly view.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -16,15 +16,20 @@ function doPost(e) {
     applyArchiveLocale_(ss);
     cleanupTechnicalSheets_(ss);
     var updated = [];
+    var monthlyVisibility = [];
 
     if (payload.sheets && payload.sheets.months) {
       (payload.sheets.months || []).forEach(function(monthly) {
-        renderMonthlySheet_(ss, monthly, monthly.sheet_name || 'Месяц');
-        updated.push(monthly.sheet_name || 'Месяц');
+        var monthlyName = monthly.sheet_name || 'Месяц';
+        renderMonthlySheet_(ss, monthly, monthlyName);
+        updated.push(monthlyName);
+        monthlyVisibility.push({ sheet_name: monthlyName, has_events: (monthly.events || []).length > 0 });
       });
     } else if (payload.sheets && payload.sheets.monthly) {
-      renderMonthlySheet_(ss, payload.sheets.monthly, payload.month_title || payload.month);
-      updated.push(payload.sheets.monthly.sheet_name);
+      var singleMonthlyName = payload.sheets.monthly.sheet_name || payload.month_title || payload.month || 'Месяц';
+      renderMonthlySheet_(ss, payload.sheets.monthly, singleMonthlyName);
+      updated.push(singleMonthlyName);
+      monthlyVisibility.push({ sheet_name: singleMonthlyName, has_events: (payload.sheets.monthly.events || []).length > 0 });
     }
     if (payload.sheets && payload.sheets.payment_requests) {
       renderPaymentRequestsSheet_(ss, payload.sheets.payment_requests);
@@ -34,6 +39,8 @@ function doPost(e) {
       renderAnnualStatsSheet_(ss, payload.sheets.annual_stats);
       updated.push(payload.sheets.annual_stats.sheet_name || 'Годовая статистика');
     }
+
+    applyMonthlySheetVisibility_(ss, monthlyVisibility);
 
     return jsonResponse({
       ok: true,
@@ -132,6 +139,45 @@ function cleanupTechnicalSheets_(ss) {
     }
   });
 }
+
+function countVisibleSheets_(ss) {
+  var count = 0;
+  ss.getSheets().forEach(function(sheet) {
+    if (!sheet.isSheetHidden()) count++;
+  });
+  return count;
+}
+
+function applyMonthlySheetVisibility_(ss, monthlyVisibility) {
+  (monthlyVisibility || []).forEach(function(info) {
+    var sheet = ss.getSheetByName(info.sheet_name || '');
+    if (!sheet) return;
+    try {
+      if (info.has_events) {
+        sheet.showSheet();
+      } else if (countVisibleSheets_(ss) > 1) {
+        sheet.hideSheet();
+      }
+    } catch (err) {
+      // Visibility is cosmetic only; export data must not fail because a sheet cannot be hidden.
+    }
+  });
+}
+
+function applyCompletedPlanFill_(sheet, row, actualValues, actualTotal, planValues, planTotal, lastCol) {
+  var green = '#d9ead3';
+  for (var i = 0; i < 12; i++) {
+    var actual = money_((actualValues || [])[i]);
+    var plan = money_((planValues || [])[i]);
+    if (plan > 0 && actual >= plan) {
+      sheet.getRange(row, i + 2).setBackground(green);
+    }
+  }
+  if (money_(planTotal) > 0 && money_(actualTotal) >= money_(planTotal)) {
+    sheet.getRange(row, lastCol).setBackground(green);
+  }
+}
+
 
 function money_(value) {
   return Number(value || 0);
@@ -486,6 +532,15 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     sheet.getRange(3, 1, summaryRows.length, 1).setFontWeight('bold').setBackground('#f4cccc');
     sheet.getRange(3, lastCol, summaryRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
     formatMoneyRange_(sheet.getRange(3, 2, summaryRows.length, lastCol - 1));
+    applyCompletedPlanFill_(
+      sheet,
+      8,
+      months.map(function(month) { return month.company_income; }),
+      totals.company_income,
+      months.map(function(month) { return month.plan; }),
+      totals.plan,
+      lastCol
+    );
   }
 
   var monthKeys = months.map(function(month) { return month.month || ''; });
@@ -499,7 +554,8 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     .setBackground('#d9ead3');
   sheet.getRange(currentRow + 1, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
 
-  var departmentRows = (statsSheet.department_rows || []).map(function(row) {
+  var departmentRowsSource = statsSheet.department_rows || [];
+  var departmentRows = departmentRowsSource.map(function(row) {
     var byMonth = row.income_by_month || {};
     var values = monthKeys.map(function(key) { return money_(byMonth[key]); });
     while (values.length < 12) values.push(0);
@@ -510,6 +566,19 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     sheet.getRange(currentRow + 2, 1, departmentRows.length, 1).setFontWeight('bold');
     sheet.getRange(currentRow + 2, lastCol, departmentRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
     formatMoneyRange_(sheet.getRange(currentRow + 2, 2, departmentRows.length, lastCol - 1));
+    departmentRowsSource.forEach(function(row, index) {
+      var byMonth = row.income_by_month || {};
+      var planByMonth = row.plan_by_month || {};
+      applyCompletedPlanFill_(
+        sheet,
+        currentRow + 2 + index,
+        monthKeys.map(function(key) { return money_(byMonth[key]); }),
+        row.income_total,
+        monthKeys.map(function(key) { return money_(planByMonth[key]); }),
+        row.plan_total,
+        lastCol
+      );
+    });
   }
 
   currentRow += 2 + Math.max(departmentRows.length, 1) + 2;
@@ -523,7 +592,8 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     .setBackground('#dbe5f1');
   sheet.getRange(managerStartRow + 1, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
 
-  var managerRows = (statsSheet.manager_rows || []).map(function(row) {
+  var managerRowsSource = statsSheet.manager_rows || [];
+  var managerRows = managerRowsSource.map(function(row) {
     var byMonth = row.income_by_month || {};
     var values = monthKeys.map(function(key) { return money_(byMonth[key]); });
     while (values.length < 12) values.push(0);
@@ -534,6 +604,19 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     sheet.getRange(managerStartRow + 2, 1, managerRows.length, 1).setFontWeight('bold');
     sheet.getRange(managerStartRow + 2, lastCol, managerRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
     formatMoneyRange_(sheet.getRange(managerStartRow + 2, 2, managerRows.length, lastCol - 1));
+    managerRowsSource.forEach(function(row, index) {
+      var byMonth = row.income_by_month || {};
+      var planByMonth = row.plan_by_month || {};
+      applyCompletedPlanFill_(
+        sheet,
+        managerStartRow + 2 + index,
+        monthKeys.map(function(key) { return money_(byMonth[key]); }),
+        row.income_total,
+        monthKeys.map(function(key) { return money_(planByMonth[key]); }),
+        row.plan_total,
+        lastCol
+      );
+    });
   }
 
   var salaryStartRow = managerStartRow + 2 + Math.max(managerRows.length, 1) + 2;
