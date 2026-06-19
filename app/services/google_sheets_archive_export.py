@@ -184,6 +184,7 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
             "taxes_total": decimal_to_int(summary_raw.get("taxes_total")),
             "deductions_total": decimal_to_int(summary_raw.get("deductions_total")),
             "manager_salary": decimal_to_int(summary_raw.get("manager_salary")),
+            "manager_percent": decimal_to_float(summary_raw.get("manager_percent")),
             "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
         }
 

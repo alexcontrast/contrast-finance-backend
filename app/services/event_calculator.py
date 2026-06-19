@@ -132,7 +132,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
     - contractor_vat_credit: НДС подрядчиков, который берём в зачёт.
     - vat_to_pay: НДС к оплате = клиентский НДС - НДС подрядчиков.
     - deductions_total: прочие вычеты подрядчиков, которые уменьшают налоговую нагрузку/увеличивают доход.
-    - manager_salary: 21% от базы менеджера, координатор не участвует в базе.
+    - manager_salary: процент мероприятия от базы менеджера, координатор не участвует в базе.
     - coordinator_company_share: 50% координатора в доход компании, добавляется после ЗП менеджера.
     """
     manager_salary_items = [item for item in items if item.item_type == "manager_salary"]

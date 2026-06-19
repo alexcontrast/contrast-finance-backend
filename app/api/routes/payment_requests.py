@@ -156,6 +156,13 @@ def get_event_items_for_summary(db: Session, event_id: int) -> list[EventItem]:
     ).scalars().all()
 
 
+
+def manager_salary_item_name(event: Event) -> str:
+    percent = q(getattr(event, "manager_percent", Decimal("21.00")) or Decimal("21.00"))
+    percent_text = format(percent.normalize(), "f").rstrip("0").rstrip(".")
+    return f"Менеджер {percent_text or '0'}%"
+
+
 def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary: Decimal) -> EventItem:
     item = db.execute(
         select(EventItem)
@@ -171,7 +178,7 @@ def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary:
         item = EventItem(
             event_id=event.id,
             item_type="manager_salary",
-            external_name="Менеджер 21%",
+            external_name=manager_salary_item_name(event),
             external_price=Decimal("0.00"),
             external_quantity=Decimal("1.00"),
             external_days=Decimal("1.00"),
@@ -194,6 +201,7 @@ def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary:
         db.add(item)
         db.flush()
     else:
+        item.external_name = manager_salary_item_name(event)
         item.external_amount = Decimal("0.00")
         item.external_price = Decimal("0.00")
         item.external_quantity = Decimal("1.00")

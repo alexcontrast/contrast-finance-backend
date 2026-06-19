@@ -39,6 +39,18 @@ class EventCustomerPaymentPayload(BaseModel):
     amount: Decimal
 
 
+class EventManagerPercentPayload(BaseModel):
+    manager_percent: Decimal
+
+
+
+def normalize_manager_percent(value: Decimal) -> Decimal:
+    percent = q(value)
+    if percent < Decimal("0.00") or percent > Decimal("100.00"):
+        raise HTTPException(status_code=400, detail="Процент менеджера должен быть от 0 до 100")
+    return percent
+
+
 
 def mark_event_payment_requests_for_telegram_sync(db: Session, request_ids: list[int]) -> None:
     if not request_ids:
@@ -182,7 +194,7 @@ def create_event(
         status="accepted" if payload.status == "cash_received" else payload.status,
         money_status="cash_received" if payload.status == "cash_received" else "waiting_money",
         client_calc_type=payload.client_calc_type,
-        manager_percent=payload.manager_percent,
+        manager_percent=normalize_manager_percent(payload.manager_percent),
         agency_commission_amount=payload.agency_commission_amount,
         customer_paid_amount=getattr(payload, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00"),
         agency_commission_spread_enabled=payload.agency_commission_spread_enabled,
@@ -237,7 +249,7 @@ def update_event(
     else:
         event.status = payload.status
     event.client_calc_type = payload.client_calc_type
-    event.manager_percent = payload.manager_percent
+    event.manager_percent = normalize_manager_percent(payload.manager_percent)
     event.agency_commission_amount = payload.agency_commission_amount
     event.agency_commission_spread_enabled = payload.agency_commission_spread_enabled
     event.simplified_bank_tax_percent = payload.simplified_bank_tax_percent
@@ -252,6 +264,28 @@ def update_event(
 def require_admin_event_action(current_user: User) -> None:
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admin can perform this action")
+
+
+@router.patch("/events/{event_id}/manager-percent", response_model=EventRead)
+def update_event_manager_percent(
+    event_id: int,
+    payload: EventManagerPercentPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    if event.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Нельзя менять процент менеджера у отменённого мероприятия")
+
+    event.manager_percent = normalize_manager_percent(payload.manager_percent)
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
 
 
 @router.post("/events/{event_id}/accept", response_model=EventRead)

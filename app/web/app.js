@@ -3003,6 +3003,24 @@ function customerPaymentLabel(type) {
 }
 
 
+function formatPercentValue(value, fallback = 21) {
+  const raw = value === null || value === undefined || value === "" ? fallback : value;
+  const n = Number(String(raw).replace(",", "."));
+  const safe = Number.isFinite(n) ? n : fallback;
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(safe);
+}
+
+function managerPercentValue(event = null, summary = null) {
+  const raw = event?.manager_percent ?? summary?.manager_percent ?? 21;
+  const n = Number(String(raw).replace(",", "."));
+  return Number.isFinite(n) ? n : 21;
+}
+
+function managerPercentLabel(event = null, summary = null) {
+  return `Менеджер ${formatPercentValue(managerPercentValue(event, summary))}%`;
+}
+
+
 function isDraftEvent(event) {
   return canEditManagerEvent(event);
 }
@@ -3056,7 +3074,7 @@ function setDraftEventValue(eventId, field, value) {
   const event = state.managerDraftEventsById[key];
   if (!event) return;
 
-  if (["agency_commission_amount", "simplified_bank_tax_percent"].includes(field)) {
+  if (["agency_commission_amount", "simplified_bank_tax_percent", "manager_percent"].includes(field)) {
     event[field] = normalizeNumberInput(value);
   } else {
     event[field] = value;
@@ -3903,6 +3921,54 @@ function attachCustomerPaymentActions(root = document) {
         await addEventCustomerPayment(eventId);
       } catch (error) {
         alert(error.message || "Не удалось добавить оплату заказчика");
+      }
+    });
+  });
+}
+
+
+async function updateEventManagerPercent(eventId, percent) {
+  const updatedEvent = await api(`/events/${eventId}/manager-percent`, {
+    method: "PATCH",
+    body: JSON.stringify({ manager_percent: percent }),
+  });
+
+  patchEventState(updatedEvent);
+  if (state.eventModalPayloadById) delete state.eventModalPayloadById[String(eventId)];
+  if (state.managerEventPayloadById) delete state.managerEventPayloadById[String(eventId)];
+
+  if (Number(state.adminEventEditModeId || 0) === Number(eventId)) {
+    await openAdminEventEditMode(eventId);
+  } else {
+    await openEventModal(eventId);
+  }
+  await loadDashboard();
+}
+
+function attachManagerPercentEditActions(root = document) {
+  root.querySelectorAll("[data-admin-manager-percent-edit]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const eventId = button.getAttribute("data-admin-manager-percent-edit");
+      const currentPayload = state.currentEventModalPayload;
+      const currentPercent = managerPercentValue(currentPayload?.event, currentPayload?.summary);
+      const raw = prompt("Процент менеджера по этому мероприятию", formatPercentValue(currentPercent));
+      if (raw === null) return;
+
+      const percent = normalizeNumberInput(String(raw).replace("%", ""));
+      if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+        alert("Введите процент от 0 до 100");
+        return;
+      }
+
+      try {
+        button.disabled = true;
+        await updateEventManagerPercent(eventId, percent);
+      } catch (error) {
+        alert(error.message || "Не удалось изменить процент менеджера");
+      } finally {
+        button.disabled = false;
       }
     });
   });
@@ -5292,13 +5358,13 @@ function customerEstimateVatTopAmount(event, summary, items, taxesAmount, agency
 }
 
 
-function adminManagerSalaryEstimateRow(summary) {
+function adminManagerSalaryEstimateRow(summary, event = null) {
   const managerSalary = asNumber(summary?.manager_salary ?? 0);
   const managerSalaryPaid = asNumber(managerSalaryPaidValue(summary));
 
   return `
     <tr class="manager-salary-estimate-row">
-      <td><strong>Менеджер 21%</strong></td>
+      <td><strong>${managerPercentLabel(event, summary)}</strong></td>
       <td>${formatMoney(0)}</td>
       <td>${formatMoney(managerSalary)}</td>
       <td class="paid-col">${formatMoney(managerSalaryPaid)}</td>
@@ -5610,6 +5676,8 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
   const taxesAmount = customerTaxesTopAmount(summary);
   const vatAmount = customerVatTopAmount(summary);
   const managerSalary = asNumber(summary.manager_salary);
+  const managerLabel = managerPercentLabel(event, summary);
+  const canEditManagerPercent = state.bootstrap?.user?.role === "admin" && event?.status !== "cancelled";
 
   $("eventModalContent").innerHTML = `
     <div class="grid cards modal-metric-cards">
@@ -5617,7 +5685,10 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
       ${metric(`Налоги ${taxPercentLabelForEvent(event, summary)} к уплате`, formatMoney(taxesAmount))}
       ${metric("НДС к уплате", formatMoney(vatAmount))}
       <div class="card metric manager-salary-metric">
-        <div class="label">Менеджер 21%</div>
+        <div class="label manager-percent-label">
+          <span>${managerLabel}</span>
+          ${canEditManagerPercent ? `<button class="manager-percent-edit-btn" data-admin-manager-percent-edit="${event.id}" title="Изменить процент менеджера">✎</button>` : ""}
+        </div>
         <div class="value">${formatMoney(managerSalary)}</div>
       </div>
       <div class="card metric income-metric">
@@ -5660,7 +5731,7 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
               <td class="method-col">${paymentMethodLabel(item.payment_method)}</td>
             </tr>
           `).join("")}
-          ${adminManagerSalaryEstimateRow(summary)}
+          ${adminManagerSalaryEstimateRow(summary, event)}
           ${adminEstimateTopRows(event, summary, sortedItems, taxesAmount, vatAmount)}
         </tbody>
       </table>
@@ -5673,6 +5744,7 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
 
   installAdminEventModalActions(event, requests || []);
   attachCustomerPaymentActions($("eventModalContent"));
+  attachManagerPercentEditActions($("eventModalContent"));
   attachPaymentRequestActions();
   attachEventModalRequestFilter(requests || []);
 }
@@ -7058,6 +7130,7 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
     vat_net: vatNet,
     regular_positions_commission: regularCommission,
     total_commission_amount: regularCommission + agency,
+    manager_percent: asNumber(event?.manager_percent || 21),
     manager_salary: managerSalary,
     coordinator_company_share: coordinatorCompanyShare,
     final_company_income: companyIncome,
@@ -7376,7 +7449,7 @@ function updateInternalSummaryCards() {
   const values = [
     ["Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total)],
     ["Комиссия", formatMoney(summary.agency_commission_amount ?? 0)],
-    ["Менеджер", formatMoney(summary.manager_salary)],
+    [managerPercentLabel(state.currentManagerEvent, summary), formatMoney(summary.manager_salary)],
     [`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary))],
     ["НДС", formatMoney(internalVatNet(summary))],
     ["Доход компании", formatMoney(summary.final_company_income)],
@@ -7481,7 +7554,7 @@ function refreshDraftVisibleCalculations(eventId) {
       grid.innerHTML = `
         ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
         ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}
-        ${metric("Менеджер", formatMoney(summary.manager_salary))}
+        ${metric(managerPercentLabel(state.currentManagerEvent, summary), formatMoney(summary.manager_salary))}
         ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
         ${metric("НДС", formatMoney(internalVatNet(summary)))}
         <div class="card metric income-metric">
@@ -8043,6 +8116,11 @@ function renderManagerEventCard(event, items = [], summary = null) {
         <label>Комиссия агентства, %
           <input value="${formatPlainNumber(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
+        ${isAdminEditMode ? `
+          <label>Менеджер, %
+            <input value="${formatPercentValue(event.manager_percent || 21)}" data-event-field="manager_percent" data-event-id="${event.id}" ${readonlyAttrs} />
+          </label>
+        ` : ""}
         ${event.client_calc_type === "simplified" ? `
           <label>Банк+налоги, %
             <input value="${formatPlainNumber(event.simplified_bank_tax_percent || 0)}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${readonlyAttrs} />
@@ -8065,7 +8143,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
         <div class="manager-summary-grid manager-summary-grid-six">
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
           ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}
-          ${metric("Менеджер", formatMoney(summary.manager_salary))}
+          ${metric(managerPercentLabel(event, summary), formatMoney(summary.manager_salary))}
           ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
           ${metric("НДС", formatMoney(internalVatNet(summary)))}
           <div class="card metric income-metric">

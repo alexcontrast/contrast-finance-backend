@@ -3486,3 +3486,29 @@ button.soft-loading::after {
   font-weight: 900;
   text-decoration: none;
 }
+
+/* v0.40.46: event-level manager salary percent edit */
+.manager-salary-metric .manager-percent-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.manager-percent-edit-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 143, 116, .32);
+  background: rgba(255, 255, 255, .78);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.manager-percent-edit-btn:hover {
+  border-color: rgba(80, 210, 40, .65);
+  box-shadow: 0 0 0 3px rgba(80, 210, 40, .10);
+}

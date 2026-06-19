@@ -1034,6 +1034,13 @@ def create_extra_item(db: Session, event: Event, name: str, amount: Decimal, met
     return item
 
 
+
+def manager_salary_item_name(event: Event) -> str:
+    percent = q(getattr(event, "manager_percent", Decimal("21.00")) or Decimal("21.00"))
+    percent_text = format(percent.normalize(), "f").rstrip("0").rstrip(".")
+    return f"Менеджер {percent_text or '0'}%"
+
+
 def get_or_create_salary_item(db: Session, event: Event, amount: Decimal) -> EventItem:
     item = db.execute(
         select(EventItem).where(
@@ -1046,7 +1053,7 @@ def get_or_create_salary_item(db: Session, event: Event, amount: Decimal) -> Eve
         item = EventItem(
             event_id=event.id,
             item_type="manager_salary",
-            external_name="Менеджер 21%",
+            external_name=manager_salary_item_name(event),
             external_price=Decimal("0.00"),
             external_quantity=Decimal("1.00"),
             external_days=Decimal("1.00"),
@@ -1067,6 +1074,7 @@ def get_or_create_salary_item(db: Session, event: Event, amount: Decimal) -> Eve
             updated_at=datetime.utcnow(),
         )
     else:
+        item.external_name = manager_salary_item_name(event)
         item.amount_fact = q(amount)
         item.updated_at = datetime.utcnow()
     db.add(item)

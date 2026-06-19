@@ -1,6 +1,7 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.5.5: money grouping, old-style tax row logic, blank fact cell in total rows.
+ * v0.5.9: VAT deductions are shown in VAT column and also added to Commission column as company income.
+ *         Keeps agency commission row above VAT, manager percent label, money grouping and tax gross/net logic.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -12,6 +13,7 @@ function doPost(e) {
     }
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    applyArchiveLocale_(ss);
     cleanupTechnicalSheets_(ss);
     var updated = [];
 
@@ -39,6 +41,23 @@ function jsonResponse(obj, statusCode) {
   var output = ContentService.createTextOutput(JSON.stringify(obj));
   output.setMimeType(ContentService.MimeType.JSON);
   return output;
+}
+
+function applyArchiveLocale_(ss) {
+  // Number grouping in Google Sheets is locale-dependent. Kazakhstan/Russian locale
+  // gives spaces in all groups: 1 000 000, not 1000 000.
+  try {
+    var current = String(ss.getSpreadsheetLocale && ss.getSpreadsheetLocale() || '').toLowerCase();
+    if (current.indexOf('ru') !== 0 && current.indexOf('kk') !== 0) {
+      try {
+        ss.setSpreadsheetLocale('ru_KZ');
+      } catch (errKz) {
+        ss.setSpreadsheetLocale('ru');
+      }
+    }
+  } catch (err) {
+    // Formatting below still works; this just protects against locale permission/code issues.
+  }
 }
 
 function getOrCreateSheet_(ss, name) {
@@ -109,7 +128,60 @@ function money_(value) {
   return Number(value || 0);
 }
 
+function hasValue_(obj, key) {
+  return obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== '';
+}
+
+function firstNumber_(obj, keys, fallback) {
+  for (var i = 0; i < keys.length; i++) {
+    if (hasValue_(obj, keys[i])) return money_(obj[keys[i]]);
+  }
+  return fallback === undefined ? 0 : money_(fallback);
+}
+
+
+function firstNumberOrNull_(obj, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    if (hasValue_(obj, keys[i])) return money_(obj[keys[i]]);
+  }
+  return null;
+}
+
+function sumItemsExternal_(items) {
+  var total = 0;
+  (items || []).forEach(function(item) {
+    total += money_(item.external_amount);
+  });
+  return total;
+}
+
+function firstValue_(obj, keys, fallback) {
+  for (var i = 0; i < keys.length; i++) {
+    if (hasValue_(obj, keys[i])) return obj[keys[i]];
+  }
+  return fallback;
+}
+
+function formatPercentLabel_(value, fallback) {
+  var raw = value;
+  if (raw === undefined || raw === null || raw === '') raw = fallback;
+  if (raw === undefined || raw === null || raw === '') return '';
+  var n = Number(String(raw).replace(',', '.'));
+  if (!isFinite(n)) return String(raw);
+  if (Math.abs(n) > 0 && Math.abs(n) <= 1) n = n * 100;
+  var rounded = Math.round(n * 100) / 100;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.000001) return String(Math.round(rounded)) + '%';
+  return String(rounded).replace('.', ',') + '%';
+}
+
+function labelWithPercent_(label, percentValue, fallbackPercent) {
+  var suffix = formatPercentLabel_(percentValue, fallbackPercent);
+  return suffix ? label + ' ' + suffix : label;
+}
+
 function formatMoneyRange_(range) {
+  // Keep values numeric, but use grouped display. With archive locale ru/kk this renders as:
+  // 1 000, 1 000 000, -1 000 000.
   range.setNumberFormat('#,##0');
 }
 
@@ -200,12 +272,72 @@ function renderMonthlySheet_(ss, monthly, title) {
         money_(item.paid_amount)
       ]);
     });
-    // Add old-style special calculation rows.
-    values.push(['НДС', money_(s.client_vat), '', money_(s.vat_to_pay), money_(s.contractor_vat_credit), money_(s.vat_to_pay), '']);
-    var taxGross = money_(s.taxes_total || s.tax_to_pay);
+
+    // Old-style special calculation rows.
+    // Комиссия агентства must be visible in every event table and placed
+    // directly above VAT. Prefer explicit backend amount; if it is not present
+    // yet, rebuild it from total payable - positions total - client VAT.
+    var agencyAmountKeys = [
+      'agencyAmount',
+      'agency_amount',
+      'agency_commission',
+      'agency_commission_amount',
+      'agency_fee',
+      'agency_fee_amount',
+      'service_fee',
+      'service_fee_amount',
+      'customer_commission',
+      'customer_commission_amount'
+    ];
+    var agencyCommissionDirect = firstNumberOrNull_(s, agencyAmountKeys);
+    var agencyCommission = agencyCommissionDirect !== null
+      ? agencyCommissionDirect
+      : money_(s.external_total) - sumItemsExternal_(items) - money_(s.client_vat);
+    if (Math.abs(agencyCommission) < 0.000001) agencyCommission = 0;
+
+    var agencyPercentKeys = [
+      'agencyPercent',
+      'agency_percent',
+      'agency_commission_percent',
+      'agency_fee_percent',
+      'agency_rate',
+      'agency_commission_rate',
+      'service_fee_percent',
+      'customer_commission_percent',
+      'commission_percent',
+      'markup_percent',
+      'customer_markup_percent'
+    ];
+    var agencyPercent = firstValue_(s, agencyPercentKeys, firstValue_(ev, agencyPercentKeys, ''));
+    values.push([labelWithPercent_('Комиссия агентства', agencyPercent, ''), agencyCommission, '', '', '', agencyCommission, '']);
+
+    // НДС:
+    //   Стоимость = НДС, выставленный заказчику по смете;
+    //   Расход/Факт = пусто;
+    //   НДС = вся сумма НДС-вычетов от подрядчиков;
+    //   Комиссия = та же сумма НДС-вычетов как доход компании;
+    //   Вычеты/Оплачено = пусто.
+    var vatCredit = money_(s.contractor_vat_credit);
+    values.push(['НДС', money_(s.client_vat), '', vatCredit, '', vatCredit, '']);
+
+    // Налоги:
+    //   Расход/Факт = первичная сумма налоговых расходов ДО вычетов;
+    //   Вычеты = сумма всех налоговых вычетов;
+    //   Комиссия = реальный минус по налогам: -(Факт - Вычеты).
+    // If backend does not send taxes_total yet, rebuild gross tax from net tax_to_pay + deductions.
     var taxDeductions = money_(s.deductions_total);
-    values.push(['Налоги', '', taxGross, 0, taxDeductions, taxDeductions - taxGross, '']);
-    values.push(['Менеджер', '', '', '', '', money_(s.manager_salary) * -1, '']);
+    var taxGross = hasValue_(s, 'taxes_total') ? money_(s.taxes_total) : money_(s.tax_to_pay) + taxDeductions;
+    var taxNet = taxGross - taxDeductions;
+    values.push(['Налоги', '', taxGross, 0, taxDeductions, taxNet * -1, '']);
+
+    var managerPercent = firstValue_(s, [
+      'manager_percent',
+      'manager_salary_percent',
+      'manager_rate',
+      'manager_salary_rate',
+      'salary_percent'
+    ], 21);
+    values.push([labelWithPercent_('Менеджер', managerPercent, 21), '', '', '', '', money_(s.manager_salary) * -1, '']);
 
     if (values.length) {
       sheet.getRange(row, 1, values.length, 7).setValues(values);
@@ -219,6 +351,7 @@ function renderMonthlySheet_(ss, monthly, title) {
       row += values.length;
     }
 
+    // Total row: Fact/Rashod column is intentionally blank.
     var totalRow = [['Итого:', money_(s.external_total), '', '', '', money_(s.final_company_income), ev.status || '']];
     sheet.getRange(row, 1, 1, 7).setValues(totalRow).setFontWeight('bold').setBackground('#fce4d6');
     sheet.getRange(row, 7).setBackground(statusFill_(ev.status)).setHorizontalAlignment('center');
@@ -266,7 +399,7 @@ function renderPaymentRequestsSheet_(ss, requestsSheet) {
   });
   if (rows.length) {
     sheet.getRange(3, 1, rows.length, headers[0].length).setValues(rows);
-    sheet.getRange(3, 7, rows.length, 1).setNumberFormat('#,##0');
+    formatMoneyRange_(sheet.getRange(3, 7, rows.length, 1));
   }
 
   var lastRow = Math.max(3, rows.length + 2);
