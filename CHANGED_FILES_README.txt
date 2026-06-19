@@ -1,11 +1,8 @@
-Changed files in v0.40.47:
+Changed files in v0.40.48:
 
-- app/api/routes/google_sheets_export.py
-- app/core/config.py
-- app/main.py
 - app/services/google_sheets_archive_export.py
-- app/services/google_sheets_daily_export.py
-- app/web/app.js
 - tools/google_sheets_export_webapp.gs
-- .env.example
-- CHANGELOG_v0.40.47.txt
+- CHANGELOG_v0.40.48.txt
+
+Also attached separately for direct Apps Script copy:
+- v0.6.1/google_sheets_export_webapp_v0.6.1_COPY_TO_AppsScript.txt

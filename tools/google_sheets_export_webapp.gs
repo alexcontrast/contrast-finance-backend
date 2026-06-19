@@ -1,7 +1,7 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.6.0: accepts full yearly export: all 12 monthly sheets, payment requests, and annual statistics.
- *         Keeps v0.5.9 archive table logic: agency commission, VAT credits as income, manager percent label.
+ * v0.6.1: annual statistics shows VAT/taxes to pay, department income, clean founder income,
+ *         and compact one-screen widths. Keeps v0.5.9 monthly event table logic.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -224,8 +224,8 @@ function renderMonthlySheet_(ss, monthly, title) {
   var summaryValues = [
     ['Кол-во мероприятий', money_(summary.events_count)],
     ['Оборот', money_(summary.turnover)],
-    ['Налоги', money_(summary.tax_to_pay)],
-    ['НДС', money_(summary.vat_to_pay)],
+    ['Налоги к уплате', money_(summary.tax_to_pay)],
+    ['НДС к уплате', money_(summary.vat_to_pay)],
     ['Общий доход компании', income],
     ['Цель', plan],
     ['Остаток до цели', remaining]
@@ -474,12 +474,11 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     ['План'].concat(valuesForMetric_('plan')),
     ['Кол-во мероприятий'].concat(valuesForMetric_('events_count')),
     ['Оборот'].concat(valuesForMetric_('turnover')),
-    ['Налоги'].concat(valuesForMetric_('tax_to_pay')),
-    ['НДС'].concat(valuesForMetric_('vat_to_pay')),
+    ['Налоги к уплате'].concat(valuesForMetric_('tax_to_pay')),
+    ['НДС к уплате'].concat(valuesForMetric_('vat_to_pay')),
     ['Доход компании'].concat(valuesForMetric_('company_income')),
     ['Расходы'].concat(valuesForMetric_('expenses')),
-    ['Доход после расходов'].concat(valuesForMetric_('income_after_expenses')),
-    ['Остаток до цели'].concat(valuesForMetric_('remaining'))
+    ['Чистый доход'].concat(valuesForMetric_('clean_income', 'clean_income'))
   ];
 
   if (summaryRows.length) {
@@ -489,16 +488,41 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
     formatMoneyRange_(sheet.getRange(3, 2, summaryRows.length, lastCol - 1));
   }
 
-  var managerStartRow = 3 + summaryRows.length + 2;
+  var monthKeys = months.map(function(month) { return month.month || ''; });
+  var currentRow = 3 + summaryRows.length + 2;
+
+  sheet.getRange(currentRow, 1, 1, lastCol).merge().setValue('Доход по отделам');
+  sheet.getRange(currentRow, 1, 1, lastCol)
+    .setFontSize(11)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setBackground('#d9ead3');
+  sheet.getRange(currentRow + 1, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
+
+  var departmentRows = (statsSheet.department_rows || []).map(function(row) {
+    var byMonth = row.income_by_month || {};
+    var values = monthKeys.map(function(key) { return money_(byMonth[key]); });
+    while (values.length < 12) values.push(0);
+    return [row.department || ''].concat(values.slice(0, 12)).concat([money_(row.income_total)]);
+  });
+  if (departmentRows.length) {
+    sheet.getRange(currentRow + 2, 1, departmentRows.length, lastCol).setValues(departmentRows);
+    sheet.getRange(currentRow + 2, 1, departmentRows.length, 1).setFontWeight('bold');
+    sheet.getRange(currentRow + 2, lastCol, departmentRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
+    formatMoneyRange_(sheet.getRange(currentRow + 2, 2, departmentRows.length, lastCol - 1));
+  }
+
+  currentRow += 2 + Math.max(departmentRows.length, 1) + 2;
+
+  var managerStartRow = currentRow;
   sheet.getRange(managerStartRow, 1, 1, lastCol).merge().setValue('Доход по менеджерам');
   sheet.getRange(managerStartRow, 1, 1, lastCol)
-    .setFontSize(13)
+    .setFontSize(11)
     .setFontWeight('bold')
     .setHorizontalAlignment('center')
     .setBackground('#dbe5f1');
   sheet.getRange(managerStartRow + 1, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
 
-  var monthKeys = months.map(function(month) { return month.month || ''; });
   var managerRows = (statsSheet.manager_rows || []).map(function(row) {
     var byMonth = row.income_by_month || {};
     var values = monthKeys.map(function(key) { return money_(byMonth[key]); });
@@ -535,12 +559,15 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
   }
 
   var lastRow = Math.max(salaryStartRow + 2 + salaryRows.length, managerStartRow + 2 + managerRows.length, 14);
-  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle').setWrap(false);
+  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(8).setVerticalAlignment('middle').setWrap(false);
+  sheet.getRange(1, 1, 1, lastCol).setFontSize(14);
   sheet.getRange(2, 1, Math.max(1, lastRow - 1), lastCol).setBorder(true, true, true, true, true, true, '#e4eadf', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(2, 1, 1, lastCol).setBorder(true, true, true, true, true, true, '#9ebd8d', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(1, 1, 1, lastCol).setBorder(true, true, true, true, false, false, '#4b88ff', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  sheet.setColumnWidth(1, 210);
-  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 130 : 105);
+  sheet.setColumnWidth(1, 150);
+  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 90 : 62);
+  sheet.getRange(2, 2, Math.max(1, lastRow - 1), lastCol - 1).setHorizontalAlignment('right');
+  sheet.getRange(2, 1, Math.max(1, lastRow - 1), 1).setHorizontalAlignment('left');
 }
 

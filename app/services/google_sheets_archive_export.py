@@ -141,16 +141,117 @@ def requested_by_payload(current_admin: User | None) -> dict:
     return {"id": current_admin.id, "name": current_admin.name}
 
 
+def positive_int(value) -> int:
+    return max(0, decimal_to_int(value))
+
+
+def allocated_decimal(value: Decimal, percent: Decimal) -> Decimal:
+    return money(value) * money(percent) / Decimal("100")
+
+
+def user_department_name(user: User | None) -> str | None:
+    if user is None or user.department is None:
+        return None
+    return user.department.name
+
+
+def event_primary_department_name(event: Event, user_by_id: dict[int, User]) -> str:
+    manager = user_by_id.get(event.manager_id) if event.manager_id else None
+    return user_department_name(manager) or (event.department.name if event.department else "Без отдела")
+
+
+def add_event_income_to_departments(
+    department_income: dict[str, Decimal],
+    event: Event,
+    event_income: Decimal,
+    user_by_id: dict[int, User],
+) -> None:
+    shares = list(event.shares or [])
+    if not shares:
+        department_name = event_primary_department_name(event, user_by_id)
+        department_income[department_name] = department_income.get(department_name, Decimal("0.00")) + event_income
+        return
+
+    for share in shares:
+        manager = user_by_id.get(share.user_id)
+        department_name = user_department_name(manager)
+        if not department_name:
+            continue
+        amount = allocated_decimal(event_income, money(share.share_percent))
+        department_income[department_name] = department_income.get(department_name, Decimal("0.00")) + amount
+
+
+def department_plan_amount(plan: MonthlyPlan | None, department_name: str) -> Decimal:
+    if plan is None:
+        return Decimal("0.00")
+    if department_name == "Санжар":
+        return q0(money(plan.company_plan_amount) * money(plan.sanzhar_share_percent) / Decimal("100"))
+    if department_name == "Рауфаль":
+        return q0(money(plan.company_plan_amount) * money(plan.raufal_share_percent) / Decimal("100"))
+    return Decimal("0.00")
+
+
+def split_monthly_expenses(expenses: list[MonthlyExpense], plan: MonthlyPlan | None) -> dict[str, Decimal]:
+    sanzhar_percent = money(plan.sanzhar_share_percent) if plan is not None else Decimal("66.67")
+    by_department = {"Санжар": Decimal("0.00"), "Рауфаль": Decimal("0.00")}
+
+    for expense in expenses:
+        amount = money(expense.amount)
+        if expense.allocation_type == "default_split":
+            sanzhar_amount = q0(amount * sanzhar_percent / Decimal("100"))
+            raufal_amount = q0(amount - sanzhar_amount)
+        else:
+            sanzhar_amount = money(expense.sanzhar_amount)
+            raufal_amount = money(expense.raufal_amount)
+
+        by_department["Санжар"] += sanzhar_amount
+        by_department["Рауфаль"] += raufal_amount
+
+    return by_department
+
+
+def department_head_percent(income: Decimal, plan_amount: Decimal) -> Decimal:
+    return Decimal("15.00") if plan_amount > 0 and income >= plan_amount else Decimal("10.00")
+
+
+def department_head_salary(income: Decimal, expenses: Decimal, percent: Decimal) -> Decimal:
+    base = money(income) - money(expenses)
+    if base <= 0:
+        return Decimal("0.00")
+    return q0(base * money(percent) / Decimal("100"))
+
+
 def build_monthly_tax_totals(events_payload: list[dict]) -> dict:
-    turnover = sum(row["summary"]["turnover"] for row in events_payload)
-    vat_to_pay = sum(row["summary"]["vat_to_pay"] for row in events_payload)
-    tax_to_pay = sum(row["summary"]["tax_to_pay"] for row in events_payload)
-    company_income = sum(row["summary"].get("final_company_income", 0) for row in events_payload)
+    turnover = sum((money(row["summary"].get("turnover", 0)) for row in events_payload), Decimal("0.00"))
+    client_vat = sum((money(row["summary"].get("client_vat", 0)) for row in events_payload), Decimal("0.00"))
+    contractor_vat_credit = sum((money(row["summary"].get("contractor_vat_credit", 0)) for row in events_payload), Decimal("0.00"))
+    contrast_event_tax_total = sum(
+        (
+            money(row["summary"].get("taxes_total", 0))
+            for row in events_payload
+            if row.get("client_calc_type_code") == "ip_contrast_event"
+        ),
+        Decimal("0.00"),
+    )
+    deductions_total = sum((money(row["summary"].get("deductions_total", 0)) for row in events_payload), Decimal("0.00"))
+    company_income = sum((money(row["summary"].get("final_company_income", 0)) for row in events_payload), Decimal("0.00"))
+
+    # Сводки показывают реальные суммы к уплате за месяц:
+    # - НДС к уплате = клиентский НДС - все НДС-зачёты по подрядчикам за месяц.
+    # - Налоги к уплате = налог только по ИП Contrast Event - все налоговые вычеты за месяц.
+    #   Расходы по налогам ОУР без НДС и Упрощенки здесь не показываем как налог к уплате.
+    vat_to_pay = q0(client_vat - contractor_vat_credit)
+    tax_to_pay = q0(contrast_event_tax_total - deductions_total)
+
     return {
-        "turnover": int(turnover),
-        "vat_to_pay": int(vat_to_pay),
-        "tax_to_pay": int(tax_to_pay),
-        "company_income": int(company_income),
+        "turnover": decimal_to_int(turnover),
+        "client_vat": decimal_to_int(client_vat),
+        "contractor_vat_credit": decimal_to_int(contractor_vat_credit),
+        "vat_to_pay": positive_int(vat_to_pay),
+        "contrast_event_tax_total": decimal_to_int(contrast_event_tax_total),
+        "deductions_total": decimal_to_int(deductions_total),
+        "tax_to_pay": positive_int(tax_to_pay),
+        "company_income": decimal_to_int(company_income),
     }
 
 
@@ -216,6 +317,10 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     events_payload: list[dict] = []
     manager_income: dict[str, int] = {}
     manager_salary: dict[str, int] = {}
+    department_income_dec: dict[str, Decimal] = {}
+
+    users = db.execute(select(User).options(selectinload(User.department))).scalars().all()
+    user_by_id = {user.id: user for user in users}
 
     for event in events:
         items = sorted(
@@ -242,6 +347,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
         manager_name = event.manager.name if event.manager else "Без менеджера"
         manager_income[manager_name] = manager_income.get(manager_name, 0) + summary["final_company_income"]
         manager_salary[manager_name] = manager_salary.get(manager_name, 0) + summary["manager_salary"]
+        add_event_income_to_departments(department_income_dec, event, money(summary["final_company_income"]), user_by_id)
 
         event_requests = list(event.payment_requests or [])
         all_requests.extend(event_requests)
@@ -257,6 +363,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
             "status": EVENT_STATUS_LABELS.get(event.status, event.status),
             "money_status": MONEY_STATUS_LABELS.get(event.money_status, event.money_status),
             "client_calc_type": CLIENT_CALC_TYPE_LABELS.get(event.client_calc_type, event.client_calc_type),
+            "client_calc_type_code": event.client_calc_type,
             "customer_paid": decimal_to_int(event.customer_paid_amount),
             "summary": summary,
             "items": [
@@ -281,8 +388,31 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     monthly_totals = build_monthly_tax_totals(events_payload)
     monthly_totals["plan"] = decimal_to_int(plan.company_plan_amount) if plan else 0
     monthly_totals["events_count"] = len(events_payload)
-    monthly_totals["expenses"] = sum(decimal_to_int(expense.amount) for expense in expenses)
-    monthly_totals["income_after_expenses"] = monthly_totals["company_income"] - monthly_totals["expenses"]
+
+    base_expenses = sum((money(expense.amount) for expense in expenses), Decimal("0.00"))
+    department_expenses = split_monthly_expenses(expenses, plan)
+    department_income = {name: decimal_to_int(amount) for name, amount in sorted(department_income_dec.items())}
+
+    sanzhar_income = department_income_dec.get("Санжар", Decimal("0.00"))
+    raufal_income = department_income_dec.get("Рауфаль", Decimal("0.00"))
+    sanzhar_head_salary = department_head_salary(
+        sanzhar_income,
+        department_expenses.get("Санжар", Decimal("0.00")),
+        department_head_percent(sanzhar_income, department_plan_amount(plan, "Санжар")),
+    )
+    raufal_head_salary = department_head_salary(
+        raufal_income,
+        department_expenses.get("Рауфаль", Decimal("0.00")),
+        department_head_percent(raufal_income, department_plan_amount(plan, "Рауфаль")),
+    )
+    department_heads_salary = q0(sanzhar_head_salary + raufal_head_salary)
+    expenses_with_heads = q0(base_expenses + department_heads_salary)
+
+    monthly_totals["base_expenses"] = decimal_to_int(base_expenses)
+    monthly_totals["department_heads_salary"] = decimal_to_int(department_heads_salary)
+    monthly_totals["expenses"] = decimal_to_int(expenses_with_heads)
+    monthly_totals["clean_income"] = monthly_totals["company_income"] - monthly_totals["expenses"]
+    monthly_totals["income_after_expenses"] = monthly_totals["clean_income"]
     monthly_totals["remaining"] = monthly_totals["plan"] - monthly_totals["company_income"]
 
     logger.info(
@@ -306,6 +436,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
         },
         "manager_income": manager_income,
         "manager_salary": manager_salary,
+        "department_income": department_income,
     }
 
 
@@ -320,10 +451,28 @@ def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
         "vat_to_pay": sum(row.get("vat_to_pay", 0) for row in months),
         "tax_to_pay": sum(row.get("tax_to_pay", 0) for row in months),
         "company_income": sum(row.get("company_income", 0) for row in months),
+        "base_expenses": sum(row.get("base_expenses", 0) for row in months),
+        "department_heads_salary": sum(row.get("department_heads_salary", 0) for row in months),
         "expenses": sum(row.get("expenses", 0) for row in months),
-        "income_after_expenses": sum(row.get("income_after_expenses", 0) for row in months),
+        "clean_income": sum(row.get("clean_income", row.get("income_after_expenses", 0)) for row in months),
+        "income_after_expenses": sum(row.get("clean_income", row.get("income_after_expenses", 0)) for row in months),
     }
     totals["remaining"] = totals["plan"] - totals["company_income"]
+
+    department_names: set[str] = set()
+    for section in month_sections:
+        department_names.update(section.get("department_income", {}).keys())
+
+    department_rows = []
+    for department_name in sorted(department_names):
+        income_by_month = {}
+        for key, section in zip(month_keys, month_sections):
+            income_by_month[key] = int(section.get("department_income", {}).get(department_name, 0))
+        department_rows.append({
+            "department": department_name,
+            "income_by_month": income_by_month,
+            "income_total": sum(income_by_month.values()),
+        })
 
     manager_names: set[str] = set()
     for section in month_sections:
@@ -350,6 +499,7 @@ def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
         "year": year,
         "months": months,
         "totals": totals,
+        "department_rows": department_rows,
         "manager_rows": manager_rows,
     }
 
@@ -360,7 +510,7 @@ def build_export_payload(db: Session, month: str, current_admin: User | None) ->
     sections = build_month_export_sections(db, month_date)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.6.0",
+        "schema_version": "contrast_google_archive_v0.6.1",
         "export_type": "month",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
         "requested_by": requested_by_payload(current_admin),
@@ -399,7 +549,7 @@ def build_year_export_payload(db: Session, year: int | str, current_admin: User 
     events_count = sum(len(sheet.get("events") or []) for sheet in monthly_sheets)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.6.0",
+        "schema_version": "contrast_google_archive_v0.6.1",
         "export_type": "year",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
         "requested_by": requested_by_payload(current_admin),
