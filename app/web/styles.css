@@ -3443,3 +3443,46 @@ button.soft-loading::after {
     grid-template-columns: 1fr;
   }
 }
+
+/* Google Sheets archive export v0.5.1 */
+.google-export-panel {
+  display: grid;
+  gap: 18px;
+}
+.google-export-card {
+  background: #f8fbf5;
+  border: 1px solid rgba(93, 180, 60, 0.20);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 16px 35px rgba(40, 80, 20, 0.08);
+  display: grid;
+  gap: 16px;
+}
+.google-export-card h3 {
+  margin: 4px 0 8px;
+  font-size: 24px;
+}
+.google-export-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.google-export-stats span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid rgba(93, 180, 60, 0.18);
+  font-weight: 800;
+}
+.google-export-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.google-export-status a {
+  color: #239300;
+  font-weight: 900;
+  text-decoration: none;
+}

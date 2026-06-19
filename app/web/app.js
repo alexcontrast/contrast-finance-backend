@@ -4011,6 +4011,7 @@ function renderAdminTabs() {
     ["requests_archive", "Архив заявок"],
     ["plans", "Задать планы"],
     ["closing", "Закрыть месяц"],
+    ["google_export", "Google архив"],
   ];
 
   $("adminTabs").classList.remove("hidden");
@@ -6516,6 +6517,7 @@ function renderAdminEmptyDashboard(month, error = null) {
   attachManagerDeleteButtons();
   attachPlansModal();
   attachClosingPanel();
+  attachGoogleSheetsExportPanel();
 }
 
 function clearDashboardForPeriodLoading() {
@@ -6523,6 +6525,73 @@ function clearDashboardForPeriodLoading() {
     $("dashboardContent").innerHTML = `
       <div class="empty-state">Загружаем выбранный период…</div>
     `;
+  }
+}
+
+
+function renderGoogleSheetsExportPanel(data) {
+  const month = selectedMonthValue();
+  const eventsCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
+  const requestsCount = (data.payment_requests || []).length;
+  return `
+    <section class="google-export-panel">
+      <div class="google-export-card">
+        <div>
+          <div class="overview-label">Google Sheets архив</div>
+          <h3>Выгрузка за ${escapeHtml(month)}</h3>
+          <p class="muted">Этап v0.5.1: обновляем месячный лист и красивый лист “Заявки на оплату”. Технические листы не выгружаются.</p>
+        </div>
+        <div class="google-export-stats">
+          <span>${eventsCount} мероприятий</span>
+          <span>${requestsCount} заявок</span>
+        </div>
+        <div class="google-export-actions">
+          <button id="googleExportDryRunBtn" type="button" class="secondary">Проверить данные</button>
+          <button id="googleExportMonthBtn" type="button">Выгрузить в Google Sheets</button>
+        </div>
+        <div id="googleExportStatus" class="google-export-status muted"></div>
+      </div>
+    </section>
+  `;
+}
+
+async function runGoogleSheetsExport(dryRun, button) {
+  const month = selectedMonthValue();
+  const statusEl = $("googleExportStatus");
+  if (statusEl) statusEl.textContent = dryRun ? "Собираю данные для проверки…" : "Выгружаю в Google Sheets…";
+  const startedAt = perfNow();
+  const result = await api(`/google-sheets/export-month?month=${encodeURIComponent(month)}&dry_run=${dryRun ? "true" : "false"}`, { method: "POST" });
+  console.info(`PERF web google-sheets-export dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
+
+  const sheets = (result.updated_sheets || []).join(", ");
+  const message = result.dry_run
+    ? `Проверка готова: ${result.events_count || 0} мероприятий, ${result.payment_requests_count || 0} заявок. Листы: ${sheets}.`
+    : `${result.message || "Выгрузка завершена"}${sheets ? ` Листы: ${sheets}.` : ""}`;
+  if (statusEl) {
+    statusEl.innerHTML = `${escapeHtml(message)}${result.google_sheet_url ? ` <a href="${escapeHtml(result.google_sheet_url)}" target="_blank" rel="noopener">Открыть таблицу</a>` : ""}`;
+  }
+  return result;
+}
+
+function attachGoogleSheetsExportPanel() {
+  const dryRunBtn = $("googleExportDryRunBtn");
+  if (dryRunBtn) {
+    dryRunBtn.addEventListener("click", async () => {
+      await runPatchUpdateAction(dryRunBtn, () => runGoogleSheetsExport(true, dryRunBtn), null, {
+        loadingText: "Проверяю…",
+        errorPrefix: "Не удалось проверить выгрузку",
+      });
+    });
+  }
+
+  const exportBtn = $("googleExportMonthBtn");
+  if (exportBtn) {
+    exportBtn.addEventListener("click", async () => {
+      await runPatchUpdateAction(exportBtn, () => runGoogleSheetsExport(false, exportBtn), null, {
+        loadingText: "Выгружаю…",
+        errorPrefix: "Не удалось выгрузить в Google Sheets",
+      });
+    });
   }
 }
 
@@ -6551,6 +6620,8 @@ function renderAdminDashboard(data) {
     $("dashboardContent").innerHTML = renderPlansSkeleton(data);
   } else if (state.activeAdminTab === "closing") {
     $("dashboardContent").innerHTML = renderClosingSkeleton(data);
+  } else if (state.activeAdminTab === "google_export") {
+    $("dashboardContent").innerHTML = renderGoogleSheetsExportPanel(data);
   }
 
   attachPaymentRequestActions();
@@ -6559,6 +6630,7 @@ function renderAdminDashboard(data) {
   attachManagerDeleteButtons();
   attachPlansModal();
   attachClosingPanel();
+  attachGoogleSheetsExportPanel();
 }
 
 function renderDepartmentDashboard(data, paymentRequests = []) {
@@ -11579,7 +11651,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.89 loaded");
+  console.info("Contrast Finance web app v0.5.1 loaded");
   if (!state.token) {
     showLogin();
     return;

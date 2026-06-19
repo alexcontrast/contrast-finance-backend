@@ -23,6 +23,7 @@ from app.api.routes.users_import import router as users_import_router
 from app.api.routes.users_manage import router as users_manage_router
 from app.api.routes.health import router as health_router
 from app.api.routes.legacy_migration import router as legacy_migration_router
+from app.api.routes.google_sheets_export import router as google_sheets_export_router
 from app.core.config import get_settings
 
 
@@ -35,6 +36,7 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(legacy_migration_router)
+app.include_router(google_sheets_export_router)
 app.include_router(departments_router)
 app.include_router(events_router)
 app.include_router(event_summary_router)

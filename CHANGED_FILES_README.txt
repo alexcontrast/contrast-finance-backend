@@ -1,5 +1,24 @@
-v0.40.89
-- Fixed intermittent duplicate Telegram request cards by adding a per-request publish lock.
-- The bot now marks a request as recently published at the start of publishing, not only after sending/saving all cards.
-- Telegram message records are saved immediately after each sent card, so the background poller cannot see a just-sent card as missing.
-- Added a second recently-published check inside poll_site_requests before publishing.
+v0.5.1 — Google Sheets archive export, stage 1
+
+Changed/added files:
+- app/core/config.py
+- app/main.py
+- app/api/routes/google_sheets_export.py
+- app/services/google_sheets_archive_export.py
+- app/web/app.js
+- app/web/styles.css
+- tools/google_sheets_export_webapp.gs
+
+What this version adds:
+- Admin tab “Google архив”.
+- Manual export button for selected month.
+- Dry-run button that checks data count without sending to Google.
+- Backend endpoint POST /google-sheets/export-month.
+- Export payload for monthly sheet + clean “Заявки на оплату” sheet.
+- Apps Script web app receiver template for Google Sheets formatting.
+- No technical sheets are exported.
+
+Required Railway secrets before real export:
+- GOOGLE_SHEETS_EXPORT_WEBHOOK_URL
+- optional GOOGLE_SHEETS_EXPORT_TOKEN
+- optional GOOGLE_SHEETS_ARCHIVE_URL
