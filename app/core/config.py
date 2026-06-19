@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.5.1"
+    VERSION: str = "0.40.47"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -27,6 +27,9 @@ class Settings:
     GOOGLE_SHEETS_EXPORT_WEBHOOK_URL: str | None = os.getenv("GOOGLE_SHEETS_EXPORT_WEBHOOK_URL") or os.getenv("GOOGLE_ARCHIVE_EXPORT_WEBHOOK_URL")
     GOOGLE_SHEETS_EXPORT_TOKEN: str | None = os.getenv("GOOGLE_SHEETS_EXPORT_TOKEN") or os.getenv("GOOGLE_ARCHIVE_EXPORT_TOKEN")
     GOOGLE_SHEETS_ARCHIVE_URL: str | None = os.getenv("GOOGLE_SHEETS_ARCHIVE_URL") or os.getenv("GOOGLE_ARCHIVE_SHEET_URL")
+    GOOGLE_SHEETS_DAILY_EXPORT_ENABLED: bool = os.getenv("GOOGLE_SHEETS_DAILY_EXPORT_ENABLED", "true").lower() not in {"0", "false", "no", "off"}
+    GOOGLE_SHEETS_DAILY_EXPORT_HOUR: int = int(os.getenv("GOOGLE_SHEETS_DAILY_EXPORT_HOUR", "0"))
+    GOOGLE_SHEETS_DAILY_EXPORT_MINUTE: int = int(os.getenv("GOOGLE_SHEETS_DAILY_EXPORT_MINUTE", "0"))
 
     # Temporary one-time legacy migration page/API. Set before import, remove after migration.
     LEGACY_MIGRATION_TOKEN: str | None = os.getenv("LEGACY_MIGRATION_TOKEN")
