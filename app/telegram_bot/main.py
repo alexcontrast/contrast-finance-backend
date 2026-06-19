@@ -58,7 +58,7 @@ from app.services.kgd.client import check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.86_ADMIN_IDS_QUICK_EXPENSES"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.89_TELEGRAM_PUBLISH_LOCKS"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -198,6 +198,7 @@ BOUND_USER_CACHE: Dict[str, Dict[str, Any]] = {}
 BOUND_USER_CACHE_TTL_SECONDS = 24 * 60 * 60
 RECENTLY_PUBLISHED: Dict[str, float] = {}
 RECENTLY_PUBLISHED_TTL_SECONDS = 10 * 60
+PUBLISH_LOCKS: Dict[str, asyncio.Lock] = {}
 PENDING_EXPENSES: Dict[str, Dict[str, Any]] = {}
 PENDING_EXPENSE_TTL_SECONDS = 30 * 60
 ASTANA_TZ = ZoneInfo("Asia/Almaty")
@@ -1512,51 +1513,72 @@ async def sync_tatyana_message(bot, request: PaymentRequest, title: str) -> None
 
 
 async def publish_created_request_cards(bot, manager_chat_id: Any, request_id: int, title_for_manager: str = "🧾 Заявка создана") -> None:
-    with db_session() as db:
-        request = db.get(PaymentRequest, request_id)
-        if request is None:
-            return
-        creator = db.get(User, request.created_by_user_id)
-        manager_tg = manager_chat_id or (creator.telegram_id if creator else None)
-    await dedupe_active_cards(bot, int(request_id))
-    with db_session() as db:
-        existing_admin = active_messages(db, int(request_id), "admin_payment_card")
-        existing_manager = [
-            m for m in active_messages(db, int(request_id), "manager_payment_card")
-            if manager_tg and str(m.chat_id) == str(manager_tg)
-        ]
+    """Publish initial Telegram cards once per request.
 
-    manager_msg = None
-    if manager_tg:
-        if existing_manager:
-            await safe_edit(bot, existing_manager[0], request, title_for_manager, is_manager=True)
+    The bot can reach this function from two paths at almost the same time:
+    direct bot-created request publishing and background polling of site-created
+    requests. Without a per-request lock both paths can observe "no active
+    admin card" before either has saved telegram_messages, then both send a
+    card. This is why only some requests were duplicated.
+    """
+    lock_key = str(int(request_id))
+    lock = PUBLISH_LOCKS.setdefault(lock_key, asyncio.Lock())
+    async with lock:
+        remember_recently_published(request_id)
+        with db_session() as db:
+            request = db.get(PaymentRequest, request_id)
+            if request is None:
+                return
+            creator = db.get(User, request.created_by_user_id)
+            manager_tg = manager_chat_id or (creator.telegram_id if creator else None)
+
+        await dedupe_active_cards(bot, int(request_id))
+        with db_session() as db:
+            request = db.get(PaymentRequest, request_id)
+            if request is None:
+                return
+            existing_admin = active_messages(db, int(request_id), "admin_payment_card")
+            existing_manager = [
+                m for m in active_messages(db, int(request_id), "manager_payment_card")
+                if manager_tg and str(m.chat_id) == str(manager_tg)
+            ]
+
+        if manager_tg:
+            if existing_manager:
+                await safe_edit(bot, existing_manager[0], request, title_for_manager, is_manager=True)
+            else:
+                manager_msg = await bot.send_message(
+                    chat_id=int(manager_tg),
+                    text=payment_text_from_request(request, title_for_manager),
+                    parse_mode="HTML",
+                    reply_markup=manager_keyboard(request),
+                )
+                with db_session() as db:
+                    req = db.get(PaymentRequest, request_id)
+                    if req is not None:
+                        save_message(db, req.id, manager_tg, manager_msg.message_id, "manager_payment_card", req.created_by_user_id)
+                        db.commit()
+
+        with db_session() as db:
+            existing_admin = active_messages(db, int(request_id), "admin_payment_card")
+
+        if existing_admin:
+            await safe_edit(bot, existing_admin[0], request, "🧾 Новая заявка на оплату", is_admin=True)
         else:
-            manager_msg = await bot.send_message(
-                chat_id=int(manager_tg),
-                text=payment_text_from_request(request, title_for_manager),
+            admin_msg = await bot.send_message(
+                chat_id=ADMIN_CHAT_ID,
+                text=payment_text_from_request(request, "🧾 Новая заявка на оплату"),
                 parse_mode="HTML",
-                reply_markup=manager_keyboard(request),
+                reply_markup=admin_keyboard(request),
             )
-    admin_msg = None
-    if existing_admin:
-        await safe_edit(bot, existing_admin[0], request, "🧾 Новая заявка на оплату", is_admin=True)
-    else:
-        admin_msg = await bot.send_message(
-            chat_id=ADMIN_CHAT_ID,
-            text=payment_text_from_request(request, "🧾 Новая заявка на оплату"),
-            parse_mode="HTML",
-            reply_markup=admin_keyboard(request),
-        )
-    await sync_tatyana_message(bot, request, "🧾 Новая заявка по счету")
-    with db_session() as db:
-        req = db.get(PaymentRequest, request_id)
-        if req is not None:
-            if admin_msg is not None:
-                save_message(db, req.id, ADMIN_CHAT_ID, admin_msg.message_id, "admin_payment_card", None)
-            if manager_msg and manager_tg:
-                save_message(db, req.id, manager_tg, manager_msg.message_id, "manager_payment_card", req.created_by_user_id)
-            db.commit()
-    remember_recently_published(request_id)
+            with db_session() as db:
+                req = db.get(PaymentRequest, request_id)
+                if req is not None:
+                    save_message(db, req.id, ADMIN_CHAT_ID, admin_msg.message_id, "admin_payment_card", None)
+                    db.commit()
+
+        await sync_tatyana_message(bot, request, "🧾 Новая заявка по счету")
+        await dedupe_active_cards(bot, int(request_id))
 
 
 async def delete_admin_manager_cards(bot, request: PaymentRequest, extra_messages: Optional[List[tuple[Any, Any]]] = None) -> None:
@@ -2298,6 +2320,8 @@ async def poll_site_requests(context: ContextTypes.DEFAULT_TYPE):
         ).scalars().all()
         request_ids = [r.id for r in requests if not is_recently_published(r.id)]
     for request_id in request_ids:
+        if is_recently_published(request_id):
+            continue
         with db_session() as db:
             request = db.get(PaymentRequest, request_id)
             creator = db.get(User, request.created_by_user_id) if request else None
