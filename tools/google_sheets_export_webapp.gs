@@ -1,6 +1,6 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.5.2: archive-only sheets, old-style monthly visual layout, compact requests sheet.
+ * v0.5.5: money grouping, old-style tax row logic, blank fact cell in total rows.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -42,11 +42,42 @@ function jsonResponse(obj, statusCode) {
 }
 
 function getOrCreateSheet_(ss, name) {
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
+  // Strong reset: delete the old archive sheet and recreate it from zero.
+  // This is safer than clear()+breakApart() because old Google Sheets files may
+  // contain merged/protected/partially formatted ranges outside getDataRange().
+  // Those stale ranges caused partial redraws and "merge/break apart selected range" errors.
+  var existing = ss.getSheetByName(name);
+  var targetIndex = existing ? Math.max(0, existing.getIndex() - 1) : ss.getSheets().length;
+  var tempName = '__contrast_export_temp__';
+  var temp = null;
+
+  if (existing) {
+    if (ss.getSheets().length <= 1) {
+      temp = ss.insertSheet(tempName);
+    }
+    ss.deleteSheet(existing);
+  }
+
+  var sheet = ss.insertSheet(name, Math.min(targetIndex, ss.getSheets().length));
+  resetSheet_(sheet);
+
+  if (temp) {
+    ss.deleteSheet(temp);
+  }
+  return sheet;
+}
+
+function resetSheet_(sheet) {
+  // Keep this helper for newly created sheets and future safety.
+  var merged = sheet.getDataRange().getMergedRanges();
+  merged.forEach(function(range) {
+    range.breakApart();
+  });
   sheet.clear({ contentsOnly: false });
   sheet.clearConditionalFormatRules();
-  return sheet;
+  sheet.setFrozenRows(0);
+  sheet.setFrozenColumns(0);
+  if (sheet.getFilter()) sheet.getFilter().remove();
 }
 
 function cleanupTechnicalSheets_(ss) {
@@ -79,7 +110,7 @@ function money_(value) {
 }
 
 function formatMoneyRange_(range) {
-  range.setNumberFormat('# ##0');
+  range.setNumberFormat('#,##0');
 }
 
 function setBorder_(range) {
@@ -171,7 +202,9 @@ function renderMonthlySheet_(ss, monthly, title) {
     });
     // Add old-style special calculation rows.
     values.push(['НДС', money_(s.client_vat), '', money_(s.vat_to_pay), money_(s.contractor_vat_credit), money_(s.vat_to_pay), '']);
-    values.push(['Налоги', '', '', 0, money_(s.deductions_total), money_(s.tax_to_pay), '']);
+    var taxGross = money_(s.taxes_total || s.tax_to_pay);
+    var taxDeductions = money_(s.deductions_total);
+    values.push(['Налоги', '', taxGross, 0, taxDeductions, taxDeductions - taxGross, '']);
     values.push(['Менеджер', '', '', '', '', money_(s.manager_salary) * -1, '']);
 
     if (values.length) {
@@ -186,7 +219,7 @@ function renderMonthlySheet_(ss, monthly, title) {
       row += values.length;
     }
 
-    var totalRow = [['Итого:', money_(s.external_total), money_(s.fact_total), '', '', money_(s.final_company_income), ev.status || '']];
+    var totalRow = [['Итого:', money_(s.external_total), '', '', '', money_(s.final_company_income), ev.status || '']];
     sheet.getRange(row, 1, 1, 7).setValues(totalRow).setFontWeight('bold').setBackground('#fce4d6');
     sheet.getRange(row, 7).setBackground(statusFill_(ev.status)).setHorizontalAlignment('center');
     formatMoneyRange_(sheet.getRange(row, 2, 1, 5));
@@ -233,7 +266,7 @@ function renderPaymentRequestsSheet_(ss, requestsSheet) {
   });
   if (rows.length) {
     sheet.getRange(3, 1, rows.length, headers[0].length).setValues(rows);
-    sheet.getRange(3, 7, rows.length, 1).setNumberFormat('# ##0');
+    sheet.getRange(3, 7, rows.length, 1).setNumberFormat('#,##0');
   }
 
   var lastRow = Math.max(3, rows.length + 2);

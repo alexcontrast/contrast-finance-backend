@@ -181,6 +181,7 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
             "client_vat": decimal_to_int(summary_raw.get("client_vat_amount")),
             "contractor_vat_credit": decimal_to_int(summary_raw.get("contractor_vat_credit")),
             "tax_to_pay": decimal_to_int(summary_raw.get("taxes_net")),
+            "taxes_total": decimal_to_int(summary_raw.get("taxes_total")),
             "deductions_total": decimal_to_int(summary_raw.get("deductions_total")),
             "manager_salary": decimal_to_int(summary_raw.get("manager_salary")),
             "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
@@ -243,7 +244,7 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
     monthly_totals["expenses"] = sum(decimal_to_int(expense.amount) for expense in expenses)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.5.2",
+        "schema_version": "contrast_google_archive_v0.5.5",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
         "requested_by": {"id": current_admin.id, "name": current_admin.name},
         "month": f"{year}-{month_num:02d}",
