@@ -1,7 +1,7 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.5.9: VAT deductions are shown in VAT column and also added to Commission column as company income.
- *         Keeps agency commission row above VAT, manager percent label, money grouping and tax gross/net logic.
+ * v0.6.0: accepts full yearly export: all 12 monthly sheets, payment requests, and annual statistics.
+ *         Keeps v0.5.9 archive table logic: agency commission, VAT credits as income, manager percent label.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -17,13 +17,22 @@ function doPost(e) {
     cleanupTechnicalSheets_(ss);
     var updated = [];
 
-    if (payload.sheets && payload.sheets.monthly) {
+    if (payload.sheets && payload.sheets.months) {
+      (payload.sheets.months || []).forEach(function(monthly) {
+        renderMonthlySheet_(ss, monthly, monthly.sheet_name || 'Месяц');
+        updated.push(monthly.sheet_name || 'Месяц');
+      });
+    } else if (payload.sheets && payload.sheets.monthly) {
       renderMonthlySheet_(ss, payload.sheets.monthly, payload.month_title || payload.month);
       updated.push(payload.sheets.monthly.sheet_name);
     }
     if (payload.sheets && payload.sheets.payment_requests) {
       renderPaymentRequestsSheet_(ss, payload.sheets.payment_requests);
       updated.push(payload.sheets.payment_requests.sheet_name);
+    }
+    if (payload.sheets && payload.sheets.annual_stats) {
+      renderAnnualStatsSheet_(ss, payload.sheets.annual_stats);
+      updated.push(payload.sheets.annual_stats.sheet_name || 'Годовая статистика');
     }
 
     return jsonResponse({
@@ -101,7 +110,7 @@ function resetSheet_(sheet) {
 
 function cleanupTechnicalSheets_(ss) {
   var keepMonthly = /^(Январь|Февраль|Март|Апрель|Май|Июнь|Июль|Август|Сентябрь|Октябрь|Ноябрь|Декабрь)\s+\d{4}$/;
-  var keep = { 'Заявки на оплату': true };
+  var keep = { 'Заявки на оплату': true, 'Годовая статистика': true };
   var technical = {
     'Лист1': true,
     '_MIGRATION_EXPORT_JSON': true,
@@ -433,3 +442,105 @@ function renderPaymentRequestsSheet_(ss, requestsSheet) {
   sheet.setColumnWidth(11, 220);
   sheet.setRowHeights(3, Math.max(1, rows.length), 22);
 }
+
+function renderAnnualStatsSheet_(ss, statsSheet) {
+  var sheet = getOrCreateSheet_(ss, statsSheet.sheet_name || 'Годовая статистика');
+  sheet.setFrozenRows(2);
+  sheet.setHiddenGridlines(true);
+
+  var months = statsSheet.months || [];
+  var totals = statsSheet.totals || {};
+  var monthTitles = months.map(function(month) { return month.title || month.month || ''; });
+  while (monthTitles.length < 12) monthTitles.push('');
+  var headers = ['Показатель'].concat(monthTitles.slice(0, 12)).concat(['Итого']);
+  var lastCol = headers.length;
+
+  sheet.getRange(1, 1, 1, lastCol).merge().setValue('Годовая статистика ' + (statsSheet.year || ''));
+  sheet.getRange(1, 1, 1, lastCol)
+    .setFontSize(18)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setBackground('#e7ffd9');
+
+  sheet.getRange(2, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
+
+  function valuesForMetric_(key, totalKey) {
+    var values = months.map(function(month) { return money_(month[key]); });
+    while (values.length < 12) values.push(0);
+    return values.slice(0, 12).concat([money_(totals[totalKey || key])]);
+  }
+
+  var summaryRows = [
+    ['План'].concat(valuesForMetric_('plan')),
+    ['Кол-во мероприятий'].concat(valuesForMetric_('events_count')),
+    ['Оборот'].concat(valuesForMetric_('turnover')),
+    ['Налоги'].concat(valuesForMetric_('tax_to_pay')),
+    ['НДС'].concat(valuesForMetric_('vat_to_pay')),
+    ['Доход компании'].concat(valuesForMetric_('company_income')),
+    ['Расходы'].concat(valuesForMetric_('expenses')),
+    ['Доход после расходов'].concat(valuesForMetric_('income_after_expenses')),
+    ['Остаток до цели'].concat(valuesForMetric_('remaining'))
+  ];
+
+  if (summaryRows.length) {
+    sheet.getRange(3, 1, summaryRows.length, lastCol).setValues(summaryRows);
+    sheet.getRange(3, 1, summaryRows.length, 1).setFontWeight('bold').setBackground('#f4cccc');
+    sheet.getRange(3, lastCol, summaryRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
+    formatMoneyRange_(sheet.getRange(3, 2, summaryRows.length, lastCol - 1));
+  }
+
+  var managerStartRow = 3 + summaryRows.length + 2;
+  sheet.getRange(managerStartRow, 1, 1, lastCol).merge().setValue('Доход по менеджерам');
+  sheet.getRange(managerStartRow, 1, 1, lastCol)
+    .setFontSize(13)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setBackground('#dbe5f1');
+  sheet.getRange(managerStartRow + 1, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
+
+  var monthKeys = months.map(function(month) { return month.month || ''; });
+  var managerRows = (statsSheet.manager_rows || []).map(function(row) {
+    var byMonth = row.income_by_month || {};
+    var values = monthKeys.map(function(key) { return money_(byMonth[key]); });
+    while (values.length < 12) values.push(0);
+    return [row.manager || ''].concat(values.slice(0, 12)).concat([money_(row.income_total)]);
+  });
+  if (managerRows.length) {
+    sheet.getRange(managerStartRow + 2, 1, managerRows.length, lastCol).setValues(managerRows);
+    sheet.getRange(managerStartRow + 2, 1, managerRows.length, 1).setFontWeight('bold');
+    sheet.getRange(managerStartRow + 2, lastCol, managerRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
+    formatMoneyRange_(sheet.getRange(managerStartRow + 2, 2, managerRows.length, lastCol - 1));
+  }
+
+  var salaryStartRow = managerStartRow + 2 + Math.max(managerRows.length, 1) + 2;
+  sheet.getRange(salaryStartRow, 1, 1, lastCol).merge().setValue('ЗП менеджеров');
+  sheet.getRange(salaryStartRow, 1, 1, lastCol)
+    .setFontSize(13)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center')
+    .setBackground('#e5dfec');
+  sheet.getRange(salaryStartRow + 1, 1, 1, lastCol).setValues([headers]).setFontWeight('bold').setBackground('#eef5e8');
+
+  var salaryRows = (statsSheet.manager_rows || []).map(function(row) {
+    var byMonth = row.salary_by_month || {};
+    var values = monthKeys.map(function(key) { return money_(byMonth[key]); });
+    while (values.length < 12) values.push(0);
+    return [row.manager || ''].concat(values.slice(0, 12)).concat([money_(row.salary_total)]);
+  });
+  if (salaryRows.length) {
+    sheet.getRange(salaryStartRow + 2, 1, salaryRows.length, lastCol).setValues(salaryRows);
+    sheet.getRange(salaryStartRow + 2, 1, salaryRows.length, 1).setFontWeight('bold');
+    sheet.getRange(salaryStartRow + 2, lastCol, salaryRows.length, 1).setFontWeight('bold').setBackground('#fff2cc');
+    formatMoneyRange_(sheet.getRange(salaryStartRow + 2, 2, salaryRows.length, lastCol - 1));
+  }
+
+  var lastRow = Math.max(salaryStartRow + 2 + salaryRows.length, managerStartRow + 2 + managerRows.length, 14);
+  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle').setWrap(false);
+  sheet.getRange(2, 1, Math.max(1, lastRow - 1), lastCol).setBorder(true, true, true, true, true, true, '#e4eadf', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(2, 1, 1, lastCol).setBorder(true, true, true, true, true, true, '#9ebd8d', SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(1, 1, 1, lastCol).setBorder(true, true, true, true, false, false, '#4b88ff', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+
+  sheet.setColumnWidth(1, 210);
+  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 130 : 105);
+}
+

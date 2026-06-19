@@ -1,10 +1,11 @@
-v0.40.46 changed files:
-- app/api/routes/events.py
-- app/api/routes/payment_requests.py
-- app/services/event_calculator.py
+Changed files in v0.40.47:
+
+- app/api/routes/google_sheets_export.py
+- app/core/config.py
+- app/main.py
 - app/services/google_sheets_archive_export.py
-- app/telegram_bot/main.py
+- app/services/google_sheets_daily_export.py
 - app/web/app.js
-- app/web/styles.css
 - tools/google_sheets_export_webapp.gs
-- CHANGELOG_v0.40.46.txt
+- .env.example
+- CHANGELOG_v0.40.47.txt

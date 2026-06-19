@@ -23,7 +23,8 @@ from app.models.user import User
 from app.services.event_calculator import calculate_event_summary_values, money, q0
 
 logger = logging.getLogger("contrast.performance")
-ASTANA_TZ = ZoneInfo("Asia/Almaty")
+ARCHIVE_TZ = ZoneInfo("Asia/Qyzylorda")
+ASTANA_TZ = ARCHIVE_TZ
 
 MONTH_NAMES_RU = {
     1: "Январь",
@@ -87,6 +88,16 @@ def parse_month(month: str) -> date:
         raise HTTPException(status_code=400, detail="month must be YYYY-MM") from exc
 
 
+def parse_year(year: int | str) -> int:
+    try:
+        parsed = int(year)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="year must be YYYY") from exc
+    if parsed < 2000 or parsed > 2100:
+        raise HTTPException(status_code=400, detail="year must be between 2000 and 2100")
+    return parsed
+
+
 def decimal_to_int(value) -> int:
     return int(q0(money(value)))
 
@@ -114,10 +125,20 @@ def month_title(month_date: date) -> str:
     return f"{MONTH_NAMES_RU.get(month_date.month, month_date.strftime('%B'))} {month_date.year}"
 
 
+def month_short_title(month_date: date) -> str:
+    return MONTH_NAMES_RU.get(month_date.month, month_date.strftime("%B"))
+
+
 def sheet_safe_text(value) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def requested_by_payload(current_admin: User | None) -> dict:
+    if current_admin is None:
+        return {"id": None, "name": "Автоэкспорт 00:00"}
+    return {"id": current_admin.id, "name": current_admin.name}
 
 
 def build_monthly_tax_totals(events_payload: list[dict]) -> dict:
@@ -133,9 +154,37 @@ def build_monthly_tax_totals(events_payload: list[dict]) -> dict:
     }
 
 
-def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
+def build_request_row(request: PaymentRequest) -> dict:
+    event = request.event
+    item = request.event_item
+    manager_name = request.created_by_user.name if request.created_by_user else (event.manager.name if event and event.manager else "")
+    return {
+        "_sort_key": (request.created_at or datetime.min).isoformat(),
+        "event_date": iso_date(event.event_date if event else None),
+        "created_at": astana_datetime(request.created_at),
+        "manager": manager_name,
+        "client": sheet_safe_text(event.client_name if event else ""),
+        "event": sheet_safe_text(event.title if event else ""),
+        "position": sheet_safe_text(request.item_name_snapshot or (item.external_name if item else "")),
+        "amount": decimal_to_int(request.amount_requested),
+        "payment_method": PAYMENT_METHOD_LABELS.get(request.payment_method, request.payment_method),
+        "payment_status": REQUEST_STATUS_LABELS.get(request.status, request.status),
+        "money_status": MONEY_STATUS_LABELS.get(request.money_status, request.money_status),
+        "comment": sheet_safe_text(request.comment),
+    }
+
+
+def strip_sort_keys(rows: list[dict]) -> list[dict]:
+    stripped = []
+    for row in rows:
+        copy = dict(row)
+        copy.pop("_sort_key", None)
+        stripped.append(copy)
+    return stripped
+
+
+def build_month_export_sections(db: Session, month_date: date) -> dict:
     started = perf_counter()
-    month_date = parse_month(month)
     year = month_date.year
     month_num = month_date.month
 
@@ -165,6 +214,8 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
 
     all_requests: list[PaymentRequest] = []
     events_payload: list[dict] = []
+    manager_income: dict[str, int] = {}
+    manager_salary: dict[str, int] = {}
 
     for event in events:
         items = sorted(
@@ -187,6 +238,10 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
             "manager_percent": decimal_to_float(summary_raw.get("manager_percent")),
             "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
         }
+
+        manager_name = event.manager.name if event.manager else "Без менеджера"
+        manager_income[manager_name] = manager_income.get(manager_name, 0) + summary["final_company_income"]
+        manager_salary[manager_name] = manager_salary.get(manager_name, 0) + summary["manager_salary"]
 
         event_requests = list(event.payment_requests or [])
         all_requests.extend(event_requests)
@@ -220,53 +275,163 @@ def build_export_payload(db: Session, month: str, current_admin: User) -> dict:
             ],
         })
 
-    requests_rows = []
-    for request in sorted(all_requests, key=lambda item: (item.created_at or datetime.min), reverse=True):
-        event = request.event
-        item = request.event_item
-        manager_name = request.created_by_user.name if request.created_by_user else (event.manager.name if event and event.manager else "")
-        requests_rows.append({
-            "event_date": iso_date(event.event_date if event else None),
-            "created_at": astana_datetime(request.created_at),
-            "manager": manager_name,
-            "client": sheet_safe_text(event.client_name if event else ""),
-            "event": sheet_safe_text(event.title if event else ""),
-            "position": sheet_safe_text(request.item_name_snapshot or (item.external_name if item else "")),
-            "amount": decimal_to_int(request.amount_requested),
-            "payment_method": PAYMENT_METHOD_LABELS.get(request.payment_method, request.payment_method),
-            "payment_status": REQUEST_STATUS_LABELS.get(request.status, request.status),
-            "money_status": MONEY_STATUS_LABELS.get(request.money_status, request.money_status),
-            "comment": sheet_safe_text(request.comment),
-        })
+    requests_rows = [build_request_row(request) for request in all_requests]
+    requests_rows.sort(key=lambda row: row.get("_sort_key") or "", reverse=True)
 
     monthly_totals = build_monthly_tax_totals(events_payload)
     monthly_totals["plan"] = decimal_to_int(plan.company_plan_amount) if plan else 0
     monthly_totals["events_count"] = len(events_payload)
     monthly_totals["expenses"] = sum(decimal_to_int(expense.amount) for expense in expenses)
+    monthly_totals["income_after_expenses"] = monthly_totals["company_income"] - monthly_totals["expenses"]
+    monthly_totals["remaining"] = monthly_totals["plan"] - monthly_totals["company_income"]
+
+    logger.info(
+        "PERF google-archive-month-sections month=%s events=%s requests=%s total=%.3fs",
+        f"{year}-{month_num:02d}", len(events_payload), len(requests_rows), perf_counter() - started,
+    )
+
+    return {
+        "month": f"{year}-{month_num:02d}",
+        "month_date": month_date,
+        "monthly": {
+            "sheet_name": month_title(month_date),
+            "summary": monthly_totals,
+            "events": events_payload,
+        },
+        "payment_request_rows": requests_rows,
+        "annual_month": {
+            "month": f"{year}-{month_num:02d}",
+            "title": month_short_title(month_date),
+            **monthly_totals,
+        },
+        "manager_income": manager_income,
+        "manager_salary": manager_salary,
+    }
+
+
+def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
+    months = [section["annual_month"] for section in month_sections]
+    month_keys = [row["month"] for row in months]
+
+    totals = {
+        "plan": sum(row.get("plan", 0) for row in months),
+        "events_count": sum(row.get("events_count", 0) for row in months),
+        "turnover": sum(row.get("turnover", 0) for row in months),
+        "vat_to_pay": sum(row.get("vat_to_pay", 0) for row in months),
+        "tax_to_pay": sum(row.get("tax_to_pay", 0) for row in months),
+        "company_income": sum(row.get("company_income", 0) for row in months),
+        "expenses": sum(row.get("expenses", 0) for row in months),
+        "income_after_expenses": sum(row.get("income_after_expenses", 0) for row in months),
+    }
+    totals["remaining"] = totals["plan"] - totals["company_income"]
+
+    manager_names: set[str] = set()
+    for section in month_sections:
+        manager_names.update(section.get("manager_income", {}).keys())
+        manager_names.update(section.get("manager_salary", {}).keys())
+
+    manager_rows = []
+    for manager_name in sorted(manager_names):
+        income_by_month = {}
+        salary_by_month = {}
+        for key, section in zip(month_keys, month_sections):
+            income_by_month[key] = int(section.get("manager_income", {}).get(manager_name, 0))
+            salary_by_month[key] = int(section.get("manager_salary", {}).get(manager_name, 0))
+        manager_rows.append({
+            "manager": manager_name,
+            "income_by_month": income_by_month,
+            "salary_by_month": salary_by_month,
+            "income_total": sum(income_by_month.values()),
+            "salary_total": sum(salary_by_month.values()),
+        })
+
+    return {
+        "sheet_name": "Годовая статистика",
+        "year": year,
+        "months": months,
+        "totals": totals,
+        "manager_rows": manager_rows,
+    }
+
+
+def build_export_payload(db: Session, month: str, current_admin: User | None) -> dict:
+    started = perf_counter()
+    month_date = parse_month(month)
+    sections = build_month_export_sections(db, month_date)
 
     payload = {
-        "schema_version": "contrast_google_archive_v0.5.5",
+        "schema_version": "contrast_google_archive_v0.6.0",
+        "export_type": "month",
         "generated_at": datetime.now(ASTANA_TZ).isoformat(),
-        "requested_by": {"id": current_admin.id, "name": current_admin.name},
-        "month": f"{year}-{month_num:02d}",
+        "requested_by": requested_by_payload(current_admin),
+        "month": sections["month"],
         "month_title": month_title(month_date),
         "sheets": {
-            "monthly": {
-                "sheet_name": month_title(month_date),
-                "summary": monthly_totals,
-                "events": events_payload,
-            },
+            "monthly": sections["monthly"],
             "payment_requests": {
                 "sheet_name": "Заявки на оплату",
-                "rows": requests_rows,
+                "rows": strip_sort_keys(sections["payment_request_rows"]),
             },
         },
     }
     logger.info(
         "PERF google-archive-payload month=%s events=%s requests=%s total=%.3fs",
-        payload["month"], len(events_payload), len(requests_rows), perf_counter() - started,
+        payload["month"],
+        len(sections["monthly"].get("events") or []),
+        len(sections["payment_request_rows"]),
+        perf_counter() - started,
     )
     return payload
+
+
+def build_year_export_payload(db: Session, year: int | str, current_admin: User | None = None) -> dict:
+    started = perf_counter()
+    parsed_year = parse_year(year)
+    month_sections = [build_month_export_sections(db, date(parsed_year, month_num, 1)) for month_num in range(1, 13)]
+
+    request_rows: list[dict] = []
+    for section in month_sections:
+        request_rows.extend(section["payment_request_rows"])
+    request_rows.sort(key=lambda row: row.get("_sort_key") or "", reverse=True)
+
+    annual_stats = build_annual_stats_sheet(parsed_year, month_sections)
+    monthly_sheets = [section["monthly"] for section in month_sections]
+    events_count = sum(len(sheet.get("events") or []) for sheet in monthly_sheets)
+
+    payload = {
+        "schema_version": "contrast_google_archive_v0.6.0",
+        "export_type": "year",
+        "generated_at": datetime.now(ASTANA_TZ).isoformat(),
+        "requested_by": requested_by_payload(current_admin),
+        "year": parsed_year,
+        "sheets": {
+            "months": monthly_sheets,
+            "payment_requests": {
+                "sheet_name": "Заявки на оплату",
+                "rows": strip_sort_keys(request_rows),
+            },
+            "annual_stats": annual_stats,
+        },
+    }
+    logger.info(
+        "PERF google-archive-year-payload year=%s months=%s events=%s requests=%s total=%.3fs",
+        parsed_year, len(monthly_sheets), events_count, len(request_rows), perf_counter() - started,
+    )
+    return payload
+
+
+def payload_updated_sheet_names(payload: dict) -> list[str]:
+    sheets = payload.get("sheets") or {}
+    names: list[str] = []
+    if sheets.get("monthly"):
+        names.append((sheets["monthly"] or {}).get("sheet_name") or "Месяц")
+    if sheets.get("months"):
+        names.extend([(sheet or {}).get("sheet_name") or "Месяц" for sheet in sheets.get("months") or []])
+    if sheets.get("payment_requests"):
+        names.append((sheets["payment_requests"] or {}).get("sheet_name") or "Заявки на оплату")
+    if sheets.get("annual_stats"):
+        names.append((sheets["annual_stats"] or {}).get("sheet_name") or "Годовая статистика")
+    return names
 
 
 def post_to_apps_script(payload: dict) -> dict:
@@ -296,8 +461,9 @@ def post_to_apps_script(payload: dict) -> dict:
     )
 
     started = perf_counter()
+    export_key = payload.get("month") or payload.get("year") or payload.get("export_type") or "archive"
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=300) as response:
             raw = response.read().decode("utf-8")
             result = json.loads(raw) if raw else {"ok": True}
     except urllib.error.HTTPError as exc:
@@ -307,12 +473,12 @@ def post_to_apps_script(payload: dict) -> dict:
         raise HTTPException(status_code=502, detail=f"Google export webhook failed: {exc}") from exc
 
     logger.info(
-        "PERF google-archive-webhook month=%s total=%.3fs ok=%s",
-        payload.get("month"), perf_counter() - started, result.get("ok"),
+        "PERF google-archive-webhook export=%s total=%.3fs ok=%s",
+        export_key, perf_counter() - started, result.get("ok"),
     )
     return {
         "ok": bool(result.get("ok", True)),
         "message": result.get("message") or "Выгрузка в Google Sheets завершена",
         "google_sheet_url": result.get("spreadsheet_url") or archive_url,
-        "updated_sheets": result.get("updated_sheets") or [],
+        "updated_sheets": result.get("updated_sheets") or payload_updated_sheet_names(payload),
     }

@@ -1,0 +1,20 @@
+Contrast Finance 2.0 — v0.40.47
+
+Google Sheets archive: yearly export and daily 00:00 auto-export.
+
+Added:
+- Backend endpoint POST /google-sheets/export-year?year=YYYY&dry_run=true|false.
+- Yearly payload that includes all 12 monthly archive sheets, one common payment requests sheet, and the annual statistics sheet.
+- Apps Script receiver v0.6.0 with support for payload.sheets.months and payload.sheets.annual_stats.
+- New sheet "Годовая статистика": yearly summary by months, manager income by months, and manager salary by months.
+- Admin UI buttons in "Google архив": check/export selected month and check/export full year.
+- Daily background export scheduler: runs once per day at 00:00 Asia/Qyzylorda and exports the current year.
+
+Kept:
+- Existing v0.5.9 monthly table layout and logic: agency commission row, VAT credits as income, gross/net tax logic, manager percent label, and grouped money formatting.
+- Existing manual month export remains compatible.
+
+Environment:
+- GOOGLE_SHEETS_DAILY_EXPORT_ENABLED=true by default.
+- GOOGLE_SHEETS_DAILY_EXPORT_HOUR=0 and GOOGLE_SHEETS_DAILY_EXPORT_MINUTE=0 by default.
+- If GOOGLE_SHEETS_EXPORT_WEBHOOK_URL or DATABASE_URL is missing, the scheduler is skipped safely.

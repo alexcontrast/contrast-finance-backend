@@ -2797,6 +2797,11 @@ function selectedMonthValue() {
   return `${year}-${month}`;
 }
 
+function selectedYearValue() {
+  const yearSelect = $("yearSelect");
+  return String(yearSelect?.value || state.month.slice(0, 4) || new Date().getFullYear());
+}
+
 function attachMonthYearSelectors() {
   const monthSelect = $("monthSelect");
   const yearSelect = $("yearSelect");
@@ -6603,6 +6608,7 @@ function clearDashboardForPeriodLoading() {
 
 function renderGoogleSheetsExportPanel(data) {
   const month = selectedMonthValue();
+  const year = selectedYearValue();
   const eventsCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
   const requestsCount = (data.payment_requests || []).length;
   return `
@@ -6610,16 +6616,18 @@ function renderGoogleSheetsExportPanel(data) {
       <div class="google-export-card">
         <div>
           <div class="overview-label">Google Sheets архив</div>
-          <h3>Выгрузка за ${escapeHtml(month)}</h3>
-          <p class="muted">Этап v0.5.2: месячный лист ближе к старому формату, заявки компактные, удалённые мероприятия не выгружаются.</p>
+          <h3>Выгрузка ${escapeHtml(year)}</h3>
+          <p class="muted">Месячные листы уже настроены. Следующий режим: все 12 месяцев, общий лист оплат и «Годовая статистика». Автоэкспорт запускается каждый день в 00:00.</p>
         </div>
         <div class="google-export-stats">
-          <span>${eventsCount} мероприятий</span>
-          <span>${requestsCount} заявок</span>
+          <span>${eventsCount} мероприятий в ${escapeHtml(month)}</span>
+          <span>${requestsCount} заявок в ${escapeHtml(month)}</span>
         </div>
         <div class="google-export-actions">
-          <button id="googleExportDryRunBtn" type="button" class="secondary">Проверить данные</button>
-          <button id="googleExportMonthBtn" type="button">Выгрузить в Google Sheets</button>
+          <button id="googleExportDryRunBtn" type="button" class="secondary">Проверить месяц</button>
+          <button id="googleExportMonthBtn" type="button" class="secondary">Выгрузить месяц</button>
+          <button id="googleExportYearDryRunBtn" type="button" class="secondary">Проверить год</button>
+          <button id="googleExportYearBtn" type="button">Выгрузить весь год</button>
         </div>
         <div id="googleExportStatus" class="google-export-status muted"></div>
       </div>
@@ -6630,15 +6638,33 @@ function renderGoogleSheetsExportPanel(data) {
 async function runGoogleSheetsExport(dryRun, button) {
   const month = selectedMonthValue();
   const statusEl = $("googleExportStatus");
-  if (statusEl) statusEl.textContent = dryRun ? "Собираю данные для проверки…" : "Выгружаю в Google Sheets…";
+  if (statusEl) statusEl.textContent = dryRun ? "Собираю месяц для проверки…" : "Выгружаю месяц в Google Sheets…";
   const startedAt = perfNow();
   const result = await api(`/google-sheets/export-month?month=${encodeURIComponent(month)}&dry_run=${dryRun ? "true" : "false"}`, { method: "POST" });
-  console.info(`PERF web google-sheets-export dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
+  console.info(`PERF web google-sheets-export-month dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
 
   const sheets = (result.updated_sheets || []).join(", ");
   const message = result.dry_run
-    ? `Проверка готова: ${result.events_count || 0} мероприятий, ${result.payment_requests_count || 0} заявок. Листы: ${sheets}.`
-    : `${result.message || "Выгрузка завершена"}${sheets ? ` Листы: ${sheets}.` : ""}`;
+    ? `Проверка месяца готова: ${result.events_count || 0} мероприятий, ${result.payment_requests_count || 0} заявок. Листы: ${sheets}.`
+    : `${result.message || "Выгрузка месяца завершена"}${sheets ? ` Листы: ${sheets}.` : ""}`;
+  if (statusEl) {
+    statusEl.innerHTML = `${escapeHtml(message)}${result.google_sheet_url ? ` <a href="${escapeHtml(result.google_sheet_url)}" target="_blank" rel="noopener">Открыть таблицу</a>` : ""}`;
+  }
+  return result;
+}
+
+async function runGoogleSheetsYearExport(dryRun, button) {
+  const year = selectedYearValue();
+  const statusEl = $("googleExportStatus");
+  if (statusEl) statusEl.textContent = dryRun ? "Собираю год для проверки…" : "Выгружаю все месяцы, оплаты и годовую статистику…";
+  const startedAt = perfNow();
+  const result = await api(`/google-sheets/export-year?year=${encodeURIComponent(year)}&dry_run=${dryRun ? "true" : "false"}`, { method: "POST" });
+  console.info(`PERF web google-sheets-export-year dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
+
+  const sheets = (result.updated_sheets || []).join(", ");
+  const message = result.dry_run
+    ? `Проверка года готова: ${result.months_count || 0} месяцев, ${result.events_count || 0} мероприятий, ${result.payment_requests_count || 0} заявок. Листы: ${sheets}.`
+    : `${result.message || "Годовая выгрузка завершена"}${sheets ? ` Листы: ${sheets}.` : ""}`;
   if (statusEl) {
     statusEl.innerHTML = `${escapeHtml(message)}${result.google_sheet_url ? ` <a href="${escapeHtml(result.google_sheet_url)}" target="_blank" rel="noopener">Открыть таблицу</a>` : ""}`;
   }
@@ -6660,8 +6686,28 @@ function attachGoogleSheetsExportPanel() {
   if (exportBtn) {
     exportBtn.addEventListener("click", async () => {
       await runPatchUpdateAction(exportBtn, () => runGoogleSheetsExport(false, exportBtn), null, {
-        loadingText: "Выгружаю…",
-        errorPrefix: "Не удалось выгрузить в Google Sheets",
+        loadingText: "Выгружаю месяц…",
+        errorPrefix: "Не удалось выгрузить месяц в Google Sheets",
+      });
+    });
+  }
+
+  const yearDryRunBtn = $("googleExportYearDryRunBtn");
+  if (yearDryRunBtn) {
+    yearDryRunBtn.addEventListener("click", async () => {
+      await runPatchUpdateAction(yearDryRunBtn, () => runGoogleSheetsYearExport(true, yearDryRunBtn), null, {
+        loadingText: "Проверяю год…",
+        errorPrefix: "Не удалось проверить годовую выгрузку",
+      });
+    });
+  }
+
+  const yearExportBtn = $("googleExportYearBtn");
+  if (yearExportBtn) {
+    yearExportBtn.addEventListener("click", async () => {
+      await runPatchUpdateAction(yearExportBtn, () => runGoogleSheetsYearExport(false, yearExportBtn), null, {
+        loadingText: "Выгружаю год…",
+        errorPrefix: "Не удалось выгрузить год в Google Sheets",
       });
     });
   }

@@ -25,6 +25,10 @@ from app.api.routes.health import router as health_router
 from app.api.routes.legacy_migration import router as legacy_migration_router
 from app.api.routes.google_sheets_export import router as google_sheets_export_router
 from app.core.config import get_settings
+from app.services.google_sheets_daily_export import (
+    start_daily_google_sheets_export_scheduler,
+    stop_daily_google_sheets_export_scheduler,
+)
 
 
 settings = get_settings()
@@ -33,6 +37,16 @@ app = FastAPI(
     title="Contrast Finance API",
     version=settings.VERSION,
 )
+
+
+@app.on_event("startup")
+async def start_background_jobs():
+    start_daily_google_sheets_export_scheduler()
+
+
+@app.on_event("shutdown")
+async def stop_background_jobs():
+    await stop_daily_google_sheets_export_scheduler()
 
 app.include_router(health_router)
 app.include_router(legacy_migration_router)
