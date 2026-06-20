@@ -1,6 +1,7 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.6.3: wider annual statistics, supports phased yearly exports, keeps plan highlights and hidden empty months.
+ * v0.6.4: splits payment requests into active/archive sheets and uses conditional formatting
+ *         for request statuses instead of slow per-row coloring. Keeps v0.6.3 yearly export/statistics.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -31,8 +32,12 @@ function doPost(e) {
       monthlyVisibility.push({ sheet_name: singleMonthlyName, has_events: (payload.sheets.monthly.events || []).length > 0 });
     }
     if (payload.sheets && payload.sheets.payment_requests) {
-      renderPaymentRequestsSheet_(ss, payload.sheets.payment_requests);
-      updated.push(payload.sheets.payment_requests.sheet_name);
+      renderPaymentRequestsSheet_(ss, payload.sheets.payment_requests, 'Заявки на оплату');
+      updated.push(payload.sheets.payment_requests.sheet_name || 'Заявки на оплату');
+    }
+    if (payload.sheets && payload.sheets.payment_requests_archive) {
+      renderPaymentRequestsSheet_(ss, payload.sheets.payment_requests_archive, 'Архив заявок');
+      updated.push(payload.sheets.payment_requests_archive.sheet_name || 'Архив заявок');
     }
     if (payload.sheets && payload.sheets.annual_stats) {
       renderAnnualStatsSheet_(ss, payload.sheets.annual_stats);
@@ -116,7 +121,7 @@ function resetSheet_(sheet) {
 
 function cleanupTechnicalSheets_(ss) {
   var keepMonthly = /^(Январь|Февраль|Март|Апрель|Май|Июнь|Июль|Август|Сентябрь|Октябрь|Ноябрь|Декабрь)\s+\d{4}$/;
-  var keep = { 'Заявки на оплату': true, 'Годовая статистика': true };
+  var keep = { 'Заявки на оплату': true, 'Архив заявок': true, 'Годовая статистика': true };
   var technical = {
     'Лист1': true,
     '_MIGRATION_EXPORT_JSON': true,
@@ -426,11 +431,13 @@ function renderMonthlySheet_(ss, monthly, title) {
   sheet.autoResizeRows(1, Math.min(row, 500));
 }
 
-function renderPaymentRequestsSheet_(ss, requestsSheet) {
-  var sheet = getOrCreateSheet_(ss, requestsSheet.sheet_name || 'Заявки на оплату');
+function renderPaymentRequestsSheet_(ss, requestsSheet, defaultTitle) {
+  var title = requestsSheet.sheet_name || defaultTitle || 'Заявки на оплату';
+  var sheet = getOrCreateSheet_(ss, title);
+  var started = new Date().getTime();
   sheet.setFrozenRows(2);
   sheet.setHiddenGridlines(true);
-  sheet.getRange('A1:K1').merge().setValue('Заявки на оплату');
+  sheet.getRange('A1:K1').merge().setValue(title);
   sheet.getRange('A1:K1').setFontSize(18).setFontWeight('bold').setBackground('#e7ffd9').setHorizontalAlignment('left');
 
   var headers = [['Дата', 'Создана', 'Менеджер', 'Заказчик', 'Мероприятие', 'Позиция', 'Сумма', 'Способ', 'Статус оплаты', 'Статус денег', 'Комментарий']];
@@ -451,26 +458,24 @@ function renderPaymentRequestsSheet_(ss, requestsSheet) {
       row.comment || ''
     ];
   });
+
+  var dataStarted = new Date().getTime();
   if (rows.length) {
     sheet.getRange(3, 1, rows.length, headers[0].length).setValues(rows);
     formatMoneyRange_(sheet.getRange(3, 7, rows.length, 1));
   }
+  var dataMs = new Date().getTime() - dataStarted;
 
   var lastRow = Math.max(3, rows.length + 2);
+  var styleStarted = new Date().getTime();
   var all = sheet.getRange(1, 1, lastRow, headers[0].length);
   all.setFontFamily('Arial').setFontSize(10).setVerticalAlignment('middle').setWrap(false);
+  sheet.getRange(3, 1, Math.max(1, rows.length), headers[0].length).setBackground('#ffffff');
   sheet.getRange(2, 1, lastRow - 1, headers[0].length).setBorder(true, true, true, true, true, true, '#e4eadf', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(2, 1, 1, headers[0].length).setBorder(true, true, true, true, true, true, '#9ebd8d', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(1, 1, 1, headers[0].length).setBorder(true, true, true, true, false, false, '#4b88ff', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  for (var r = 3; r <= lastRow; r++) {
-    var bg = r % 2 === 0 ? '#ffffff' : '#f8fbf5';
-    sheet.getRange(r, 1, 1, headers[0].length).setBackground(bg);
-    var payStatus = sheet.getRange(r, 9).getValue();
-    var moneyStatus = sheet.getRange(r, 10).getValue();
-    sheet.getRange(r, 9).setBackground(statusFill_(payStatus));
-    sheet.getRange(r, 10).setBackground(statusFill_(moneyStatus));
-  }
+  applyPaymentRequestsConditionalFormatting_(sheet, lastRow);
 
   if (sheet.getFilter()) sheet.getFilter().remove();
   sheet.getRange(2, 1, Math.max(1, lastRow - 1), headers[0].length).createFilter();
@@ -485,7 +490,37 @@ function renderPaymentRequestsSheet_(ss, requestsSheet) {
   sheet.setColumnWidth(9, 115);
   sheet.setColumnWidth(10, 125);
   sheet.setColumnWidth(11, 220);
-  sheet.setRowHeights(3, Math.max(1, rows.length), 22);
+  if (rows.length) sheet.setRowHeights(3, rows.length, 22);
+
+  try {
+    console.log('PERF payment_requests_sheet title=' + title + ' rows=' + rows.length + ' data_ms=' + dataMs + ' style_ms=' + (new Date().getTime() - styleStarted) + ' total_ms=' + (new Date().getTime() - started));
+  } catch (err) {}
+}
+
+function applyPaymentRequestsConditionalFormatting_(sheet, lastRow) {
+  var rangeRows = Math.max(1, lastRow - 2);
+  var paymentRange = sheet.getRange(3, 9, rangeRows, 1);
+  var moneyRange = sheet.getRange(3, 10, rangeRows, 1);
+  var rules = [];
+  function addRule(range, text, color) {
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo(text)
+        .setBackground(color)
+        .setRanges([range])
+        .build()
+    );
+  }
+  addRule(paymentRange, 'Новая', '#fff2cc');
+  addRule(paymentRange, 'На оплату', '#fff2cc');
+  addRule(paymentRange, 'Проверить КГД', '#fff2cc');
+  addRule(paymentRange, 'Оплачено', '#d9ead3');
+  addRule(paymentRange, 'Отменено', '#f4cccc');
+  addRule(moneyRange, 'Ждём денег', '#fff2cc');
+  addRule(moneyRange, 'Ждем денег', '#fff2cc');
+  addRule(moneyRange, 'Деньги в кассе', '#d9ead3');
+  addRule(moneyRange, 'Отменено', '#f4cccc');
+  sheet.setConditionalFormatRules(rules);
 }
 
 function renderAnnualStatsSheet_(ss, statsSheet) {
@@ -641,14 +676,14 @@ function renderAnnualStatsSheet_(ss, statsSheet) {
   }
 
   var lastRow = Math.max(salaryStartRow + 2 + salaryRows.length, managerStartRow + 2 + managerRows.length, 14);
-  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(9).setVerticalAlignment('middle').setWrap(false);
-  sheet.getRange(1, 1, 1, lastCol).setFontSize(16);
+  sheet.getRange(1, 1, lastRow, lastCol).setFontFamily('Arial').setFontSize(8).setVerticalAlignment('middle').setWrap(false);
+  sheet.getRange(1, 1, 1, lastCol).setFontSize(14);
   sheet.getRange(2, 1, Math.max(1, lastRow - 1), lastCol).setBorder(true, true, true, true, true, true, '#e4eadf', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(2, 1, 1, lastCol).setBorder(true, true, true, true, true, true, '#9ebd8d', SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(1, 1, 1, lastCol).setBorder(true, true, true, true, false, false, '#4b88ff', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  sheet.setColumnWidth(1, 195);
-  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 115 : 80);
+  sheet.setColumnWidth(1, 150);
+  for (var c = 2; c <= lastCol; c++) sheet.setColumnWidth(c, c === lastCol ? 90 : 62);
   sheet.getRange(2, 2, Math.max(1, lastRow - 1), lastCol - 1).setHorizontalAlignment('right');
   sheet.getRange(2, 1, Math.max(1, lastRow - 1), 1).setHorizontalAlignment('left');
 }
