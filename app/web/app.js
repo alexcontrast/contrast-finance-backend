@@ -6617,7 +6617,7 @@ function renderGoogleSheetsExportPanel(data) {
         <div>
           <div class="overview-label">Google Sheets архив</div>
           <h3>Выгрузка ${escapeHtml(year)}</h3>
-          <p class="muted">Месячные листы уже настроены. Следующий режим: все 12 месяцев, общий лист оплат и «Годовая статистика». Автоэкспорт запускается каждый день в 00:00.</p>
+          <p class="muted">Автоэкспорт запускается каждый день в 00:00.</p>
         </div>
         <div class="google-export-stats">
           <span>${eventsCount} мероприятий в ${escapeHtml(month)}</span>

@@ -1,8 +1,10 @@
-v0.40.52 changed files
+Contrast Finance 2.0 — v0.40.53 changed files only
 
-Replace these files in GitHub/backend:
-- app/services/google_sheets_archive_export.py
-- app/services/google_sheets_daily_export.py
-- app/api/routes/google_sheets_export.py
+Changed files:
+- app/web/app.js
+- tools/google_sheets_export_webapp.gs
+- CHANGELOG_v0.40.53.txt
 
-Apps Script is unchanged from v0.6.4.
+Deploy:
+1. Apply backend/frontend changes to GitHub/Railway.
+2. Copy tools/google_sheets_export_webapp.gs into Apps Script exporter or use the separate txt file.

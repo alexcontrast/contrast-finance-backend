@@ -1,7 +1,8 @@
 /**
  * Contrast Finance 2.0 → Google Sheets archive receiver.
- * v0.6.4: splits payment requests into active/archive sheets and uses conditional formatting
- *         for request statuses instead of slow per-row coloring. Keeps v0.6.3 yearly export/statistics.
+ * v0.6.5: monthly event total rows use Google Sheets formulas and highlight mismatches
+ *         against backend totals; monthly mini-summary turnover/income is formula-based;
+ *         archive payment requests sheet is always hidden.
  * Deploy inside the archive Google spreadsheet as Web App.
  */
 function doPost(e) {
@@ -36,8 +37,10 @@ function doPost(e) {
       updated.push(payload.sheets.payment_requests.sheet_name || 'Заявки на оплату');
     }
     if (payload.sheets && payload.sheets.payment_requests_archive) {
+      var archiveName = payload.sheets.payment_requests_archive.sheet_name || 'Архив заявок';
       renderPaymentRequestsSheet_(ss, payload.sheets.payment_requests_archive, 'Архив заявок');
-      updated.push(payload.sheets.payment_requests_archive.sheet_name || 'Архив заявок');
+      hideSheetByName_(ss, archiveName);
+      updated.push(archiveName);
     }
     if (payload.sheets && payload.sheets.annual_stats) {
       renderAnnualStatsSheet_(ss, payload.sheets.annual_stats);
@@ -168,6 +171,41 @@ function applyMonthlySheetVisibility_(ss, monthlyVisibility) {
   });
 }
 
+
+function hideSheetByName_(ss, sheetName) {
+  var sheet = ss.getSheetByName(sheetName || '');
+  if (!sheet) return;
+  try {
+    if (countVisibleSheets_(ss) > 1) {
+      sheet.hideSheet();
+    }
+  } catch (err) {
+    // Archive visibility is cosmetic only; export data must not fail because a sheet cannot be hidden.
+  }
+}
+
+function formulaNumber_(value) {
+  var n = money_(value);
+  if (!isFinite(n)) n = 0;
+  // Formulas inserted by Apps Script use invariant decimal dot reliably.
+  return String(Math.round(n * 100) / 100).replace(',', '.');
+}
+
+function sumFormulaForRows_(columnLetter, rows) {
+  if (!rows || !rows.length) return '=0';
+  return '=SUM(' + rows.map(function(row) { return columnLetter + row; }).join(',') + ')';
+}
+
+function addTotalMismatchRule_(rules, range, cellA1, expectedValue) {
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=ABS(' + cellA1 + '-' + formulaNumber_(expectedValue) + ')>1')
+      .setBackground('#f4cccc')
+      .setRanges([range])
+      .build()
+  );
+}
+
 function applyCompletedPlanFill_(sheet, row, actualValues, actualTotal, planValues, planTotal, lastCol) {
   var green = '#d9ead3';
   for (var i = 0; i < 12; i++) {
@@ -290,6 +328,8 @@ function renderMonthlySheet_(ss, monthly, title) {
 
   var row = 11;
   var events = monthly.events || [];
+  var eventTotalRows = [];
+  var eventTotalValidationRules = [];
   events.forEach(function(ev) {
     var s = ev.summary || {};
     var items = ev.items || [];
@@ -410,14 +450,38 @@ function renderMonthlySheet_(ss, monthly, title) {
       row += values.length;
     }
 
-    // Total row: Fact/Rashod column is intentionally blank.
-    var totalRow = [['Итого:', money_(s.external_total), '', '', '', money_(s.final_company_income), ev.status || '']];
+    // Total row: formulas sum the whole event block above, including positions,
+    // agency commission, VAT, taxes and manager salary. This turns the sheet into
+    // a control layer: red fill means the sheet formula does not match backend totals.
+    var totalRowNumber = row;
+    var totalRow = [['Итого:', '', '', '', '', '', ev.status || '']];
     sheet.getRange(row, 1, 1, 7).setValues(totalRow).setFontWeight('bold').setBackground('#fce4d6');
+    if (row > startItemsRow) {
+      sheet.getRange(row, 2).setFormula('=SUM(B' + startItemsRow + ':B' + (row - 1) + ')');
+      sheet.getRange(row, 6).setFormula('=SUM(F' + startItemsRow + ':F' + (row - 1) + ')');
+    } else {
+      sheet.getRange(row, 2).setValue(0);
+      sheet.getRange(row, 6).setValue(0);
+    }
+    addTotalMismatchRule_(eventTotalValidationRules, sheet.getRange(row, 2), 'B' + row, s.external_total);
+    addTotalMismatchRule_(eventTotalValidationRules, sheet.getRange(row, 6), 'F' + row, s.final_company_income);
+    eventTotalRows.push(totalRowNumber);
     sheet.getRange(row, 7).setBackground(statusFill_(ev.status)).setHorizontalAlignment('center');
     formatMoneyRange_(sheet.getRange(row, 2, 1, 5));
     setBorder_(sheet.getRange(row, 1, 1, 7));
     row += 2;
   });
+
+  // Monthly mini-summary uses formulas from the rendered event totals, not backend totals.
+  // This makes the archive sheet a second independent check of turnover and company income.
+  sheet.getRange('B3').setFormula(sumFormulaForRows_('B', eventTotalRows));
+  sheet.getRange('B6').setFormula(sumFormulaForRows_('F', eventTotalRows));
+  sheet.getRange('B8').setFormula('=B7-B6');
+  formatMoneyRange_(sheet.getRange('B2:B8'));
+
+  if (eventTotalValidationRules.length) {
+    sheet.setConditionalFormatRules(eventTotalValidationRules);
+  }
 
   sheet.setColumnWidth(1, 260);
   sheet.setColumnWidth(2, 140);
