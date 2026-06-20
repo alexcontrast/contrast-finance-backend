@@ -1,8 +1,8 @@
-v0.40.50 changed files:
+v0.40.52 changed files
+
+Replace these files in GitHub/backend:
 - app/services/google_sheets_archive_export.py
 - app/services/google_sheets_daily_export.py
 - app/api/routes/google_sheets_export.py
-- tools/google_sheets_export_webapp.gs
-- CHANGELOG_v0.40.50.txt
 
-Apps Script changed: copy tools/google_sheets_export_webapp.gs to Apps Script exporter, or use the separate txt file attached with this version.
+Apps Script is unchanged from v0.6.4.

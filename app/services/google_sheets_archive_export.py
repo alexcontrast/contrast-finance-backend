@@ -181,6 +181,39 @@ def add_event_income_to_departments(
         department_income[department_name] = department_income.get(department_name, Decimal("0.00")) + amount
 
 
+def event_manager_allocations(event: Event, user_by_id: dict[int, User]) -> list[tuple[str, Decimal]]:
+    shares = list(event.shares or [])
+    if not shares:
+        manager = user_by_id.get(event.manager_id) if event.manager_id else None
+        manager_name = manager.name if manager else (event.manager.name if event.manager else "Без менеджера")
+        return [(manager_name, Decimal("100.00"))]
+
+    allocations: list[tuple[str, Decimal]] = []
+    for share in shares:
+        manager = user_by_id.get(share.user_id)
+        if manager is None:
+            continue
+        allocations.append((manager.name, money(share.share_percent)))
+    return allocations
+
+
+def add_event_values_to_managers(
+    manager_income: dict[str, Decimal],
+    manager_salary: dict[str, Decimal],
+    event: Event,
+    event_income: Decimal,
+    salary: Decimal,
+    user_by_id: dict[int, User],
+) -> None:
+    allocations = event_manager_allocations(event, user_by_id)
+    if not allocations:
+        allocations = [(event.manager.name if event.manager else "Без менеджера", Decimal("100.00"))]
+
+    for manager_name, share_percent in allocations:
+        manager_income[manager_name] = manager_income.get(manager_name, Decimal("0.00")) + allocated_decimal(event_income, share_percent)
+        manager_salary[manager_name] = manager_salary.get(manager_name, Decimal("0.00")) + allocated_decimal(salary, share_percent)
+
+
 def department_plan_amount(plan: MonthlyPlan | None, department_name: str) -> Decimal:
     if plan is None:
         return Decimal("0.00")
@@ -337,8 +370,8 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
 
     all_requests: list[PaymentRequest] = []
     events_payload: list[dict] = []
-    manager_income: dict[str, int] = {}
-    manager_salary: dict[str, int] = {}
+    manager_income_dec: dict[str, Decimal] = {}
+    manager_salary_dec: dict[str, Decimal] = {}
     department_income_dec: dict[str, Decimal] = {}
 
     users = db.execute(select(User).options(selectinload(User.department))).scalars().all()
@@ -366,10 +399,10 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
             "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
         }
 
-        manager_name = event.manager.name if event.manager else "Без менеджера"
-        manager_income[manager_name] = manager_income.get(manager_name, 0) + summary["final_company_income"]
-        manager_salary[manager_name] = manager_salary.get(manager_name, 0) + summary["manager_salary"]
-        add_event_income_to_departments(department_income_dec, event, money(summary["final_company_income"]), user_by_id)
+        event_final_income = money(summary["final_company_income"])
+        event_manager_salary = money(summary["manager_salary"])
+        add_event_values_to_managers(manager_income_dec, manager_salary_dec, event, event_final_income, event_manager_salary, user_by_id)
+        add_event_income_to_departments(department_income_dec, event, event_final_income, user_by_id)
 
         event_requests = list(event.payment_requests or [])
         all_requests.extend(event_requests)
@@ -418,6 +451,8 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
 
     base_expenses = sum((money(expense.amount) for expense in expenses), Decimal("0.00"))
     department_expenses = split_monthly_expenses(expenses, plan)
+    manager_income = {name: decimal_to_int(amount) for name, amount in sorted(manager_income_dec.items())}
+    manager_salary = {name: decimal_to_int(amount) for name, amount in sorted(manager_salary_dec.items())}
     department_income = {name: decimal_to_int(amount) for name, amount in sorted(department_income_dec.items())}
     department_plans = {
         "Санжар": decimal_to_int(department_plan_amount(plan, "Санжар")),
@@ -623,6 +658,114 @@ def build_year_export_payload(db: Session, year: int | str, current_admin: User 
         parsed_year, len(monthly_sheets), events_count, len(active_request_rows) + len(archive_request_rows), perf_counter() - started,
     )
     return payload
+
+
+def build_year_export_payloads(db: Session, year: int | str, current_admin: User | None = None) -> list[dict]:
+    """Build a safe phased yearly export.
+
+    Each returned payload is posted to Apps Script separately so the large
+    payment registries cannot consume the same Apps Script run as monthly
+    sheets and annual statistics.
+    """
+    started = perf_counter()
+    parsed_year = parse_year(year)
+    generated_at = datetime.now(ASTANA_TZ).isoformat()
+    requester = requested_by_payload(current_admin)
+    month_sections = [build_month_export_sections(db, date(parsed_year, month_num, 1)) for month_num in range(1, 13)]
+
+    active_request_rows: list[dict] = []
+    archive_request_rows: list[dict] = []
+    for section in month_sections:
+        active_request_rows.extend(section["active_payment_request_rows"])
+        archive_request_rows.extend(section["archive_payment_request_rows"])
+    active_request_rows.sort(key=lambda row: row.get("_sort_key") or "", reverse=True)
+    archive_request_rows.sort(key=lambda row: row.get("_sort_key") or "", reverse=True)
+
+    annual_stats = build_annual_stats_sheet(parsed_year, month_sections)
+
+    def base_payload(export_type: str) -> dict:
+        return {
+            "schema_version": "contrast_google_archive_v0.6.4",
+            "export_type": export_type,
+            "generated_at": generated_at,
+            "requested_by": requester,
+            "year": parsed_year,
+            "sheets": {},
+        }
+
+    payloads: list[dict] = []
+
+    active_payload = base_payload("year_payment_requests_active")
+    active_payload["sheets"]["payment_requests"] = {
+        "sheet_name": "Заявки на оплату",
+        "rows": strip_sort_keys(active_request_rows),
+    }
+    payloads.append(active_payload)
+
+    archive_payload = base_payload("year_payment_requests_archive")
+    archive_payload["sheets"]["payment_requests_archive"] = {
+        "sheet_name": "Архив заявок",
+        "rows": strip_sort_keys(archive_request_rows),
+    }
+    payloads.append(archive_payload)
+
+    for section in month_sections:
+        month_payload = base_payload("year_month")
+        month_payload["month"] = section["month"]
+        month_payload["month_title"] = section["monthly"].get("sheet_name") or month_title(section["month_date"])
+        month_payload["sheets"]["monthly"] = section["monthly"]
+        payloads.append(month_payload)
+
+    annual_payload = base_payload("year_annual_stats")
+    annual_payload["sheets"]["annual_stats"] = annual_stats
+    payloads.append(annual_payload)
+
+    logger.info(
+        "PERF google-archive-year-phased-payloads year=%s steps=%s events=%s active_requests=%s archive_requests=%s total=%.3fs",
+        parsed_year,
+        len(payloads),
+        sum(len(section["monthly"].get("events") or []) for section in month_sections),
+        len(active_request_rows),
+        len(archive_request_rows),
+        perf_counter() - started,
+    )
+    return payloads
+
+
+def post_payload_sequence(payloads: list[dict]) -> dict:
+    updated_sheets: list[str] = []
+    google_sheet_url = None
+    results: list[dict] = []
+    started = perf_counter()
+
+    for index, payload in enumerate(payloads, start=1):
+        logger.info(
+            "google-archive-phased-post step=%s/%s type=%s month=%s year=%s",
+            index,
+            len(payloads),
+            payload.get("export_type"),
+            payload.get("month"),
+            payload.get("year"),
+        )
+        result = post_to_apps_script(payload)
+        results.append(result)
+        google_sheet_url = result.get("google_sheet_url") or google_sheet_url
+        for sheet_name in result.get("updated_sheets") or payload_updated_sheet_names(payload):
+            if sheet_name and sheet_name not in updated_sheets:
+                updated_sheets.append(sheet_name)
+
+    logger.info(
+        "PERF google-archive-phased-posts steps=%s total=%.3fs",
+        len(payloads),
+        perf_counter() - started,
+    )
+    return {
+        "ok": all(bool(result.get("ok", True)) for result in results),
+        "message": "Поэтапная выгрузка в Google Sheets завершена",
+        "google_sheet_url": google_sheet_url,
+        "updated_sheets": updated_sheets,
+        "steps_count": len(payloads),
+    }
 
 
 def payload_updated_sheet_names(payload: dict) -> list[str]:

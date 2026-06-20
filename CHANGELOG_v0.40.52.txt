@@ -1,0 +1,7 @@
+v0.40.52 — Google Sheets yearly export startup hotfix
+
+- Fixed backend startup after v0.40.51 changed-only deploy: restored build_year_export_payloads and post_payload_sequence exports used by the phased daily Google Sheets export.
+- Restored phased year export endpoint as the default: active requests, archive requests, each month, annual statistics.
+- Kept v0.40.51 active/archived payment request split.
+- Restored co-author share allocation in annual statistics for manager income and manager salary while keeping active/archive request sheets.
+- Apps Script exporter is unchanged from v0.6.4.
