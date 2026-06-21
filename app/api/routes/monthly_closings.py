@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import extract, select
+from collections import defaultdict
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -60,9 +61,19 @@ def allocated_amount(value: Decimal, share_percent: Decimal) -> Decimal:
     return q(money(value) * money(share_percent) / Decimal("100"))
 
 
-def get_department_income(db: Session, department_id: int, year: int, month: int) -> Decimal:
-    # Closing uses the same business meaning as admin overview:
-    # cancelled events are excluded, drafts are included, shared events are split by event_shares.
+def get_department_income_amounts(db: Session, year: int, month: int) -> dict[int, Decimal]:
+    """
+    Fast department income calculation for closing.
+
+    Before v0.40.55 closing calculated each department separately. That meant:
+    - loading the same month's events twice;
+    - loading items per event twice;
+    - loading shares per event twice.
+
+    With 40+ events this became the last slow part of the admin site. Here we load
+    events, items, shares and users once, calculate every event once, then split
+    income by the same event_shares rules.
+    """
     events = db.execute(
         select(Event).where(
             extract("year", Event.event_date) == year,
@@ -71,67 +82,89 @@ def get_department_income(db: Session, department_id: int, year: int, month: int
         )
     ).scalars().all()
 
+    if not events:
+        return {}
+
+    event_ids = [event.id for event in events]
+
+    items = db.execute(
+        select(EventItem)
+        .where(
+            EventItem.event_id.in_(event_ids),
+            EventItem.is_deleted == False,  # noqa: E712
+        )
+        .order_by(EventItem.event_id, EventItem.sort_order, EventItem.id)
+    ).scalars().all()
+    items_by_event_id: dict[int, list[EventItem]] = defaultdict(list)
+    for item in items:
+        items_by_event_id[item.event_id].append(item)
+
+    shares = db.execute(
+        select(EventShare).where(EventShare.event_id.in_(event_ids))
+    ).scalars().all()
+    shares_by_event_id: dict[int, list[EventShare]] = defaultdict(list)
+    for share in shares:
+        shares_by_event_id[share.event_id].append(share)
+
     users = db.execute(select(User)).scalars().all()
     user_by_id = {user.id: user for user in users}
 
-    income = Decimal("0.00")
+    incomes_by_department_id: dict[int, Decimal] = defaultdict(lambda: Decimal("0.00"))
 
     for event in events:
-        items = db.execute(
-            select(EventItem)
-            .where(EventItem.event_id == event.id, EventItem.is_deleted == False)  # noqa: E712
-            .order_by(EventItem.sort_order, EventItem.id)
-        ).scalars().all()
-
-        values = calculate_event_summary_values(event, items)
+        values = calculate_event_summary_values(event, items_by_event_id.get(event.id, []))
         event_income = money(values["final_company_income"])
+        event_shares = shares_by_event_id.get(event.id, [])
 
-        shares = db.execute(select(EventShare).where(EventShare.event_id == event.id)).scalars().all()
-        if not shares:
+        if not event_shares:
             manager = user_by_id.get(event.manager_id)
-            event_department_id = manager.department_id if manager and manager.department_id else event.department_id
-            if event_department_id == department_id:
-                income += event_income
+            department_id = manager.department_id if manager and manager.department_id else event.department_id
+            if department_id:
+                incomes_by_department_id[department_id] += event_income
             continue
 
-        for share in shares:
+        for share in event_shares:
             manager = user_by_id.get(share.user_id)
-            if manager and manager.department_id == department_id:
-                income += allocated_amount(event_income, share.share_percent)
+            if manager and manager.department_id:
+                incomes_by_department_id[manager.department_id] += allocated_amount(event_income, share.share_percent)
 
-    return q(income)
+    return {department_id: q(income) for department_id, income in incomes_by_department_id.items()}
 
 
-def expense_default_split_amounts(db: Session, expense: MonthlyExpense) -> tuple[Decimal, Decimal]:
-    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == expense.month)).scalar_one_or_none()
+def get_department_income(db: Session, department_id: int, year: int, month: int) -> Decimal:
+    # Kept for backward compatibility with older internal calls.
+    return q(get_department_income_amounts(db, year, month).get(department_id, Decimal("0.00")))
+
+def expense_default_split_amounts(expense: MonthlyExpense, plan: MonthlyPlan | None) -> tuple[Decimal, Decimal]:
     sanzhar_percent = money(plan.sanzhar_share_percent) if plan is not None else Decimal("66.67")
     sanzhar = q(money(expense.amount) * sanzhar_percent / Decimal("100"))
     return sanzhar, q(money(expense.amount) - sanzhar)
 
 
-def get_department_expenses(db: Session, department_name: str, year: int, month: int) -> Decimal:
+def get_department_expense_amounts(db: Session, month_date: date, plan: MonthlyPlan | None) -> dict[str, Decimal]:
     expenses = db.execute(
-        select(MonthlyExpense).where(
-            extract("year", MonthlyExpense.month) == year,
-            extract("month", MonthlyExpense.month) == month,
-        )
+        select(MonthlyExpense).where(MonthlyExpense.month == month_date)
     ).scalars().all()
 
-    total = Decimal("0.00")
+    totals = {"Санжар": Decimal("0.00"), "Рауфаль": Decimal("0.00")}
 
     for expense in expenses:
         if expense.allocation_type == "default_split":
-            sanzhar_amount, raufal_amount = expense_default_split_amounts(db, expense)
+            sanzhar_amount, raufal_amount = expense_default_split_amounts(expense, plan)
         else:
             sanzhar_amount, raufal_amount = money(expense.sanzhar_amount), money(expense.raufal_amount)
 
-        if department_name == "Санжар":
-            total += sanzhar_amount
-        elif department_name == "Рауфаль":
-            total += raufal_amount
+        totals["Санжар"] += sanzhar_amount
+        totals["Рауфаль"] += raufal_amount
 
-    return q(total)
+    return {name: q(amount) for name, amount in totals.items()}
 
+
+def get_department_expenses(db: Session, department_name: str, year: int, month: int) -> Decimal:
+    # Kept for backward compatibility with older internal calls.
+    month_date = date(year, month, 1)
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    return q(get_department_expense_amounts(db, month_date, plan).get(department_name, Decimal("0.00")))
 
 def head_percent(income: Decimal, plan: Decimal) -> Decimal:
     return Decimal("15.00") if income >= plan and plan > 0 else Decimal("10.00")
@@ -158,11 +191,13 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
     sanzhar_plan = department_plan_amount(plan, "Санжар")
     raufal_plan = department_plan_amount(plan, "Рауфаль")
 
-    sanzhar_income = get_department_income(db, sanzhar.id, month_date.year, month_date.month)
-    raufal_income = get_department_income(db, raufal.id, month_date.year, month_date.month)
+    incomes_by_department_id = get_department_income_amounts(db, month_date.year, month_date.month)
+    sanzhar_income = incomes_by_department_id.get(sanzhar.id, Decimal("0.00"))
+    raufal_income = incomes_by_department_id.get(raufal.id, Decimal("0.00"))
 
-    sanzhar_expenses = get_department_expenses(db, "Санжар", month_date.year, month_date.month)
-    raufal_expenses = get_department_expenses(db, "Рауфаль", month_date.year, month_date.month)
+    expenses_by_department = get_department_expense_amounts(db, month_date, plan)
+    sanzhar_expenses = expenses_by_department.get("Санжар", Decimal("0.00"))
+    raufal_expenses = expenses_by_department.get("Рауфаль", Decimal("0.00"))
 
     sanzhar_completion = completion_percent(sanzhar_income, sanzhar_plan)
     raufal_completion = completion_percent(raufal_income, raufal_plan)
