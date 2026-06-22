@@ -2760,6 +2760,262 @@ function injectManagerUxStyles() {
       }
     }
 
+
+    /* v0.40.65 — desktop tables: compact outlined dates, centered statuses, no request horizontal scroll. */
+    @media (min-width: 721px) {
+      .admin-events-table,
+      .department-head-events-table {
+        table-layout: fixed !important;
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+
+      .admin-events-table th,
+      .department-head-events-table th,
+      .admin-requests-table th,
+      .department-head-requests-table th,
+      .request-compact-table th {
+        text-align: center !important;
+      }
+
+      .admin-events-table th:nth-child(1),
+      .admin-events-table td:nth-child(1),
+      .department-head-events-table th:nth-child(1),
+      .department-head-events-table td:nth-child(1) {
+        width: 24px !important;
+        min-width: 24px !important;
+        max-width: 24px !important;
+        padding-left: 1px !important;
+        padding-right: 1px !important;
+        text-align: center !important;
+        background: transparent !important;
+      }
+
+      .admin-events-table td.date-day-cell,
+      .department-head-events-table td.date-day-cell {
+        width: 24px !important;
+        min-width: 24px !important;
+        max-width: 24px !important;
+        height: 28px !important;
+        padding: 0 !important;
+        border: 1px solid rgba(22, 25, 21, .82) !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        text-align: center !important;
+        vertical-align: middle !important;
+        line-height: 26px !important;
+        font-weight: 950 !important;
+      }
+
+      .admin-events-table tbody tr.admin-event-row td:first-child,
+      .department-head-events-table tbody tr td:first-child {
+        background: transparent !important;
+        border-radius: 8px !important;
+      }
+
+      .admin-events-table tbody tr.admin-event-row td:nth-child(2),
+      .department-head-events-table tbody tr td:nth-child(2) {
+        border-top-left-radius: 14px !important;
+        border-bottom-left-radius: 14px !important;
+      }
+
+      .admin-events-table td:nth-child(6),
+      .admin-events-table td:nth-child(7),
+      .department-head-events-table td:nth-child(6),
+      .department-head-events-table td:nth-child(7) {
+        text-align: center !important;
+      }
+
+      .admin-events-table td:nth-child(8),
+      .department-head-events-table td:nth-child(8) {
+        font-weight: 950 !important;
+        text-align: center !important;
+      }
+
+      .admin-events-table td:nth-child(9),
+      .admin-events-table td:nth-child(10),
+      .admin-events-table td:nth-child(11),
+      .department-head-events-table td:nth-child(9),
+      .department-head-events-table td:nth-child(10),
+      .department-head-events-table td:nth-child(11) {
+        text-align: center !important;
+      }
+
+      .admin-events-table .admin-event-status-badge,
+      .admin-events-table .admin-event-money-badge,
+      .department-head-events-table .admin-event-status-badge,
+      .department-head-events-table .admin-event-money-badge,
+      .department-head-events-table .status {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+      }
+
+      .request-compact-table,
+      .admin-requests-table,
+      .department-head-requests-table {
+        width: 100% !important;
+        min-width: 0 !important;
+        table-layout: fixed !important;
+        font-size: 11px !important;
+      }
+
+      .admin-requests-table-wrap,
+      .admin-requests-table-wrap .table-wrap,
+      .table-wrap:has(.admin-requests-table),
+      .table-wrap:has(.department-head-requests-table) {
+        overflow-x: visible !important;
+      }
+
+      .request-compact-table th,
+      .request-compact-table td {
+        padding: 6px 4px !important;
+        font-size: 11px !important;
+        line-height: 1.08 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
+
+      .request-compact-table th {
+        font-size: 8.5px !important;
+        letter-spacing: .025em !important;
+      }
+
+      .admin-requests-table th:nth-child(1),
+      .admin-requests-table td:nth-child(1),
+      .department-head-requests-table th:nth-child(1),
+      .department-head-requests-table td:nth-child(1),
+      .request-compact-table th:nth-child(1),
+      .request-compact-table td:nth-child(1) { width: 3.5% !important; }
+      .admin-requests-table th:nth-child(2),
+      .admin-requests-table td:nth-child(2),
+      .department-head-requests-table th:nth-child(2),
+      .department-head-requests-table td:nth-child(2),
+      .request-compact-table th:nth-child(2),
+      .request-compact-table td:nth-child(2) { width: 6% !important; }
+      .admin-requests-table th:nth-child(3),
+      .admin-requests-table td:nth-child(3),
+      .department-head-requests-table th:nth-child(3),
+      .department-head-requests-table td:nth-child(3),
+      .request-compact-table th:nth-child(3),
+      .request-compact-table td:nth-child(3) { width: 8% !important; }
+      .admin-requests-table th:nth-child(4),
+      .admin-requests-table td:nth-child(4),
+      .department-head-requests-table th:nth-child(4),
+      .department-head-requests-table td:nth-child(4),
+      .request-compact-table th:nth-child(4),
+      .request-compact-table td:nth-child(4) { width: 10% !important; }
+      .admin-requests-table th:nth-child(5),
+      .admin-requests-table td:nth-child(5),
+      .department-head-requests-table th:nth-child(5),
+      .department-head-requests-table td:nth-child(5),
+      .request-compact-table th:nth-child(5),
+      .request-compact-table td:nth-child(5) { width: 12% !important; }
+      .admin-requests-table th:nth-child(6),
+      .admin-requests-table td:nth-child(6),
+      .department-head-requests-table th:nth-child(6),
+      .department-head-requests-table td:nth-child(6),
+      .request-compact-table th:nth-child(6),
+      .request-compact-table td:nth-child(6) { width: 11% !important; }
+      .admin-requests-table th:nth-child(7),
+      .admin-requests-table td:nth-child(7),
+      .department-head-requests-table th:nth-child(7),
+      .department-head-requests-table td:nth-child(7),
+      .request-compact-table th:nth-child(7),
+      .request-compact-table td:nth-child(7) { width: 7% !important; }
+      .admin-requests-table th:nth-child(8),
+      .admin-requests-table td:nth-child(8),
+      .department-head-requests-table th:nth-child(8),
+      .department-head-requests-table td:nth-child(8),
+      .request-compact-table th:nth-child(8),
+      .request-compact-table td:nth-child(8) { width: 6.5% !important; text-align: center !important; }
+      .admin-requests-table th:nth-child(9),
+      .admin-requests-table td:nth-child(9),
+      .department-head-requests-table th:nth-child(9),
+      .department-head-requests-table td:nth-child(9),
+      .request-compact-table th:nth-child(9),
+      .request-compact-table td:nth-child(9) { width: 7.5% !important; text-align: center !important; }
+      .admin-requests-table th:nth-child(10),
+      .admin-requests-table td:nth-child(10),
+      .department-head-requests-table th:nth-child(10),
+      .department-head-requests-table td:nth-child(10),
+      .request-compact-table th:nth-child(10),
+      .request-compact-table td:nth-child(10) { width: 8% !important; text-align: center !important; }
+      .admin-requests-table th:nth-child(11),
+      .admin-requests-table td:nth-child(11),
+      .department-head-requests-table th:nth-child(11),
+      .department-head-requests-table td:nth-child(11),
+      .request-compact-table th:nth-child(11),
+      .request-compact-table td:nth-child(11) { width: 20.5% !important; }
+
+      .admin-requests-table td.date-day-cell,
+      .department-head-requests-table td.date-day-cell,
+      .request-compact-table td.date-day-cell {
+        width: 24px !important;
+        min-width: 24px !important;
+        max-width: 24px !important;
+        height: 28px !important;
+        padding: 0 !important;
+        border: 1px solid rgba(22, 25, 21, .82) !important;
+        border-radius: 8px !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        line-height: 26px !important;
+        text-align: center !important;
+        vertical-align: middle !important;
+        font-weight: 950 !important;
+      }
+
+      .request-compact-table td:nth-child(2),
+      .request-compact-table td:nth-child(7),
+      .request-compact-table td:nth-child(8),
+      .request-compact-table td:nth-child(9),
+      .request-compact-table td:nth-child(10),
+      .request-compact-table td:nth-child(11) {
+        text-align: center !important;
+      }
+
+      .request-compact-table td:nth-child(7) strong {
+        display: inline-block !important;
+        width: 100% !important;
+        text-align: center !important;
+      }
+
+      .request-compact-table .status {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        max-width: 100% !important;
+        padding: 3px 5px !important;
+        font-size: 9.2px !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+      }
+
+      .request-compact-table .request-actions-cell {
+        overflow: visible !important;
+        white-space: normal !important;
+      }
+
+      .request-compact-table .request-actions-row {
+        justify-content: center !important;
+        flex-wrap: wrap !important;
+        gap: 3px !important;
+      }
+
+      .request-compact-table .request-actions-row button,
+      .request-compact-table button.small {
+        padding: 5px 7px !important;
+        min-height: 28px !important;
+        border-radius: 10px !important;
+        font-size: 10.5px !important;
+        line-height: 1 !important;
+      }
+    }
+
 `;
   document.head.appendChild(style);
 }

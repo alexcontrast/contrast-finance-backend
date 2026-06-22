@@ -1,10 +1,12 @@
 # CHANGELOG
 
-## v0.40.64 — Desktop table alignment polish
-- Web/desktop: narrowed the event date column further to a compact square calendar chip.
-- Web/desktop: centered headers in event/request/archive tables.
-- Web/desktop: centered numeric values in event and request tables.
-- CSS-only visual patch; backend and Apps Script unchanged.
+## v0.40.65 — desktop tables polish
 
-## v0.40.63
-- Web/desktop date chip polish for admin and department-head event tables.
+- В веб-версии в таблицах мероприятий и архиве мероприятий дата стала узкой календарной ячейкой без заливки.
+- Основная заливка строки остаётся на данных мероприятия, а дата — только с тонкой обводкой.
+- Статусы в мероприятиях и архиве мероприятий выровнены по центру.
+- Колонка «Оборот» в мероприятиях выделена жирным.
+- Во вкладках «Заявки» и «Архив заявок» сжаты ширины колонок, чтобы таблица помещалась без горизонтального скролла.
+- В заявках способ оплаты выровнен по центру.
+- В заявках и архиве заявок даты тоже оформлены календарной ячейкой с обводкой.
+- Изменены только frontend CSS/JS-стили. Backend и Apps Script не менялись.

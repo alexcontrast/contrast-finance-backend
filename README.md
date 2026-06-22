@@ -1,3 +1,9 @@
-# Contrast Finance backend v0.40.64
+# Contrast Finance Backend v0.40.65
 
-Desktop visual polish for admin/department-head tables: narrower date column, centered table headers and centered numeric cells. Backend and Apps Script are unchanged.
+Точечная визуальная правка веб-таблиц админки и главдепов.
+
+## Установка
+
+Заменить файлы из архива поверх текущего проекта и задеплоить через GitHub/Railway.
+
+Apps Script не менялся.
