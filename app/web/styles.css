@@ -4601,3 +4601,60 @@ button.soft-loading::after {
     font-size: 8.6px !important;
   }
 }
+
+/* v0.40.63 — desktop event date column as separate calendar chip, row rounded from data columns. */
+@media (min-width: 721px) {
+  .admin-events-table,
+  .department-head-events-table {
+    border-collapse: separate !important;
+    border-spacing: 0 7px !important;
+  }
+
+  .admin-events-table th:first-child,
+  .admin-events-table td:first-child,
+  .department-head-events-table th:first-child,
+  .department-head-events-table td:first-child {
+    width: 46px !important;
+    min-width: 46px !important;
+    max-width: 46px !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  .admin-events-table td.date-day-cell,
+  .department-head-events-table td.date-day-cell {
+    width: 38px !important;
+    min-width: 38px !important;
+    max-width: 38px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(22, 25, 21, .82) !important;
+    border-radius: 10px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    line-height: 34px !important;
+    font-weight: 950 !important;
+  }
+
+  .admin-events-table tbody tr.admin-event-row td:first-child,
+  .department-head-events-table tbody tr td:first-child {
+    border-top-left-radius: 10px !important;
+    border-bottom-left-radius: 10px !important;
+    border-top-right-radius: 10px !important;
+    border-bottom-right-radius: 10px !important;
+  }
+
+  .admin-events-table tbody tr.admin-event-row td:nth-child(2),
+  .department-head-events-table tbody tr td:nth-child(2) {
+    border-top-left-radius: 14px !important;
+    border-bottom-left-radius: 14px !important;
+  }
+
+  .admin-events-table tbody tr.admin-event-row td:last-child,
+  .department-head-events-table tbody tr td:last-child {
+    border-top-right-radius: 14px !important;
+    border-bottom-right-radius: 14px !important;
+  }
+}

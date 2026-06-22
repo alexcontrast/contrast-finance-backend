@@ -1,8 +1,13 @@
 # CHANGELOG
 
-## v0.40.62 — Date chips and mobile event color polish
+## v0.40.63 — Desktop event date column polish
 
-- Added calendar-style thin outlines to date cells in admin and department-head event tables.
-- Fixed mobile admin event card department colors: Sanjar is blue, Raufal is peach.
-- Aligned mobile event status and money-status badges to the same height.
-- CSS-only patch; backend and Apps Script were not changed.
+- В веб-версии админки и кабинетов главдепов колонка даты в списке мероприятий сделана узкой квадратной “календарной” ячейкой.
+- Убрана заливка у самой ячейки даты, оставлен тонкий тёмный контур.
+- Основная строка данных мероприятия теперь снова имеет скругление слева и справа: дата визуально отделена, а блок данных не выглядит обрубленным слева.
+- Изменён только CSS; backend и Apps Script не менялись.
+
+## v0.40.62 — Mobile admin dates and colors
+
+- В админке и у главдепов даты получили тонкую обводку.
+- В мобильной админке выровнены бейджи статусов и исправлены цвета карточек мероприятий по отделам.
