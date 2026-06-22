@@ -50,6 +50,8 @@ class AdminPaymentRequestRowRead(BaseModel):
     status: str
     money_status: str = "waiting_money"
     tax_status: str | None
+    card_number: str | None = None
+    contractor_name_snapshot: str | None = None
     warning_over_remaining: bool
 
 

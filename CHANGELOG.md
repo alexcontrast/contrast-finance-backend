@@ -1,10 +1,10 @@
 # CHANGELOG
 
-## v0.40.74 — Mobile request cards compact details
+## v0.40.75 — Mobile request cards detail split
 
-- Mobile admin request cards are denser in `Заявки` and `Архив заявок`.
-- Removed event title line from mobile request cards.
-- Combined request details into one line: `позиция / способ / КГД|карта|фамилия`.
-- Moved manager name to the right-side meta area below the created date.
-- Kept request action buttons in one bottom row.
-- Desktop layout is unchanged.
+- В мобильных вкладках «Заявки» и «Архив заявок» карточка заявки стала компактнее и читабельнее.
+- Вторая строка карточки теперь показывает позицию и способ оплаты.
+- Третья строка показывает актуальную деталь оплаты: номер карты, фамилию самозанятого или статус КГД.
+- Backend начал передавать в строки заявок `card_number` и `contractor_name_snapshot`, чтобы мобильная карточка могла показывать карту/фамилию.
+- Название мероприятия в мобильной карточке заявки остаётся скрытым.
+- Десктопный вид не менялся.

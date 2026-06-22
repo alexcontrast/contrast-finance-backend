@@ -433,6 +433,8 @@ def get_admin_dashboard(
             status=request.status,
             money_status=getattr(request, "money_status", "waiting_money"),
             tax_status=tax_status_label(request.tax_status_snapshot),
+            card_number=request.card_number,
+            contractor_name_snapshot=request.contractor_name_snapshot,
             warning_over_remaining=request.warning_over_remaining,
         )
         for request in payment_requests
@@ -709,6 +711,8 @@ def get_admin_dashboard_bundle(
             status=request.status,
             money_status=getattr(request, "money_status", "waiting_money"),
             tax_status=tax_status_label(request.tax_status_snapshot),
+            card_number=request.card_number,
+            contractor_name_snapshot=request.contractor_name_snapshot,
             warning_over_remaining=request.warning_over_remaining,
         )
         for request in sorted(payment_requests_by_id.values(), key=lambda item: item.id or 0, reverse=True)

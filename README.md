@@ -1,7 +1,3 @@
-# Contrast Finance Backend v0.40.74
+# Contrast Finance v0.40.75
 
-Mobile-only visual update for admin request cards.
-
-## Deploy
-
-Upload the archive contents to GitHub/Railway as usual. Apps Script was not changed.
+Патч мобильных карточек заявок: отдельная третья строка для номера карты, фамилии самозанятого или статуса КГД.

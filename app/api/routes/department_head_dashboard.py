@@ -358,6 +358,8 @@ def get_department_head_dashboard(
                 status=request.status,
                 money_status=getattr(request, "money_status", "waiting_money"),
                 tax_status=tax_status_label(request.tax_status_snapshot),
+                card_number=request.card_number,
+                contractor_name_snapshot=request.contractor_name_snapshot,
                 warning_over_remaining=request.warning_over_remaining,
             )
         )
@@ -633,6 +635,8 @@ def get_department_head_dashboard_bundle(
                 status=request.status,
                 money_status=getattr(request, "money_status", "waiting_money"),
                 tax_status=tax_status_label(request.tax_status_snapshot),
+                card_number=request.card_number,
+                contractor_name_snapshot=request.contractor_name_snapshot,
                 warning_over_remaining=request.warning_over_remaining,
             )
         )

@@ -3966,7 +3966,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
                 ${requestTextCell(managerNameForRequest(request), "request-manager-cell")}
                 ${requestPositionMobileCell(request)}
                 ${requestHtmlCell(`<div class="request-main-amount">${formatMoney(request.amount_requested)}</div>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
-                ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
+                ${requestMethodMobileCell(request)}
                 ${requestTextCell(request.tax_status || request.tax_status_label || "", "request-tax-cell")}
                 ${requestHtmlCell(`<span class="status ${request.status} event-request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
                 ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} event-request-status-badge request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
@@ -4841,7 +4841,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
               ${requestTextCell(paymentRequestEventTitle(request), "request-event-cell")}
               ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
               ${requestHtmlCell(`<strong>${formatMoney(request.amount_requested)}</strong>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
-              ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
+              ${requestMethodMobileCell(request)}
               ${requestHtmlCell(`<span class="status ${request.status} request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
               ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
             </tr>
@@ -5404,18 +5404,26 @@ function paymentRequestEventTitle(request) {
   return request?.event_title || request?.title || request?.event_name || request?.event || "";
 }
 
-function paymentRequestMobileDetail(request) {
+function paymentRequestMobileSecondLine(request) {
   const position = String(request?.position || request?.item_name_snapshot || "").trim();
+  const method = paymentMethodLabel(request?.payment_method);
+  return [position, method].filter(Boolean).join(" / ");
+}
+
+function paymentRequestMobileThirdLine(request) {
   const method = paymentMethodLabel(request?.payment_method);
   const methodValue = String(request?.payment_method || "").toLowerCase();
 
-  let extra = "";
   if (isInvoiceMethod(methodValue) || isInvoiceMethod(method)) {
-    extra = String(request?.tax_status_label || request?.tax_status || request?.kgd_status || "").trim();
-  } else if (methodValue === "card" || method === "На карту") {
-    extra = String(request?.card_number || request?.card || request?.card_last4 || request?.payment_card || "").trim();
-  } else if (isSelfEmployedMethod(methodValue) || isSelfEmployedMethod(method)) {
-    extra = String(
+    return String(request?.tax_status_label || request?.tax_status || request?.kgd_status || "").trim();
+  }
+
+  if (methodValue === "card" || method === "На карту") {
+    return String(request?.card_number || request?.card || request?.card_last4 || request?.payment_card || "").trim();
+  }
+
+  if (isSelfEmployedMethod(methodValue) || isSelfEmployedMethod(method)) {
+    return String(
       request?.self_employed_surname ||
       request?.contractor_name_snapshot ||
       request?.contractor_name ||
@@ -5424,16 +5432,26 @@ function paymentRequestMobileDetail(request) {
     ).trim();
   }
 
-  return [position, method, extra].filter(Boolean).join(" / ");
+  return String(request?.contractor_name_snapshot || "").trim();
 }
 
 function requestPositionMobileCell(request) {
   const desktopText = String(request?.position || request?.item_name_snapshot || "").trim();
-  const mobileText = paymentRequestMobileDetail(request) || desktopText;
+  const mobileText = paymentRequestMobileSecondLine(request) || desktopText;
   return requestHtmlCell(
     `<span class="request-position-desktop">${escapeHtml(desktopText)}</span><span class="request-position-mobile">${escapeHtml(mobileText)}</span>`,
     mobileText || desktopText,
     "request-position-cell"
+  );
+}
+
+function requestMethodMobileCell(request) {
+  const desktopText = paymentMethodLabel(request?.payment_method);
+  const mobileText = paymentRequestMobileThirdLine(request);
+  return requestHtmlCell(
+    `<span class="request-method-desktop">${escapeHtml(desktopText)}</span><span class="request-method-mobile">${escapeHtml(mobileText)}</span>`,
+    mobileText || desktopText,
+    "request-method-cell"
   );
 }
 
@@ -5476,7 +5494,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
                 ${requestTextCell(paymentRequestEventTitle(request), "request-event-cell")}
                 ${requestPositionMobileCell(request)}
                 ${requestHtmlCell(`<strong>${formatMoney(request.amount_requested)}</strong>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
-                ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
+                ${requestMethodMobileCell(request)}
                 ${requestHtmlCell(`<span class="status ${request.status} request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
                 ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
                 <td class="request-actions-cell">

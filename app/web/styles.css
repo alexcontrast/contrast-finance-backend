@@ -5563,3 +5563,71 @@ button.soft-loading::after {
     display: none !important;
   }
 }
+
+/* v0.40.75 — mobile admin request cards: split method details into separate third line. */
+@media (max-width: 720px) {
+  body.admin-mode .admin-requests-table tbody tr {
+    grid-template-columns: 42px minmax(0, 1fr) max-content max-content !important;
+    grid-template-areas:
+      "date customer pay money"
+      "date position amount amount"
+      "date extra amount amount"
+      "date created amount amount"
+      "date manager amount amount"
+      "actions actions actions actions" !important;
+    gap: 3px 5px !important;
+    padding: 8px 9px !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(5) {
+    display: none !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(8) {
+    display: block !important;
+    grid-area: extra !important;
+    align-self: start !important;
+    justify-self: start !important;
+    min-width: 0 !important;
+    max-width: 165px !important;
+    color: rgba(43, 54, 35, .58) !important;
+    font-size: 9.8px !important;
+    line-height: 1.1 !important;
+    font-weight: 760 !important;
+    text-align: left !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode .admin-requests-table .request-method-desktop {
+    display: none !important;
+  }
+
+  body.admin-mode .admin-requests-table .request-method-mobile {
+    display: block !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(6) {
+    max-width: 165px !important;
+    color: rgba(43, 54, 35, .70) !important;
+    font-size: 10.2px !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(2),
+  body.admin-mode .admin-requests-table td:nth-child(3) {
+    max-width: 128px !important;
+  }
+}
+
+@media (min-width: 721px) {
+  .request-method-mobile {
+    display: none !important;
+  }
+}
