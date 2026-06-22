@@ -1,3 +1,5 @@
-# Contrast Finance v0.40.75
+# Contrast Finance Backend v0.40.76
 
-Патч мобильных карточек заявок: отдельная третья строка для номера карты, фамилии самозанятого или статуса КГД.
+Mobile-only polish for admin request cards.
+
+Deploy full archive or changed-only files over the current project.

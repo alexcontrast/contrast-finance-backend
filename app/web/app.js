@@ -3319,10 +3319,27 @@ function formatDateTimeAstana(value) {
   return `${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute}`;
 }
 
+function compactDateTimeParts(value) {
+  const text = formatDateTimeAstana(value) || value || "";
+  const match = String(text || "").match(/^(\d{2})[-./](\d{2})(?:[-./]\d{2,4})?\s+(\d{2}:\d{2})/);
+  if (match) {
+    return { date: `${match[1]}/${match[2]}`, time: match[3], text };
+  }
+
+  const raw = String(value || "").trim();
+  const fallback = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T\s]?(\d{2}:\d{2})?/);
+  if (fallback) {
+    return { date: `${fallback[3]}/${fallback[2]}`, time: fallback[4] || "", text: text || raw };
+  }
+
+  return { date: text, time: "", text };
+}
+
 function paymentRequestCreatedAtCell(request) {
   const value = paymentRequestDateValue(request);
   const text = formatDateTimeAstana(value) || value || "";
-  return `<td class="nowrap request-created-at-cell clip-cell" title="${escapeHtml(text)}">${escapeHtml(text)}</td>`;
+  const compact = compactDateTimeParts(value);
+  return `<td class="nowrap request-created-at-cell clip-cell" title="${escapeHtml(text)}"><span class="request-created-desktop">${escapeHtml(text)}</span><span class="request-created-mobile"><span>${escapeHtml(compact.date)}</span>${compact.time ? `<span>${escapeHtml(compact.time)}</span>` : ""}</span></td>`;
 }
 
 function formatMonthListDay(value) {
