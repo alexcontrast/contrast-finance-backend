@@ -1,7 +1,5 @@
-Contrast Finance backend v0.40.79
+# Contrast Finance backend v0.40.80
 
-Mobile-only polish for the admin “Задать планы” table alignment.
+Mobile-only visual patch for the admin “Закрыть месяц” tab.
 
-# Contrast Finance Backend v0.40.78
-
-Mobile-only visual refinement for the admin “Задать планы” tab. Backend and Apps Script were not changed.
+Deploy through the normal GitHub/Railway flow. Apps Script does not need to be updated.

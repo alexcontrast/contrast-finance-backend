@@ -1,19 +1,15 @@
-# CHANGELOG
+# Changelog
 
-## v0.40.79
+## v0.40.80 — Mobile closing month compact layout
 
-- Mobile admin “Задать планы”: aligned the month, department percent, and manager percent columns into a strict 3-column grid.
-- Reduced the height of amount and percent inputs on mobile.
-- Centered all mobile plan column content and made spacing between columns consistent.
-- Desktop, backend, and Apps Script are unchanged.
-
-## v0.40.78
-
-- Mobile admin “Задать планы”: company plan amount input is shown under the month name.
-- Mobile plan percentage controls are shorter and show calculated amounts underneath.
-- Mobile label now uses full “Менеджер” text instead of shortened “Мен.”.
-- Desktop, backend, and Apps Script are unchanged.
-
-## v0.40.77
-
-- Mobile admin “Задать планы” was compacted: explanatory text was hidden and the table was reduced for phone screens.
+- Mobile-only polish for admin tab “Закрыть месяц”.
+- Removed explanatory subtitle text on mobile.
+- Rebuilt expense input form into one compact row: title, amount, allocation, check button.
+- Hid comment input on mobile.
+- Replaced “Добавить” button text with a compact ✓ button on mobile.
+- Compacted mobile expenses table: Расход / Сумма / Деление / actions.
+- Hid department amount columns in mobile expenses table.
+- Shortened mobile split label to “По плану” / department name.
+- Made department calculation cards a horizontal carousel on mobile.
+- Kept founders calculation as a separate block.
+- Desktop, backend and Apps Script are unchanged.

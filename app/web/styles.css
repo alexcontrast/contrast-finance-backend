@@ -6228,3 +6228,262 @@ button.soft-loading::after {
     text-overflow: ellipsis !important;
   }
 }
+
+/* v0.40.80 — mobile closing month compact layout */
+.closing-allocation-short,
+.closing-add-check {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  body.admin-mode #closingPanel .closing-title {
+    align-items: center !important;
+    margin-bottom: 4px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-title p {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel .closing-title h3 {
+    font-size: 20px !important;
+    line-height: 1.05 !important;
+  }
+
+  body.admin-mode #closingPanel .closing-status-row {
+    gap: 4px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-status {
+    min-width: 0 !important;
+    height: 28px !important;
+    padding: 0 10px !important;
+    font-size: 10.5px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-mini-section {
+    padding: 10px !important;
+    border-radius: 16px !important;
+    gap: 8px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-section-head {
+    align-items: center !important;
+    gap: 8px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-section-head h4 {
+    font-size: 16px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-section-head span {
+    font-size: 13px !important;
+    max-width: 58% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.admin-mode #closingPanel .closing-expense-form {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.25fr) 76px 108px 36px !important;
+    gap: 5px !important;
+    align-items: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-expense-form input,
+  body.admin-mode #closingPanel .closing-expense-form select {
+    min-width: 0 !important;
+    width: 100% !important;
+    height: 34px !important;
+    padding: 5px 7px !important;
+    border-radius: 10px !important;
+    font-size: 12px !important;
+    font-weight: 850 !important;
+    box-sizing: border-box !important;
+  }
+
+  body.admin-mode #closingPanel #closingExpenseTitle {
+    grid-column: 1 !important;
+  }
+
+  body.admin-mode #closingPanel #closingExpenseAmount {
+    grid-column: 2 !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #closingPanel #closingExpenseAllocation {
+    grid-column: 3 !important;
+    padding-right: 18px !important;
+  }
+
+  body.admin-mode #closingPanel #closingExpenseComment {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel .closing-custom-split:not(.hidden) {
+    grid-column: span 2 !important;
+    height: 30px !important;
+  }
+
+  body.admin-mode #closingPanel #addClosingExpenseBtn {
+    grid-column: 4 !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    border-radius: 10px !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+  }
+
+  body.admin-mode #closingPanel #addClosingExpenseBtn .closing-add-text {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel #addClosingExpenseBtn .closing-add-check {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table-wrap {
+    overflow-x: hidden !important;
+    width: 100% !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+    border-spacing: 0 5px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th,
+  body.admin-mode #closingPanel .closing-table td {
+    padding: 6px 5px !important;
+    font-size: 11.5px !important;
+    line-height: 1.15 !important;
+    vertical-align: middle !important;
+    box-sizing: border-box !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th {
+    padding-bottom: 2px !important;
+    font-size: 10px !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th:nth-child(1),
+  body.admin-mode #closingPanel .closing-table td:nth-child(1) {
+    width: 42% !important;
+    text-align: left !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th:nth-child(2),
+  body.admin-mode #closingPanel .closing-table td:nth-child(2) {
+    width: 20% !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th:nth-child(3),
+  body.admin-mode #closingPanel .closing-table td:nth-child(3) {
+    width: 25% !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th:nth-child(4),
+  body.admin-mode #closingPanel .closing-table td:nth-child(4),
+  body.admin-mode #closingPanel .closing-table th:nth-child(5),
+  body.admin-mode #closingPanel .closing-table td:nth-child(5) {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table th:nth-child(6),
+  body.admin-mode #closingPanel .closing-table td:nth-child(6) {
+    width: 13% !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table td strong {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 12.5px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table td small {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel .closing-allocation-full {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel .closing-allocation-short {
+    display: inline !important;
+  }
+
+  body.admin-mode #closingPanel .closing-row-actions {
+    gap: 3px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-icon-btn {
+    width: 23px !important;
+    height: 23px !important;
+    font-size: 13px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-edit-amount-input {
+    width: 100% !important;
+    max-width: 74px !important;
+    height: 26px !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #closingPanel .closing-expenses-total-row td {
+    font-size: 11.5px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-calc-grid {
+    display: flex !important;
+    grid-template-columns: none !important;
+    gap: 10px !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain !important;
+    scroll-snap-type: x mandatory !important;
+    padding-bottom: 2px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  body.admin-mode #closingPanel .closing-calc-grid::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  body.admin-mode #closingPanel .closing-department-card {
+    min-width: calc(100% - 4px) !important;
+    scroll-snap-align: start !important;
+    padding: 10px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-founders-card {
+    margin-top: 10px !important;
+    padding: 10px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-founders-grid {
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  body.admin-mode #closingPanel .closing-actions button {
+    width: 100% !important;
+  }
+}

@@ -6787,12 +6787,13 @@ function departmentDefaultSplitLabel() {
   return `${formatPercentValue(sanzharPercent)} / ${formatPercentValue(raufalPercent)}%`;
 }
 
-function expenseAllocationLabel(expense) {
+function expenseAllocationLabel(expense, options = {}) {
+  const short = Boolean(options?.short);
   const type = expense?.allocation_type;
   if (type === "sanzhar_only") return "Санжар";
   if (type === "raufal_only") return "Рауфаль";
   if (type === "custom") return "Вручную";
-  return `По плану ${departmentDefaultSplitLabel()}`;
+  return short ? "По плану" : `По плану ${departmentDefaultSplitLabel()}`;
 }
 
 function renderClosingSkeleton(data) {
@@ -6851,7 +6852,10 @@ function renderClosingExpenseRows(expenses) {
                     />
                   ` : formatMoney(expense.amount)}
                 </td>
-                <td>${expenseAllocationLabel(expense)}</td>
+                <td>
+                  <span class="closing-allocation-full">${expenseAllocationLabel(expense)}</span>
+                  <span class="closing-allocation-short">${expenseAllocationLabel(expense, { short: true })}</span>
+                </td>
                 <td>${formatMoney(expense.sanzhar_amount)}</td>
                 <td>${formatMoney(expense.raufal_amount)}</td>
                 <td>
@@ -6965,7 +6969,7 @@ function renderClosingContent(expenses, calc, closing, error = null, calcPending
         <input id="closingExpenseSanzhar" class="closing-custom-split hidden" inputmode="numeric" placeholder="Санжар" />
         <input id="closingExpenseRaufal" class="closing-custom-split hidden" inputmode="numeric" placeholder="Рауфаль" />
         <input id="closingExpenseComment" placeholder="Комментарий" />
-        <button id="addClosingExpenseBtn" type="button">Добавить</button>
+        <button id="addClosingExpenseBtn" type="button"><span class="closing-add-text">Добавить</span><span class="closing-add-check">✓</span></button>
       </div>
       ${renderClosingExpenseRows(expenses || [])}
     </section>
