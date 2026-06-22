@@ -1690,8 +1690,8 @@ button[data-manager-event-save-draft]:hover {
   width: 34px;
   min-width: 34px;
   text-align: center;
-  padding-left: 4px;
-  padding-right: 4px;
+  padding-left: 3px;
+  padding-right: 3px;
 }
 
 .drag-handle {
@@ -3342,28 +3342,28 @@ button.soft-loading::after {
   width: 100%;
 }
 .event-modal-requests-table th:nth-child(1),
-.event-modal-requests-table td:nth-child(1) { width: 8%; }
+.event-modal-requests-table td:nth-child(1) { width: 10%; }
 .event-modal-requests-table th:nth-child(2),
-.event-modal-requests-table td:nth-child(2) { width: 7%; }
+.event-modal-requests-table td:nth-child(2) { width: 6%; }
 .event-modal-requests-table th:nth-child(3),
-.event-modal-requests-table td:nth-child(3) { width: 19%; }
+.event-modal-requests-table td:nth-child(3) { width: 15%; }
 .event-modal-requests-table th:nth-child(4),
-.event-modal-requests-table td:nth-child(4) { width: 8%; text-align: center; }
+.event-modal-requests-table td:nth-child(4) { width: 7%; text-align: center; }
 .event-modal-requests-table th:nth-child(5),
 .event-modal-requests-table td:nth-child(5) { width: 6%; }
 .event-modal-requests-table th:nth-child(6),
-.event-modal-requests-table td:nth-child(6) { width: 5%; }
+.event-modal-requests-table td:nth-child(6) { width: 6%; }
 .event-modal-requests-table th:nth-child(7),
-.event-modal-requests-table td:nth-child(7) { width: 6%; }
+.event-modal-requests-table td:nth-child(7) { width: 7%; }
 .event-modal-requests-table th:nth-child(8),
-.event-modal-requests-table td:nth-child(8) { width: 6%; }
+.event-modal-requests-table td:nth-child(8) { width: 8%; }
 .event-modal-requests-table th:nth-child(9),
 .event-modal-requests-table td:nth-child(9) { width: 35%; }
 
 .event-modal-requests-table th,
 .event-modal-requests-table td {
-  padding-left: 4px;
-  padding-right: 4px;
+  padding-left: 3px;
+  padding-right: 3px;
 }
 
 .event-modal-requests-table .request-amount-cell,
@@ -3376,15 +3376,15 @@ button.soft-loading::after {
 }
 
 .event-modal-requests-table .request-actions-row {
-  justify-content: flex-end;
-  flex-wrap: wrap;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
   gap: 4px;
 }
 
 .event-modal-requests-table .request-actions-row button,
 .event-modal-requests-table button.small {
-  padding: 5px 6px;
-  font-size: 10px;
+  padding: 4px 6px;
+  font-size: 9.5px;
   line-height: 1;
   border-radius: 9px;
   white-space: nowrap;

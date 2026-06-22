@@ -2387,27 +2387,32 @@ function injectManagerUxStyles() {
       table-layout: fixed !important;
     }
 
+    /* v0.40.70: таблица заявок в модалке имеет 9 колонок.
+       Старые правила были на 8 колонок, поэтому "Деньги" раздувались,
+       а колонке кнопок не оставалось места. */
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(1),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(1) { width: 11% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(1) { width: 10% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(2),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(2) { width: 14% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(2) { width: 6% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(3),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(3) { width: 12% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(3) { width: 15% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(4),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(4) { width: 10% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(4) { width: 7% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(5),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(5) { width: 12% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(5) { width: 6% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(6),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(6),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(6) { width: 6% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(7),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(7) { width: 10% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(7) { width: 7% !important; }
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(8),
-    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(8) { width: 21% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(8) { width: 8% !important; }
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th:nth-child(9),
+    #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td:nth-child(9) { width: 35% !important; }
 
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table th,
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table td {
-      padding: 7px 6px !important;
-      font-size: 11px !important;
+      padding: 6px 4px !important;
+      font-size: 10.5px !important;
     }
 
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table .request-actions-row {
@@ -2416,11 +2421,13 @@ function injectManagerUxStyles() {
     }
 
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table .request-actions-row button {
-      min-height: 26px !important;
-      padding: 5px 7px !important;
-      font-size: 10px !important;
+      min-height: 24px !important;
+      padding: 4px 6px !important;
+      font-size: 9.5px !important;
       line-height: 1 !important;
-      border-radius: 10px !important;
+      border-radius: 9px !important;
+      white-space: nowrap !important;
+      flex: 0 0 auto !important;
     }
 
     #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .event-requests-table .status {

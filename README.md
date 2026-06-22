@@ -1,3 +1,12 @@
-# Contrast Finance v0.40.69
+# Contrast Finance backend v0.40.70
 
-Точечная правка веб-модалки мероприятия: компактная таблица заявок, короткие заголовки статусов и центрирование суммы заявки.
+Patch focused on fitting the requests table inside the event modal.
+
+Changed frontend files only:
+- `app/web/app.js`
+- `app/web/styles.css`
+- `app/web/index.html`
+- `CHANGELOG.md`
+- `README.md`
+
+Backend and Apps Script were not changed.
