@@ -1,13 +1,10 @@
 # CHANGELOG
 
-## v0.40.63 — Desktop event date column polish
+## v0.40.64 — Desktop table alignment polish
+- Web/desktop: narrowed the event date column further to a compact square calendar chip.
+- Web/desktop: centered headers in event/request/archive tables.
+- Web/desktop: centered numeric values in event and request tables.
+- CSS-only visual patch; backend and Apps Script unchanged.
 
-- В веб-версии админки и кабинетов главдепов колонка даты в списке мероприятий сделана узкой квадратной “календарной” ячейкой.
-- Убрана заливка у самой ячейки даты, оставлен тонкий тёмный контур.
-- Основная строка данных мероприятия теперь снова имеет скругление слева и справа: дата визуально отделена, а блок данных не выглядит обрубленным слева.
-- Изменён только CSS; backend и Apps Script не менялись.
-
-## v0.40.62 — Mobile admin dates and colors
-
-- В админке и у главдепов даты получили тонкую обводку.
-- В мобильной админке выровнены бейджи статусов и исправлены цвета карточек мероприятий по отделам.
+## v0.40.63
+- Web/desktop date chip polish for admin and department-head event tables.

@@ -1,15 +1,3 @@
-# Contrast Finance Backend v0.40.63
+# Contrast Finance backend v0.40.64
 
-Точечная визуальная правка десктопной вкладки мероприятий.
-
-## Что изменилось
-
-- Колонка даты стала узкой квадратной календарной ячейкой без заливки.
-- Строка данных мероприятия скругляется слева и справа, чтобы не выглядела обрубленной рядом с датой.
-- Правка применена к админке и кабинетам главдепов.
-- Apps Script не менялся.
-
-## Проверки
-
-- `node --check app/web/app.js`
-- `python3 -m compileall -q app`
+Desktop visual polish for admin/department-head tables: narrower date column, centered table headers and centered numeric cells. Backend and Apps Script are unchanged.

@@ -4658,3 +4658,87 @@ button.soft-loading::after {
     border-bottom-right-radius: 14px !important;
   }
 }
+
+/* v0.40.64 — desktop table date column and numeric/header alignment polish. */
+@media (min-width: 721px) {
+  .admin-events-table th,
+  .admin-requests-table th,
+  .department-head-events-table th,
+  .department-head-requests-table th,
+  .request-compact-table th {
+    text-align: center !important;
+  }
+
+  .admin-events-table th:nth-child(1),
+  .admin-events-table td:nth-child(1),
+  .department-head-events-table th:nth-child(1),
+  .department-head-events-table td:nth-child(1) {
+    width: 34px !important;
+    min-width: 34px !important;
+    max-width: 34px !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+    text-align: center !important;
+  }
+
+  .admin-events-table th:nth-child(1),
+  .department-head-events-table th:nth-child(1) {
+    font-size: 8.2px !important;
+    letter-spacing: .025em !important;
+  }
+
+  .admin-events-table td.date-day-cell,
+  .department-head-events-table td.date-day-cell {
+    width: 30px !important;
+    min-width: 30px !important;
+    max-width: 30px !important;
+    height: 30px !important;
+    padding: 0 !important;
+    line-height: 28px !important;
+    border-radius: 9px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+  }
+
+  .admin-events-table td:nth-child(7),
+  .admin-events-table td:nth-child(8),
+  .admin-events-table td:nth-child(9),
+  .admin-events-table td:nth-child(10),
+  .admin-events-table td:nth-child(11),
+  .department-head-events-table td:nth-child(7),
+  .department-head-events-table td:nth-child(8),
+  .department-head-events-table td:nth-child(9),
+  .department-head-events-table td:nth-child(10),
+  .department-head-events-table td:nth-child(11) {
+    text-align: center !important;
+  }
+
+  .admin-requests-table td.date-day-cell,
+  .department-head-requests-table td.date-day-cell,
+  .request-compact-table td.date-day-cell,
+  .admin-requests-table td:nth-child(2),
+  .admin-requests-table td:nth-child(7),
+  .admin-requests-table td:nth-child(9),
+  .admin-requests-table td:nth-child(10),
+  .admin-requests-table td:nth-child(11),
+  .department-head-requests-table td:nth-child(2),
+  .department-head-requests-table td:nth-child(7),
+  .department-head-requests-table td:nth-child(9),
+  .department-head-requests-table td:nth-child(10),
+  .department-head-requests-table td:nth-child(11),
+  .request-compact-table td:nth-child(2),
+  .request-compact-table td:nth-child(7),
+  .request-compact-table td:nth-child(9),
+  .request-compact-table td:nth-child(10),
+  .request-compact-table td:nth-child(11) {
+    text-align: center !important;
+  }
+
+  .admin-requests-table td:nth-child(7) strong,
+  .department-head-requests-table td:nth-child(7) strong,
+  .request-compact-table td:nth-child(7) strong {
+    display: inline-block;
+    width: 100%;
+    text-align: center !important;
+  }
+}
