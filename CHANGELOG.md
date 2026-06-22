@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v0.40.58 — Mobile admin header polish
+
+- Mobile-only CSS patch for admin dashboard.
+- Full Contrast logo is restored in the left top corner; `АДМИН` is placed in the right top corner.
+- Month, year and refresh are compressed into one mobile row.
+- Company/department event count badges are widened so the text fits.
+- Monthly totals rows get safer inner padding and slightly smaller values.
+- Department carousel cards are narrowed to fit the phone viewport.
+
 ## v0.40.57 — Mobile admin overview polish
 - Мобильная админка: шапка стала компактной — логотип + «АДМИН», без подписи и текста Contrast Finance 2.0.
 - Мобильная админка: месяц и год уложены в одну строку.

@@ -4109,3 +4109,157 @@ button.soft-loading::after {
   }
 }
 
+
+
+/* v0.40.58 — mobile admin header and overview tightening. Desktop is untouched. */
+@media (max-width: 720px) {
+  /* Header: full logo in the left top corner, ADMIN in the right top corner. */
+  body.admin-mode .brand-topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand admin"
+      "actions actions";
+    align-items: start !important;
+    gap: 10px 12px !important;
+    padding: 14px 16px 13px !important;
+  }
+
+  body.admin-mode .brand-block {
+    display: contents !important;
+  }
+
+  body.admin-mode .brand-logo {
+    grid-area: brand;
+    justify-self: start;
+    width: 118px !important;
+    max-width: 44vw !important;
+    height: auto !important;
+    max-height: 42px !important;
+    border-radius: 0 !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    mix-blend-mode: multiply;
+  }
+
+  body.admin-mode .brand-block > div {
+    grid-area: admin;
+    justify-self: end;
+    align-self: start;
+    min-width: 0;
+    text-align: right;
+  }
+
+  body.admin-mode #pageTitle {
+    margin-top: 3px !important;
+    font-size: 14px !important;
+    letter-spacing: .18em !important;
+  }
+
+  body.admin-mode .topbar-actions {
+    grid-area: actions;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: 100% !important;
+    gap: 8px !important;
+    margin-left: 0 !important;
+  }
+
+  body.admin-mode .topbar-actions #changePinOpenBtn,
+  body.admin-mode .topbar-actions #logoutBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    font-size: 12px !important;
+  }
+
+  /* Month/year/update in one compact row. */
+  body.admin-mode #dashboardScreen > .toolbar {
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, .78fr) minmax(88px, .72fr) !important;
+    gap: 6px !important;
+    align-items: end !important;
+  }
+
+  body.admin-mode #dashboardScreen > .toolbar .month-control,
+  body.admin-mode #dashboardScreen > .toolbar .year-control {
+    max-width: none !important;
+  }
+
+  body.admin-mode #dashboardScreen > .toolbar .month-control select,
+  body.admin-mode #dashboardScreen > .toolbar .year-control select {
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    font-size: 13px !important;
+    border-radius: 12px !important;
+  }
+
+  body.admin-mode #reloadBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    font-size: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  body.admin-mode #changePinOpenBtn {
+    width: 100% !important;
+  }
+
+  /* Event count badges: make room for the full word. */
+  body.admin-mode .overview-company-card-main .overview-card-top,
+  body.admin-mode .department-card-head {
+    padding-right: 110px !important;
+  }
+
+  body.admin-mode .overview-company-card-main .overview-events-count-badge,
+  body.admin-mode .department-overview-card .overview-events-count-badge {
+    min-width: 102px !important;
+    max-width: 112px !important;
+    height: 24px !important;
+    padding: 0 10px !important;
+    justify-content: center !important;
+    font-size: 10px !important;
+    letter-spacing: 0 !important;
+  }
+
+  /* Monthly totals: more inner breathing room, slightly smaller values. */
+  body.admin-mode .overview-month-finance-card {
+    padding: 12px 11px !important;
+  }
+
+  body.admin-mode .overview-finance-list {
+    gap: 7px !important;
+  }
+
+  body.admin-mode .overview-finance-row {
+    gap: 8px !important;
+    padding: 8px 13px 8px 14px !important;
+    border-radius: 15px !important;
+    overflow: visible !important;
+  }
+
+  body.admin-mode .overview-finance-row span {
+    font-size: 10.5px !important;
+    letter-spacing: .075em !important;
+  }
+
+  body.admin-mode .overview-finance-row strong {
+    font-size: 18px !important;
+    letter-spacing: -.045em !important;
+  }
+
+  /* Department carousel cards must fit inside the phone viewport. */
+  body.admin-mode .overview-departments-grid {
+    width: 100% !important;
+    padding: 0 0 10px !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  body.admin-mode .department-overview-card {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 12px !important;
+  }
+}
