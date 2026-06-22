@@ -6675,14 +6675,14 @@ function formatPercentValue(value) {
 }
 
 function renderPlanPercentInput(monthValue, kind, value, label) {
-  const shortLabel = label === "Менеджер" ? "Мен." : label;
   return `
     <label class="plan-percent-cell plan-percent-cell-${kind}">
-      <span>${shortLabel}</span>
+      <span>${label}</span>
       <span class="plan-percent-control">
         <input class="plan-percent-input" data-plan-percent="${kind}" data-plan-month="${monthValue}" inputmode="decimal" value="${formatPercentValue(value)}" />
         <b>%</b>
       </span>
+      <em class="plan-percent-mobile-amount" data-plan-mobile-calc-${kind}="${monthValue}">0</em>
     </label>
   `;
 }
@@ -6717,7 +6717,7 @@ function renderPlansSkeleton(data) {
                 <th>Отделы %</th>
                 <th>Санжар</th>
                 <th>Рауфаль</th>
-                <th>Мен. %</th>
+                <th>Менеджер %</th>
                 <th>Менеджер</th>
               </tr>
             </thead>
@@ -11721,9 +11721,20 @@ function updatePlansCalculatedCells() {
     const raufalCell = document.querySelector(`[data-plan-calc-raufal="${monthValue}"]`);
     const managerCell = document.querySelector(`[data-plan-calc-manager="${monthValue}"]`);
 
-    if (sanzharCell) sanzharCell.textContent = formatMoney(companyPlan * sanzharPercent / 100);
-    if (raufalCell) raufalCell.textContent = formatMoney(companyPlan * raufalPercent / 100);
-    if (managerCell) managerCell.textContent = formatMoney(companyPlan * managerPercent / 100);
+    const sanzharAmount = formatMoney(companyPlan * sanzharPercent / 100);
+    const raufalAmount = formatMoney(companyPlan * raufalPercent / 100);
+    const managerAmount = formatMoney(companyPlan * managerPercent / 100);
+
+    if (sanzharCell) sanzharCell.textContent = sanzharAmount;
+    if (raufalCell) raufalCell.textContent = raufalAmount;
+    if (managerCell) managerCell.textContent = managerAmount;
+
+    const sanzharMobile = document.querySelector(`[data-plan-mobile-calc-sanzhar="${monthValue}"]`);
+    const raufalMobile = document.querySelector(`[data-plan-mobile-calc-raufal="${monthValue}"]`);
+    const managerMobile = document.querySelector(`[data-plan-mobile-calc-manager="${monthValue}"]`);
+    if (sanzharMobile) sanzharMobile.textContent = sanzharAmount;
+    if (raufalMobile) raufalMobile.textContent = raufalAmount;
+    if (managerMobile) managerMobile.textContent = managerAmount;
   });
 }
 

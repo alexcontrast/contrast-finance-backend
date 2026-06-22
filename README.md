@@ -1,5 +1,3 @@
-# Contrast Finance Backend v0.40.76
+# Contrast Finance Backend v0.40.78
 
-Mobile-only polish for admin request cards.
-
-Deploy full archive or changed-only files over the current project.
+Mobile-only visual refinement for the admin “Задать планы” tab. Backend and Apps Script were not changed.
