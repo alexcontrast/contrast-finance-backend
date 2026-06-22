@@ -3947,7 +3947,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
               <th>Позиция</th>
               <th>Сумма заявки</th>
               <th>Способ</th>
-              <th>Налоговый статус</th>
+              <th>КГД</th>
               <th>Статус оплаты</th>
               <th>Статус денег</th>
               <th>Кнопки</th>

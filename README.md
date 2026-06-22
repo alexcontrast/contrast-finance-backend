@@ -1,5 +1,10 @@
-# Contrast Finance v0.40.67
+# Contrast Finance v0.40.68
 
-Патч устраняет мигание экрана входа при обновлении страницы с сохранённой авторизацией.
+Точечная визуальная правка таблицы заявок в модалке мероприятия.
 
-Изменения только во фронтенде: `app/web/index.html`, `app/web/styles.css`, `app/web/app.js`.
+Изменения только во frontend-файлах:
+- app/web/app.js
+- app/web/styles.css
+- app/web/index.html
+
+Backend и Apps Script не менялись.
