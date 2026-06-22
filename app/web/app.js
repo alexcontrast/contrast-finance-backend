@@ -3945,11 +3945,11 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
               <th>Создана</th>
               <th>Менеджер</th>
               <th>Позиция</th>
-              <th>Сумма заявки</th>
+              <th>Сумма</th>
               <th>Способ</th>
               <th>КГД</th>
-              <th>Статус оплаты</th>
-              <th>Статус денег</th>
+              <th>Оплаты</th>
+              <th>Деньги</th>
               <th>Кнопки</th>
             </tr>
           </thead>
@@ -12163,7 +12163,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.67 loaded");
+  console.info("Contrast Finance web app v0.40.69 loaded");
   if (!state.token) {
     showLogin();
     return;
