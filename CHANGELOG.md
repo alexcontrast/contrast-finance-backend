@@ -1,10 +1,7 @@
 # CHANGELOG
 
-## v0.40.76 — Mobile request cards layout polish
-- В мобильных вкладках «Заявки» и «Архив заявок» дата/время создания перенесены под календарный день в компактном виде: `22/06` и время ниже.
-- Убрана разделительная линия над суммой, из-за которой правый блок визуально ломал карточку.
-- Правая часть карточки стала компактнее: статусы рядом, сумма и менеджер без лишней вертикальной башни.
-- Изменения только во фронтенде; backend и Apps Script не менялись.
-
-## v0.40.75
-- В мобильных карточках заявок детали оплаты разбиты на отдельные строки.
+## v0.40.77
+- Mobile admin: compacted “Задать планы” tab.
+- Hidden explanatory title/help text on mobile.
+- Mobile plan table now shows only month and editable percent columns; calculated amount columns are hidden.
+- Desktop and Apps Script unchanged.

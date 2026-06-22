@@ -5738,3 +5738,155 @@ button.soft-loading::after {
     display: none !important;
   }
 }
+
+/* v0.40.77 mobile admin plans compact percent editor */
+@media (max-width: 720px) {
+  body.admin-mode #plansEditor.plans-editor {
+    gap: 8px !important;
+  }
+
+  body.admin-mode #plansEditor .plans-editor-title {
+    display: flex !important;
+    justify-content: stretch !important;
+    align-items: center !important;
+    margin: 0 !important;
+  }
+
+  body.admin-mode #plansEditor .plans-editor-title > div,
+  body.admin-mode #plansEditor .plans-help-card,
+  body.admin-mode #plansEditor .plans-help-card-compact {
+    display: none !important;
+  }
+
+  body.admin-mode #plansEditor #savePlansYearBtn {
+    width: 100% !important;
+    min-height: 38px !important;
+    padding: 9px 12px !important;
+    border-radius: 14px !important;
+    font-size: 13px !important;
+    font-weight: 950 !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    padding: 5px !important;
+    border-radius: 16px !important;
+    box-sizing: border-box !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+    border-spacing: 0 4px !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(2),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(2),
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(4),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(4),
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(5),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(5),
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(7),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(7) {
+    display: none !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(1),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(1) {
+    width: 24% !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(3),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(3) {
+    width: 50% !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(6),
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(6) {
+    width: 26% !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly th {
+    padding: 0 4px 2px !important;
+    font-size: 9px !important;
+    line-height: 1 !important;
+    letter-spacing: .035em !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly th:nth-child(1) {
+    text-align: left !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly td {
+    padding: 4px 4px !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+    vertical-align: middle !important;
+    overflow: hidden !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly td:first-child {
+    padding-left: 7px !important;
+    font-size: 10.5px !important;
+    border-radius: 12px 0 0 12px !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(6) {
+    border-right: 1px solid rgba(223,234,212,.9) !important;
+    border-radius: 0 12px 12px 0 !important;
+  }
+
+  body.admin-mode #plansEditor .plans-table-monthly td:nth-child(3) .plan-percent-pair {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 3px !important;
+    justify-content: stretch !important;
+    align-items: center !important;
+  }
+
+  body.admin-mode #plansEditor .plan-percent-cell {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 2px !important;
+    justify-items: center !important;
+    min-width: 0 !important;
+    font-size: 8.5px !important;
+    line-height: 1 !important;
+  }
+
+  body.admin-mode #plansEditor .plan-percent-cell span:first-child {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #plansEditor .plan-percent-control {
+    justify-content: center !important;
+    gap: 1px !important;
+  }
+
+  body.admin-mode #plansEditor .plan-percent-input {
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 24px !important;
+    padding: 3px 2px !important;
+    border-radius: 9px !important;
+    font-size: 10px !important;
+    font-weight: 900 !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #plansEditor .plan-percent-control b {
+    font-size: 8.5px !important;
+  }
+
+  body.admin-mode #plansEditor .plans-save-message {
+    min-height: 14px !important;
+    font-size: 10px !important;
+  }
+}
