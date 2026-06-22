@@ -1,12 +1,9 @@
 # CHANGELOG
 
-## v0.40.71 — Event modal requests table width polish
+## v0.40.72 — Mobile admin request cards
 
-- Adjusted desktop event modal "Заявки мероприятия" table column widths.
-- Reduced excessive empty space in the actions column.
-- Expanded manager and KGD columns so values are less likely to be truncated.
-- Increased table font size slightly.
-- Kept request action buttons in one row without wrapping.
-- Updated frontend cache query strings to v0.40.71.
-
-Backend and Apps Script were not changed.
+- Mobile-only redesign for admin tabs “Заявки” and “Архив заявок”.
+- Request tables become compact cards on screens up to 720px.
+- Cards show date, created time, manager, customer, event, position, amount, payment method, statuses and actions without horizontal table scrolling.
+- Desktop layout is unchanged.
+- Apps Script unchanged.

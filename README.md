@@ -1,3 +1,3 @@
-Contrast Finance backend v0.40.71.
+# Contrast Finance Backend v0.40.72
 
-Patch focus: desktop event modal request table visual width balance.
+Mobile admin request cards patch. Desktop and Apps Script are unchanged.
