@@ -1,6 +1,0 @@
-v0.40.30
-- Added Event.customer_paid_amount and Alembic migration 0009.
-- Added admin endpoint POST /events/{event_id}/customer-payment to add customer prepayment to an event.
-- Event-level Деньги в кассе now fills customer_paid_amount to full turnover.
-- Added customer payment card after Доход компании in admin event modal and admin edit summary.
-- Card shows Оплачено, Остаток, amount input and ✓ button; complete payment gets light green background.
