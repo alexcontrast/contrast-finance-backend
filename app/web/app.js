@@ -4193,6 +4193,7 @@ function updateHeaderUserInfo(user) {
 
 
 function showLogin() {
+  document.body.classList.remove("boot-mode");
   document.body.classList.add("login-mode");
   document.body.classList.remove("dashboard-mode");
   $("loginScreen").classList.remove("hidden");
@@ -4208,6 +4209,7 @@ function showLogin() {
 }
 
 function showDashboardShell() {
+  document.body.classList.remove("boot-mode");
   document.body.classList.remove("login-mode");
   document.body.classList.add("dashboard-mode");
   $("loginScreen").classList.add("hidden");
@@ -12161,7 +12163,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.2 loaded");
+  console.info("Contrast Finance web app v0.40.67 loaded");
   if (!state.token) {
     showLogin();
     return;

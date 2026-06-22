@@ -34,6 +34,16 @@ h3 { font-size: 16px; }
 }
 .narrow { max-width: 460px; }
 .hidden { display: none !important; }
+
+/* v0.40.67: prevent login screen flash while saved session is checked. */
+body.boot-mode .app-shell {
+  visibility: hidden !important;
+}
+
+body.boot-mode {
+  min-height: 100vh;
+}
+
 .muted { color: var(--muted); }
 .error { margin-top: 12px; color: var(--danger); font-weight: 650; }
 label { display: grid; gap: 8px; margin: 14px 0; color: var(--muted); font-size: 14px; }
