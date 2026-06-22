@@ -6961,9 +6961,9 @@ function renderClosingContent(expenses, calc, closing, error = null, calcPending
         <input id="closingExpenseTitle" placeholder="Название" />
         <input id="closingExpenseAmount" inputmode="numeric" placeholder="Сумма" />
         <select id="closingExpenseAllocation">
-          <option value="default_split">По плану месяца</option>
-          <option value="sanzhar_only">100% Санжар</option>
-          <option value="raufal_only">100% Рауфаль</option>
+          <option value="default_split">По плану</option>
+          <option value="sanzhar_only">Санжар</option>
+          <option value="raufal_only">Рауфаль</option>
           <option value="custom">Вручную</option>
         </select>
         <input id="closingExpenseSanzhar" class="closing-custom-split hidden" inputmode="numeric" placeholder="Санжар" />

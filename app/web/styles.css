@@ -6355,27 +6355,27 @@ button.soft-loading::after {
     width: 100% !important;
     min-width: 0 !important;
     table-layout: fixed !important;
-    border-spacing: 0 5px !important;
+    border-spacing: 0 2px !important;
   }
 
   body.admin-mode #closingPanel .closing-table th,
   body.admin-mode #closingPanel .closing-table td {
-    padding: 6px 5px !important;
-    font-size: 11.5px !important;
-    line-height: 1.15 !important;
+    padding: 3px 3px !important;
+    font-size: 10.5px !important;
+    line-height: 1.05 !important;
     vertical-align: middle !important;
     box-sizing: border-box !important;
   }
 
   body.admin-mode #closingPanel .closing-table th {
-    padding-bottom: 2px !important;
-    font-size: 10px !important;
+    padding-bottom: 1px !important;
+    font-size: 9.5px !important;
     text-align: center !important;
   }
 
   body.admin-mode #closingPanel .closing-table th:nth-child(1),
   body.admin-mode #closingPanel .closing-table td:nth-child(1) {
-    width: 42% !important;
+    width: 32% !important;
     text-align: left !important;
   }
 
@@ -6387,7 +6387,7 @@ button.soft-loading::after {
 
   body.admin-mode #closingPanel .closing-table th:nth-child(3),
   body.admin-mode #closingPanel .closing-table td:nth-child(3) {
-    width: 25% !important;
+    width: 30% !important;
     text-align: center !important;
   }
 
@@ -6400,7 +6400,7 @@ button.soft-loading::after {
 
   body.admin-mode #closingPanel .closing-table th:nth-child(6),
   body.admin-mode #closingPanel .closing-table td:nth-child(6) {
-    width: 13% !important;
+    width: 18% !important;
     text-align: center !important;
   }
 
@@ -6410,7 +6410,7 @@ button.soft-loading::after {
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
-    font-size: 12.5px !important;
+    font-size: 11px !important;
   }
 
   body.admin-mode #closingPanel .closing-table td small {
@@ -6423,23 +6423,34 @@ button.soft-loading::after {
 
   body.admin-mode #closingPanel .closing-allocation-short {
     display: inline !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #closingPanel .closing-table td:nth-child(2),
+  body.admin-mode #closingPanel .closing-table td:nth-child(3) {
+    white-space: nowrap !important;
   }
 
   body.admin-mode #closingPanel .closing-row-actions {
-    gap: 3px !important;
+    gap: 4px !important;
+    justify-content: center !important;
+    flex-wrap: nowrap !important;
   }
 
   body.admin-mode #closingPanel .closing-icon-btn {
-    width: 23px !important;
-    height: 23px !important;
-    font-size: 13px !important;
+    width: 21px !important;
+    height: 21px !important;
+    min-width: 21px !important;
+    font-size: 12px !important;
+    padding: 0 !important;
   }
 
   body.admin-mode #closingPanel .closing-edit-amount-input {
     width: 100% !important;
-    max-width: 74px !important;
-    height: 26px !important;
+    max-width: 66px !important;
+    height: 22px !important;
     text-align: center !important;
+    font-size: 10.5px !important;
   }
 
   body.admin-mode #closingPanel .closing-expenses-total-row td {

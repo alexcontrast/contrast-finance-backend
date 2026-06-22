@@ -1,15 +1,8 @@
-# Changelog
+# CHANGELOG
 
-## v0.40.80 — Mobile closing month compact layout
+## v0.40.81 — mobile closing expenses fit
 
-- Mobile-only polish for admin tab “Закрыть месяц”.
-- Removed explanatory subtitle text on mobile.
-- Rebuilt expense input form into one compact row: title, amount, allocation, check button.
-- Hid comment input on mobile.
-- Replaced “Добавить” button text with a compact ✓ button on mobile.
-- Compacted mobile expenses table: Расход / Сумма / Деление / actions.
-- Hid department amount columns in mobile expenses table.
-- Shortened mobile split label to “По плану” / department name.
-- Made department calculation cards a horizontal carousel on mobile.
-- Kept founders calculation as a separate block.
-- Desktop, backend and Apps Script are unchanged.
+- Mobile admin “Закрыть месяц”: tightened expense rows by reducing row padding, font size and spacing.
+- Narrowed the “Расход” column and widened the action column so edit/delete buttons fit.
+- Mobile expense allocation dropdown now uses short labels: “По плану”, “Санжар”, “Рауфаль”, “Вручную”.
+- No backend or Apps Script changes.
