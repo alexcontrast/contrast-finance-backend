@@ -3512,3 +3512,296 @@ button.soft-loading::after {
   border-color: rgba(80, 210, 40, .65);
   box-shadow: 0 0 0 3px rgba(80, 210, 40, .10);
 }
+
+/* v0.40.56 — mobile-only admin compact mode. Desktop is untouched. */
+@media (max-width: 720px) {
+  body.admin-mode .app-shell {
+    width: calc(100% - 14px);
+    padding-top: 12px;
+    padding-bottom: 28px;
+  }
+
+  body.admin-mode .topbar {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  body.admin-mode h1 {
+    font-size: 22px;
+    line-height: 1.05;
+  }
+
+  body.admin-mode h2 {
+    font-size: 17px;
+    margin-bottom: 8px;
+  }
+
+  body.admin-mode h3 {
+    font-size: 14px;
+  }
+
+  body.admin-mode .card {
+    border-radius: 16px;
+    padding: 12px;
+  }
+
+  body.admin-mode .toolbar,
+  body.admin-mode .filters-row,
+  body.admin-mode .section-head,
+  body.admin-mode .topbar-actions {
+    gap: 7px;
+  }
+
+  body.admin-mode .toolbar {
+    margin-bottom: 10px;
+  }
+
+  body.admin-mode label,
+  body.admin-mode .compact-label {
+    font-size: 11px;
+    gap: 5px;
+    margin: 6px 0;
+    min-width: 0;
+  }
+
+  body.admin-mode input,
+  body.admin-mode select {
+    min-height: 38px;
+    padding: 9px 10px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
+  body.admin-mode button {
+    min-height: 38px;
+    padding: 9px 11px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  body.admin-mode button.small {
+    min-height: 32px;
+    padding: 7px 9px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  body.admin-mode .tabs {
+    gap: 6px;
+    margin: 2px 0 10px;
+    padding-bottom: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.admin-mode .tab-btn {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 8px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  body.admin-mode .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  body.admin-mode .metric {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  body.admin-mode .metric .label {
+    font-size: 10.5px;
+    line-height: 1.1;
+  }
+
+  body.admin-mode .metric .value {
+    margin-top: 4px;
+    font-size: 16px;
+    line-height: 1.05;
+    letter-spacing: -.02em;
+  }
+
+  body.admin-mode .badge,
+  body.admin-mode .status {
+    min-height: 0;
+    padding: 4px 7px;
+    font-size: 10.5px;
+    line-height: 1.05;
+  }
+
+  body.admin-mode .empty-state {
+    padding: 12px;
+    border-radius: 14px;
+    font-size: 13px;
+  }
+
+  /* Admin events: on mobile the table becomes compact cards with only key info. */
+  body.admin-mode .admin-events-table-wrap {
+    overflow-x: visible !important;
+  }
+
+  body.admin-mode .admin-events-table {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-spacing: 0 !important;
+    font-size: 12px !important;
+  }
+
+  body.admin-mode .admin-events-table thead {
+    display: none !important;
+  }
+
+  body.admin-mode .admin-events-table tbody {
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row {
+    display: grid !important;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "date client status"
+      "date title status"
+      "manager manager manager"
+      "turnover income income";
+    gap: 3px 8px;
+    padding: 9px 10px;
+    border: 1px solid rgba(120, 140, 110, .16);
+    border-radius: 15px;
+    box-shadow: 0 8px 22px rgba(28, 45, 18, .055);
+    overflow: hidden;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-sanzhar {
+    background: rgba(225, 246, 218, .86) !important;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-raufal {
+    background: rgba(226, 241, 255, .86) !important;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-mixed,
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-mixed-sanzhar-raufal {
+    background: linear-gradient(90deg, rgba(225, 246, 218, .86), rgba(244, 247, 241, .88), rgba(226, 241, 255, .86)) !important;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row:not(.department-sanzhar):not(.department-raufal):not(.department-mixed):not(.department-mixed-sanzhar-raufal) {
+    background: rgba(244, 247, 241, .90) !important;
+  }
+
+  body.admin-mode .admin-events-table th,
+  body.admin-mode .admin-events-table td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    font-size: 12px !important;
+    line-height: 1.12 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(1) {
+    grid-area: date;
+    align-self: start;
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px;
+    display: grid !important;
+    place-items: center;
+    border-radius: 12px !important;
+    background: rgba(255,255,255,.62) !important;
+    font-size: 14px !important;
+    font-weight: 950 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(2) {
+    grid-area: manager;
+    color: rgba(43, 54, 35, .76) !important;
+    font-size: 10.5px !important;
+    font-weight: 800 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(3) {
+    grid-area: client;
+    font-size: 13px !important;
+    font-weight: 950 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(3) strong {
+    font-size: 13px !important;
+    font-weight: 950 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(4) {
+    grid-area: title;
+    color: rgba(43, 54, 35, .82) !important;
+    font-size: 11.5px !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(6) {
+    grid-area: status;
+    align-self: start;
+    justify-self: end;
+    max-width: 94px !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(8) {
+    grid-area: turnover;
+    margin-top: 4px;
+    padding-top: 6px !important;
+    border-top: 1px solid rgba(110, 130, 100, .13) !important;
+    font-size: 11px !important;
+    font-weight: 900 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(8)::before {
+    content: "Оборот ";
+    color: rgba(43, 54, 35, .62);
+    font-weight: 800;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(9) {
+    grid-area: income;
+    margin-top: 4px;
+    padding-top: 6px !important;
+    border-top: 1px solid rgba(110, 130, 100, .13) !important;
+    text-align: right;
+    font-size: 11px !important;
+    font-weight: 950 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(9)::before {
+    content: "Доход ";
+    color: rgba(43, 54, 35, .62);
+    font-weight: 800;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(5),
+  body.admin-mode .admin-events-table td:nth-child(7),
+  body.admin-mode .admin-events-table td:nth-child(10),
+  body.admin-mode .admin-events-table td:nth-child(11) {
+    display: none !important;
+  }
+
+  body.admin-mode .admin-events-table .admin-event-status-badge,
+  body.admin-mode .admin-events-table .admin-event-money-badge {
+    max-width: 100% !important;
+    padding: 4px 7px !important;
+    font-size: 10px !important;
+    line-height: 1.05 !important;
+    white-space: nowrap !important;
+  }
+}

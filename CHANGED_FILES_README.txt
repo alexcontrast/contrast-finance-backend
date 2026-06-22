@@ -1,10 +1,8 @@
-Contrast Finance 2.0 — v0.40.53 changed files only
+Contrast Finance v0.40.56 — changed files only
 
-Changed files:
-- app/web/app.js
-- tools/google_sheets_export_webapp.gs
-- CHANGELOG_v0.40.53.txt
+Copy these files over the existing project:
 
-Deploy:
-1. Apply backend/frontend changes to GitHub/Railway.
-2. Copy tools/google_sheets_export_webapp.gs into Apps Script exporter or use the separate txt file.
+- app/web/styles.css
+- CHANGELOG.md
+
+Apps Script was not changed in this patch.
