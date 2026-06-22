@@ -1,5 +1,3 @@
-# Contrast Finance backend
+# v0.40.62 changed files
 
-Current patch: v0.40.59.
-
-This patch only changes mobile CSS for the admin “Мероприятия” tab. Desktop behavior and Apps Script are unchanged.
+Copy these files over the current project. Backend and Apps Script were not changed.

@@ -4540,3 +4540,64 @@ button.soft-loading::after {
     white-space: nowrap !important;
   }
 }
+
+
+/* v0.40.62 — date chips and mobile event badge/color polish. */
+.admin-events-table td.date-day-cell,
+.department-head-events-table td.date-day-cell {
+  width: 38px !important;
+  min-width: 38px !important;
+  max-width: 42px !important;
+  height: 30px !important;
+  padding: 4px 6px !important;
+  border: 1px solid rgba(24, 28, 22, .78) !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, .72) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .42) !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+  line-height: 1 !important;
+}
+
+@media (max-width: 720px) {
+  /* Sanjar events are blue, Raufal events are peach. */
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-sanzhar {
+    background: linear-gradient(135deg, rgba(225, 241, 255, .96), rgba(255, 255, 255, .90)) !important;
+    border-color: rgba(46, 126, 190, .18) !important;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 232, 210, .96), rgba(255, 255, 255, .90)) !important;
+    border-color: rgba(218, 139, 78, .20) !important;
+  }
+
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-mixed,
+  body.admin-mode .admin-events-table tbody tr.admin-event-row.department-mixed-sanzhar-raufal {
+    background: linear-gradient(135deg, rgba(225, 241, 255, .94), rgba(255, 255, 255, .90), rgba(255, 232, 210, .94)) !important;
+    border-color: rgba(150, 136, 118, .18) !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(1).date-day-cell {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 38px !important;
+    margin: 0 !important;
+  }
+
+  body.admin-mode .admin-events-table .admin-event-status-badge,
+  body.admin-mode .admin-events-table .admin-event-money-badge {
+    height: 22px !important;
+    min-height: 22px !important;
+    max-height: 22px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    line-height: 1 !important;
+    box-sizing: border-box !important;
+  }
+
+  body.admin-mode .admin-events-table .admin-event-money-badge {
+    margin-left: 0 !important;
+    font-size: 8.6px !important;
+  }
+}

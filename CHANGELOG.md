@@ -1,14 +1,8 @@
 # CHANGELOG
 
-## v0.40.61 — Mobile admin events card polish
+## v0.40.62 — Date chips and mobile event color polish
 
-- Polished mobile admin “Мероприятия” cards.
-- Added the payment/calculation method next to the customer name on mobile only.
-- Made event status and money-status badges compact and non-clipped.
-- Added a thin dark outline around the date cell to make it look like a small calendar block.
-- Kept all changes mobile-only where applicable; desktop layout is not changed.
-
-## v0.40.60 — Desktop manager action buttons
-
-- Centered delete/restore manager icons in desktop admin department blocks.
-- CSS-only patch.
+- Added calendar-style thin outlines to date cells in admin and department-head event tables.
+- Fixed mobile admin event card department colors: Sanjar is blue, Raufal is peach.
+- Aligned mobile event status and money-status badges to the same height.
+- CSS-only patch; backend and Apps Script were not changed.
