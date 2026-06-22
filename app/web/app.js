@@ -3964,7 +3964,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
               <tr>
                 ${paymentRequestCreatedAtCell(request)}
                 ${requestTextCell(managerNameForRequest(request), "request-manager-cell")}
-                ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
+                ${requestPositionMobileCell(request)}
                 ${requestHtmlCell(`<div class="request-main-amount">${formatMoney(request.amount_requested)}</div>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
                 ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
                 ${requestTextCell(request.tax_status || request.tax_status_label || "", "request-tax-cell")}
@@ -5404,6 +5404,39 @@ function paymentRequestEventTitle(request) {
   return request?.event_title || request?.title || request?.event_name || request?.event || "";
 }
 
+function paymentRequestMobileDetail(request) {
+  const position = String(request?.position || request?.item_name_snapshot || "").trim();
+  const method = paymentMethodLabel(request?.payment_method);
+  const methodValue = String(request?.payment_method || "").toLowerCase();
+
+  let extra = "";
+  if (isInvoiceMethod(methodValue) || isInvoiceMethod(method)) {
+    extra = String(request?.tax_status_label || request?.tax_status || request?.kgd_status || "").trim();
+  } else if (methodValue === "card" || method === "На карту") {
+    extra = String(request?.card_number || request?.card || request?.card_last4 || request?.payment_card || "").trim();
+  } else if (isSelfEmployedMethod(methodValue) || isSelfEmployedMethod(method)) {
+    extra = String(
+      request?.self_employed_surname ||
+      request?.contractor_name_snapshot ||
+      request?.contractor_name ||
+      request?.comment ||
+      ""
+    ).trim();
+  }
+
+  return [position, method, extra].filter(Boolean).join(" / ");
+}
+
+function requestPositionMobileCell(request) {
+  const desktopText = String(request?.position || request?.item_name_snapshot || "").trim();
+  const mobileText = paymentRequestMobileDetail(request) || desktopText;
+  return requestHtmlCell(
+    `<span class="request-position-desktop">${escapeHtml(desktopText)}</span><span class="request-position-mobile">${escapeHtml(mobileText)}</span>`,
+    mobileText || desktopText,
+    "request-position-cell"
+  );
+}
+
 function renderPaymentRequestsTable(requests, title = "Заявки", mode = "regular") {
   const filtered = filteredPaymentRequests(requests || [], mode);
 
@@ -5441,7 +5474,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
                 ${requestTextCell(paymentRequestManagerName(request), "request-manager-cell")}
                 ${requestTextCell(paymentRequestClientName(request), "request-customer-cell")}
                 ${requestTextCell(paymentRequestEventTitle(request), "request-event-cell")}
-                ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
+                ${requestPositionMobileCell(request)}
                 ${requestHtmlCell(`<strong>${formatMoney(request.amount_requested)}</strong>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
                 ${requestTextCell(paymentMethodLabel(request.payment_method), "request-method-cell")}
                 ${requestHtmlCell(`<span class="status ${request.status} request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
