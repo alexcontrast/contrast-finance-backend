@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.72
+# Contrast Finance Backend v0.40.73
 
-Mobile admin request cards patch. Desktop and Apps Script are unchanged.
+Mobile-only visual polish for admin request cards. Backend and Apps Script are unchanged.

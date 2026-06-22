@@ -5340,3 +5340,116 @@ button.soft-loading::after {
     white-space: nowrap !important;
   }
 }
+
+/* v0.40.73 — mobile admin request cards: bottom action row and cleaner compact text. */
+@media (max-width: 720px) {
+  body.admin-mode .admin-requests-table tbody tr {
+    grid-template-columns: 42px minmax(0, 1fr) max-content max-content !important;
+    grid-template-areas:
+      "date customer pay money"
+      "date event amount amount"
+      "date position amount amount"
+      "date manager created created"
+      "method method method method"
+      "actions actions actions actions" !important;
+    gap: 3px 5px !important;
+    padding: 9px !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(2) {
+    grid-area: created !important;
+    justify-self: end !important;
+    align-self: start !important;
+    max-width: 150px !important;
+    color: rgba(43, 54, 35, .50) !important;
+    font-size: 8.6px !important;
+    font-weight: 700 !important;
+    text-align: right !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(3) {
+    grid-area: manager !important;
+    justify-self: start !important;
+    max-width: 120px !important;
+    color: rgba(43, 54, 35, .66) !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(3)::before,
+  body.admin-mode .admin-requests-table td:nth-child(6)::before,
+  body.admin-mode .admin-requests-table td:nth-child(8)::before {
+    content: "" !important;
+    display: none !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(6) {
+    grid-area: position !important;
+    color: rgba(43, 54, 35, .64) !important;
+    font-size: 10.2px !important;
+    font-weight: 750 !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(8) {
+    grid-area: method !important;
+    color: rgba(43, 54, 35, .62) !important;
+    font-size: 10px !important;
+    font-weight: 750 !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(9) {
+    grid-area: pay !important;
+    justify-self: end !important;
+    align-self: start !important;
+    overflow: visible !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(10) {
+    grid-area: money !important;
+    justify-self: start !important;
+    align-self: start !important;
+    overflow: visible !important;
+  }
+
+  body.admin-mode .admin-requests-table .request-status-badge,
+  body.admin-mode .admin-requests-table .request-money-badge {
+    min-height: 21px !important;
+    height: 21px !important;
+    padding: 4px 7px !important;
+    font-size: 8.5px !important;
+  }
+
+  body.admin-mode .admin-requests-table td:nth-child(11) {
+    grid-area: actions !important;
+    justify-self: stretch !important;
+    align-self: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-top: 5px !important;
+    overflow: visible !important;
+  }
+
+  body.admin-mode .admin-requests-table .request-actions-row {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    justify-content: stretch !important;
+    align-items: center !important;
+    gap: 5px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body.admin-mode .admin-requests-table .request-actions-row button,
+  body.admin-mode .admin-requests-table button.small {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    min-height: 28px !important;
+    padding: 6px 6px !important;
+    border-radius: 11px !important;
+    font-size: 9.4px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}

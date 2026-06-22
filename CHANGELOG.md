@@ -1,9 +1,13 @@
 # CHANGELOG
 
-## v0.40.72 — Mobile admin request cards
+## v0.40.73 — Mobile request cards polish
 
-- Mobile-only redesign for admin tabs “Заявки” and “Архив заявок”.
-- Request tables become compact cards on screens up to 720px.
-- Cards show date, created time, manager, customer, event, position, amount, payment method, statuses and actions without horizontal table scrolling.
-- Desktop layout is unchanged.
-- Apps Script unchanged.
+- Mobile admin request cards: action buttons moved into one separate bottom row.
+- Created date moved under request amount.
+- Payment and money status badges tightened and placed next to each other without large spacing.
+- Removed mobile labels before manager, position, and payment method: now shown as short values only.
+- Updated frontend cache version to `0.40.73`.
+
+## v0.40.72
+
+- Mobile admin tabs “Заявки” and “Архив заявок” switched from horizontal tables to compact cards.
