@@ -1,25 +1,14 @@
 # CHANGELOG
 
-## v0.40.60 — Desktop manager action buttons polish
-- Desktop admin overview mini-fix: manager delete/restore buttons now center their × / ↺ icons properly.
-- No backend or Apps Script changes.
+## v0.40.61 — Mobile admin events card polish
 
-## v0.40.59 — Mobile admin events tab
-- Mobile-only polish for the admin “Мероприятия” tab.
-- Event filters now fit in one row: department, manager, status, customer.
-- Event cards now use a full-card background instead of looking like text highlights.
-- Mobile event card layout updated: date on the left; customer, event title, and manager in the main area; status/money status, turnover, and income on the right.
-- Desktop layout is untouched.
+- Polished mobile admin “Мероприятия” cards.
+- Added the payment/calculation method next to the customer name on mobile only.
+- Made event status and money-status badges compact and non-clipped.
+- Added a thin dark outline around the date cell to make it look like a small calendar block.
+- Kept all changes mobile-only where applicable; desktop layout is not changed.
 
-## v0.40.58 — Mobile admin header polish
-- Mobile admin header polished: full logo left, ADMIN right.
-- Month/year/update controls fit in one row.
-- Company/department badges and monthly totals spacing improved.
+## v0.40.60 — Desktop manager action buttons
 
-## v0.40.57 — Mobile admin overview
-- Mobile admin overview compacted.
-- Department cards converted to swipe carousel.
-- Manager progress rows compacted.
-
-## v0.40.56 — Mobile admin compact base
-- First mobile-only admin visual pass.
+- Centered delete/restore manager icons in desktop admin department blocks.
+- CSS-only patch.

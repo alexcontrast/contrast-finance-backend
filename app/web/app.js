@@ -4626,7 +4626,7 @@ function renderEventsTable(events, allowClick = false) {
             <tr class="${allowClick ? "clickable-row" : ""} admin-event-row ${adminEventDepartmentToneClass(event)}" ${allowClick ? `data-event-id="${event.id}"` : ""}>
               ${monthListDateCell(event.event_date)}
               <td>${event.manager_name || managerNameById(event.manager_id) || ""}</td>
-              <td><strong>${event.client_name || ""}</strong></td>
+              <td><strong>${event.client_name || ""}</strong><span class="admin-event-calc-mobile">${calcTypeLabel(event.client_calc_type)}</span></td>
               <td>${event.title || ""}</td>
               <td>${calcTypeLabel(event.client_calc_type)}</td>
               <td><span class="status ${event.status} admin-event-status-badge">${statusLabel(event.status)}</span></td>

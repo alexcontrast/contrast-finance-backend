@@ -4471,3 +4471,72 @@ button.soft-loading::after {
     white-space: nowrap !important;
   }
 }
+
+/* v0.40.61 — mobile admin events cards polish. Desktop-safe by default. */
+.admin-event-calc-mobile {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  body.admin-mode .admin-events-table tbody tr.admin-event-row {
+    grid-template-columns: 40px minmax(0, 1fr) max-content max-content !important;
+    column-gap: 5px !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(1) {
+    border: 1px solid rgba(24, 28, 22, .78) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .45) !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(3) {
+    display: flex !important;
+    align-items: baseline !important;
+    gap: 5px !important;
+    min-width: 0 !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(3) strong {
+    display: inline-block !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode .admin-events-table .admin-event-calc-mobile {
+    display: inline-block !important;
+    flex: 0 0 auto !important;
+    max-width: 88px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: rgba(43, 54, 35, .58) !important;
+    font-size: 8.8px !important;
+    font-weight: 650 !important;
+    line-height: 1 !important;
+    letter-spacing: -.02em !important;
+  }
+
+  body.admin-mode .admin-events-table td:nth-child(6),
+  body.admin-mode .admin-events-table td:nth-child(7) {
+    max-width: none !important;
+    min-width: max-content !important;
+    overflow: visible !important;
+  }
+
+  body.admin-mode .admin-events-table .admin-event-status-badge,
+  body.admin-mode .admin-events-table .admin-event-money-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: auto !important;
+    min-width: max-content !important;
+    max-width: none !important;
+    min-height: 22px !important;
+    padding: 4px 7px !important;
+    font-size: 8.6px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+}
