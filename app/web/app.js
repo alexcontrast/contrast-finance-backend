@@ -3014,7 +3014,52 @@ function injectManagerUxStyles() {
         font-size: 10.5px !important;
         line-height: 1 !important;
       }
-    }
+
+
+/* v0.40.66 — unified compact date chips for request tables. */
+@media (min-width: 721px) {
+  .admin-events-table td.date-day-cell,
+  .department-head-events-table td.date-day-cell,
+  .admin-requests-table td.date-day-cell,
+  .department-head-requests-table td.date-day-cell,
+  .request-compact-table td.date-day-cell {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+  }
+
+  .date-day-cell .date-day-chip {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 24px !important;
+    min-width: 24px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(22, 25, 21, .82) !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: inherit !important;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    text-align: center !important;
+  }
+
+  .admin-requests-table td.date-day-cell,
+  .department-head-requests-table td.date-day-cell,
+  .request-compact-table td.date-day-cell {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+}
+
 
 `;
   document.head.appendChild(style);
@@ -3286,7 +3331,7 @@ function formatMonthListDay(value) {
 function monthListDateCell(value) {
   const fullDate = formatDateRu(value) || value || "";
   const day = formatMonthListDay(value) || fullDate;
-  return `<td class="date-day-cell nowrap clip-cell" title="${escapeHtml(fullDate)}">${escapeHtml(day)}</td>`;
+  return `<td class="date-day-cell nowrap clip-cell" title="${escapeHtml(fullDate)}"><span class="date-day-chip">${escapeHtml(day)}</span></td>`;
 }
 
 function asNumber(value) {
