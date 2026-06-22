@@ -1854,12 +1854,20 @@ button[data-manager-event-save-draft]:hover {
 .manager-delete-btn,
 .manager-restore-btn,
 .manager-action-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
   width: 34px;
   height: 34px;
+  padding: 0;
   border-radius: 999px;
   font-size: 22px;
   line-height: 1;
   font-weight: 950;
+  text-align: center;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .manager-delete-btn,

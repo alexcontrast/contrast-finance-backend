@@ -1,5 +1,7 @@
-# Contrast Finance backend
+# Contrast Finance backend v0.40.60
 
-Current patch: v0.40.59.
+Mini visual patch for desktop admin manager action buttons.
 
-This patch only changes mobile CSS for the admin “Мероприятия” tab. Desktop behavior and Apps Script are unchanged.
+- Centers delete/restore icons in department manager rows.
+- Changes only CSS.
+- Backend and Apps Script are unchanged.

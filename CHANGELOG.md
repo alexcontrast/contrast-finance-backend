@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.40.60 — Desktop manager action buttons polish
+- Desktop admin overview mini-fix: manager delete/restore buttons now center their × / ↺ icons properly.
+- No backend or Apps Script changes.
+
 ## v0.40.59 — Mobile admin events tab
 - Mobile-only polish for the admin “Мероприятия” tab.
 - Event filters now fit in one row: department, manager, status, customer.
