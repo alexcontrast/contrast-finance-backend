@@ -5068,8 +5068,8 @@ function renderDepartmentHeadTotals(data) {
         ${metric("Факт", formatMoney(calc.income_amount || data.fact_income_amount || 0))}
         ${metric("Выполнение", `${calc.completion_percent || data.completion_percent || 0}%`)}
         ${departmentHeadClickableExpenseMetric(formatMoney(calc.expense_amount || data.expenses_amount || 0), expensesCount)}
-        ${metric("% главы", `${calc.head_percent || 0}%`)}
-        ${metric("ЗП главы", formatMoney(calc.head_salary || 0))}
+        <div class="card metric department-head-bonus-metric ${asNumber(calc.head_percent || 0) >= 15 ? "is-green" : ""}"><div class="label">% главы</div><div class="value">${calc.head_percent || 0}%</div></div>
+        <div class="card metric department-head-bonus-metric ${asNumber(calc.head_percent || 0) >= 15 ? "is-green" : ""}"><div class="label">ЗП главы</div><div class="value">${formatMoney(calc.head_salary || 0)}</div></div>
       </div>
     </section>
   `;

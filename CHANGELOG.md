@@ -1,11 +1,12 @@
 # CHANGELOG
 
-## v0.40.90 — mobile department-head overview polish
-- Mobile department-head header aligned with the main admin header: full logo left, role right, PIN/logout in one row.
-- Department-head mobile tabs now use the same horizontal compact carousel pattern as admin tabs.
-- Department-head main plan card rebuilt to match the admin department card: clean department title, event badge in the corner, fact/goal/progress aligned.
-- Fixed oversized/shifted text in the department-head mobile overview card.
-- Desktop, backend, and Apps Script unchanged.
+## v0.40.91 — Department Head Mobile Final Alignment
+- Mobile department-head tabs now fit in one row: Обзор / Мероприятия / Заявки / Итог.
+- Department-head overview card height and progress spacing aligned with main admin layout.
+- Department-head event cards aligned with main admin mobile event cards: colors, sizing, badges, and layout.
+- Department-head request cards realigned so created date and manager no longer drift.
+- Department-head event modal inherits the compact admin mobile modal layout while remaining read-only.
+- Department-head totals highlight head bonus percent and salary in green when head percent is 15%.
 
-## v0.40.89
-- Department-head cabinets visually aligned closer to the admin dashboard.
+## Current base
+- Based on v0.40.90.
