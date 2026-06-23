@@ -1,5 +1,10 @@
-# Contrast Finance Backend v0.40.98
+# Contrast Finance 2.0 — v0.40.99
 
-Visual patch for event modal title typography and mobile metric label alignment.
+Desktop-only fix for department-head overview after mobile visual polishing.
 
-Backend and Apps Script are unchanged.
+## Changed
+- Restored desktop department-head tabs alignment.
+- Restored desktop department-head plan card layout.
+- Updated cache version to 0.40.99.
+
+Backend and Apps Script were not changed.

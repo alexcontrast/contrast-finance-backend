@@ -3249,6 +3249,140 @@ function injectManagerUxStyles() {
 }
 
 
+/* v0.40.99 — desktop-only department-head overview restore.
+   Mobile polishing had overridden the desktop head-department overview: tabs became centered
+   and the goal card inherited mobile-density geometry. Keep these fixes above 720px only. */
+@media (min-width: 721px) {
+  body.department-head-mode #adminTabs {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+    padding: 8px !important;
+    margin: 0 0 18px !important;
+    border-radius: 22px !important;
+  }
+
+  body.department-head-mode #adminTabs .tab-btn {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 118px !important;
+    height: auto !important;
+    min-height: 44px !important;
+    padding: 0 22px !important;
+    border-radius: 16px !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    letter-spacing: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel {
+    display: grid !important;
+    grid-template-columns: minmax(230px, 280px) minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 24px !important;
+    padding: 18px 22px !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.department-head-mode .department-head-card-head {
+    display: block !important;
+    position: relative !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-card-title-block,
+  body.department-head-mode .department-head-total {
+    display: block !important;
+    text-align: left !important;
+    min-width: 0 !important;
+  }
+
+  body.department-head-mode .department-head-card-head .overview-label,
+  body.department-head-mode .department-head-card-title-block .overview-label {
+    display: block !important;
+    margin: 0 0 6px !important;
+  }
+
+  body.department-head-mode .department-head-overview-name {
+    display: block !important;
+    margin: 0 0 6px !important;
+    font-size: 22px !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.03em !important;
+    text-transform: none !important;
+    color: var(--text) !important;
+  }
+
+  body.department-head-mode .department-head-total > div {
+    display: block !important;
+    margin: 0 0 2px !important;
+    font-size: 18px !important;
+    line-height: 1.12 !important;
+    letter-spacing: -.02em !important;
+    font-weight: 850 !important;
+    color: var(--text) !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-total > span {
+    display: block !important;
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1.18 !important;
+    color: var(--muted) !important;
+    font-weight: 850 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-events-word-badge {
+    position: static !important;
+    display: inline-flex !important;
+    margin-top: 6px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 24px !important;
+    padding: 0 10px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-main-progress {
+    display: grid !important;
+    gap: 8px !important;
+    margin: 0 !important;
+    min-width: 0 !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    height: 10px !important;
+    margin: 0 !important;
+  }
+
+  body.department-head-mode .department-head-overview-muted {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+    color: var(--muted) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}
+
+
 `;
   document.head.appendChild(style);
 }
