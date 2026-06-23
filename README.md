@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.86
+Contrast Finance backend/frontend bundle v0.40.87.
 
-Mobile-only event modal visual fix. Desktop and Apps Script unchanged.
+Patch focus: mobile event modal polish. Apps Script was not changed.

@@ -3931,6 +3931,38 @@ function modalFilteredRequests(requests, status) {
   return (requests || []).filter((request) => request.status === status);
 }
 
+
+function renderEventModalRequestMobileCard(request) {
+  const created = compactDateTimeParts(paymentRequestDateValue(request));
+  const createdTitle = formatDateTimeAstana(paymentRequestDateValue(request)) || paymentRequestDateValue(request) || "";
+  const manager = managerNameForRequest(request);
+  const position = String(request?.position || request?.item_name_snapshot || "").trim();
+  const method = paymentMethodLabel(request?.payment_method);
+  const details = paymentRequestMobileThirdLine(request);
+  const actions = `${adminRequestActions(request, "regular")}${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}`;
+  return `
+    <article class="event-modal-request-card">
+      <div class="event-modal-request-date" title="${escapeHtml(createdTitle)}">
+        <strong>${escapeHtml(created.date || "—")}</strong>
+        ${created.time ? `<span>${escapeHtml(created.time)}</span>` : ""}
+      </div>
+      <div class="event-modal-request-main">
+        <strong>${escapeHtml(position || "Позиция")}</strong>
+        <span>${escapeHtml([method, details].filter(Boolean).join(" / "))}</span>
+      </div>
+      <div class="event-modal-request-statuses">
+        <span class="status ${request.status} event-request-status-badge">${statusLabel(request.status)}</span>
+        <span class="status ${requestMoneyStatus(request)} event-request-status-badge request-money-badge">${statusLabel(requestMoneyStatus(request))}</span>
+      </div>
+      <div class="event-modal-request-side">
+        <strong>${formatMoney(request.amount_requested)}</strong>
+        <span>${escapeHtml(manager)}</span>
+      </div>
+      ${actions ? `<div class="event-modal-request-actions inline-actions request-actions-row">${actions}</div>` : ""}
+    </article>
+  `;
+}
+
 function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
   const filtered = modalFilteredRequests(requests || [], selectedStatus);
 
@@ -3939,13 +3971,6 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
       <h3>Заявки мероприятия</h3>
       <span class="muted">${filtered.length} из ${(requests || []).length} шт.</span>
     </div>
-    ${(requests || []).some((request) => requestMoneyStatus(request) === "cash_received") ? `
-      <div class="event-request-cash-note">
-        <span class="status cash_received event-request-status-badge">Деньги в кассе</span>
-        <span>По мероприятию уже есть оплаты со статусом “Деньги в кассе”.</span>
-      </div>
-    ` : ""}
-
     <div class="filters-row">
       <label class="compact-label">Статус оплаты
         <select id="eventModalRequestStatusFilter">
@@ -3997,6 +4022,9 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
             `).join("")}
           </tbody>
         </table>
+      </div>
+      <div class="event-modal-request-cards">
+        ${filtered.map(renderEventModalRequestMobileCard).join("")}
       </div>
     ` : `<div class="empty-state">По выбранному статусу заявок нет.</div>`}
   `;
