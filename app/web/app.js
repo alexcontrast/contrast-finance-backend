@@ -3067,6 +3067,188 @@ function injectManagerUxStyles() {
 }
 
 
+/* v0.40.94 — department-head mobile exact request/event polish.
+   Fixes the actual mobile head-department card gaps and prevents department fill from tinting badges/text fragments. */
+@media (max-width: 720px) {
+  body.department-head-mode #adminTabs {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    justify-content: stretch !important;
+    align-items: center !important;
+    gap: 3px !important;
+    overflow: hidden !important;
+    padding: 4px !important;
+    min-height: 0 !important;
+    border-radius: 17px !important;
+  }
+
+  body.department-head-mode #adminTabs .tab-btn {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 4px !important;
+    border-radius: 13px !important;
+    font-size: 10.2px !important;
+    line-height: 1 !important;
+    letter-spacing: -.04em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel {
+    padding: 10px 12px 8px !important;
+  }
+
+  body.department-head-mode .department-head-card-head {
+    margin-bottom: 0 !important;
+  }
+
+  body.department-head-mode .department-head-total > span {
+    margin-top: 1px !important;
+  }
+
+  body.department-head-mode .department-head-main-progress {
+    margin-top: -2px !important;
+    gap: 3px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    margin-top: 0 !important;
+  }
+
+  body.department-head-mode .department-head-overview-muted {
+    margin-top: 0 !important;
+  }
+
+  /* Events: Sanjar is blue, Raufal is peach; color belongs to the whole card only. */
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row.department-sanzhar {
+    background: linear-gradient(135deg, rgba(225, 241, 255, .96), rgba(255, 255, 255, .90)) !important;
+    border-color: rgba(46, 126, 190, .20) !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 239, 226, .97), rgba(255, 255, 255, .90)) !important;
+    border-color: rgba(224, 126, 80, .20) !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row.department-mixed,
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row.department-mixed-sanzhar-raufal {
+    background: linear-gradient(135deg, rgba(225, 241, 255, .94), rgba(255,255,255,.90), rgba(255, 239, 226, .94)) !important;
+    border-color: rgba(150, 136, 118, .18) !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row td:not(.date-day-cell),
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row td:not(.date-day-cell) > *:not(.status):not(.admin-event-status-badge):not(.admin-event-money-badge),
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row .clip-cell,
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row strong,
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row span:not(.status):not(.admin-event-status-badge):not(.admin-event-money-badge) {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-status-badge,
+  body.department-head-mode .department-head-events-table .admin-event-money-badge,
+  body.department-head-mode .department-head-events-table .status {
+    box-shadow: none !important;
+    background-clip: padding-box !important;
+  }
+
+  /* Requests: collapse the empty vertical zones marked in the screenshot. */
+  body.department-head-mode .department-head-requests-table tbody {
+    display: grid !important;
+    gap: 7px !important;
+  }
+
+  body.department-head-mode .department-head-requests-table tbody tr {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) max-content max-content !important;
+    grid-template-areas:
+      "date customer pay money"
+      "created position amount amount"
+      "created method manager manager" !important;
+    column-gap: 5px !important;
+    row-gap: 0 !important;
+    padding: 7px 9px !important;
+    align-items: start !important;
+    min-height: 0 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td {
+    min-height: 0 !important;
+    padding: 0 !important;
+    line-height: 1.02 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(4) {
+    grid-area: customer !important;
+    align-self: start !important;
+    max-width: 170px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 12px !important;
+    line-height: 1.02 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(6) {
+    grid-area: position !important;
+    align-self: start !important;
+    max-width: 170px !important;
+    margin: -1px 0 0 !important;
+    padding: 0 !important;
+    font-size: 9.8px !important;
+    line-height: 1.02 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(8) {
+    grid-area: method !important;
+    align-self: start !important;
+    max-width: 170px !important;
+    margin: -2px 0 0 !important;
+    padding: 0 !important;
+    font-size: 9.6px !important;
+    line-height: 1.02 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(7) {
+    grid-area: amount !important;
+    justify-self: end !important;
+    align-self: start !important;
+    min-width: 104px !important;
+    margin: -1px 0 0 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+    text-align: right !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(3) {
+    grid-area: manager !important;
+    justify-self: end !important;
+    align-self: start !important;
+    max-width: 120px !important;
+    margin: -2px 0 0 !important;
+    padding: 0 !important;
+    font-size: 9px !important;
+    line-height: 1.02 !important;
+    text-align: right !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(2) {
+    grid-area: created !important;
+    align-self: start !important;
+    margin-top: -1px !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(9),
+  body.department-head-mode .department-head-requests-table td:nth-child(10) {
+    align-self: start !important;
+    margin: 0 !important;
+  }
+}
+
+
 `;
   document.head.appendChild(style);
 }

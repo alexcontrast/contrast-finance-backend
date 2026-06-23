@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.93
+# Contrast Finance Backend v0.40.94
 
-Mobile visual polish for department-head cabinet only. Backend and Apps Script are unchanged.
+Точечный визуальный патч мобильного кабинета главдепа. Backend и Apps Script не менялись.
