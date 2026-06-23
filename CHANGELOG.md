@@ -1,10 +1,8 @@
 # CHANGELOG
 
-## v0.40.95 — Department head mobile request cards exact fix
-
-- Fixed mobile department-head request cards by changing their render to use the same mobile-aware position/method cells as the main admin request cards.
-- Fixed the real cause of method/KGD text gluing: desktop and mobile method spans were both visible in department-head mobile cards.
-- Removed the negative-margin layout that glued amount and manager together.
-- Kept the compact card layout while preserving separate amount and manager lines.
-- Updated frontend cache version to 0.40.95.
-
+## v0.40.96 — Department head mobile request cards exact fix
+- Rebuilt mobile department-head request cards as a separate card list instead of trying to restyle the desktop table.
+- Removed the empty gaps between customer, payment details, amount, and manager in department-head mobile request cards.
+- Restored `method / details` formatting for mobile request cards, e.g. `По счету / ОУР без НДС`, `На карту / card`, `Самозанятый / surname`.
+- Restored department-head mobile event status/money badges so row/card fill no longer bleeds into badges.
+- Removed the negative progress offset in the department-head overview card so target text no longer sticks to the progress bar.

@@ -5089,6 +5089,43 @@ function renderDepartmentHeadRequestFilters(requests = []) {
   `;
 }
 
+function renderDepartmentHeadRequestMobileCard(request) {
+  const dateValue = paymentRequestDateValue(request);
+  const day = formatMonthListDay(dateValue) || "";
+  const created = compactDateTimeParts(dateValue);
+  const customer = paymentRequestClientName(request);
+  const position = String(request?.position || request?.item_name_snapshot || "").trim();
+  const method = paymentMethodLabel(request?.payment_method);
+  const methodDetails = paymentRequestMobileThirdLine(request);
+  const methodLine = [method, methodDetails].filter(Boolean).join(" / ");
+  const manager = paymentRequestManagerName(request);
+  const amount = formatMoney(request.amount_requested);
+  const payStatus = statusLabel(request.status);
+  const moneyStatus = statusLabel(requestMoneyStatus(request));
+  return `
+    <article class="department-head-request-card">
+      <div class="department-head-request-date">
+        <span class="department-head-request-day">${escapeHtml(day)}</span>
+        <span>${escapeHtml(created.date)}</span>
+        ${created.time ? `<span>${escapeHtml(created.time)}</span>` : ""}
+      </div>
+      <div class="department-head-request-main">
+        <strong>${escapeHtml(customer)}</strong>
+        ${position ? `<span>${escapeHtml(position)}</span>` : ""}
+        ${methodLine ? `<span>${escapeHtml(methodLine)}</span>` : ""}
+      </div>
+      <div class="department-head-request-side">
+        <div class="department-head-request-statuses">
+          <span class="status ${request.status} request-status-badge" title="${escapeHtml(payStatus)}">${escapeHtml(payStatus)}</span>
+          <span class="status ${requestMoneyStatus(request)} request-money-badge" title="${escapeHtml(moneyStatus)}">${escapeHtml(moneyStatus)}</span>
+        </div>
+        <strong>${escapeHtml(amount)}</strong>
+        <span>${escapeHtml(manager)}</span>
+      </div>
+    </article>
+  `;
+}
+
 function renderDepartmentHeadRequestsTable(requests = []) {
   const sourceRequests = requests || [];
   const filtered = sourceRequests.filter(departmentHeadRequestMatchesFilters);
@@ -5100,7 +5137,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
       <span class="muted">${filtered.length} из ${sourceRequests.length} шт.</span>
     </div>
     ${filtered.length ? `
-    <div class="table-wrap department-head-table-wrap">
+    <div class="table-wrap department-head-table-wrap department-head-requests-desktop-wrap">
       <table class="department-head-requests-table request-compact-table">
         <thead>
           <tr>
@@ -5133,6 +5170,9 @@ function renderDepartmentHeadRequestsTable(requests = []) {
           `).join("")}
         </tbody>
       </table>
+    </div>
+    <div class="department-head-requests-mobile-list">
+      ${filtered.map(renderDepartmentHeadRequestMobileCard).join("")}
     </div>
     ` : `<div class="empty-state">По фильтрам заявок нет.</div>`}
   `;

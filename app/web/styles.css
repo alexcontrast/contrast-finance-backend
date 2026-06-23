@@ -9862,3 +9862,213 @@ button.soft-loading::after {
     align-self: start !important;
   }
 }
+
+/* v0.40.96 — department-head mobile exact cards fix.
+   Root cause: old table-grid request layout made status badges define row height,
+   which created the visible empty gaps. Mobile now uses a separate card list.
+   Also restores event status badge backgrounds and removes the negative progress offset. */
+@media (max-width: 720px) {
+  body.department-head-mode .department-head-requests-desktop-wrap {
+    display: none !important;
+  }
+
+  body.department-head-mode .department-head-requests-mobile-list {
+    display: grid !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  body.department-head-mode .department-head-request-card {
+    display: grid !important;
+    grid-template-columns: 48px minmax(0, 1fr) minmax(108px, max-content) !important;
+    gap: 6px !important;
+    align-items: start !important;
+    padding: 9px 10px !important;
+    min-height: 0 !important;
+    border: 1px solid rgba(185, 210, 175, .56) !important;
+    border-radius: 17px !important;
+    background: rgba(255, 255, 255, .82) !important;
+    box-shadow: 0 8px 22px rgba(74, 110, 52, .045) !important;
+    overflow: hidden !important;
+  }
+
+  body.department-head-mode .department-head-request-date {
+    display: grid !important;
+    justify-items: center !important;
+    align-content: start !important;
+    gap: 1px !important;
+    color: rgba(43, 54, 35, .52) !important;
+    font-size: 8.6px !important;
+    line-height: 1.02 !important;
+    font-weight: 850 !important;
+    text-align: center !important;
+  }
+
+  body.department-head-mode .department-head-request-day {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 34px !important;
+    height: 34px !important;
+    border: 1px solid rgba(22, 25, 21, .82) !important;
+    border-radius: 11px !important;
+    color: var(--text) !important;
+    background: rgba(255, 255, 255, .76) !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body.department-head-mode .department-head-request-main {
+    min-width: 0 !important;
+    display: grid !important;
+    align-content: start !important;
+    gap: 2px !important;
+    padding-top: 0 !important;
+  }
+
+  body.department-head-mode .department-head-request-main strong {
+    display: block !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: var(--text) !important;
+    font-size: 12.8px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+  }
+
+  body.department-head-mode .department-head-request-main span {
+    display: block !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: rgba(43, 54, 35, .62) !important;
+    font-size: 9.7px !important;
+    line-height: 1.08 !important;
+    font-weight: 850 !important;
+  }
+
+  body.department-head-mode .department-head-request-side {
+    min-width: 0 !important;
+    display: grid !important;
+    justify-items: end !important;
+    align-content: start !important;
+    gap: 3px !important;
+    text-align: right !important;
+  }
+
+  body.department-head-mode .department-head-request-statuses {
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    gap: 4px !important;
+    min-width: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-request-statuses .status {
+    height: 20px !important;
+    min-height: 20px !important;
+    padding: 0 7px !important;
+    border-radius: 999px !important;
+    font-size: 8.7px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-request-side strong {
+    display: block !important;
+    margin-top: 1px !important;
+    color: var(--text) !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-request-side span:not(.status) {
+    display: block !important;
+    max-width: 116px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    color: rgba(43, 54, 35, .58) !important;
+    font-size: 9px !important;
+    line-height: 1.05 !important;
+    font-weight: 850 !important;
+  }
+
+  body.department-head-mode .department-head-main-progress {
+    margin-top: 6px !important;
+    gap: 4px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    margin-top: 0 !important;
+  }
+
+  body.department-head-mode .department-head-overview-muted {
+    margin-top: 0 !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row td:not(.date-day-cell),
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row td:not(.date-day-cell) > *:not(.status):not(.admin-event-status-badge):not(.admin-event-money-badge),
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row .clip-cell,
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row strong,
+  body.department-head-mode .department-head-events-table tbody tr.admin-event-row span:not(.status):not(.admin-event-status-badge):not(.admin-event-money-badge) {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.draft,
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.revision {
+    background: rgba(244, 247, 241, .98) !important;
+    border-color: rgba(125, 133, 118, .28) !important;
+    color: #52594f !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.review {
+    background: rgba(255, 239, 196, .98) !important;
+    border-color: rgba(199, 151, 40, .34) !important;
+    color: #8a6207 !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.accepted,
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.completed,
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.archive,
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.archived {
+    background: rgba(216, 244, 210, .98) !important;
+    border-color: rgba(53, 150, 57, .28) !important;
+    color: #1f7a35 !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-status-badge.cancelled {
+    background: rgba(255, 228, 222, .98) !important;
+    border-color: rgba(205, 86, 67, .28) !important;
+    color: #b84835 !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-money-badge.cash_received,
+  body.department-head-mode .department-head-events-table .status.cash_received {
+    background: #7CFF35 !important;
+    border-color: rgba(72, 195, 12, .62) !important;
+    color: #173f0b !important;
+  }
+
+  body.department-head-mode .department-head-events-table .admin-event-money-badge.waiting_money,
+  body.department-head-mode .department-head-events-table .status.waiting_money {
+    background: rgba(245, 245, 245, .92) !important;
+    border-color: rgba(150, 150, 150, .28) !important;
+    color: #686868 !important;
+  }
+}
+
+@media (min-width: 721px) {
+  body.department-head-mode .department-head-requests-mobile-list {
+    display: none !important;
+  }
+}

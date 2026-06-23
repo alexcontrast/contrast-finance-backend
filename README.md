@@ -1,12 +1,3 @@
-# Contrast Finance v0.40.95
+# Contrast Finance v0.40.96
 
-Patch focused on mobile department-head request cards.
-
-Changed files:
-- app/web/app.js
-- app/web/styles.css
-- app/web/index.html
-- CHANGELOG.md
-- README.md
-
-No backend logic or Apps Script changes.
+Patch focused on the mobile department-head cabinet. It fixes request card layout by rendering a dedicated mobile card list, restores status badge colors in event cards, and removes the overview progress negative offset.
