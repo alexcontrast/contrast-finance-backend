@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.85
+# Contrast Finance Backend v0.40.86
 
-Mobile-only event modal layout pass. Desktop, backend logic and Apps Script are unchanged.
+Mobile-only event modal visual fix. Desktop and Apps Script unchanged.
