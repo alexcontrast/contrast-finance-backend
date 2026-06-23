@@ -4271,60 +4271,112 @@ function customerPaymentMetric(event, summary, editable = true) {
   const paid = Math.min(customerPaidAmount(event, summary), turnover > 0 ? turnover : customerPaidAmount(event, summary));
   const remaining = Math.max(0, turnover - paid);
   const completed = turnover > 0 && remaining <= 0;
+  const editState = state.customerPaymentEditByEventId || {};
+  const isEditing = editable && (paid <= 0 || editState[String(event?.id || "")]);
   const inputId = `customerPaymentInput_${event?.id || ""}`;
   return `
-    <div class="card metric customer-paid-metric ${completed ? "is-complete" : ""}">
+    <div class="card metric customer-paid-metric ${completed ? "is-complete" : ""}" data-customer-paid-metric="${event?.id || ""}">
       <div class="label">Оплачено</div>
-      <div class="value">${formatMoney(paid)}</div>
-      <div class="customer-paid-rest">Остаток: ${formatMoney(remaining)}</div>
       ${editable ? `
-        <div class="customer-payment-add-row">
-          <input id="${inputId}" data-event-customer-payment-input="${event.id}" inputmode="numeric" placeholder="Сумма" />
-          <button class="icon-btn" data-event-customer-payment-add="${event.id}" title="Добавить оплату заказчика">✓</button>
+        <div class="customer-payment-control-row ${isEditing ? "is-editing" : "is-readonly"}">
+          ${isEditing ? `
+            <input id="${inputId}" data-event-customer-payment-input="${event.id}" inputmode="numeric" value="${paid ? formatMoney(paid) : ""}" placeholder="Сумма" />
+            <button class="icon-btn customer-payment-action-btn" data-event-customer-payment-save="${event.id}" title="Сохранить оплату заказчика">✓</button>
+          ` : `
+            <div class="customer-paid-fixed-value">${formatMoney(paid)}</div>
+            <button class="icon-btn customer-payment-action-btn" data-event-customer-payment-edit="${event.id}" title="Изменить оплату заказчика">✎</button>
+          `}
         </div>
-      ` : ""}
+      ` : `<div class="value">${formatMoney(paid)}</div>`}
+      <div class="customer-paid-rest">Остаток: ${formatMoney(remaining)}</div>
     </div>
   `;
 }
 
-async function addEventCustomerPayment(eventId) {
+function patchCustomerPaymentMetric(updatedEvent) {
+  const eventId = String(updatedEvent?.id || "");
+  if (!eventId) return;
+  const metricEl = document.querySelector(`[data-customer-paid-metric="${eventId}"]`);
+  const payload = state.currentEventModalPayload;
+  if (!metricEl || !payload?.summary) return;
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = customerPaymentMetric(updatedEvent, payload.summary, state.bootstrap?.user?.role === "admin").trim();
+  const next = wrapper.firstElementChild;
+  if (!next) return;
+  metricEl.replaceWith(next);
+  attachCustomerPaymentActions(next);
+}
+
+async function saveEventCustomerPayment(eventId, button = null) {
   const input = document.querySelector(`[data-event-customer-payment-input="${eventId}"]`);
   if (!input) return;
   const amount = normalizeNumberInput(input.value);
-  if (!amount || amount <= 0) {
+  if (amount === null || amount === undefined || Number.isNaN(amount) || amount < 0) {
     alert("Введите сумму оплаты заказчика");
     input.focus();
     return;
   }
 
-  await api(`/events/${eventId}/customer-payment`, {
-    method: "POST",
-    body: JSON.stringify({ amount }),
-  });
-
-  input.value = "";
-  if (Number(state.adminEventEditModeId || 0) === Number(eventId)) {
-    await openAdminEventEditMode(eventId);
-  } else {
-    await openEventModal(eventId);
+  const originalText = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.textContent = "…";
   }
-  await loadDashboard();
+  input.disabled = true;
+
+  try {
+    const updatedEvent = await api(`/events/${eventId}/customer-payment`, {
+      method: "PATCH",
+      body: JSON.stringify({ amount }),
+    });
+
+    if (!state.customerPaymentEditByEventId) state.customerPaymentEditByEventId = {};
+    state.customerPaymentEditByEventId[String(eventId)] = false;
+    patchEventState(updatedEvent);
+    patchCustomerPaymentMetric(updatedEvent);
+    rerenderAdminEventListIfOpen();
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+      button.textContent = originalText || "✓";
+    }
+    input.disabled = false;
+  }
 }
 
 function attachCustomerPaymentActions(root = document) {
-  root.querySelectorAll("[data-event-customer-payment-add]").forEach((button) => {
+  root.querySelectorAll("[data-event-customer-payment-save]").forEach((button) => {
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const eventId = button.getAttribute("data-event-customer-payment-add");
+      const eventId = button.getAttribute("data-event-customer-payment-save");
       try {
-        button.disabled = true;
-        await addEventCustomerPayment(eventId);
+        await saveEventCustomerPayment(eventId, button);
       } catch (error) {
-        alert(error.message || "Не удалось добавить оплату заказчика");
-      } finally {
-        button.disabled = false;
+        alert(error.message || "Не удалось сохранить оплату заказчика");
       }
+    });
+  });
+
+  root.querySelectorAll("[data-event-customer-payment-edit]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const eventId = button.getAttribute("data-event-customer-payment-edit");
+      if (!state.customerPaymentEditByEventId) state.customerPaymentEditByEventId = {};
+      state.customerPaymentEditByEventId[String(eventId)] = true;
+      const payload = state.currentEventModalPayload;
+      const eventData = payload?.event?.id && Number(payload.event.id) === Number(eventId) ? payload.event : null;
+      if (eventData) patchCustomerPaymentMetric(eventData);
+      requestAnimationFrame(() => {
+        const input = document.querySelector(`[data-event-customer-payment-input="${eventId}"]`);
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      });
     });
   });
 
@@ -4333,10 +4385,11 @@ function attachCustomerPaymentActions(root = document) {
       if (event.key !== "Enter") return;
       event.preventDefault();
       const eventId = input.getAttribute("data-event-customer-payment-input");
+      const button = input.closest(".customer-payment-control-row")?.querySelector("[data-event-customer-payment-save]");
       try {
-        await addEventCustomerPayment(eventId);
+        await saveEventCustomerPayment(eventId, button);
       } catch (error) {
-        alert(error.message || "Не удалось добавить оплату заказчика");
+        alert(error.message || "Не удалось сохранить оплату заказчика");
       }
     });
   });

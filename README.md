@@ -1,3 +1,9 @@
-# Contrast Finance Backend v0.40.81
+# Contrast Finance Backend v0.40.82
 
-Mobile-only visual patch for the admin “Закрыть месяц” tab.
+Patch for desktop event modal customer payment editing.
+
+Changed areas:
+- `app/api/routes/events.py`
+- `app/web/app.js`
+- `app/web/styles.css`
+- `app/web/index.html`

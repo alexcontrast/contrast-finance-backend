@@ -6498,3 +6498,86 @@ button.soft-loading::after {
     width: 100% !important;
   }
 }
+
+/* v0.40.82 — compact desktop event modal summary and inline customer payment editor */
+@media (min-width: 901px) {
+  #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards {
+    align-items: start !important;
+    gap: 10px !important;
+  }
+
+  #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards .metric {
+    min-height: 0 !important;
+    padding: 10px 14px 12px !important;
+  }
+
+  #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards .metric .label {
+    min-height: 18px;
+    line-height: 18px;
+    display: flex;
+    align-items: center;
+  }
+
+  #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards .metric .value {
+    margin-top: 5px;
+    line-height: 1;
+  }
+
+  .manager-salary-metric .manager-percent-label {
+    justify-content: flex-start !important;
+    gap: 8px !important;
+  }
+}
+
+.customer-payment-control-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.customer-payment-control-row input,
+.customer-paid-fixed-value {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(130, 138, 150, .28);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.customer-paid-fixed-value {
+  display: flex;
+  align-items: center;
+  color: #69707c;
+  background: rgba(245, 246, 248, .92);
+}
+
+.customer-payment-control-row .customer-payment-action-btn {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.customer-payment-control-row .customer-payment-action-btn.is-loading {
+  opacity: .7;
+  cursor: wait;
+}
+
+.customer-paid-metric .customer-paid-rest {
+  margin-top: 6px;
+}
+
+/* Old customer add row is kept for cache safety, but the active editor uses customer-payment-control-row. */
+.customer-payment-add-row {
+  display: none;
+}

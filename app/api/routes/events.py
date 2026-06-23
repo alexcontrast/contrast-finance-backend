@@ -39,6 +39,10 @@ class EventCustomerPaymentPayload(BaseModel):
     amount: Decimal
 
 
+class EventCustomerPaymentSetPayload(BaseModel):
+    amount: Decimal
+
+
 class EventManagerPercentPayload(BaseModel):
     manager_percent: Decimal
 
@@ -366,6 +370,36 @@ def add_event_customer_payment(
     event.customer_paid_amount = q(new_paid)
     if turnover > 0 and event.customer_paid_amount >= turnover:
         event.money_status = "cash_received"
+    event.updated_at = datetime.utcnow()
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+@router.patch("/events/{event_id}/customer-payment", response_model=EventRead)
+def set_event_customer_payment(
+    event_id: int,
+    payload: EventCustomerPaymentSetPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_event_action(current_user)
+    event = get_event_or_404(db, event_id)
+
+    amount = q(payload.amount)
+    if amount < 0:
+        raise HTTPException(status_code=400, detail="Сумма оплаты заказчика не может быть меньше 0")
+
+    turnover = _event_customer_turnover(db, event)
+    if turnover > 0 and amount > turnover:
+        amount = turnover
+
+    event.customer_paid_amount = q(amount)
+    if turnover > 0 and event.customer_paid_amount >= turnover:
+        event.money_status = "cash_received"
+    else:
+        event.money_status = "waiting_money"
     event.updated_at = datetime.utcnow()
 
     db.add(event)
