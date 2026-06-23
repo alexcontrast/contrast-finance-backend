@@ -1,3 +1,5 @@
-# Contrast Finance Backend v0.40.97
+# Contrast Finance Backend v0.40.98
 
-Mobile visual polish patch for the event modal. Backend and Apps Script are unchanged.
+Visual patch for event modal title typography and mobile metric label alignment.
+
+Backend and Apps Script are unchanged.

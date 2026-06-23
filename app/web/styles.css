@@ -10127,3 +10127,73 @@ button.soft-loading::after {
     letter-spacing: .07em !important;
   }
 }
+
+
+/* v0.40.98 — event modal title split + mobile manager metric label alignment.
+   Event title is always rendered as two spans: client and event title. Keep them visually
+   separated on desktop and mobile; keep manager percent title aligned like other metric labels. */
+#eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0;
+  line-height: 1.08;
+}
+
+#eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle .event-modal-title-client {
+  display: block;
+  font-weight: 950;
+  color: var(--text);
+  line-height: 1.08;
+}
+
+#eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle .event-modal-title-name {
+  display: block;
+  margin-top: 2px;
+  font-size: .72em;
+  font-weight: 750;
+  color: var(--muted);
+  line-height: 1.12;
+}
+
+@media (max-width: 720px) {
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label {
+    justify-content: flex-start !important;
+    align-items: center !important;
+    text-align: left !important;
+    width: 100% !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label > span,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label > span {
+    width: auto !important;
+    max-width: 100% !important;
+    text-align: left !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+    text-align: left !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle .event-modal-title-client,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle .event-modal-title-client {
+    font-size: 18px !important;
+    font-weight: 950 !important;
+    line-height: 1.08 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle .event-modal-title-name,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle .event-modal-title-name {
+    font-size: 12px !important;
+    font-weight: 750 !important;
+    color: var(--muted) !important;
+    line-height: 1.12 !important;
+  }
+}
