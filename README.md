@@ -1,3 +1,3 @@
-Contrast Finance backend/frontend bundle v0.40.87.
+# Contrast Finance Backend v0.40.88
 
-Patch focus: mobile event modal polish. Apps Script was not changed.
+Mobile event-modal request card visual polish. Backend and Apps Script are unchanged.
