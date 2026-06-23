@@ -1,9 +1,3 @@
-# Contrast Finance Backend v0.40.82
+# Contrast Finance Backend v0.40.83
 
-Patch for desktop event modal customer payment editing.
-
-Changed areas:
-- `app/api/routes/events.py`
-- `app/web/app.js`
-- `app/web/styles.css`
-- `app/web/index.html`
+Патч интерфейса Google-архива: выбор года для архива и компактная мобильная раскладка кнопок/бейджей.

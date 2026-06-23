@@ -3503,7 +3503,7 @@ button.soft-loading::after {
   }
 }
 
-/* Google Sheets archive export v0.5.1 */
+/* Google Sheets archive export */
 .google-export-panel {
   display: grid;
   gap: 18px;
@@ -3521,6 +3521,30 @@ button.soft-loading::after {
   margin: 4px 0 8px;
   font-size: 24px;
 }
+.google-export-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.google-export-year-control {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  color: #6d7668;
+  font-size: 13px;
+  font-weight: 900;
+}
+.google-export-year-control select {
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(93, 180, 60, 0.22);
+  background: #fff;
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 16px;
+  font-weight: 900;
+}
 .google-export-stats {
   display: flex;
   gap: 10px;
@@ -3536,6 +3560,10 @@ button.soft-loading::after {
   font-weight: 800;
 }
 .google-export-actions {
+  display: grid;
+  gap: 10px;
+}
+.google-export-action-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -6580,4 +6608,85 @@ button.soft-loading::after {
 /* Old customer add row is kept for cache safety, but the active editor uses customer-payment-control-row. */
 .customer-payment-add-row {
   display: none;
+}
+
+/* v0.40.83: mobile Google archive compact controls */
+@media (max-width: 720px) {
+  .google-export-card {
+    padding: 16px;
+    border-radius: 20px;
+    gap: 12px;
+  }
+
+  .google-export-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 10px;
+  }
+
+  .google-export-card h3 {
+    margin: 2px 0 0;
+    font-size: 22px;
+    line-height: 1.05;
+  }
+
+  .google-export-card .muted {
+    display: none;
+  }
+
+  .google-export-year-control {
+    min-width: 96px;
+    gap: 4px;
+    font-size: 11px;
+    text-align: left;
+  }
+
+  .google-export-year-control select {
+    width: 96px;
+    height: 38px;
+    border-radius: 13px;
+    padding: 0 9px;
+    font-size: 15px;
+  }
+
+  .google-export-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .google-export-stats span {
+    justify-content: center;
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 13px;
+    line-height: 1.05;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .google-export-actions {
+    gap: 8px;
+  }
+
+  .google-export-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .google-export-action-row button {
+    width: 100%;
+    min-height: 42px;
+    padding: 9px 10px;
+    font-size: 13px;
+    line-height: 1.05;
+    white-space: normal;
+  }
+
+  .google-export-status {
+    font-size: 12px;
+    line-height: 1.35;
+  }
 }

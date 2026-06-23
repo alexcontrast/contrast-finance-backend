@@ -7125,28 +7125,52 @@ function clearDashboardForPeriodLoading() {
 }
 
 
+function googleExportYearOptions(selectedYear) {
+  const currentYear = new Date().getFullYear();
+  const years = new Set([currentYear - 1, currentYear, currentYear + 1, currentYear + 2, Number(selectedYear)]);
+  return Array.from(years)
+    .filter((year) => Number.isFinite(year))
+    .sort((a, b) => a - b)
+    .map((year) => `<option value="${year}" ${String(year) === String(selectedYear) ? "selected" : ""}>${year}</option>`)
+    .join("");
+}
+
+function selectedGoogleExportYearValue() {
+  const exportYearSelect = $("googleExportYearSelect");
+  return String(exportYearSelect?.value || selectedYearValue());
+}
+
 function renderGoogleSheetsExportPanel(data) {
-  const month = selectedMonthValue();
   const year = selectedYearValue();
   const eventsCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
   const requestsCount = (data.payment_requests || []).length;
   return `
     <section class="google-export-panel">
       <div class="google-export-card">
-        <div>
-          <div class="overview-label">Google Sheets архив</div>
-          <h3>Выгрузка ${escapeHtml(year)}</h3>
-          <p class="muted">Автоэкспорт запускается каждый день в 00:00.</p>
+        <div class="google-export-head">
+          <div>
+            <div class="overview-label">Google Sheets архив</div>
+            <h3>Выгрузка архива</h3>
+            <p class="muted">Автоэкспорт запускается каждый день в 00:00.</p>
+          </div>
+          <label class="google-export-year-control">
+            <span>Год архива</span>
+            <select id="googleExportYearSelect">${googleExportYearOptions(year)}</select>
+          </label>
         </div>
         <div class="google-export-stats">
-          <span>${eventsCount} мероприятий в ${escapeHtml(month)}</span>
-          <span>${requestsCount} заявок в ${escapeHtml(month)}</span>
+          <span>${eventsCount} мероприятий</span>
+          <span>${requestsCount} заявок</span>
         </div>
         <div class="google-export-actions">
-          <button id="googleExportDryRunBtn" type="button" class="secondary">Проверить месяц</button>
-          <button id="googleExportMonthBtn" type="button" class="secondary">Выгрузить месяц</button>
-          <button id="googleExportYearDryRunBtn" type="button" class="secondary">Проверить год</button>
-          <button id="googleExportYearBtn" type="button">Выгрузить весь год</button>
+          <div class="google-export-action-row google-export-action-row-month">
+            <button id="googleExportDryRunBtn" type="button" class="secondary">Проверить месяц</button>
+            <button id="googleExportMonthBtn" type="button" class="secondary">Выгрузить месяц</button>
+          </div>
+          <div class="google-export-action-row google-export-action-row-year">
+            <button id="googleExportYearDryRunBtn" type="button" class="secondary">Проверить год</button>
+            <button id="googleExportYearBtn" type="button">Выгрузить весь год</button>
+          </div>
         </div>
         <div id="googleExportStatus" class="google-export-status muted"></div>
       </div>
@@ -7173,7 +7197,7 @@ async function runGoogleSheetsExport(dryRun, button) {
 }
 
 async function runGoogleSheetsYearExport(dryRun, button) {
-  const year = selectedYearValue();
+  const year = selectedGoogleExportYearValue();
   const statusEl = $("googleExportStatus");
   if (statusEl) statusEl.textContent = dryRun ? "Собираю год для проверки…" : "Выгружаю все месяцы, оплаты и годовую статистику…";
   const startedAt = perfNow();
