@@ -3067,7 +3067,7 @@ function injectManagerUxStyles() {
 }
 
 
-/* v0.40.94 — department-head mobile exact request/event polish.
+/* v0.40.95 — department-head mobile exact request/event polish.
    Fixes the actual mobile head-department card gaps and prevents department fill from tinting badges/text fragments. */
 @media (max-width: 720px) {
   body.department-head-mode #adminTabs {
@@ -5124,7 +5124,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
               ${requestTextCell(request.manager_name || "", "request-manager-cell")}
               ${requestTextCell(paymentRequestClientName(request), "request-customer-cell")}
               ${requestTextCell(paymentRequestEventTitle(request), "request-event-cell")}
-              ${requestTextCell(request.position || request.item_name_snapshot || "", "request-position-cell")}
+              ${requestPositionMobileCell(request)}
               ${requestHtmlCell(`<strong>${formatMoney(request.amount_requested)}</strong>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
               ${requestMethodMobileCell(request)}
               ${requestHtmlCell(`<span class="status ${request.status} request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}

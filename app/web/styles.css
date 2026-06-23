@@ -9577,7 +9577,7 @@ button.soft-loading::after {
 }
 
 
-/* v0.40.94 — department-head mobile exact request/event polish.
+/* v0.40.95 — department-head mobile exact request/event polish.
    Fixes the actual mobile head-department card gaps and prevents department fill from tinting badges/text fragments. */
 @media (max-width: 720px) {
   body.department-head-mode #adminTabs {
@@ -9755,5 +9755,110 @@ button.soft-loading::after {
   body.department-head-mode .department-head-requests-table td:nth-child(10) {
     align-self: start !important;
     margin: 0 !important;
+  }
+}
+
+
+/* v0.40.95 — exact department-head mobile request cards fix.
+   Root cause: department-head request rows used the desktop position cell and did not hide
+   request-method desktop/mobile spans, so method + KGD were glued together. Previous negative
+   margins also glued amount and manager. Keep the table-render, but make the mobile grid deterministic. */
+@media (max-width: 720px) {
+  body.department-head-mode .department-head-requests-table tbody tr {
+    grid-template-columns: 42px minmax(0, 1fr) max-content max-content !important;
+    grid-template-areas:
+      "date customer pay money"
+      "created position amount amount"
+      "created method manager manager" !important;
+    column-gap: 6px !important;
+    row-gap: 2px !important;
+    padding: 8px 9px 8px !important;
+    align-items: start !important;
+    min-height: 0 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td {
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 1.08 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table .request-position-desktop,
+  body.department-head-mode .department-head-requests-table .request-method-desktop {
+    display: none !important;
+  }
+
+  body.department-head-mode .department-head-requests-table .request-position-mobile,
+  body.department-head-mode .department-head-requests-table .request-method-mobile {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(4) {
+    grid-area: customer !important;
+    align-self: start !important;
+    max-width: 100% !important;
+    font-size: 12px !important;
+    line-height: 1.08 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(6) {
+    grid-area: position !important;
+    align-self: start !important;
+    max-width: 100% !important;
+    font-size: 9.8px !important;
+    line-height: 1.08 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(8) {
+    grid-area: method !important;
+    align-self: start !important;
+    max-width: 100% !important;
+    color: rgba(43, 54, 35, .62) !important;
+    font-size: 9.6px !important;
+    line-height: 1.08 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(7) {
+    grid-area: amount !important;
+    justify-self: end !important;
+    align-self: start !important;
+    min-width: 104px !important;
+    text-align: right !important;
+    line-height: 1.05 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(3) {
+    grid-area: manager !important;
+    justify-self: end !important;
+    align-self: start !important;
+    max-width: 124px !important;
+    margin-top: 1px !important;
+    padding-top: 0 !important;
+    font-size: 9px !important;
+    line-height: 1.08 !important;
+    text-align: right !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(2) {
+    grid-area: created !important;
+    align-self: start !important;
+    margin-top: 0 !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(9) {
+    grid-area: pay !important;
+    justify-self: end !important;
+    align-self: start !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(10) {
+    grid-area: money !important;
+    justify-self: end !important;
+    align-self: start !important;
   }
 }
