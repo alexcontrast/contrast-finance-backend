@@ -3560,13 +3560,20 @@ button.soft-loading::after {
   font-weight: 800;
 }
 .google-export-actions {
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 10px;
+  flex-wrap: nowrap;
 }
 .google-export-action-row {
   display: flex;
+  align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+.google-export-action-row button {
+  white-space: nowrap;
 }
 .google-export-status a {
   color: #239300;
@@ -6667,6 +6674,7 @@ button.soft-loading::after {
   }
 
   .google-export-actions {
+    display: grid;
     gap: 8px;
   }
 
