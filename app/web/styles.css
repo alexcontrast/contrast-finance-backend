@@ -10072,3 +10072,58 @@ button.soft-loading::after {
     display: none !important;
   }
 }
+
+/* v0.40.97 — mobile event modal metric title and estimate density fix.
+   Root cause: .manager-percent-label stayed inline-flex from desktop percent editor even when
+   the edit button is hidden for department-head/mobile, and department-head modal estimate
+   table did not inherit the compact admin mobile table typography. */
+@media (max-width: 720px) {
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    line-height: 1 !important;
+    text-align: center !important;
+    transform: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label > span,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-salary-metric .manager-percent-label > span {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    transform: none !important;
+  }
+
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table {
+    min-width: 620px !important;
+    font-size: 8.8px !important;
+  }
+
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table th,
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table td,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table th,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table td {
+    padding: 3px 5px !important;
+    font-size: 8.8px !important;
+    line-height: 1.05 !important;
+  }
+
+  body.department-head-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table th,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table th {
+    letter-spacing: .07em !important;
+  }
+}
