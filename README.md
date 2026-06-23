@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.92
+# Contrast Finance Backend v0.40.93
 
-Mobile visual alignment patch for department-head cabinets. Backend and Apps Script were not changed.
+Mobile visual polish for department-head cabinet only. Backend and Apps Script are unchanged.

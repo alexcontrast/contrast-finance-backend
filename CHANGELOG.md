@@ -1,9 +1,9 @@
 # CHANGELOG
 
-## v0.40.92 — Department head mobile final visual alignment
-- Mobile department-head tabs now use the same narrow horizontal rail pattern as the main admin.
-- Department-head plan card height, badge, goal text and progress spacing aligned with main admin cards.
-- Department-head event cards now use the same full-card fill geometry as main admin mobile event cards; removed accidental text-highlight backgrounds.
-- Department-head request cards tightened: better vertical rhythm, date/manager/amount positioning adjusted.
-- Department-head event modal now reuses the main admin mobile modal sizing, metric cards, estimate scroll, and request-card formatting, while keeping restricted head-department actions hidden.
-- Updated frontend cache version to 0.40.92.
+## v0.40.93 — Department head mobile exact polish
+
+- Mobile department-head tabs: compressed to one row without horizontal scroll.
+- Mobile department-head plan card: removed extra vertical gap between goal text and progress bar.
+- Mobile department-head event cards: fixed department colors: Sanjar blue, Raufal peach, and removed text-only background highlights so the whole card is filled evenly.
+- Mobile department-head request cards: removed wasted vertical space after customer name and lifted position, method, amount, and manager lines.
+- No backend or Apps Script changes.
