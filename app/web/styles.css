@@ -8103,3 +8103,224 @@ button.soft-loading::after {
     line-height: 1.05 !important;
   }
 }
+
+/* v0.40.90 — department-head mobile overview aligned with main admin overview. */
+@media (max-width: 720px) {
+  body.department-head-mode .brand-topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "brand admin"
+      "actions actions" !important;
+    align-items: start !important;
+    gap: 10px 12px !important;
+    padding: 14px 16px 13px !important;
+    margin-bottom: 10px !important;
+  }
+
+  body.department-head-mode .brand-block {
+    display: contents !important;
+  }
+
+  body.department-head-mode .brand-logo {
+    grid-area: brand !important;
+    justify-self: start !important;
+    width: 118px !important;
+    max-width: 44vw !important;
+    height: auto !important;
+    max-height: 42px !important;
+    border-radius: 0 !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    mix-blend-mode: multiply !important;
+  }
+
+  body.department-head-mode .brand-block > div {
+    grid-area: admin !important;
+    justify-self: end !important;
+    align-self: start !important;
+    text-align: right !important;
+  }
+
+  body.department-head-mode #pageTitle {
+    margin: 3px 0 0 !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    letter-spacing: .18em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+  }
+
+  body.department-head-mode #userBadge {
+    display: none !important;
+  }
+
+  body.department-head-mode .topbar-actions {
+    grid-area: actions !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  body.department-head-mode .topbar-actions #changePinOpenBtn,
+  body.department-head-mode .topbar-actions #logoutBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    border-radius: 14px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, .74fr) minmax(88px, .70fr) !important;
+    gap: 6px !important;
+    align-items: end !important;
+    margin-bottom: 10px !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .toolbar .month-control,
+  body.department-head-mode #dashboardScreen > .toolbar .year-control {
+    min-width: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .toolbar .month-control select,
+  body.department-head-mode #dashboardScreen > .toolbar .year-control select,
+  body.department-head-mode #reloadBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    border-radius: 14px !important;
+    font-size: 12px !important;
+    padding: 7px 8px !important;
+  }
+
+  body.department-head-mode #adminTabs {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    scroll-snap-type: x mandatory !important;
+    padding: 9px !important;
+    border-radius: 22px !important;
+    width: 100% !important;
+  }
+
+  body.department-head-mode #adminTabs::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  body.department-head-mode #adminTabs .tab-btn {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    padding: 0 18px !important;
+    border-radius: 17px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    font-weight: 900 !important;
+    scroll-snap-align: center !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel {
+    position: relative !important;
+    padding: 13px !important;
+    border-radius: 17px !important;
+    margin-bottom: 12px !important;
+    overflow: hidden !important;
+  }
+
+  body.department-head-mode .department-head-card-head {
+    display: block !important;
+    position: relative !important;
+    margin-bottom: 10px !important;
+    padding-right: 86px !important;
+  }
+
+  body.department-head-mode .department-head-card-title-block .overview-label,
+  body.department-head-mode .department-head-card-head .overview-label {
+    display: none !important;
+  }
+
+  body.department-head-mode .department-head-overview-name {
+    display: block !important;
+    margin: 0 0 5px !important;
+    padding: 0 !important;
+    color: var(--accent-dark) !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .16em !important;
+    font-weight: 950 !important;
+  }
+
+  body.department-head-mode .department-head-total {
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-total > div {
+    font-size: 24px !important;
+    line-height: 1.02 !important;
+    letter-spacing: -.045em !important;
+    font-weight: 950 !important;
+    color: var(--text) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.department-head-mode .department-head-total > span {
+    display: block !important;
+    margin-top: 3px !important;
+    color: rgba(43,54,35,.68) !important;
+    font-size: 10.5px !important;
+    line-height: 1.15 !important;
+    font-weight: 850 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .department-head-events-word-badge {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    height: 22px !important;
+    max-width: 84px !important;
+    padding: 0 8px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+  }
+
+  body.department-head-mode .department-head-main-progress {
+    display: grid !important;
+    gap: 6px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    height: 9px !important;
+    margin: 0 !important;
+  }
+
+  body.department-head-mode .department-head-overview-muted {
+    margin-top: 0 !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    color: rgba(43, 54, 35, .62) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}

@@ -1,3 +1,10 @@
-# Contrast Finance v0.40.89
+# Contrast Finance Backend v0.40.90
 
-Patch focused on visual alignment of department-head cabinets with the main admin dashboard. Backend and Apps Script are unchanged.
+Mobile visual polish for department-head dashboards. This patch aligns the department-head mobile header, tabs, and overview plan card with the main admin mobile layout.
+
+Changed files:
+- app/web/index.html
+- app/web/app.js
+- app/web/styles.css
+- CHANGELOG.md
+- README.md

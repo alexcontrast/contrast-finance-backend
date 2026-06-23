@@ -4717,18 +4717,21 @@ function renderDepartmentHeadOverview(data) {
   const calc = data.calculation || {};
   return `
     <section class="manager-plan-panel department-head-plan-panel ${departmentClassByName(data.department_name)}">
-      <div>
-        <div class="overview-label">План отдела</div>
-        <h3 class="department-head-overview-name">${escapeHtml(data.department_name || "Отдел")} ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}</h3>
-      </div>
-      <div class="manager-plan-main">
-        <div class="manager-plan-row">
-          <strong>Факт: ${formatMoney(data.fact_income_amount)} ₸</strong>
-          <strong class="overview-subline-with-badge">Цель: ${formatMoney(data.plan_amount)} ₸</strong>
-          <strong>${percent}%</strong>
+      <div class="department-head-card-head">
+        <div class="department-head-card-title-block">
+          <div class="overview-label">Отдел</div>
+          <h3 class="department-head-overview-name">${escapeHtml(data.department_name || "Отдел")}</h3>
         </div>
+        <div class="department-head-total">
+          <div>${formatMoney(data.fact_income_amount)} ₸</div>
+          <span class="overview-subline-with-badge">${percent}% · цель ${formatMoney(data.plan_amount)} ₸</span>
+        </div>
+        ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}
+      </div>
+
+      <div class="manager-plan-main department-head-main-progress">
         ${progressLine(percent)}
-        <div class="muted">Осталось: ${formatMoney(data.remaining_to_plan)} ₸ · расходов: ${formatMoney(data.expenses_amount)} ₸</div>
+        <div class="muted department-head-overview-muted">Осталось: ${formatMoney(data.remaining_to_plan)} ₸ · расходов: ${formatMoney(data.expenses_amount)} ₸</div>
       </div>
     </section>
 
@@ -12359,7 +12362,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.69 loaded");
+  console.info("Contrast Finance web app v0.40.90 loaded");
   if (!state.token) {
     showLogin();
     return;
