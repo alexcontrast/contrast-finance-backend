@@ -4220,7 +4220,9 @@ function renderUserBadgeContent(user) {
 function updateHeaderUserInfo(user) {
   if (!user) return;
   document.body.classList.toggle("admin-mode", user.role === "admin");
-  $("pageTitle").textContent = roleLabel(user.role);
+  document.body.classList.toggle("department-head-mode", user.role === "department_head");
+  document.body.classList.toggle("manager-mode", user.role === "manager");
+  $("pageTitle").textContent = user.role === "department_head" ? "ГЛАВДЕП" : roleLabel(user.role);
   $("pageSubtitle").textContent = user.role === "admin"
     ? "Проверка мероприятий, заявки, планы и закрытие месяца"
     : "";

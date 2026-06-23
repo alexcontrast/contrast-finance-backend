@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.88
+# Contrast Finance v0.40.89
 
-Mobile event-modal request card visual polish. Backend and Apps Script are unchanged.
+Patch focused on visual alignment of department-head cabinets with the main admin dashboard. Backend and Apps Script are unchanged.

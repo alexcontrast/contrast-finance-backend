@@ -7514,3 +7514,592 @@ button.soft-loading::after {
     color: rgba(43, 54, 35, .50) !important;
   }
 }
+
+/* v0.40.89 — department-head cabinets aligned with main admin visual system. */
+@media (min-width: 721px) {
+  body.department-head-mode #dashboardScreen > .card {
+    padding: 26px 28px 30px !important;
+    border-radius: 30px !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .card > .section-head {
+    align-items: center !important;
+    margin-bottom: 20px !important;
+  }
+
+  body.department-head-mode #dashboardTitle {
+    font-size: 22px !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.03em !important;
+  }
+
+  body.department-head-mode #adminTabs {
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 9px !important;
+    border-radius: 24px !important;
+  }
+
+  body.department-head-mode #adminTabs .tab-btn {
+    min-height: 44px !important;
+    padding: 0 22px !important;
+    border-radius: 18px !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    font-weight: 900 !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel,
+  body.department-head-mode .department-head-panel,
+  body.department-head-mode .department-head-total-section {
+    border-radius: 22px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel {
+    padding: 22px !important;
+  }
+
+  body.department-head-mode .department-head-overview-name {
+    font-size: 24px !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.035em !important;
+  }
+
+  body.department-head-mode .department-head-manager-row {
+    min-height: 58px !important;
+    border-radius: 16px !important;
+    padding: 12px 14px !important;
+  }
+
+  body.department-head-mode .department-head-events-table,
+  body.department-head-mode .department-head-requests-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body.department-head-mode .department-head-events-table th,
+  body.department-head-mode .department-head-events-table td,
+  body.department-head-mode .department-head-requests-table th,
+  body.department-head-mode .department-head-requests-table td {
+    text-align: center !important;
+    vertical-align: middle !important;
+  }
+
+  body.department-head-mode .department-head-events-table td:nth-child(2),
+  body.department-head-mode .department-head-events-table td:nth-child(3),
+  body.department-head-mode .department-head-events-table td:nth-child(4),
+  body.department-head-mode .department-head-requests-table td:nth-child(3),
+  body.department-head-mode .department-head-requests-table td:nth-child(4),
+  body.department-head-mode .department-head-requests-table td:nth-child(5),
+  body.department-head-mode .department-head-requests-table td:nth-child(6) {
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-events-table td:nth-child(7),
+  body.department-head-mode .department-head-events-table td:nth-child(8),
+  body.department-head-mode .department-head-events-table td:nth-child(9),
+  body.department-head-mode .department-head-requests-table td:nth-child(7) {
+    font-weight: 950 !important;
+    text-align: center !important;
+  }
+
+  body.department-head-mode .department-head-events-table .status,
+  body.department-head-mode .department-head-requests-table .status {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+}
+
+@media (max-width: 720px) {
+  body.department-head-mode .brand-topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand admin"
+      "actions actions";
+    align-items: start !important;
+    gap: 10px 12px !important;
+    padding: 14px 16px 13px !important;
+  }
+
+  body.department-head-mode .brand-block {
+    display: contents !important;
+  }
+
+  body.department-head-mode .brand-logo {
+    grid-area: brand;
+    justify-self: start;
+    width: 118px !important;
+    max-width: 44vw !important;
+    height: auto !important;
+    max-height: 42px !important;
+    border-radius: 0 !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    mix-blend-mode: multiply;
+  }
+
+  body.department-head-mode .brand-block > div {
+    grid-area: admin;
+    justify-self: end;
+    align-self: start;
+    min-width: 0;
+    text-align: right;
+  }
+
+  body.department-head-mode .brand-block .eyebrow,
+  body.department-head-mode #pageSubtitle {
+    display: none !important;
+  }
+
+  body.department-head-mode #pageTitle {
+    margin: 3px 0 0 !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    letter-spacing: .18em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+  }
+
+  body.department-head-mode .topbar-actions {
+    grid-area: actions;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: 100% !important;
+    gap: 8px !important;
+    margin-left: 0 !important;
+  }
+
+  body.department-head-mode .topbar-actions #changePinOpenBtn,
+  body.department-head-mode .topbar-actions #logoutBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    font-size: 12px !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, .78fr) minmax(88px, .72fr) !important;
+    gap: 6px !important;
+    align-items: end !important;
+    margin-bottom: 10px !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .toolbar .month-control,
+  body.department-head-mode #dashboardScreen > .toolbar .year-control {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .toolbar .month-control select,
+  body.department-head-mode #dashboardScreen > .toolbar .year-control select,
+  body.department-head-mode #reloadBtn {
+    width: 100% !important;
+  }
+
+  body.department-head-mode #reloadBtn {
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    font-size: 12px !important;
+  }
+
+  body.department-head-mode #dashboardScreen > .card > .section-head {
+    display: none !important;
+  }
+
+  body.department-head-mode #adminTabs {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    padding: 9px !important;
+    border-radius: 22px !important;
+  }
+
+  body.department-head-mode #adminTabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.department-head-mode #adminTabs .tab-btn {
+    flex: 0 0 auto !important;
+    min-height: 42px !important;
+    padding: 0 16px !important;
+    border-radius: 17px !important;
+    font-size: 12px !important;
+    font-weight: 900 !important;
+    scroll-snap-align: center;
+  }
+
+  body.department-head-mode .department-head-plan-panel {
+    position: relative !important;
+    padding: 13px !important;
+    border-radius: 17px !important;
+    margin-bottom: 9px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .overview-label {
+    display: none !important;
+  }
+
+  body.department-head-mode .department-head-overview-name {
+    display: block !important;
+    margin: 0 0 8px !important;
+    padding-right: 82px !important;
+    color: var(--accent-dark) !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .16em !important;
+    font-weight: 950 !important;
+  }
+
+  body.department-head-mode .department-head-events-word-badge {
+    position: absolute !important;
+    top: 12px !important;
+    right: 12px !important;
+    height: 22px !important;
+    max-width: 78px !important;
+    padding: 0 7px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 10px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .manager-plan-main {
+    gap: 8px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) {
+    display: block !important;
+    margin-bottom: 7px !important;
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong {
+    display: block !important;
+    margin: 2px 0 !important;
+    font-size: 10.8px !important;
+    line-height: 1.15 !important;
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .manager-plan-row:not(.department-head-plan-row) strong:first-child {
+    font-size: 23px !important;
+    line-height: 1.02 !important;
+    letter-spacing: -.045em !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    height: 9px !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .muted {
+    margin-top: 5px !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+  }
+
+  body.department-head-mode .department-head-panel,
+  body.department-head-mode .department-head-total-section {
+    padding: 12px !important;
+    border-radius: 17px !important;
+  }
+
+  body.department-head-mode .department-head-manager-list {
+    gap: 6px !important;
+  }
+
+  body.department-head-mode .department-head-manager-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 5px !important;
+    padding: 8px 9px !important;
+    border-radius: 13px !important;
+  }
+
+  body.department-head-mode .department-head-manager-main {
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-manager-main strong {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 11px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.department-head-mode .department-head-plan-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
+    align-items: center !important;
+    gap: 6px !important;
+    font-size: 10px !important;
+  }
+
+  body.department-head-mode .department-head-plan-row span,
+  body.department-head-mode .department-head-plan-row strong {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.department-head-mode .department-head-filters-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  body.department-head-mode .department-head-filters-row .compact-label {
+    min-width: 0 !important;
+    font-size: 9.5px !important;
+  }
+
+  body.department-head-mode .department-head-filters-row select {
+    min-height: 34px !important;
+    padding: 6px 8px !important;
+    font-size: 10.5px !important;
+  }
+
+  body.department-head-mode .department-head-table-wrap {
+    overflow-x: visible !important;
+    width: 100% !important;
+  }
+
+  body.department-head-mode .department-head-events-table {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: auto !important;
+  }
+
+  body.department-head-mode .department-head-events-table thead {
+    display: none !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody {
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) max-content !important;
+    grid-template-areas:
+      "date customer status"
+      "date title money"
+      "manager manager turnover"
+      "manager manager income" !important;
+    gap: 3px 7px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 9px !important;
+    border: 1px solid rgba(120, 140, 110, .18) !important;
+    border-radius: 15px !important;
+    background: linear-gradient(135deg, rgba(247, 250, 244, .96), rgba(255, 255, 255, .92)) !important;
+    box-shadow: 0 8px 20px rgba(28, 45, 18, .055) !important;
+    overflow: hidden !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr.department-sanzhar {
+    background: linear-gradient(135deg, rgba(225, 242, 255, .96), rgba(255, 255, 255, .92)) !important;
+  }
+
+  body.department-head-mode .department-head-events-table tbody tr.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 236, 218, .96), rgba(255, 255, 255, .92)) !important;
+  }
+
+  body.department-head-mode .department-head-events-table th,
+  body.department-head-mode .department-head-events-table td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 10.5px !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-events-table td:nth-child(1) { grid-area: date !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(2) { grid-area: manager !important; font-weight: 850 !important; color: rgba(43,54,35,.70) !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(3) { grid-area: customer !important; font-size: 12.4px !important; font-weight: 950 !important; color: var(--text) !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(4) { grid-area: title !important; font-size: 10.8px !important; font-weight: 750 !important; color: rgba(43,54,35,.72) !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(5) { grid-area: status !important; justify-self: end !important; overflow: visible !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(6) { grid-area: money !important; justify-self: end !important; overflow: visible !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(7) { grid-area: turnover !important; justify-self: end !important; text-align: right !important; font-weight: 950 !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(7)::before { content: "Оборот " !important; color: rgba(43,54,35,.55) !important; font-size: 9px !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(9) { grid-area: income !important; justify-self: end !important; text-align: right !important; font-weight: 950 !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(9)::before { content: "Доход " !important; color: rgba(43,54,35,.55) !important; font-size: 9px !important; }
+  body.department-head-mode .department-head-events-table td:nth-child(8),
+  body.department-head-mode .department-head-events-table td:nth-child(10),
+  body.department-head-mode .department-head-events-table td:nth-child(11) { display: none !important; }
+
+  body.department-head-mode .department-head-events-table td.date-day-cell {
+    display: grid !important;
+    place-items: center !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 38px !important;
+    border: 1px solid rgba(24, 28, 22, .78) !important;
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, .72) !important;
+    color: rgba(28, 32, 24, .92) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .42) !important;
+    font-size: 13px !important;
+    font-weight: 950 !important;
+    text-align: center !important;
+  }
+
+  body.department-head-mode .department-head-events-table .status {
+    min-height: 20px !important;
+    height: 20px !important;
+    padding: 3px 6px !important;
+    font-size: 8.2px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-requests-table {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-spacing: 0 !important;
+    table-layout: auto !important;
+  }
+
+  body.department-head-mode .department-head-requests-table thead {
+    display: none !important;
+  }
+
+  body.department-head-mode .department-head-requests-table tbody {
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  body.department-head-mode .department-head-requests-table tbody tr {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) max-content max-content !important;
+    grid-template-areas:
+      "date customer pay money"
+      "date position amount amount"
+      "date method amount amount"
+      "date created amount amount"
+      "date manager amount amount" !important;
+    gap: 3px 5px !important;
+    padding: 8px 9px !important;
+    border: 1px solid rgba(120, 140, 110, .18) !important;
+    border-radius: 15px !important;
+    background: linear-gradient(135deg, rgba(247, 250, 244, .96), rgba(255, 255, 255, .92)) !important;
+    box-shadow: 0 8px 20px rgba(28, 45, 18, .055) !important;
+    overflow: hidden !important;
+  }
+
+  body.department-head-mode .department-head-requests-table th,
+  body.department-head-mode .department-head-requests-table td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    text-align: left !important;
+  }
+
+  body.department-head-mode .department-head-requests-table td:nth-child(1) { grid-area: date !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(2) { grid-area: created !important; justify-self: end !important; color: rgba(43,54,35,.50) !important; font-size: 8.6px !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(3) { grid-area: manager !important; justify-self: end !important; color: rgba(43,54,35,.64) !important; font-weight: 800 !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(4) { grid-area: customer !important; font-size: 12.4px !important; font-weight: 950 !important; color: var(--text) !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(5) { display: none !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(6) { grid-area: position !important; color: rgba(43,54,35,.70) !important; font-weight: 800 !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(7) { grid-area: amount !important; justify-self: end !important; text-align: right !important; min-width: 112px !important; font-weight: 950 !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(7)::before { content: "Сумма " !important; color: rgba(43,54,35,.55) !important; font-size: 9px !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(8) { grid-area: method !important; color: rgba(43,54,35,.58) !important; font-weight: 760 !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(9) { grid-area: pay !important; justify-self: end !important; overflow: visible !important; }
+  body.department-head-mode .department-head-requests-table td:nth-child(10) { grid-area: money !important; justify-self: start !important; overflow: visible !important; }
+
+  body.department-head-mode .department-head-requests-table td.date-day-cell {
+    display: grid !important;
+    place-items: center !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+    height: 38px !important;
+    border: 1px solid rgba(24, 28, 22, .78) !important;
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, .72) !important;
+    font-size: 13px !important;
+    font-weight: 950 !important;
+    text-align: center !important;
+  }
+
+  body.department-head-mode .department-head-requests-table .request-status-badge,
+  body.department-head-mode .department-head-requests-table .request-money-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 20px !important;
+    height: 20px !important;
+    padding: 3px 6px !important;
+    border-radius: 999px !important;
+    font-size: 8.2px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-calc-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  body.department-head-mode .department-head-calc-grid .metric {
+    min-height: 72px !important;
+    padding: 11px !important;
+    border-radius: 15px !important;
+  }
+
+  body.department-head-mode .department-head-calc-grid .metric .label {
+    font-size: 9px !important;
+    letter-spacing: .08em !important;
+  }
+
+  body.department-head-mode .department-head-calc-grid .metric .value {
+    font-size: 19px !important;
+    line-height: 1.05 !important;
+  }
+}
