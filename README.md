@@ -1,3 +1,3 @@
-# Contrast Finance Backend v0.40.84
+# Contrast Finance Backend v0.40.85
 
-Точечный фронтенд-патч: в веб-версии вкладки Google архив кнопки снова идут в один ряд. Мобильная двухрядная раскладка сохранена.
+Mobile-only event modal layout pass. Desktop, backend logic and Apps Script are unchanged.

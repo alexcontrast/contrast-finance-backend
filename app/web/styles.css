@@ -6698,3 +6698,396 @@ button.soft-loading::after {
     line-height: 1.35;
   }
 }
+
+/* v0.40.85 — mobile event modal cleanup. Desktop is untouched. */
+@media (max-width: 720px) {
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal {
+    width: calc(100vw - 14px) !important;
+    max-width: calc(100vw - 14px) !important;
+    max-height: calc(100vh - 14px) !important;
+    padding: 12px 10px !important;
+    border-radius: 20px !important;
+    overflow-y: auto !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-head {
+    display: grid !important;
+    grid-template-columns: 68px minmax(0, 1fr) !important;
+    grid-template-areas:
+      "title title"
+      "close actions" !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+    margin-bottom: 8px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-head > div:first-child {
+    grid-area: title !important;
+    min-width: 0 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-head .eyebrow {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalTitle {
+    margin: 0 !important;
+    display: grid !important;
+    gap: 2px !important;
+    line-height: 1.08 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-title-client {
+    display: block !important;
+    font-size: 18px !important;
+    font-weight: 950 !important;
+    color: var(--text) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-title-name {
+    display: block !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    color: var(--muted) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalCloseBtn {
+    grid-area: close !important;
+    width: 100% !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0 6px !important;
+    border-radius: 12px !important;
+    font-size: 10.5px !important;
+    font-weight: 950 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalActions {
+    grid-area: actions !important;
+    min-width: 0 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-actions {
+    display: grid !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: minmax(0, 1fr) !important;
+    gap: 5px !important;
+    width: 100% !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-actions .event-action-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0 4px !important;
+    border-radius: 12px !important;
+    font-size: 9.6px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+    white-space: normal !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-actions .event-edit-btn,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-actions .event-delete-btn,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-actions .event-force-delete-btn {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalContent {
+    overflow-x: hidden !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+    margin-top: 4px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards .metric {
+    min-height: 0 !important;
+    padding: 7px 6px !important;
+    border-radius: 13px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards .metric .label {
+    min-height: 0 !important;
+    height: auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    font-size: 8.4px !important;
+    line-height: 1.05 !important;
+    text-align: center !important;
+    letter-spacing: .01em !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .modal-metric-cards .metric .value {
+    margin-top: 4px !important;
+    font-size: 12px !important;
+    line-height: 1.05 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .manager-percent-edit-btn {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .customer-payment-control-row {
+    gap: 3px !important;
+    margin-top: 4px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .customer-payment-control-row input,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .customer-paid-fixed-value {
+    height: 24px !important;
+    padding: 3px 5px !important;
+    font-size: 10px !important;
+    border-radius: 8px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .customer-payment-control-row .customer-payment-action-btn {
+    width: 24px !important;
+    min-width: 24px !important;
+    height: 24px !important;
+    border-radius: 8px !important;
+    font-size: 11px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .customer-paid-metric .customer-paid-rest {
+    margin-top: 3px !important;
+    font-size: 8px !important;
+    line-height: 1.05 !important;
+    text-align: center !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .divider {
+    margin: 8px 0 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) h3 {
+    margin: 8px 0 6px !important;
+    font-size: 13px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .estimate-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 3px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table {
+    min-width: 720px !important;
+    font-size: 10px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table th,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-estimate-table td {
+    padding: 5px 6px !important;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .block-title,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) #eventModalRequestsSection .filters-row {
+    margin-top: 8px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table thead,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table tbody,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table tr,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td {
+    display: block !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table thead {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table tbody {
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table tbody tr {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) max-content max-content !important;
+    grid-template-areas:
+      "created position pay money"
+      "created method amount amount"
+      "created manager amount amount"
+      "actions actions actions actions" !important;
+    gap: 3px 5px !important;
+    align-items: start !important;
+    padding: 8px 9px !important;
+    border: 1px solid rgba(58, 68, 47, .10) !important;
+    border-radius: 16px !important;
+    background: rgba(255,255,255,.88) !important;
+    box-shadow: 0 8px 18px rgba(23, 31, 18, .05) !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(1) {
+    grid-area: created !important;
+    justify-self: center !important;
+    align-self: start !important;
+    width: 42px !important;
+    max-width: 42px !important;
+    color: rgba(43, 54, 35, .50) !important;
+    font-size: 8.2px !important;
+    font-weight: 850 !important;
+    text-align: center !important;
+    white-space: normal !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-created-desktop {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-created-mobile {
+    display: grid !important;
+    justify-items: center !important;
+    gap: 1px !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(2) {
+    grid-area: manager !important;
+    justify-self: end !important;
+    align-self: start !important;
+    max-width: 115px !important;
+    color: rgba(43, 54, 35, .58) !important;
+    font-size: 9.5px !important;
+    font-weight: 850 !important;
+    text-align: right !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(3) {
+    grid-area: position !important;
+    justify-self: start !important;
+    max-width: 180px !important;
+    font-size: 11px !important;
+    font-weight: 950 !important;
+    color: var(--text) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-position-desktop,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-method-desktop {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-position-mobile,
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-method-mobile {
+    display: block !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(4) {
+    grid-area: amount !important;
+    justify-self: end !important;
+    align-self: center !important;
+    text-align: right !important;
+    font-size: 13px !important;
+    font-weight: 950 !important;
+    color: var(--text) !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(5) {
+    grid-area: method !important;
+    justify-self: start !important;
+    max-width: 180px !important;
+    color: rgba(43, 54, 35, .62) !important;
+    font-size: 9.6px !important;
+    font-weight: 780 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(6) {
+    display: none !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(7) {
+    grid-area: pay !important;
+    justify-self: end !important;
+    align-self: start !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(8) {
+    grid-area: money !important;
+    justify-self: end !important;
+    align-self: start !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .event-request-status-badge {
+    min-height: 20px !important;
+    height: 20px !important;
+    padding: 0 7px !important;
+    border-radius: 999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 8.6px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table td:nth-child(9) {
+    grid-area: actions !important;
+    margin-top: 4px !important;
+    padding-top: 6px !important;
+    border-top: 1px solid rgba(58, 68, 47, .08) !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-actions-row {
+    display: grid !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: minmax(0, 1fr) !important;
+    gap: 5px !important;
+    width: 100% !important;
+    justify-content: stretch !important;
+    flex-wrap: nowrap !important;
+  }
+
+  body.admin-mode #eventModalBackdrop:not(.payment-modal-mode):not(.pin-modal-mode):not(.profile-modal-mode):not(.manager-payments-modal):not(.manager-requests-modal-mode) .event-modal-requests-table .request-actions-row button {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 28px !important;
+    padding: 0 3px !important;
+    border-radius: 10px !important;
+    font-size: 9px !important;
+    line-height: 1.05 !important;
+    white-space: normal !important;
+  }
+}

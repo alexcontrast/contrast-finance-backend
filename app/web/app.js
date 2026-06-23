@@ -6190,7 +6190,7 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
     state.eventModalPayloadById[String(payload.event.id)] = payload;
   }
 
-  $("eventModalTitle").textContent = `${event.client_name} · ${event.title}`;
+  $("eventModalTitle").innerHTML = `<span class="event-modal-title-client">${escapeHtml(event.client_name)}</span><span class="event-modal-title-name">${escapeHtml(event.title)}</span>`;
 
   const sortedItems = sortItemsCoordinatorFirst((items || []).filter((item) => item.item_type !== "manager_salary"));
   const taxesAmount = customerTaxesTopAmount(summary);
