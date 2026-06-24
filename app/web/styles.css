@@ -10536,3 +10536,139 @@ button.soft-loading::after {
     white-space: nowrap !important;
   }
 }
+
+/* v0.40.102 — department-head desktop overview card: match admin plan reference. */
+@media (min-width: 721px) {
+  body.department-head-mode .department-head-plan-panel {
+    position: relative !important;
+    display: block !important;
+    min-height: 270px !important;
+    padding: 38px 44px 34px !important;
+    border-radius: 30px !important;
+    overflow: hidden !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel.department-sanzhar {
+    background: linear-gradient(135deg, rgba(226, 243, 255, .96), rgba(245, 251, 255, .92)) !important;
+    border-color: rgba(120, 188, 255, .78) !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 238, 225, .96), rgba(255, 250, 246, .92)) !important;
+    border-color: rgba(255, 183, 145, .78) !important;
+  }
+
+  body.department-head-mode .department-head-plan-topline {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.department-head-mode .department-head-plan-copy {
+    width: 100% !important;
+    max-width: calc(100% - 260px) !important;
+    min-width: 0 !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .overview-label {
+    display: block !important;
+    margin: 0 0 20px !important;
+    max-width: 100% !important;
+    white-space: nowrap !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    letter-spacing: .22em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+    color: var(--accent-strong) !important;
+  }
+
+  body.department-head-mode .department-head-total {
+    display: block !important;
+    text-align: left !important;
+    min-width: 0 !important;
+  }
+
+  body.department-head-mode .department-head-total > div {
+    display: block !important;
+    margin: 0 0 18px !important;
+    font-size: clamp(54px, 5.4vw, 96px) !important;
+    line-height: .90 !important;
+    letter-spacing: -.08em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-total .overview-subline-with-badge {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 14px !important;
+    flex-wrap: wrap !important;
+    margin: 0 !important;
+    font-size: 26px !important;
+    line-height: 1.08 !important;
+    letter-spacing: -.04em !important;
+    font-weight: 950 !important;
+    color: rgba(43, 54, 35, .68) !important;
+    white-space: normal !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .department-head-events-word-badge {
+    position: static !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 190px !important;
+    max-width: none !important;
+    height: 42px !important;
+    padding: 0 22px !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
+    font-size: 20px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    letter-spacing: -.02em !important;
+  }
+
+  body.department-head-mode .department-head-overview-name {
+    position: absolute !important;
+    top: 38px !important;
+    right: 44px !important;
+    margin: 0 !important;
+    max-width: 240px !important;
+    text-align: right !important;
+    font-size: clamp(30px, 2.9vw, 46px) !important;
+    line-height: .96 !important;
+    letter-spacing: -.06em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+  }
+
+  body.department-head-mode .department-head-main-progress {
+    display: block !important;
+    margin: 32px 0 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    width: 100% !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    display: block !important;
+    width: 100% !important;
+    height: 34px !important;
+    margin: 0 !important;
+    border-radius: 999px !important;
+  }
+
+  body.department-head-mode .department-head-overview-muted {
+    display: block !important;
+    margin: 18px 0 0 !important;
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    letter-spacing: -.035em !important;
+    font-weight: 850 !important;
+    color: rgba(43, 54, 35, .64) !important;
+  }
+}
