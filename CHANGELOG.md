@@ -1,9 +1,9 @@
 # CHANGELOG
 
-## v0.40.104 — department-head desktop plan card exact fix
+## v0.40.105 — department-head desktop plan card exact positioning
 
-- Исправлена веб-карточка «Общий план отдела» в кабинете главдепа.
-- Причина предыдущего бага: desktop-карточка зависела от `display: contents` и старых вложенных правил, из-за чего имя отдела и строка цели выпадали в левый текстовый поток.
-- Карточка переведена на явную desktop-сетку: текст слева, имя отдела справа сверху, шкала на всю ширину, строка «Осталось / расходов» под шкалой.
-- Мобильная версия не менялась.
-- Backend и Apps Script не менялись.
+- Fixed desktop department-head overview plan card layout.
+- Pinned department name to the top-right of the card.
+- Reduced main income, goal and percent typography to match the reference proportions.
+- Kept “Общий план отдела”, current income, goal/percent/events badge, full-width progress bar and remaining/expenses line in separate rows.
+- Desktop-only change; mobile, backend and Apps Script were not changed.

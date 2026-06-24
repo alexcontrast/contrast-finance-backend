@@ -11056,3 +11056,184 @@ button.soft-loading::after {
     text-overflow: clip !important;
   }
 }
+
+/* v0.40.105 — department-head desktop plan card real final layout.
+   Root cause of v0.40.104: the earlier non-scoped .department-head-plan-panel rules
+   still contained display: contents / legacy flow overrides. The later body-scoped rules
+   did not reliably win in all loaded states, so the department name stayed in the left
+   text flow. This override is intentionally unscoped from body and placed last: the card
+   is a normal block, department name is absolutely pinned top-right, and the copy/progress
+   flow is deterministic. Desktop only. */
+@media (min-width: 721px) {
+  .department-head-plan-panel {
+    position: relative !important;
+    display: block !important;
+    min-height: 0 !important;
+    padding: 34px 44px 34px !important;
+    border-radius: 30px !important;
+    overflow: hidden !important;
+  }
+
+  .department-head-plan-panel.department-sanzhar {
+    background: linear-gradient(135deg, rgba(226, 243, 255, .96), rgba(245, 251, 255, .92)) !important;
+    border-color: rgba(120, 188, 255, .78) !important;
+  }
+
+  .department-head-plan-panel.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 238, 225, .96), rgba(255, 250, 246, .92)) !important;
+    border-color: rgba(255, 183, 145, .78) !important;
+  }
+
+  .department-head-plan-panel > .department-head-card-head,
+  .department-head-plan-panel > .department-head-plan-topline {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .department-head-plan-panel .department-head-plan-copy {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    max-width: calc(100% - 270px) !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .department-head-plan-panel .overview-label {
+    display: block !important;
+    width: auto !important;
+    margin: 0 0 18px !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    letter-spacing: .18em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+    color: var(--accent-strong) !important;
+  }
+
+  .department-head-plan-panel .department-head-total {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: left !important;
+  }
+
+  .department-head-plan-panel .department-head-total > div {
+    display: block !important;
+    margin: 0 0 16px !important;
+    padding: 0 !important;
+    font-size: clamp(46px, 4.6vw, 72px) !important;
+    line-height: .92 !important;
+    letter-spacing: -.075em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .department-head-plan-panel .department-head-total .overview-subline-with-badge {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    gap: 14px !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 21px !important;
+    line-height: 1.08 !important;
+    letter-spacing: -.04em !important;
+    font-weight: 900 !important;
+    color: rgba(43, 54, 35, .68) !important;
+  }
+
+  .department-head-plan-panel .department-head-events-word-badge {
+    position: static !important;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: auto !important;
+    min-width: 160px !important;
+    max-width: none !important;
+    height: 34px !important;
+    margin: 0 !important;
+    padding: 0 18px !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 17px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    letter-spacing: -.02em !important;
+  }
+
+  .department-head-plan-panel .department-head-overview-name {
+    position: absolute !important;
+    top: 34px !important;
+    right: 44px !important;
+    display: block !important;
+    width: auto !important;
+    max-width: 260px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: clamp(28px, 2.7vw, 42px) !important;
+    line-height: .96 !important;
+    letter-spacing: -.055em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+    z-index: 2 !important;
+  }
+
+  .department-head-plan-panel .department-head-main-progress {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 38px 0 0 !important;
+    padding: 0 !important;
+  }
+
+  .department-head-plan-panel .progress-line {
+    display: block !important;
+    width: 100% !important;
+    height: 26px !important;
+    margin: 0 !important;
+    border-radius: 999px !important;
+  }
+
+  .department-head-plan-panel .department-head-overview-muted {
+    display: block !important;
+    margin: 14px 0 0 !important;
+    padding: 0 !important;
+    font-size: 17px !important;
+    line-height: 1.15 !important;
+    letter-spacing: -.03em !important;
+    font-weight: 850 !important;
+    color: rgba(43, 54, 35, .64) !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+}
