@@ -10672,3 +10672,189 @@ button.soft-loading::after {
     color: rgba(43, 54, 35, .64) !important;
   }
 }
+
+
+/* v0.40.103 — department-head DESKTOP plan card hard restore.
+   Cause of v0.40.102 break: the desktop card was still depending on the old
+   .department-head-card-head normal flow/absolute positioning, while earlier
+   department-head overrides kept changing .department-head-overview-name and
+   subline layout. This grid override makes the desktop card deterministic and
+   independent from the mobile/header experiments above. */
+@media (min-width: 721px) {
+  .department-head-plan-panel {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) max-content !important;
+    grid-template-areas:
+      "dh-copy dh-name"
+      "dh-progress dh-progress" !important;
+    column-gap: 36px !important;
+    row-gap: 30px !important;
+    min-height: 270px !important;
+    padding: 38px 44px 34px !important;
+    border-radius: 30px !important;
+    overflow: hidden !important;
+  }
+
+  .department-head-plan-panel.department-sanzhar {
+    background: linear-gradient(135deg, rgba(226, 243, 255, .96), rgba(245, 251, 255, .92)) !important;
+    border-color: rgba(120, 188, 255, .78) !important;
+  }
+
+  .department-head-plan-panel.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 238, 225, .96), rgba(255, 250, 246, .92)) !important;
+    border-color: rgba(255, 183, 145, .78) !important;
+  }
+
+  .department-head-plan-panel .department-head-card-head,
+  .department-head-plan-panel .department-head-plan-topline {
+    display: contents !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .department-head-plan-panel .department-head-plan-copy {
+    grid-area: dh-copy !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .department-head-plan-panel .overview-label {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 0 18px !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 17px !important;
+    line-height: 1 !important;
+    letter-spacing: .16em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+    color: var(--accent-strong) !important;
+  }
+
+  .department-head-plan-panel .department-head-total {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: left !important;
+  }
+
+  .department-head-plan-panel .department-head-total > div {
+    display: block !important;
+    margin: 0 0 18px !important;
+    padding: 0 !important;
+    font-size: clamp(54px, 5.4vw, 96px) !important;
+    line-height: .90 !important;
+    letter-spacing: -.08em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .department-head-plan-panel .department-head-total .overview-subline-with-badge {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 14px !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 26px !important;
+    line-height: 1.08 !important;
+    letter-spacing: -.04em !important;
+    font-weight: 950 !important;
+    color: rgba(43, 54, 35, .68) !important;
+  }
+
+  .department-head-plan-panel .department-head-events-word-badge {
+    position: static !important;
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: auto !important;
+    min-width: 190px !important;
+    max-width: none !important;
+    height: 42px !important;
+    margin: 0 !important;
+    padding: 0 22px !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 20px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    letter-spacing: -.02em !important;
+  }
+
+  .department-head-plan-panel .department-head-overview-name {
+    grid-area: dh-name !important;
+    position: static !important;
+    display: block !important;
+    align-self: start !important;
+    justify-self: end !important;
+    width: auto !important;
+    max-width: 260px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: clamp(30px, 2.9vw, 46px) !important;
+    line-height: .96 !important;
+    letter-spacing: -.06em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+  }
+
+  .department-head-plan-panel .department-head-main-progress {
+    grid-area: dh-progress !important;
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .department-head-plan-panel .progress-line {
+    display: block !important;
+    width: 100% !important;
+    height: 34px !important;
+    margin: 0 !important;
+    border-radius: 999px !important;
+  }
+
+  .department-head-plan-panel .department-head-overview-muted {
+    display: block !important;
+    margin: 18px 0 0 !important;
+    padding: 0 !important;
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    letter-spacing: -.035em !important;
+    font-weight: 850 !important;
+    color: rgba(43, 54, 35, .64) !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+}

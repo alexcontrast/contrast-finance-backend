@@ -1,17 +1,7 @@
 # CHANGELOG
 
-## v0.40.102 — Department head desktop plan card polish
-
-- Fixed the desktop department-head overview plan card layout.
-- Restored the plan card to the admin-style reference layout:
-  - one-line “Общий план отдела” title;
-  - large current income value;
-  - goal, completion percent, and event count badge in one row;
-  - department name in the top-right corner;
-  - full-width progress bar;
-  - “Осталось / расходов” line below the progress bar.
-- Kept department-specific background colors:
-  - Sanjar: blue;
-  - Raufal: peach.
-- Updated frontend cache version to `0.40.102`.
-- Backend and Apps Script were not changed.
+## v0.40.103
+- Fixed department-head desktop overview plan card layout using a deterministic CSS grid.
+- Restored the intended card structure: title, large fact value, goal/percent/badge row, full-width progress bar, and remaining/expenses line.
+- Kept department name in the top-right corner and department-colored background.
+- Mobile, backend, and Apps Script were not changed.
