@@ -4288,6 +4288,286 @@ function injectManagerUxStyles() {
 }
 
 
+
+
+/* v0.40.114 — mobile manager header/toolbar/plan real override.
+   Scoped only to manager role and narrow screens. */
+@media (max-width: 920px) {
+  body.manager-mode .app-shell,
+  body[data-cf-role="manager"] .app-shell {
+    width: min(100% - 36px, 430px) !important;
+    padding: 18px 0 88px !important;
+  }
+
+  body.manager-mode .brand-topbar,
+  body[data-cf-role="manager"] .brand-topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-areas:
+      "logo user"
+      "pin logout" !important;
+    gap: 10px 12px !important;
+    align-items: center !important;
+    padding: 16px !important;
+    margin: 0 0 14px !important;
+    border-radius: 28px !important;
+  }
+
+  body.manager-mode .brand-block,
+  body[data-cf-role="manager"] .brand-block,
+  body.manager-mode .topbar-actions,
+  body[data-cf-role="manager"] .topbar-actions { display: contents !important; }
+
+  body.manager-mode .brand-logo,
+  body[data-cf-role="manager"] .brand-logo {
+    grid-area: logo !important;
+    justify-self: start !important;
+    align-self: center !important;
+    width: 132px !important;
+    max-width: 45vw !important;
+    height: auto !important;
+    max-height: 46px !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    mix-blend-mode: multiply !important;
+  }
+
+  body.manager-mode .brand-block > div,
+  body[data-cf-role="manager"] .brand-block > div { display: none !important; }
+
+  body.manager-mode #userBadge,
+  body[data-cf-role="manager"] #userBadge {
+    grid-area: user !important;
+    display: inline-flex !important;
+    justify-self: end !important;
+    align-self: center !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 34px !important;
+    padding: 7px 10px !important;
+    border-radius: 999px !important;
+    background: rgba(230, 248, 218, .96) !important;
+    border: 1px solid rgba(72, 195, 12, .22) !important;
+    color: #1b251a !important;
+    box-shadow: none !important;
+  }
+  body.manager-mode #userBadge .user-badge-main,
+  body[data-cf-role="manager"] #userBadge .user-badge-main { min-width: 0 !important; display: block !important; }
+  body.manager-mode #userBadge .user-badge-line,
+  body[data-cf-role="manager"] #userBadge .user-badge-line {
+    display: block !important;
+    max-width: 148px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+  body.manager-mode #userBadge .user-badge-role,
+  body.manager-mode #userBadge .user-badge-edit,
+  body[data-cf-role="manager"] #userBadge .user-badge-role,
+  body[data-cf-role="manager"] #userBadge .user-badge-edit { display: none !important; }
+
+  body.manager-mode #changePinOpenBtn,
+  body[data-cf-role="manager"] #changePinOpenBtn { grid-area: pin !important; }
+  body.manager-mode #logoutBtn,
+  body[data-cf-role="manager"] #logoutBtn { grid-area: logout !important; }
+  body.manager-mode #changePinOpenBtn,
+  body.manager-mode #logoutBtn,
+  body[data-cf-role="manager"] #changePinOpenBtn,
+  body[data-cf-role="manager"] #logoutBtn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    padding: 10px 12px !important;
+    border-radius: 18px !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, .72fr) minmax(92px, .66fr) !important;
+    gap: 8px !important;
+    align-items: end !important;
+    margin: 10px 0 14px !important;
+  }
+  body.manager-mode #dashboardScreen > .toolbar .month-control,
+  body.manager-mode #dashboardScreen > .toolbar .year-control,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar .month-control,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar .year-control {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    font-size: 13px !important;
+    line-height: 1.15 !important;
+    color: rgba(25,30,24,.62) !important;
+  }
+  body.manager-mode #dashboardScreen > .toolbar select,
+  body.manager-mode #reloadBtn,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar select,
+  body[data-cf-role="manager"] #reloadBtn {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 10px 12px !important;
+    border-radius: 18px !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode #dashboardScreen > .card,
+  body[data-cf-role="manager"] #dashboardScreen > .card { padding: 16px !important; border-radius: 28px !important; }
+  body.manager-mode #dashboardScreen > .card > .section-head,
+  body.manager-mode #summaryCards,
+  body[data-cf-role="manager"] #dashboardScreen > .card > .section-head,
+  body[data-cf-role="manager"] #summaryCards { display: none !important; }
+
+  body.manager-mode .manager-dashboard-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v113 { display: grid !important; gap: 14px !important; }
+
+  body.manager-mode .manager-plan-panel,
+  body.manager-mode .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-plan-panel,
+  body[data-cf-role="manager"] .manager-plan-panel-v113 {
+    order: 1 !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding: 18px 16px !important;
+    margin: 0 !important;
+    border-radius: 24px !important;
+    background: linear-gradient(135deg, rgba(238,255,231,.98), rgba(255,255,255,.98)) !important;
+    border: 1px solid rgba(142,226,96,.45) !important;
+    box-shadow: 0 18px 44px rgba(32,56,15,.08) !important;
+    overflow: hidden !important;
+  }
+  body.manager-mode .manager-top-actions,
+  body.manager-mode .manager-top-actions-v113,
+  body[data-cf-role="manager"] .manager-top-actions,
+  body[data-cf-role="manager"] .manager-top-actions-v113 { order: 2 !important; display: grid !important; margin: 0 !important; }
+  body.manager-mode .manager-top-actions button,
+  body.manager-mode .manager-top-actions-v113 button,
+  body[data-cf-role="manager"] .manager-top-actions button,
+  body[data-cf-role="manager"] .manager-top-actions-v113 button {
+    width: 100% !important;
+    min-height: 44px !important;
+    border-radius: 18px !important;
+    font-size: 15px !important;
+    font-weight: 950 !important;
+  }
+  body.manager-mode .manager-workspace,
+  body.manager-mode .manager-workspace-v113,
+  body[data-cf-role="manager"] .manager-workspace,
+  body[data-cf-role="manager"] .manager-workspace-v113 { order: 3 !important; }
+
+  body.manager-mode .manager-plan-head-v113,
+  body.manager-mode .manager-plan-panel > div:first-child,
+  body[data-cf-role="manager"] .manager-plan-head-v113,
+  body[data-cf-role="manager"] .manager-plan-panel > div:first-child {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+    min-width: 0 !important;
+  }
+  body.manager-mode .manager-plan-panel .overview-label,
+  body[data-cf-role="manager"] .manager-plan-panel .overview-label {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    letter-spacing: .22em !important;
+    text-transform: uppercase !important;
+    color: #43b900 !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+  }
+  body.manager-mode .manager-plan-panel h3,
+  body[data-cf-role="manager"] .manager-plan-panel h3 {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1.05 !important;
+    text-align: right !important;
+    color: rgba(25,30,24,.72) !important;
+    white-space: nowrap !important;
+    font-weight: 950 !important;
+  }
+  body.manager-mode .manager-plan-main,
+  body.manager-mode .manager-plan-main-v113,
+  body[data-cf-role="manager"] .manager-plan-main,
+  body[data-cf-role="manager"] .manager-plan-main-v113 { display: grid !important; gap: 9px !important; }
+  body.manager-mode .manager-plan-fact-v113,
+  body.manager-mode .manager-plan-row strong:first-child,
+  body[data-cf-role="manager"] .manager-plan-fact-v113,
+  body[data-cf-role="manager"] .manager-plan-row strong:first-child {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    font-size: clamp(32px, 9vw, 40px) !important;
+    line-height: .98 !important;
+    letter-spacing: -.055em !important;
+    font-weight: 950 !important;
+    color: #111711 !important;
+    white-space: nowrap !important;
+  }
+  body.manager-mode .manager-plan-subline-v113,
+  body.manager-mode .manager-plan-row,
+  body[data-cf-role="manager"] .manager-plan-subline-v113,
+  body[data-cf-role="manager"] .manager-plan-row {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 5px 8px !important;
+    font-size: 14px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+    color: rgba(25,30,24,.66) !important;
+  }
+  body.manager-mode .manager-plan-row strong,
+  body[data-cf-role="manager"] .manager-plan-row strong {
+    width: auto !important;
+    min-width: 0 !important;
+    font-size: 14px !important;
+    line-height: 1.05 !important;
+    color: rgba(25,30,24,.66) !important;
+    white-space: nowrap !important;
+  }
+  body.manager-mode .manager-plan-events-badge-v113,
+  body.manager-mode .manager-plan-row strong:nth-child(3),
+  body[data-cf-role="manager"] .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-plan-row strong:nth-child(3) {
+    display: inline-flex !important;
+    align-items: center !important;
+    width: auto !important;
+    min-height: 24px !important;
+    padding: 0 10px !important;
+    border-radius: 999px !important;
+    background: rgba(216,244,210,.96) !important;
+    border: 1px solid rgba(53,150,57,.22) !important;
+    color: #1f7a35 !important;
+    white-space: nowrap !important;
+    font-size: 13px !important;
+  }
+  body.manager-mode .manager-plan-panel .progress-line,
+  body[data-cf-role="manager"] .manager-plan-panel .progress-line { height: 10px !important; margin: 2px 0 0 !important; border-radius: 999px !important; }
+  body.manager-mode .manager-plan-panel .muted,
+  body.manager-mode .manager-plan-muted-v113,
+  body[data-cf-role="manager"] .manager-plan-panel .muted,
+  body[data-cf-role="manager"] .manager-plan-muted-v113 {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+    font-weight: 850 !important;
+    color: rgba(25,30,24,.62) !important;
+  }
+}
+
 `;
   document.head.appendChild(style);
 }
@@ -13864,7 +14144,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.113 loaded");
+  console.info("Contrast Finance web app v0.40.114 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
