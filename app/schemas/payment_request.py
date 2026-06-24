@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -57,6 +57,7 @@ class PaymentRequestRead(BaseModel):
     # Frontend convenience fields.
     client_name: str | None = None
     event_title: str | None = None
+    event_date: date | None = None
     manager_name: str | None = None
     position: str | None = None
 

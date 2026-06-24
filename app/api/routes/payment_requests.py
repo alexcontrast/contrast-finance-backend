@@ -388,6 +388,7 @@ def enrich_payment_request_read(request: PaymentRequest, db: Session | None = No
         if event is not None:
             data.client_name = event.client_name
             data.event_title = event.title
+            data.event_date = event.event_date
 
             manager = db.get(User, event.manager_id) if event.manager_id else None
             if manager is not None:
@@ -400,6 +401,7 @@ def enrich_payment_request_read_fast(
     request: PaymentRequest,
     client_name: str | None = None,
     event_title: str | None = None,
+    event_date = None,
     manager_name: str | None = None,
 ) -> PaymentRequestRead:
     data = PaymentRequestRead.model_validate(request)
@@ -407,6 +409,7 @@ def enrich_payment_request_read_fast(
     data.position = request.item_name_snapshot
     data.client_name = client_name
     data.event_title = event_title
+    data.event_date = event_date
     data.manager_name = manager_name
     return data
 
@@ -493,7 +496,7 @@ def list_payment_requests(
     started_at = time.perf_counter()
 
     query = (
-        select(PaymentRequest, Event.client_name, Event.title, User.name)
+        select(PaymentRequest, Event.client_name, Event.title, Event.event_date, User.name)
         .join(Event, Event.id == PaymentRequest.event_id)
         .outerjoin(User, User.id == Event.manager_id)
         .order_by(PaymentRequest.id.desc())
@@ -535,8 +538,8 @@ def list_payment_requests(
 
     rows_started_at = time.perf_counter()
     data = [
-        enrich_payment_request_read_fast(request, client_name, event_title, manager_name)
-        for request, client_name, event_title, manager_name in rows
+        enrich_payment_request_read_fast(request, client_name, event_title, event_date, manager_name)
+        for request, client_name, event_title, event_date, manager_name in rows
     ]
     rows_elapsed = time.perf_counter() - rows_started_at
 

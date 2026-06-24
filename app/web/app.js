@@ -5309,7 +5309,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
       </table>
     </div>
     <div class="department-head-requests-mobile-list">
-      ${filtered.map(renderDepartmentHeadRequestMobileCard).join("")}
+      ${groupedPaymentRequests(filtered).map((group) => renderMobileRequestGroup(group, { showActions: false, className: "department-head-mobile-request-group" })).join("")}
     </div>
     ` : `<div class="empty-state">По фильтрам заявок нет.</div>`}
   `;
@@ -5866,6 +5866,98 @@ function paymentRequestEventTitle(request) {
   return request?.event_title || request?.title || request?.event_name || request?.event || "";
 }
 
+function paymentRequestEventDateValue(request) {
+  if (request?.event_date) return request.event_date;
+  const event = eventById(request?.event_id);
+  return event?.event_date || "";
+}
+
+function paymentRequestCreatedDateValue(request) {
+  return request?.created_at || request?.created_date || request?.date_created || request?.request_date || request?.createdAt || request?.date || "";
+}
+
+function requestGroupKey(request) {
+  const eventKey = request?.event_id || `${paymentRequestClientName(request)}|${paymentRequestEventTitle(request)}|${paymentRequestEventDateValue(request)}`;
+  const positionKey = String(request?.event_item_id || request?.item_id || request?.position || request?.item_name_snapshot || "").trim();
+  return `${eventKey}::${positionKey}`;
+}
+
+function groupedPaymentRequests(requests = []) {
+  const groups = [];
+  const byKey = new Map();
+  (requests || []).forEach((request) => {
+    const key = requestGroupKey(request);
+    if (!byKey.has(key)) {
+      const group = {
+        key,
+        eventId: request?.event_id || null,
+        eventDate: paymentRequestEventDateValue(request),
+        clientName: paymentRequestClientName(request),
+        eventTitle: paymentRequestEventTitle(request),
+        position: String(request?.position || request?.item_name_snapshot || "").trim(),
+        requests: [],
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    byKey.get(key).requests.push(request);
+  });
+  return groups;
+}
+
+function requestEventDateChip(eventDate) {
+  const day = formatMonthListDay(eventDate) || "—";
+  const formatted = formatDateRu(eventDate) || eventDate || "Дата мероприятия";
+  return `<div class="request-event-date-chip" title="${escapeHtml(formatted)}"><strong>${escapeHtml(day)}</strong></div>`;
+}
+
+function renderMobileRequestGroup(group, options = {}) {
+  const mode = options.mode || "regular";
+  const showActions = options.showActions !== false;
+  const extraClass = options.className || "";
+  const sortedRequests = [...(group.requests || [])].sort((a, b) => String(paymentRequestCreatedDateValue(b)).localeCompare(String(paymentRequestCreatedDateValue(a))));
+  return `
+    <article class="mobile-request-group-card ${escapeHtml(extraClass)}">
+      ${requestEventDateChip(group.eventDate)}
+      <div class="mobile-request-group-main">
+        <strong>${escapeHtml(group.clientName || "Без заказчика")}</strong>
+        ${group.eventTitle ? `<span class="mobile-request-group-event">${escapeHtml(group.eventTitle)}</span>` : ""}
+        ${group.position ? `<span class="mobile-request-group-position">${escapeHtml(group.position)}</span>` : ""}
+        <div class="mobile-request-group-list">
+          ${sortedRequests.map((request) => {
+            const created = compactDateTimeParts(paymentRequestCreatedDateValue(request));
+            const method = paymentMethodLabel(request?.payment_method);
+            const details = paymentRequestMobileThirdLine(request);
+            const methodLine = [method, details].filter(Boolean).join(" / ");
+            const manager = paymentRequestManagerName(request);
+            const amount = formatMoney(request.amount_requested);
+            const payStatus = statusLabel(request.status);
+            const moneyStatus = statusLabel(requestMoneyStatus(request));
+            const actions = showActions ? `${adminRequestActions(request, mode)}${canManagerCancelRequest(request) ? `<button class="small danger" data-cancel-request="${request.id}">Отменить</button>` : ""}` : "";
+            return `
+              <div class="mobile-request-group-row">
+                <div class="mobile-request-group-row-info">
+                  ${methodLine ? `<span>${escapeHtml(methodLine)}</span>` : ""}
+                  <span class="mobile-request-created">${escapeHtml([created.date, created.time].filter(Boolean).join(" · "))}</span>
+                </div>
+                <div class="mobile-request-group-row-side">
+                  <div class="mobile-request-statuses">
+                    <span class="status ${request.status} request-status-badge" title="${escapeHtml(payStatus)}">${escapeHtml(payStatus)}</span>
+                    <span class="status ${requestMoneyStatus(request)} request-money-badge" title="${escapeHtml(moneyStatus)}">${escapeHtml(moneyStatus)}</span>
+                  </div>
+                  <strong>${escapeHtml(amount)}</strong>
+                  ${manager ? `<span>${escapeHtml(manager)}</span>` : ""}
+                </div>
+                ${actions ? `<div class="mobile-request-actions inline-actions request-actions-row">${actions}</div>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function paymentRequestMobileSecondLine(request) {
   const position = String(request?.position || request?.item_name_snapshot || "").trim();
   const method = paymentMethodLabel(request?.payment_method);
@@ -5969,6 +6061,9 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
             `).join("")}
           </tbody>
         </table>
+      </div>
+      <div class="admin-requests-mobile-group-list mobile-request-groups">
+        ${groupedPaymentRequests(filtered).map((group) => renderMobileRequestGroup(group, { mode, showActions: true, className: "admin-mobile-request-group" })).join("")}
       </div>
     ` : `<div class="empty-state">Заявок нет.</div>`}
   `;

@@ -43,6 +43,7 @@ class AdminPaymentRequestRowRead(BaseModel):
     created_at: datetime | None = None
     event_id: int
     event_title: str | None
+    event_date: date | None = None
     client_name: str | None = None
     position: str | None
     amount_requested: Decimal

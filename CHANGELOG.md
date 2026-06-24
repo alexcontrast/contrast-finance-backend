@@ -1,12 +1,10 @@
 # CHANGELOG
 
-## v0.40.100 — Department Head Desktop Plan Card
+## v0.40.101 — Mobile request grouping by event and position
 
-- Restored the desktop department-head overview plan card to the large admin-style layout.
-- Renamed the label to “Общий план отдела”.
-- Shows the department name on the right side of the card.
-- Uses department-colored card backgrounds: blue for Санжар, peach for Рауфаль.
-- Keeps “Осталось” and “расходов” under the progress bar.
-- Updated frontend cache version to 0.40.100.
-
-Backend and Apps Script were not changed.
+- Mobile admin request tabs now show grouped request cards by event and event position.
+- Mobile department-head request tabs now use the same grouped request-card pattern.
+- Date chip in mobile request cards now shows the event date, not request creation date.
+- Request creation date/time remains visible inside each request row.
+- Added `event_date` to payment request payloads for admin, department-head, and payment request endpoints.
+- Desktop views are unchanged.

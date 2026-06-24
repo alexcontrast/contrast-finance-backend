@@ -1,3 +1,5 @@
-# Contrast Finance 2.0 — v0.40.100
+# Contrast Finance 2.0
 
-Desktop department-head overview plan card polish. Backend and Apps Script unchanged.
+Current patch: v0.40.101
+
+This build updates mobile request cards in admin and department-head cabinets: requests are grouped by event and position, and date chips show event dates.
