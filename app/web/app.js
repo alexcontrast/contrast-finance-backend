@@ -3383,6 +3383,562 @@ function injectManagerUxStyles() {
 }
 
 
+/* v0.40.112 — mobile manager cabinet rebuild only. */
+@media (max-width: 720px) {
+  body.manager-mode .app-shell {
+    width: min(100% - 36px, 430px) !important;
+    padding: 18px 0 84px !important;
+  }
+
+  body.manager-mode .brand-topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "brand title"
+      "actions actions" !important;
+    align-items: start !important;
+    gap: 10px 12px !important;
+    padding: 14px 16px 13px !important;
+    margin-bottom: 10px !important;
+    border-radius: 26px !important;
+  }
+
+  body.manager-mode .brand-block {
+    display: contents !important;
+  }
+
+  body.manager-mode .brand-logo {
+    grid-area: brand !important;
+    justify-self: start !important;
+    width: 118px !important;
+    max-width: 44vw !important;
+    height: auto !important;
+    max-height: 42px !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    mix-blend-mode: multiply !important;
+  }
+
+  body.manager-mode .brand-block > div {
+    grid-area: title !important;
+    justify-self: end !important;
+    align-self: start !important;
+    text-align: right !important;
+    min-width: 0 !important;
+  }
+
+  body.manager-mode .brand-block .eyebrow,
+  body.manager-mode #pageSubtitle {
+    display: none !important;
+  }
+
+  body.manager-mode #pageTitle {
+    margin: 3px 0 0 !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    letter-spacing: .18em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode .topbar-actions {
+    grid-area: actions !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-areas:
+      "user user"
+      "pin logout" !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  body.manager-mode #userBadge {
+    grid-area: user !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    justify-content: center !important;
+    min-height: 34px !important;
+    padding: 7px 10px !important;
+    border-radius: 14px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    background: rgba(230, 248, 218, .96) !important;
+    border: 1px solid rgba(72, 195, 12, .22) !important;
+  }
+
+  body.manager-mode #userBadge .user-badge-main {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode #userBadge .user-badge-line {
+    display: block !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode #userBadge .user-badge-role {
+    display: none !important;
+  }
+
+  body.manager-mode #userBadge .user-badge-edit {
+    width: 24px !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    border-radius: 10px !important;
+    font-size: 11px !important;
+    padding: 0 !important;
+    flex: 0 0 auto !important;
+  }
+
+  body.manager-mode .topbar-actions #changePinOpenBtn {
+    grid-area: pin !important;
+  }
+
+  body.manager-mode .topbar-actions #logoutBtn {
+    grid-area: logout !important;
+  }
+
+  body.manager-mode .topbar-actions #changePinOpenBtn,
+  body.manager-mode .topbar-actions #logoutBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    border-radius: 14px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.12fr) minmax(0, .78fr) minmax(88px, .72fr) !important;
+    gap: 6px !important;
+    align-items: end !important;
+    margin: 10px 0 14px !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar .month-control,
+  body.manager-mode #dashboardScreen > .toolbar .year-control {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    font-size: 12px !important;
+    color: rgba(25, 30, 24, .62) !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar select,
+  body.manager-mode #reloadBtn {
+    width: 100% !important;
+    min-height: 34px !important;
+    padding: 7px 8px !important;
+    border-radius: 14px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode #dashboardScreen > .card {
+    padding: 18px 16px !important;
+    border-radius: 24px !important;
+  }
+
+  body.manager-mode #dashboardScreen > .card > .section-head {
+    display: none !important;
+  }
+
+  body.manager-mode #summaryCards {
+    display: none !important;
+  }
+
+  body.manager-mode .manager-top-actions {
+    margin: 0 0 12px !important;
+    display: grid !important;
+  }
+
+  body.manager-mode .manager-top-actions button {
+    width: 100% !important;
+    min-height: 42px !important;
+    border-radius: 16px !important;
+    font-size: 13px !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode .manager-plan-panel {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding: 18px 16px !important;
+    margin: 0 0 18px !important;
+    border-radius: 24px !important;
+    background: linear-gradient(135deg, rgba(238, 255, 231, .96), rgba(255,255,255,.96)) !important;
+    border: 1px solid rgba(142, 226, 96, .42) !important;
+    box-shadow: 0 18px 44px rgba(32,56,15,.08) !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-plan-panel > div:first-child {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+    min-width: 0 !important;
+  }
+
+  body.manager-mode .manager-plan-panel .overview-label {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    letter-spacing: .24em !important;
+    text-transform: uppercase !important;
+    color: #43b900 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode .manager-plan-panel h3 {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1.05 !important;
+    text-align: right !important;
+    color: rgba(25,30,24,.72) !important;
+    white-space: nowrap !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode .manager-plan-main {
+    gap: 10px !important;
+  }
+
+  body.manager-mode .manager-plan-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 8px 10px !important;
+    flex-wrap: wrap !important;
+  }
+
+  body.manager-mode .manager-plan-row strong {
+    display: inline-flex !important;
+    align-items: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    color: rgba(25,30,24,.70) !important;
+    font-size: 14px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-plan-row strong:first-child {
+    flex: 0 0 100% !important;
+    font-size: clamp(29px, 8.4vw, 38px) !important;
+    line-height: .98 !important;
+    letter-spacing: -.055em !important;
+    color: #111711 !important;
+  }
+
+  body.manager-mode .manager-plan-row strong:nth-child(3) {
+    color: #1f7a35 !important;
+    background: rgba(216, 244, 210, .96) !important;
+    border: 1px solid rgba(53,150,57,.24) !important;
+    border-radius: 999px !important;
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+  }
+
+  body.manager-mode .manager-plan-panel .progress-line {
+    height: 10px !important;
+    margin: 2px 0 0 !important;
+    border-radius: 999px !important;
+  }
+
+  body.manager-mode .manager-plan-panel .muted {
+    margin: 0 !important;
+    color: rgba(25,30,24,.62) !important;
+    font-size: 12px !important;
+    line-height: 1.18 !important;
+    font-weight: 850 !important;
+  }
+
+  body.manager-mode .manager-workspace {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  body.manager-mode .manager-sidebar-card,
+  body.manager-mode .manager-detail-card,
+  body.manager-mode .manager-event-card {
+    border-radius: 24px !important;
+    box-shadow: 0 16px 42px rgba(32,56,15,.07) !important;
+  }
+
+  body.manager-mode .manager-sidebar-card {
+    padding: 16px !important;
+  }
+
+  body.manager-mode .manager-sidebar-card h3 {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    margin: 0 0 2px !important;
+    font-size: 24px !important;
+    line-height: 1 !important;
+    letter-spacing: -.04em !important;
+  }
+
+  body.manager-mode .manager-sidebar-card h3::before {
+    content: "";
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: #5cff00;
+    flex: 0 0 auto;
+  }
+
+  body.manager-mode .manager-sidebar-card > .muted {
+    margin: 0 0 12px !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+  }
+
+  body.manager-mode .manager-mini-list {
+    display: grid !important;
+    gap: 10px !important;
+  }
+
+  body.manager-mode .manager-mini-card {
+    position: relative !important;
+    display: grid !important;
+    gap: 7px !important;
+    padding: 13px 14px !important;
+    border-radius: 20px !important;
+    min-height: 0 !important;
+    text-align: left !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-mini-card [data-mini-title] {
+    order: 1 !important;
+    font-size: 17px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-mini-card [data-mini-meta] {
+    order: 2 !important;
+    font-size: 12px !important;
+    line-height: 1.18 !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-mini-card [data-mini-calc] {
+    order: 3 !important;
+    font-size: 11px !important;
+    line-height: 1.12 !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-card-pills {
+    order: 4 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-pill {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 6px 8px !important;
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    text-align: center !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-badge-row {
+    order: 5 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-top: 1px !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-badge-row .status-badge,
+  body.manager-mode .manager-mini-card .mini-badge-row .coauthor-badge {
+    width: auto !important;
+    max-width: 100% !important;
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-mini-card.is-open {
+    transform: none !important;
+  }
+
+  body.manager-mode .manager-detail-card {
+    min-height: 220px !important;
+    border-radius: 24px !important;
+    overflow: visible !important;
+  }
+
+  body.manager-mode .manager-empty-detail {
+    min-height: 220px !important;
+    padding: 22px 14px !important;
+  }
+
+  body.manager-mode .manager-event-card {
+    padding: 16px !important;
+    border-radius: 24px !important;
+  }
+
+  body.manager-mode .manager-event-head {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding-bottom: 14px !important;
+  }
+
+  body.manager-mode .manager-event-head .overview-label {
+    font-size: 11px !important;
+    letter-spacing: .18em !important;
+  }
+
+  body.manager-mode .manager-event-head h2 {
+    margin: 4px 0 8px !important;
+    font-size: 22px !important;
+    line-height: 1.02 !important;
+    letter-spacing: -.045em !important;
+  }
+
+  body.manager-mode .event-badge-row {
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+  }
+
+  body.manager-mode .event-badge-row .status,
+  body.manager-mode .event-badge-row .status-badge,
+  body.manager-mode .event-badge-row .coauthor-badge {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+
+  body.manager-mode .manager-event-head .inline-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  body.manager-mode .manager-event-head .inline-actions button {
+    width: 100% !important;
+    min-height: 36px !important;
+    padding: 8px 8px !important;
+    border-radius: 14px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    margin: 0 !important;
+  }
+
+  body.manager-mode .manager-event-head .inline-actions .danger-btn {
+    grid-column: 1 / -1 !important;
+  }
+
+  body.manager-mode .manager-event-fields {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    margin-top: 14px !important;
+  }
+
+  body.manager-mode .manager-event-fields label {
+    font-size: 12px !important;
+    line-height: 1.15 !important;
+  }
+
+  body.manager-mode .manager-event-fields input,
+  body.manager-mode .manager-event-fields select {
+    min-height: 38px !important;
+    padding: 9px 10px !important;
+    border-radius: 14px !important;
+    font-size: 13px !important;
+  }
+
+  body.manager-mode .estimate-tabs {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px !important;
+    margin: 14px 0 10px !important;
+  }
+
+  body.manager-mode .estimate-tabs button {
+    width: 100% !important;
+    min-height: 36px !important;
+    border-radius: 14px !important;
+    font-size: 11px !important;
+    padding: 8px 6px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode #managerEstimatePanel {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  body.manager-mode .manager-summary-grid,
+  body.manager-mode .manager-summary-grid-six {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-top: 12px !important;
+  }
+
+  body.manager-mode .manager-summary-grid .metric,
+  body.manager-mode .manager-summary-grid-six .metric {
+    padding: 10px !important;
+    border-radius: 16px !important;
+  }
+
+  body.manager-mode .manager-summary-grid .metric .label,
+  body.manager-mode .manager-summary-grid-six .metric .label {
+    font-size: 10px !important;
+    line-height: 1.05 !important;
+  }
+
+  body.manager-mode .manager-summary-grid .metric .value,
+  body.manager-mode .manager-summary-grid-six .metric .value {
+    font-size: 15px !important;
+    line-height: 1.05 !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-card-bottom-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px !important;
+    margin-top: 14px !important;
+  }
+
+  body.manager-mode .manager-card-bottom-actions button {
+    width: 100% !important;
+    min-height: 38px !important;
+    border-radius: 14px !important;
+    padding: 8px 8px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+}
+
+
 `;
   document.head.appendChild(style);
 }
@@ -11715,6 +12271,10 @@ function attachManagerDashboardActions() {
       button.classList.add("active");
 
       await withLoading(async () => renderManagerEventDetail(eventId), "Открываем мероприятие…");
+      if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) {
+        const detail = document.getElementById("managerEventDetail");
+        if (detail) detail.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     });
   });
 
@@ -12950,7 +13510,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.111 loaded");
+  console.info("Contrast Finance web app v0.40.112 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
