@@ -3939,6 +3939,355 @@ function injectManagerUxStyles() {
 }
 
 
+/* v0.40.113 — real mobile manager rebuild, isolated from admin/head/desktop. */
+@media (max-width: 720px) {
+  body[data-cf-role="manager"] .app-shell {
+    width: min(100% - 36px, 430px) !important;
+    padding: 18px 0 88px !important;
+  }
+
+  body[data-cf-role="manager"] .brand-topbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "brand title"
+      "actions actions" !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 16px !important;
+    margin-bottom: 14px !important;
+    border-radius: 28px !important;
+  }
+
+  body[data-cf-role="manager"] .brand-block { display: contents !important; }
+  body[data-cf-role="manager"] .brand-logo {
+    grid-area: brand !important;
+    justify-self: start !important;
+    width: 125px !important;
+    max-width: 45vw !important;
+    height: auto !important;
+    max-height: 44px !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    mix-blend-mode: multiply !important;
+  }
+  body[data-cf-role="manager"] .brand-block > div {
+    grid-area: title !important;
+    justify-self: end !important;
+    text-align: right !important;
+  }
+  body[data-cf-role="manager"] .brand-block .eyebrow,
+  body[data-cf-role="manager"] #pageSubtitle { display: none !important; }
+  body[data-cf-role="manager"] #pageTitle {
+    margin: 0 !important;
+    font-size: 14px !important;
+    line-height: 1 !important;
+    letter-spacing: .22em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+  }
+
+  body[data-cf-role="manager"] .topbar-actions {
+    grid-area: actions !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-areas: "pin logout" !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  body[data-cf-role="manager"] #userBadge { display: none !important; }
+  body[data-cf-role="manager"] #changePinOpenBtn { grid-area: pin !important; }
+  body[data-cf-role="manager"] #logoutBtn { grid-area: logout !important; }
+  body[data-cf-role="manager"] #changePinOpenBtn,
+  body[data-cf-role="manager"] #logoutBtn {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 10px !important;
+    border-radius: 18px !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+  }
+
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, .72fr) minmax(92px, .62fr) !important;
+    gap: 8px !important;
+    align-items: end !important;
+    margin: 12px 0 14px !important;
+  }
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar .month-control,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar .year-control {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 13px !important;
+    color: rgba(25,30,24,.62) !important;
+  }
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar select,
+  body[data-cf-role="manager"] #reloadBtn {
+    width: 100% !important;
+    min-height: 44px !important;
+    padding: 10px !important;
+    border-radius: 18px !important;
+    font-size: 15px !important;
+    font-weight: 950 !important;
+  }
+
+  body[data-cf-role="manager"] #dashboardScreen > .card {
+    padding: 16px !important;
+    border-radius: 28px !important;
+  }
+  body[data-cf-role="manager"] #dashboardScreen > .card > .section-head,
+  body[data-cf-role="manager"] #summaryCards { display: none !important; }
+
+  body[data-cf-role="manager"] .manager-dashboard-v113 {
+    display: grid !important;
+    gap: 14px !important;
+  }
+  body[data-cf-role="manager"] .manager-top-actions-v113 {
+    display: grid !important;
+    margin: 0 !important;
+  }
+  body[data-cf-role="manager"] .manager-top-actions-v113 button {
+    width: 100% !important;
+    min-height: 44px !important;
+    border-radius: 18px !important;
+    font-size: 15px !important;
+    font-weight: 950 !important;
+  }
+
+  body[data-cf-role="manager"] .manager-plan-panel-v113 {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding: 18px 16px !important;
+    margin: 0 !important;
+    border-radius: 24px !important;
+    background: linear-gradient(135deg, rgba(238,255,231,.98), rgba(255,255,255,.98)) !important;
+    border: 1px solid rgba(142,226,96,.45) !important;
+    box-shadow: 0 18px 44px rgba(32,56,15,.08) !important;
+    overflow: hidden !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-head-v113 {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 10px !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-panel-v113 .overview-label {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    letter-spacing: .22em !important;
+    text-transform: uppercase !important;
+    color: #43b900 !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-panel-v113 h3 {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1 !important;
+    text-align: right !important;
+    color: rgba(25,30,24,.62) !important;
+    white-space: nowrap !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-main-v113 {
+    display: grid !important;
+    gap: 9px !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-fact-v113 {
+    display: block !important;
+    font-size: clamp(34px, 10vw, 46px) !important;
+    line-height: .96 !important;
+    letter-spacing: -.06em !important;
+    font-weight: 950 !important;
+    color: #111711 !important;
+    white-space: nowrap !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-subline-v113 {
+    display: flex !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 5px 8px !important;
+    font-size: 14px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+    color: rgba(25,30,24,.66) !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-events-badge-v113 {
+    display: inline-flex !important;
+    align-items: center !important;
+    min-height: 24px !important;
+    padding: 0 10px !important;
+    border-radius: 999px !important;
+    background: rgba(216,244,210,.96) !important;
+    border: 1px solid rgba(53,150,57,.22) !important;
+    color: #1f7a35 !important;
+    white-space: nowrap !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-panel-v113 .progress-line {
+    height: 10px !important;
+    margin: 2px 0 0 !important;
+    border-radius: 999px !important;
+  }
+  body[data-cf-role="manager"] .manager-plan-muted-v113 {
+    margin: 0 !important;
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+    font-weight: 850 !important;
+    color: rgba(25,30,24,.62) !important;
+  }
+
+  body[data-cf-role="manager"] .manager-workspace-v113 {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+  body[data-cf-role="manager"] .manager-sidebar-card,
+  body[data-cf-role="manager"] .manager-detail-card,
+  body[data-cf-role="manager"] .manager-event-card {
+    border-radius: 24px !important;
+    box-shadow: 0 16px 42px rgba(32,56,15,.07) !important;
+  }
+  body[data-cf-role="manager"] .manager-sidebar-card {
+    padding: 16px !important;
+  }
+  body[data-cf-role="manager"] .manager-sidebar-card h3 {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    margin: 0 0 4px !important;
+    font-size: 24px !important;
+    line-height: 1 !important;
+    letter-spacing: -.04em !important;
+  }
+  body[data-cf-role="manager"] .manager-sidebar-card h3::before {
+    content: "" !important;
+    width: 40px !important;
+    height: 4px !important;
+    border-radius: 999px !important;
+    background: #5cff00 !important;
+    flex: 0 0 auto !important;
+  }
+  body[data-cf-role="manager"] .manager-sidebar-card > .muted {
+    margin: 0 0 12px !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-list {
+    display: grid !important;
+    gap: 10px !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+    padding: 13px 14px !important;
+    border-radius: 20px !important;
+    min-height: 0 !important;
+    text-align: left !important;
+    overflow: hidden !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card [data-mini-title] {
+    order: 1 !important;
+    font-size: 17px !important;
+    line-height: 1.05 !important;
+    font-weight: 950 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card [data-mini-meta] {
+    order: 2 !important;
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card [data-mini-calc] {
+    order: 3 !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card .mini-card-pills {
+    order: 4 !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card .mini-pill {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 6px 8px !important;
+    border-radius: 999px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    text-align: center !important;
+  }
+  body[data-cf-role="manager"] .manager-mini-card .mini-badge-row {
+    order: 5 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    margin-top: 1px !important;
+  }
+
+  body[data-cf-role="manager"] .manager-detail-card-v113 {
+    min-height: 220px !important;
+    overflow: visible !important;
+  }
+  body[data-cf-role="manager"] .manager-event-card {
+    padding: 16px !important;
+    border-radius: 24px !important;
+  }
+  body[data-cf-role="manager"] .manager-event-head {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding-bottom: 14px !important;
+  }
+  body[data-cf-role="manager"] .manager-event-head h2 {
+    margin: 4px 0 8px !important;
+    font-size: 22px !important;
+    line-height: 1.02 !important;
+    letter-spacing: -.045em !important;
+  }
+  body[data-cf-role="manager"] .manager-event-head .inline-actions,
+  body[data-cf-role="manager"] .manager-card-bottom-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  body[data-cf-role="manager"] .manager-event-head .inline-actions button,
+  body[data-cf-role="manager"] .manager-card-bottom-actions button {
+    width: 100% !important;
+    min-height: 38px !important;
+    border-radius: 14px !important;
+    padding: 8px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    margin: 0 !important;
+  }
+  body[data-cf-role="manager"] .manager-event-fields,
+  body[data-cf-role="manager"] .manager-summary-grid,
+  body[data-cf-role="manager"] .manager-summary-grid-six {
+    grid-template-columns: 1fr !important;
+  }
+  body[data-cf-role="manager"] .manager-summary-grid,
+  body[data-cf-role="manager"] .manager-summary-grid-six {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+}
+
+
 `;
   document.head.appendChild(style);
 }
@@ -5094,6 +5443,7 @@ function renderUserBadgeContent(user) {
 
 function updateHeaderUserInfo(user) {
   if (!user) return;
+  document.body.setAttribute("data-cf-role", user.role || "");
   document.body.classList.toggle("admin-mode", user.role === "admin");
   document.body.classList.toggle("department-head-mode", user.role === "department_head");
   document.body.classList.toggle("manager-mode", user.role === "manager");
@@ -5121,6 +5471,7 @@ function updateHeaderUserInfo(user) {
 
 
 function showLogin() {
+  document.body.removeAttribute("data-cf-role");
   document.body.classList.remove("boot-mode");
   document.body.classList.add("login-mode");
   document.body.classList.remove("dashboard-mode");
@@ -8499,7 +8850,7 @@ function renderDepartmentDashboard(data, paymentRequests = []) {
 
 function renderManagerTopActions(data) {
   return `
-    <div class="manager-top-actions">
+    <div class="manager-top-actions manager-top-actions-v113">
       <button class="secondary" id="managerCreateEventShortcut">+ Создать мероприятие</button>
     </div>
   `;
@@ -8513,19 +8864,20 @@ function renderManagerPlanPanel(data) {
   const monthLabel = MONTHS_RU.find(([m]) => m === state.month.slice(5, 7))?.[1] || state.month;
 
   return `
-    <section class="manager-plan-panel">
-      <div>
-        <div class="overview-label">Цель на месяц</div>
+    <section class="manager-plan-panel manager-plan-panel-v113">
+      <div class="manager-plan-head-v113">
+        <div class="overview-label">Личный план</div>
         <h3>${monthLabel} ${state.month.slice(0, 4)}</h3>
       </div>
-      <div class="manager-plan-main">
-        <div class="manager-plan-row">
-          <strong>Факт: ${formatMoney(fact)} ₸</strong>
-          <strong>Цель: ${formatMoney(plan)} ₸</strong>
-          <strong>${percent}%</strong>
+      <div class="manager-plan-main manager-plan-main-v113">
+        <strong class="manager-plan-fact-v113">${formatMoney(fact)} ₸</strong>
+        <div class="manager-plan-subline-v113">
+          <span>Цель: ${formatMoney(plan)} ₸</span>
+          <span>· ${formatPercentValue(percent)}%</span>
+          <span class="manager-plan-events-badge-v113">${data.events_count || 0} мероприятий</span>
         </div>
         ${progressLine(percent)}
-        <div class="muted">Осталось: ${formatMoney(remaining)} ₸ · мероприятий: ${data.events_count || 0}</div>
+        <div class="muted manager-plan-muted-v113">Осталось: ${formatMoney(remaining)} ₸</div>
       </div>
     </section>
   `;
@@ -10003,17 +10355,19 @@ function openManagerCreateModal() {
 
 function renderManagerDashboardLayout(data) {
   return `
-    ${renderManagerTopActions(data)}
-    ${renderManagerPlanPanel(data)}
-    <div class="manager-workspace">
-      ${renderManagerEventList(data)}
-      <main id="managerEventDetail" class="manager-detail-card">
-        <div class="manager-empty-detail">
-          <div class="empty-icon">▦</div>
-          <h3>Выбери мероприятие</h3>
-          <p class="muted">Создай новое или открой черновик слева.</p>
-        </div>
-      </main>
+    <div class="manager-dashboard-v113">
+      ${renderManagerTopActions(data)}
+      ${renderManagerPlanPanel(data)}
+      <div class="manager-workspace manager-workspace-v113">
+        ${renderManagerEventList(data)}
+        <main id="managerEventDetail" class="manager-detail-card manager-detail-card-v113">
+          <div class="manager-empty-detail">
+            <div class="empty-icon">▦</div>
+            <h3>Выбери мероприятие</h3>
+            <p class="muted">Создай новое или открой черновик слева.</p>
+          </div>
+        </main>
+      </div>
     </div>
   `;
 }
@@ -13510,7 +13864,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.112 loaded");
+  console.info("Contrast Finance web app v0.40.113 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
