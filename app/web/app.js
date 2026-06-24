@@ -11137,16 +11137,16 @@ function renderManagerEventCard(event, items = [], summary = null) {
             ${coauthorBadgeHtml(event)}
           </div>
         </div>
-        <div class="inline-actions manager-event-actions-v117">
+        <div class="manager-event-actions manager-event-actions-v118">
           ${isAdminEditMode ? `
             <span class="status-badge status-tone-review">✏️ Админ-редактирование</span>
           ` : `
-            <div class="manager-event-actions-row manager-event-actions-row-main-v117">
+            <div class="manager-event-actions-row manager-event-actions-row-main-v118">
               <button class="secondary" data-manager-event-pay="${event.id}">Оплатить</button>
               <button class="ghost" data-manager-event-payments="${event.id}">Мои оплаты</button>
               <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>
             </div>
-            <div class="manager-event-actions-row manager-event-actions-row-secondary-v117">
+            <div class="manager-event-actions-row manager-event-actions-row-secondary-v118">
               <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
               ${eventIsCoauthored(event)
                 ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`

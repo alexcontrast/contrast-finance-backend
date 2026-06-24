@@ -1,13 +1,5 @@
-# Contrast Finance v0.40.117
+# Contrast Finance v0.40.118
 
-Mobile manager-only patch on top of v0.40.116.
+Патч мобильного кабинета менеджера поверх v0.40.117.
 
-Changed files:
-- `app/web/app.js`
-- `app/web/styles.css`
-- `app/web/index.html`
-- `CHANGELOG.md`
-- `README.md`
-- `app/CHANGED_FILES_README.txt`
-
-Scope: mobile manager cabinet layout only.
+Тронуты только фронтовые файлы менеджерского кабинета и cache-bust.

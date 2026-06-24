@@ -12912,3 +12912,270 @@ button.soft-loading::after {
     line-height: 1 !important;
   }
 }
+
+
+/* v0.40.118 — hard mobile manager event-card fix.
+   Real fixes after v0.40.117 did not apply because CSS cache-bust still pointed to 0.40.116
+   and older .inline-actions rules kept competing with the new layout. */
+@media (max-width: 920px) {
+  body.manager-mode .manager-event-card,
+  body[data-cf-role="manager"] .manager-event-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+    font-size: 17px !important;
+    line-height: 1.18 !important;
+  }
+
+  body.manager-mode .manager-event-head,
+  body[data-cf-role="manager"] .manager-event-head {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body.manager-mode .manager-event-head h2,
+  body[data-cf-role="manager"] .manager-event-head h2 {
+    font-size: clamp(24px, 7.2vw, 30px) !important;
+    line-height: 1.02 !important;
+    letter-spacing: -.045em !important;
+    margin: 1px 0 4px !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+  }
+
+  body.manager-mode .manager-event-head .overview-label,
+  body[data-cf-role="manager"] .manager-event-head .overview-label {
+    font-size: 12px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-event-actions-v118,
+  body[data-cf-role="manager"] .manager-event-actions-v118 {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 5px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.manager-mode .manager-event-actions-v118 .manager-event-actions-row,
+  body[data-cf-role="manager"] .manager-event-actions-v118 .manager-event-actions-row {
+    display: grid !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 5px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.manager-mode .manager-event-actions-row-main-v118,
+  body[data-cf-role="manager"] .manager-event-actions-row-main-v118 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .82fr) !important;
+  }
+
+  body.manager-mode .manager-event-actions-row-secondary-v118,
+  body[data-cf-role="manager"] .manager-event-actions-row-secondary-v118 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  body.manager-mode .manager-event-actions-v118 button,
+  body[data-cf-role="manager"] .manager-event-actions-v118 button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 4px 5px !important;
+    border-radius: 10px !important;
+    box-sizing: border-box !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.manager-mode .manager-event-actions-row-main-v118 button[data-manager-event-payments],
+  body[data-cf-role="manager"] .manager-event-actions-row-main-v118 button[data-manager-event-payments] {
+    font-size: 11.2px !important;
+    letter-spacing: -.035em !important;
+  }
+
+  body.manager-mode .manager-event-fields-v116,
+  body[data-cf-role="manager"] .manager-event-fields-v116 {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 112px !important;
+    grid-template-areas:
+      "calc date"
+      "customer title"
+      "agency banktax" !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 4px !important;
+    padding: 5px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-event-fields-v116:not(:has(.manager-event-field-banktax)),
+  body[data-cf-role="manager"] .manager-event-fields-v116:not(:has(.manager-event-field-banktax)) {
+    grid-template-areas:
+      "calc date"
+      "customer title"
+      "agency agency" !important;
+  }
+
+  body.manager-mode .manager-event-field,
+  body[data-cf-role="manager"] .manager-event-field,
+  body.manager-mode .manager-event-fields label,
+  body[data-cf-role="manager"] .manager-event-fields label {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    gap: 2px !important;
+    font-size: 9.8px !important;
+    line-height: 1 !important;
+    letter-spacing: -.025em !important;
+  }
+
+  body.manager-mode .manager-event-field-calc,
+  body[data-cf-role="manager"] .manager-event-field-calc { grid-area: calc !important; }
+  body.manager-mode .manager-event-field-date,
+  body[data-cf-role="manager"] .manager-event-field-date { grid-area: date !important; }
+  body.manager-mode .manager-event-field-customer,
+  body[data-cf-role="manager"] .manager-event-field-customer { grid-area: customer !important; }
+  body.manager-mode .manager-event-field-title,
+  body[data-cf-role="manager"] .manager-event-field-title { grid-area: title !important; }
+  body.manager-mode .manager-event-field-agency,
+  body[data-cf-role="manager"] .manager-event-field-agency { grid-area: agency !important; }
+  body.manager-mode .manager-event-field-banktax,
+  body[data-cf-role="manager"] .manager-event-field-banktax { grid-area: banktax !important; }
+
+  body.manager-mode .manager-event-fields-v116 input,
+  body.manager-mode .manager-event-fields-v116 select,
+  body.manager-mode .manager-event-fields-v116 textarea,
+  body[data-cf-role="manager"] .manager-event-fields-v116 input,
+  body[data-cf-role="manager"] .manager-event-fields-v116 select,
+  body[data-cf-role="manager"] .manager-event-fields-v116 textarea {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    padding: 2px 5px !important;
+    border-radius: 8px !important;
+    box-sizing: border-box !important;
+    font-size: 11.5px !important;
+    line-height: 1 !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-event-field-date input[type="date"],
+  body[data-cf-role="manager"] .manager-event-field-date input[type="date"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding-left: 3px !important;
+    padding-right: 1px !important;
+    font-size: 10px !important;
+    letter-spacing: -.04em !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+  }
+
+  body.manager-mode .manager-event-field-date input[type="date"]::-webkit-date-and-time-value,
+  body[data-cf-role="manager"] .manager-event-field-date input[type="date"]::-webkit-date-and-time-value {
+    text-align: left !important;
+    margin: 0 !important;
+  }
+
+  body.manager-mode .manager-event-field-date input[type="date"]::-webkit-calendar-picker-indicator,
+  body[data-cf-role="manager"] .manager-event-field-date input[type="date"]::-webkit-calendar-picker-indicator {
+    width: 12px !important;
+    min-width: 12px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.manager-mode .external-estimate-totals,
+  body.manager-mode .manager-summary-grid,
+  body.manager-mode .manager-summary-grid-six,
+  body[data-cf-role="manager"] .external-estimate-totals,
+  body[data-cf-role="manager"] .manager-summary-grid,
+  body[data-cf-role="manager"] .manager-summary-grid-six {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 4px !important;
+    margin-top: 5px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body.manager-mode .external-estimate-totals .metric,
+  body.manager-mode .manager-summary-grid .metric,
+  body.manager-mode .manager-summary-grid-six .metric,
+  body.manager-mode .external-estimate-totals .card.metric,
+  body.manager-mode .manager-summary-grid .card.metric,
+  body.manager-mode .manager-summary-grid-six .card.metric,
+  body[data-cf-role="manager"] .external-estimate-totals .metric,
+  body[data-cf-role="manager"] .manager-summary-grid .metric,
+  body[data-cf-role="manager"] .manager-summary-grid-six .metric,
+  body[data-cf-role="manager"] .external-estimate-totals .card.metric,
+  body[data-cf-role="manager"] .manager-summary-grid .card.metric,
+  body[data-cf-role="manager"] .manager-summary-grid-six .card.metric {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 4px 5px !important;
+    border-radius: 9px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .external-estimate-totals .metric .label,
+  body.manager-mode .manager-summary-grid .metric .label,
+  body.manager-mode .manager-summary-grid-six .metric .label,
+  body[data-cf-role="manager"] .external-estimate-totals .metric .label,
+  body[data-cf-role="manager"] .manager-summary-grid .metric .label,
+  body[data-cf-role="manager"] .manager-summary-grid-six .metric .label {
+    margin: 0 0 1px !important;
+    font-size: 8.8px !important;
+    line-height: 1 !important;
+    letter-spacing: -.035em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  body.manager-mode .external-estimate-totals .metric .value,
+  body.manager-mode .manager-summary-grid .metric .value,
+  body.manager-mode .manager-summary-grid-six .metric .value,
+  body[data-cf-role="manager"] .external-estimate-totals .metric .value,
+  body[data-cf-role="manager"] .manager-summary-grid .metric .value,
+  body[data-cf-role="manager"] .manager-summary-grid-six .metric .value {
+    font-size: 12.5px !important;
+    line-height: 1 !important;
+    letter-spacing: -.035em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}
