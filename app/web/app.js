@@ -5037,6 +5037,201 @@ function injectManagerUxStyles() {
   }
 }
 
+/* v0.40.116 — mobile manager compact header, plan row and event fields. */
+@media (max-width: 920px) {
+  body.manager-mode .app-shell,
+  body[data-cf-role="manager"] .app-shell {
+    width: min(100% - 24px, 430px) !important;
+    padding-top: 10px !important;
+  }
+
+  body.manager-mode .brand-topbar,
+  body[data-cf-role="manager"] .brand-topbar {
+    gap: 4px 6px !important;
+    padding: 8px !important;
+    margin: 0 0 8px !important;
+    border-radius: 20px !important;
+  }
+
+  body.manager-mode .brand-logo,
+  body[data-cf-role="manager"] .brand-logo {
+    width: 108px !important;
+    max-width: 38vw !important;
+    max-height: 30px !important;
+  }
+
+  body.manager-mode #userBadge,
+  body[data-cf-role="manager"] #userBadge {
+    min-height: 20px !important;
+    padding: 3px 6px !important;
+    border-radius: 999px !important;
+  }
+
+  body.manager-mode #userBadge .user-badge-line,
+  body[data-cf-role="manager"] #userBadge .user-badge-line {
+    max-width: 112px !important;
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+    letter-spacing: -.025em !important;
+  }
+
+  body.manager-mode #changePinOpenBtn,
+  body.manager-mode #logoutBtn,
+  body[data-cf-role="manager"] #changePinOpenBtn,
+  body[data-cf-role="manager"] #logoutBtn {
+    min-height: 24px !important;
+    height: 24px !important;
+    padding: 3px 6px !important;
+    border-radius: 10px !important;
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar {
+    gap: 4px !important;
+    margin: 6px 0 8px !important;
+    align-items: end !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar .month-control,
+  body.manager-mode #dashboardScreen > .toolbar .year-control,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar .month-control,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar .year-control {
+    font-size: 9px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode #dashboardScreen > .toolbar select,
+  body.manager-mode #reloadBtn,
+  body[data-cf-role="manager"] #dashboardScreen > .toolbar select,
+  body[data-cf-role="manager"] #reloadBtn,
+  body.manager-mode .manager-top-actions button,
+  body.manager-mode .manager-top-actions-v113 button,
+  body[data-cf-role="manager"] .manager-top-actions button,
+  body[data-cf-role="manager"] .manager-top-actions-v113 button {
+    min-height: 24px !important;
+    height: 24px !important;
+    padding: 3px 6px !important;
+    border-radius: 10px !important;
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-dashboard-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v113 {
+    gap: 8px !important;
+  }
+
+  body.manager-mode .manager-plan-panel,
+  body.manager-mode .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-plan-panel,
+  body[data-cf-role="manager"] .manager-plan-panel-v113 {
+    padding: 10px 9px !important;
+    gap: 7px !important;
+    border-radius: 18px !important;
+  }
+
+  body.manager-mode .manager-plan-subline-v113,
+  body.manager-mode .manager-plan-subline-v116,
+  body.manager-mode .manager-plan-row,
+  body[data-cf-role="manager"] .manager-plan-subline-v113,
+  body[data-cf-role="manager"] .manager-plan-subline-v116,
+  body[data-cf-role="manager"] .manager-plan-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 5px !important;
+    align-items: center !important;
+  }
+
+  body.manager-mode .manager-plan-target-v116,
+  body.manager-mode .manager-plan-subline-v113 span:first-child,
+  body[data-cf-role="manager"] .manager-plan-target-v116,
+  body[data-cf-role="manager"] .manager-plan-subline-v113 span:first-child {
+    grid-column: auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-plan-events-badge-v113,
+  body.manager-mode .manager-plan-row strong:nth-child(3),
+  body[data-cf-role="manager"] .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-plan-row strong:nth-child(3) {
+    justify-self: end !important;
+    min-height: 18px !important;
+    padding: 0 6px !important;
+    font-size: 9.5px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-event-fields,
+  body.manager-mode .manager-event-fields-v116,
+  body[data-cf-role="manager"] .manager-event-fields,
+  body[data-cf-role="manager"] .manager-event-fields-v116 {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    grid-template-areas:
+      "calc date"
+      "customer title"
+      "agency banktax" !important;
+    gap: 4px 5px !important;
+    margin: 8px 0 !important;
+    padding: 5px !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-event-field,
+  body[data-cf-role="manager"] .manager-event-field,
+  body.manager-mode .manager-event-fields label,
+  body[data-cf-role="manager"] .manager-event-fields label {
+    display: grid !important;
+    gap: 2px !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    font-size: 8.5px !important;
+    line-height: 1 !important;
+    letter-spacing: -.01em !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode .manager-event-field-calc,
+  body[data-cf-role="manager"] .manager-event-field-calc { grid-area: calc !important; }
+  body.manager-mode .manager-event-field-date,
+  body[data-cf-role="manager"] .manager-event-field-date { grid-area: date !important; }
+  body.manager-mode .manager-event-field-customer,
+  body[data-cf-role="manager"] .manager-event-field-customer { grid-area: customer !important; }
+  body.manager-mode .manager-event-field-title,
+  body[data-cf-role="manager"] .manager-event-field-title { grid-area: title !important; }
+  body.manager-mode .manager-event-field-agency,
+  body[data-cf-role="manager"] .manager-event-field-agency { grid-area: agency !important; }
+  body.manager-mode .manager-event-field-banktax,
+  body[data-cf-role="manager"] .manager-event-field-banktax { grid-area: banktax !important; }
+
+  body.manager-mode .manager-event-fields:not(:has(.manager-event-field-banktax)) .manager-event-field-agency,
+  body[data-cf-role="manager"] .manager-event-fields:not(:has(.manager-event-field-banktax)) .manager-event-field-agency {
+    grid-column: 1 / -1 !important;
+  }
+
+  body.manager-mode .manager-event-fields input,
+  body.manager-mode .manager-event-fields select,
+  body.manager-mode .manager-event-fields textarea,
+  body[data-cf-role="manager"] .manager-event-fields input,
+  body[data-cf-role="manager"] .manager-event-fields select,
+  body[data-cf-role="manager"] .manager-event-fields textarea {
+    min-height: 22px !important;
+    height: 22px !important;
+    padding: 2px 5px !important;
+    border-radius: 8px !important;
+    font-size: 10px !important;
+    line-height: 1 !important;
+  }
+}
+
 `;
   document.head.appendChild(style);
 }
@@ -9620,9 +9815,8 @@ function renderManagerPlanPanel(data) {
       </div>
       <div class="manager-plan-main manager-plan-main-v113">
         <strong class="manager-plan-fact-v113">${formatMoney(fact)} ₸</strong>
-        <div class="manager-plan-subline-v113">
-          <span>Цель: ${formatMoney(plan)} ₸</span>
-          <span>· ${formatPercentValue(percent)}%</span>
+        <div class="manager-plan-subline-v113 manager-plan-subline-v116">
+          <span class="manager-plan-target-v116">Цель: ${formatMoney(plan)} ₸ · ${formatPercentValue(percent)}%</span>
           <span class="manager-plan-events-badge-v113">${data.events_count || 0} мероприятий</span>
         </div>
         ${progressLine(percent)}
@@ -10960,8 +11154,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
 
       ${isReadonlyReview ? `<div class="readonly-banner" style="margin: 12px 0 0; padding: 10px 12px; border: 1px solid rgba(50,168,82,.35); background: rgba(50,168,82,.10); color:#256b31; border-radius:12px; font-size:13px; font-weight:700;">Мероприятие на проверке — смета и поля недоступны для редактирования. Можно делать оплаты, передавать мероприятие и добавлять соавтора.</div>` : ""}
 
-      <div class="manager-event-fields" style="${isReadonlyReview ? "filter: grayscale(.35); opacity:.72;" : ""}">
-        <label>Тип расчёта с заказчиком
+      <div class="manager-event-fields manager-event-fields-v116" style="${isReadonlyReview ? "filter: grayscale(.35); opacity:.72;" : ""}">
+        <label class="manager-event-field manager-event-field-calc">Тип расчёта
           <select data-event-field="client_calc_type" data-event-id="${event.id}" ${readonlyAttrs}>
             <option value="ip_contrast_event" ${event.client_calc_type === "ip_contrast_event" ? "selected" : ""}>ИП Contrast Event</option>
             <option value="our_no_vat" ${event.client_calc_type === "our_no_vat" ? "selected" : ""}>ОУР без НДС</option>
@@ -10969,25 +11163,25 @@ function renderManagerEventCard(event, items = [], summary = null) {
             <option value="cash" ${event.client_calc_type === "cash" ? "selected" : ""}>Нал</option>
           </select>
         </label>
-        <label>Дата мероприятия
+        <label class="manager-event-field manager-event-field-date">Дата
           <input type="date" value="${eventDateForInput(event.event_date)}" data-event-field="event_date" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
-        <label>Название заказчика
+        <label class="manager-event-field manager-event-field-customer">Заказчик
           <input value="${event.client_name || ""}" data-event-field="client_name" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
-        <label>Название мероприятия
+        <label class="manager-event-field manager-event-field-title">Мероприятие
           <input value="${event.title || ""}" data-event-field="title" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
-        <label>Комиссия агентства, %
+        <label class="manager-event-field manager-event-field-agency">Комиссия агентства, %
           <input value="${formatPlainNumber(event.agency_commission_amount || 0)}" data-event-field="agency_commission_amount" data-event-id="${event.id}" ${readonlyAttrs} />
         </label>
         ${isAdminEditMode ? `
-          <label>Менеджер, %
+          <label class="manager-event-field manager-event-field-manager-percent">Менеджер, %
             <input value="${formatPercentValue(event.manager_percent || 21)}" data-event-field="manager_percent" data-event-id="${event.id}" ${readonlyAttrs} />
           </label>
         ` : ""}
         ${event.client_calc_type === "simplified" ? `
-          <label>Банк+налоги, %
+          <label class="manager-event-field manager-event-field-banktax">Банк+налоги, %
             <input value="${formatPlainNumber(event.simplified_bank_tax_percent || 0)}" data-event-field="simplified_bank_tax_percent" data-event-id="${event.id}" ${readonlyAttrs} />
           </label>
         ` : ""}
