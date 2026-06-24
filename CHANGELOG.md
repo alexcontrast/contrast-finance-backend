@@ -1,7 +1,9 @@
 # CHANGELOG
 
-## v0.40.106 — Department head desktop plan card isolated layout
-- Fixed department head desktop overview plan card by using isolated desktop-only markup/classes.
-- Department name is now pinned to the top-right; amount, goal/percent/badge, progress, and remaining/expenses are separated into predictable rows.
-- Mobile department head card remains on the previous mobile markup.
-- Updated cache version to 0.40.106.
+## v0.40.107 — Department head plan card redraw
+
+- Fully redrew the department-head overview plan card with standalone v107 classes.
+- Desktop card no longer reuses legacy manager/admin/mobile classes that caused layout conflicts.
+- Desktop layout: label, current fact, goal/percent/events badge, department name top-right, full-width progress bar, remaining/expenses below.
+- Mobile layout keeps the department name as the first green line.
+- Backend and Apps Script unchanged.
