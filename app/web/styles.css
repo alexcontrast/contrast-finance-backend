@@ -11774,3 +11774,64 @@ button.soft-loading::after {
     line-height: 1.15 !important;
   }
 }
+
+
+/* v0.40.111 — mobile department-head plan badge line fix.
+   The old mobile rules used body.department-head-mode .department-head-events-word-badge
+   with absolute positioning and max-width, which had higher specificity than the v107 card
+   subline rules. Scope the override to the v107 mobile subline with equal/higher specificity. */
+@media (max-width: 720px) {
+  body.department-head-mode .department-head-plan-mobile-subline-v107 {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    gap: 5px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 0 12px !important;
+    overflow: hidden !important;
+    font-size: 11px !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.035em !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-plan-mobile-subline-v107 > span {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+  }
+
+  body.department-head-mode .department-head-plan-mobile-subline-v107 .department-head-events-word-badge,
+  body.department-head-mode .department-head-plan-mobile-subline-v107 .overview-events-badge,
+  body.department-head-mode .department-head-plan-card-v107 .department-head-plan-mobile-subline-v107 .department-head-events-word-badge {
+    position: static !important;
+    inset: auto !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 21px !important;
+    margin: 0 !important;
+    padding: 0 8px !important;
+    border-radius: 999px !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+    letter-spacing: -.04em !important;
+    font-weight: 950 !important;
+  }
+}

@@ -1,8 +1,10 @@
-# Contrast Finance Backend v0.40.110
+# Contrast Finance backend v0.40.111
 
-Patch for two issues:
+Patch: mobile department-head overview plan badge line fix.
 
-1. Admin modal customer payment amount now refreshes immediately after saving.
-2. Manager percent is protected from manager-side event saves/status changes, so admin overrides are not reset by draft/review transitions.
-
-Deploy as usual by replacing the app files and redeploying the backend/web service.
+Changed files:
+- app/web/styles.css
+- app/web/app.js
+- app/web/index.html
+- CHANGELOG.md
+- README.md
