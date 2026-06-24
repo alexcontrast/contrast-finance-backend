@@ -5032,25 +5032,47 @@ function renderDepartmentHeadOverview(data) {
   const percent = asNumber(data.completion_percent);
   const calc = data.calculation || {};
   const departmentName = data.department_name || "Отдел";
+  const departmentClass = departmentClassByName(departmentName);
+  const eventsBadge = overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц");
+  const remainingLine = `Осталось: ${formatMoney(data.remaining_to_plan)} ₸ · расходов: ${formatMoney(data.expenses_amount)} ₸`;
+
   return `
-    <section class="manager-plan-panel department-head-plan-panel ${departmentClassByName(departmentName)}">
-      <div class="department-head-card-head department-head-plan-topline">
-        <div class="department-head-plan-copy">
-          <div class="overview-label">Общий план отдела</div>
-          <div class="department-head-total">
-            <div>${formatMoney(data.fact_income_amount)} ₸</div>
-            <span class="overview-subline-with-badge">
-              Цель: ${formatMoney(data.plan_amount)} ₸ · ${percent}%
-              ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}
-            </span>
+    <section class="manager-plan-panel department-head-plan-panel ${departmentClass}">
+      <div class="department-head-plan-desktop-card">
+        <div class="department-head-plan-desktop-copy">
+          <div class="department-head-plan-desktop-label">Общий план отдела</div>
+          <div class="department-head-plan-desktop-fact">${formatMoney(data.fact_income_amount)} ₸</div>
+          <div class="department-head-plan-desktop-subline">
+            <span>Цель: ${formatMoney(data.plan_amount)} ₸ · ${percent}%</span>
+            ${eventsBadge}
           </div>
         </div>
-        <h3 class="department-head-overview-name">${escapeHtml(departmentName)}</h3>
+        <div class="department-head-plan-desktop-name">${escapeHtml(departmentName)}</div>
+        <div class="department-head-plan-desktop-progress">
+          ${progressLine(percent)}
+          <div class="muted department-head-plan-desktop-muted">${remainingLine}</div>
+        </div>
       </div>
 
-      <div class="manager-plan-main department-head-main-progress">
-        ${progressLine(percent)}
-        <div class="muted department-head-overview-muted">Осталось: ${formatMoney(data.remaining_to_plan)} ₸ · расходов: ${formatMoney(data.expenses_amount)} ₸</div>
+      <div class="department-head-plan-mobile-card">
+        <div class="department-head-card-head department-head-plan-topline">
+          <div class="department-head-plan-copy">
+            <div class="overview-label">Общий план отдела</div>
+            <div class="department-head-total">
+              <div>${formatMoney(data.fact_income_amount)} ₸</div>
+              <span class="overview-subline-with-badge">
+                Цель: ${formatMoney(data.plan_amount)} ₸ · ${percent}%
+                ${eventsBadge}
+              </span>
+            </div>
+          </div>
+          <h3 class="department-head-overview-name">${escapeHtml(departmentName)}</h3>
+        </div>
+
+        <div class="manager-plan-main department-head-main-progress">
+          ${progressLine(percent)}
+          <div class="muted department-head-overview-muted">${remainingLine}</div>
+        </div>
       </div>
     </section>
 

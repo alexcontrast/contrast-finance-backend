@@ -1,3 +1,1 @@
-# Contrast Finance v0.40.105
-
-Desktop-only visual fix for the department-head overview plan card.
+Changed files for Contrast Finance 2.0 v0.40.106.
