@@ -11416,3 +11416,246 @@ button.soft-loading::after {
     display: block !important;
   }
 }
+
+/* v0.40.107 — hard redraw of department-head plan card.
+   The old card reused manager/admin/mobile classes and kept fighting itself.
+   These v107 classes are standalone and do not inherit the broken legacy layout. */
+.department-head-plan-card-v107 {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 28px;
+  overflow: hidden;
+  margin: 18px 0 22px;
+}
+
+.department-head-plan-desktop-v107 {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label name"
+    "fact name"
+    "subline name"
+    "progress progress"
+    "muted muted";
+  align-items: start;
+  column-gap: 32px;
+  row-gap: 12px;
+  width: 100%;
+  min-height: 255px;
+  padding: 34px 44px 30px;
+  box-sizing: border-box;
+  border-radius: 28px;
+}
+
+.department-head-plan-card-v107.department-sanzhar .department-head-plan-desktop-v107 {
+  background: linear-gradient(135deg, rgba(226, 243, 255, .96), rgba(245, 251, 255, .92));
+  border: 1px solid rgba(120, 188, 255, .78);
+}
+
+.department-head-plan-card-v107.department-raufal .department-head-plan-desktop-v107 {
+  background: linear-gradient(135deg, rgba(255, 238, 225, .96), rgba(255, 250, 246, .92));
+  border: 1px solid rgba(255, 183, 145, .78);
+}
+
+.department-head-plan-label-v107 {
+  grid-area: label;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  font-weight: 950;
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+
+.department-head-plan-name-v107 {
+  grid-area: name;
+  justify-self: end;
+  align-self: start;
+  margin: 0;
+  padding: 0;
+  font-size: 36px;
+  line-height: 1;
+  letter-spacing: -.055em;
+  font-weight: 1000;
+  color: #151917;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.department-head-plan-fact-v107 {
+  grid-area: fact;
+  margin: 2px 0 0;
+  font-size: clamp(46px, 4.4vw, 72px);
+  line-height: .95;
+  letter-spacing: -.07em;
+  font-weight: 1000;
+  color: #151917;
+  white-space: nowrap;
+}
+
+.department-head-plan-subline-v107 {
+  grid-area: subline;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 14px;
+  margin: 0;
+  min-width: 0;
+  font-size: 20px;
+  line-height: 1.1;
+  letter-spacing: -.04em;
+  font-weight: 900;
+  color: rgba(43, 54, 35, .68);
+  white-space: nowrap;
+}
+
+.department-head-plan-subline-v107 .department-head-events-word-badge,
+.department-head-plan-subline-v107 .overview-events-badge {
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 158px !important;
+  height: 34px !important;
+  margin: 0 !important;
+  padding: 0 18px !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  font-size: 17px !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: -.02em !important;
+}
+
+.department-head-plan-progress-v107 {
+  grid-area: progress;
+  width: 100%;
+  margin: 18px 0 0;
+}
+
+.department-head-plan-progress-v107 .progress-line {
+  display: block;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+}
+
+.department-head-plan-muted-v107 {
+  grid-area: muted;
+  margin: 0;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1.15;
+  letter-spacing: -.03em;
+  font-weight: 850;
+  color: rgba(43, 54, 35, .64);
+  white-space: nowrap;
+}
+
+.department-head-plan-mobile-v107 {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .department-head-plan-card-v107 {
+    margin: 14px 0 22px;
+    border-radius: 22px;
+  }
+
+  .department-head-plan-desktop-v107 {
+    display: none;
+  }
+
+  .department-head-plan-mobile-v107 {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 20px 18px 18px;
+    border-radius: 22px;
+    border: 1px solid rgba(205, 226, 194, .95);
+    background: rgba(255,255,255,.76);
+  }
+
+  .department-head-plan-card-v107.department-sanzhar .department-head-plan-mobile-v107 {
+    background: linear-gradient(135deg, rgba(230, 244, 255, .92), rgba(255,255,255,.82));
+    border-color: rgba(143, 199, 255, .78);
+  }
+
+  .department-head-plan-card-v107.department-raufal .department-head-plan-mobile-v107 {
+    background: linear-gradient(135deg, rgba(255, 240, 229, .92), rgba(255,255,255,.84));
+    border-color: rgba(255, 190, 153, .78);
+  }
+
+  .department-head-plan-mobile-name-v107 {
+    margin: 0 0 6px;
+    color: var(--accent-strong);
+    font-size: 18px;
+    line-height: 1;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    font-weight: 950;
+  }
+
+  .department-head-plan-mobile-label-v107 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    line-height: 1;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    font-weight: 950;
+    color: rgba(47, 58, 42, .68);
+  }
+
+  .department-head-plan-mobile-fact-v107 {
+    margin: 0 0 4px;
+    font-size: 34px;
+    line-height: .98;
+    letter-spacing: -.06em;
+    font-weight: 1000;
+    color: #151917;
+  }
+
+  .department-head-plan-mobile-subline-v107 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 14px;
+    font-size: 14px;
+    line-height: 1.1;
+    letter-spacing: -.03em;
+    font-weight: 850;
+    color: rgba(43, 54, 35, .66);
+  }
+
+  .department-head-plan-mobile-subline-v107 .department-head-events-word-badge,
+  .department-head-plan-mobile-subline-v107 .overview-events-badge {
+    position: static !important;
+    min-width: 0 !important;
+    height: 28px !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    white-space: nowrap !important;
+  }
+
+  .department-head-plan-mobile-v107 .progress-line {
+    height: 12px;
+    margin: 0 0 10px;
+  }
+
+  .department-head-plan-mobile-muted-v107 {
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.2;
+  }
+}
