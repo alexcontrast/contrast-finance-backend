@@ -13348,3 +13348,61 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
     display: none !important;
   }
 }
+
+
+/* v0.40.120 — desktop manager green plan badge and delete-right action.
+   Scope: desktop manager cabinet only; mobile layout remains from v0.40.118. */
+@media (min-width: 921px) {
+  body.manager-mode .manager-dashboard-v119 .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-panel-v113 {
+    border-color: rgba(34, 197, 94, .24) !important;
+    background:
+      radial-gradient(circle at top left, rgba(34,197,94,.24), transparent 38%),
+      linear-gradient(135deg, rgba(34,197,94,.13), rgba(255,255,255,.97)) !important;
+    box-shadow: 0 16px 42px rgba(22, 163, 74, .10) !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113 .overview-label,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 .overview-label {
+    color: #15803d !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-subline-v116,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-subline-v116 {
+    justify-content: flex-start !important;
+    gap: 10px !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-target-v116,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-target-v116 {
+    flex: 0 1 auto !important;
+    color: #14532d !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-events-badge-v113 {
+    background: rgba(34,197,94,.16) !important;
+    border-color: rgba(34,197,94,.30) !important;
+    color: #166534 !important;
+  }
+
+  body.manager-mode .manager-event-actions-v118 button[data-manager-event-pay],
+  body[data-cf-role="manager"] .manager-event-actions-v118 button[data-manager-event-pay] { order: 1 !important; }
+
+  body.manager-mode .manager-event-actions-v118 button[data-manager-event-payments],
+  body[data-cf-role="manager"] .manager-event-actions-v118 button[data-manager-event-payments] { order: 2 !important; }
+
+  body.manager-mode .manager-event-actions-v118 button[data-manager-event-transfer],
+  body[data-cf-role="manager"] .manager-event-actions-v118 button[data-manager-event-transfer] { order: 3 !important; }
+
+  body.manager-mode .manager-event-actions-v118 button[data-manager-event-coauthor],
+  body.manager-mode .manager-event-actions-v118 button[data-manager-event-remove-coauthor],
+  body[data-cf-role="manager"] .manager-event-actions-v118 button[data-manager-event-coauthor],
+  body[data-cf-role="manager"] .manager-event-actions-v118 button[data-manager-event-remove-coauthor] { order: 4 !important; }
+
+  body.manager-mode .manager-event-actions-v118 button[data-manager-event-delete],
+  body[data-cf-role="manager"] .manager-event-actions-v118 button[data-manager-event-delete] {
+    order: 99 !important;
+    margin-left: auto !important;
+  }
+}

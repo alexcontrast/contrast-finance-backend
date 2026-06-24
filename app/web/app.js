@@ -9805,6 +9805,8 @@ function renderManagerPlanPanel(data) {
   const fact = asNumber(data.fact_income_amount);
   const percent = plan > 0 ? Math.round((fact / plan) * 10000) / 100 : 0;
   const remaining = Math.max(0, plan - fact);
+  const eventsCount = Number(data.events_count || 0);
+  const eventsLabel = pluralizeRu(eventsCount, "мероприятие", "мероприятия", "мероприятий");
   const monthLabel = MONTHS_RU.find(([m]) => m === state.month.slice(5, 7))?.[1] || state.month;
 
   return `
@@ -9817,7 +9819,7 @@ function renderManagerPlanPanel(data) {
         <strong class="manager-plan-fact-v113">${formatMoney(fact)} ₸</strong>
         <div class="manager-plan-subline-v113 manager-plan-subline-v116">
           <span class="manager-plan-target-v116">Цель: ${formatMoney(plan)} ₸ · ${formatPercentValue(percent)}%</span>
-          <span class="manager-plan-events-badge-v113">${data.events_count || 0} мероприятий</span>
+          <span class="manager-plan-events-badge-v113">${eventsCount} ${eventsLabel}</span>
         </div>
         ${progressLine(percent)}
         <div class="muted manager-plan-muted-v113">Осталось: ${formatMoney(remaining)} ₸</div>
