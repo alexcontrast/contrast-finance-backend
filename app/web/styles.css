@@ -13431,3 +13431,68 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
     box-shadow: 0 8px 20px rgba(125, 240, 0, .20) !important;
   }
 }
+
+/* v0.40.122 — desktop manager calmer event-count badge and tighter plan layout.
+   Scope: desktop manager cabinet only. Mobile manager keeps its v0.40.118+ layout. */
+@media (min-width: 921px) {
+  body.manager-mode .manager-dashboard-v119 .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-panel-v113 {
+    grid-template-columns: max-content minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 24px !important;
+    padding: 16px 18px !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 {
+    gap: 4px !important;
+    align-self: center !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113 h3,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 h3 {
+    font-size: 22px !important;
+    line-height: 1.02 !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-main-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-main-v113 {
+    gap: 6px !important;
+    align-self: center !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-fact-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-fact-v113 {
+    font-size: clamp(30px, 2.55vw, 40px) !important;
+    line-height: .96 !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-subline-v116,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-subline-v116 {
+    gap: 8px !important;
+    align-items: center !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-events-badge-v113 {
+    min-height: 24px !important;
+    padding: 4px 10px !important;
+    background: rgba(125, 240, 0, .16) !important;
+    border: 1px solid rgba(82, 186, 0, .28) !important;
+    color: var(--accent-dark) !important;
+    box-shadow: none !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-panel-v113 .progress-line,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-panel-v113 .progress-line {
+    height: 9px !important;
+    margin-top: 0 !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-muted-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-muted-v113 {
+    font-size: 11.5px !important;
+    line-height: 1 !important;
+  }
+}
+

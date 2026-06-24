@@ -1,4 +1,4 @@
-# Contrast Finance — v0.40.121
+# Contrast Finance — v0.40.122
 
 Точечный визуальный патч веб-версии кабинета менеджера.
 
@@ -12,3 +12,8 @@
 
 - Только фронт менеджерского кабинета.
 - Backend, Telegram-бот, админка и главдепы не менялись.
+
+
+### v0.40.122
+
+Desktop manager visual patch: calmer system-green event-count badge and tighter personal-plan layout.

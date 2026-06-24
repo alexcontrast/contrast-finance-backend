@@ -1,4 +1,4 @@
-v0.40.121 — Desktop manager brand-green plan color
+# v0.40.122 — Desktop manager plan compact green badge
 
 Changed files:
 - app/web/styles.css
@@ -8,5 +8,7 @@ Changed files:
 - app/CHANGED_FILES_README.txt
 
 Scope:
-- Only visual desktop manager cabinet changes.
-- Backend, Telegram bot, admin cabinet and head-of-department cabinets are unchanged.
+- Web/desktop manager cabinet only.
+- Calmer system-green event-count badge.
+- Personal-plan data moved closer to the title/month and vertical whitespace reduced.
+- Backend, Telegram bot, admin cabinet, department-head cabinets and mobile manager layout were not changed.
