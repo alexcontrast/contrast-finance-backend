@@ -13406,3 +13406,28 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
     margin-left: auto !important;
   }
 }
+
+/* v0.40.121 — desktop manager plan uses brand green, same family as page background / refresh / pay buttons. */
+@media (min-width: 921px) {
+  body.manager-mode .manager-dashboard-v119 .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-panel-v113 {
+    border-color: rgba(125, 240, 0, .38) !important;
+    background:
+      radial-gradient(circle at 5% 0%, rgba(125, 240, 0, .36), transparent 34%),
+      linear-gradient(135deg, rgba(125, 240, 0, .18), rgba(248, 255, 240, .96) 48%, rgba(255, 255, 255, .98)) !important;
+    box-shadow: 0 18px 48px rgba(125, 240, 0, .16) !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113 .overview-label,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 .overview-label {
+    color: var(--accent-dark) !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-events-badge-v113 {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)) !important;
+    border-color: rgba(125, 240, 0, .58) !important;
+    color: #142000 !important;
+    box-shadow: 0 8px 20px rgba(125, 240, 0, .20) !important;
+  }
+}
