@@ -1,12 +1,13 @@
-# v0.40.116 — Mobile manager compact controls and event form
+# CHANGELOG
 
-- Мобильный кабинет менеджера: дополнительно ужата шапка — кнопки PIN/выход, бейдж менеджера, меню месяца/года и кнопка обновления стали ниже и с меньшим шрифтом.
-- Кнопка «Создать мероприятие» под шапкой также уменьшена по высоте и шрифту.
-- Блок «Личный план»: строка цели и процента объединена в один левый текст `Цель: ... · ...%`; бейдж количества мероприятий оставлен в той же строке справа.
-- Карточка мероприятия: полевая панель с типом расчёта/датой/заказчиком/мероприятием/комиссией сжата по высоте.
-- В мобильном менеджере поля карточки мероприятия разложены в 3 строки:
-  - строка 1: `Тип расчёта` + `Дата`;
-  - строка 2: `Заказчик` + `Мероприятие`;
-  - строка 3: `Комиссия агентства, %` + `Банк+налоги, %` для упрощёнки.
-- Подписи `Название заказчика` и `Название мероприятия` заменены на `Заказчик` и `Мероприятие` в карточке менеджера.
-- Правка ограничена мобильным менеджером (`body.manager-mode` / `body[data-cf-role="manager"]`). Админка, главдепы, backend и Telegram-бот не менялись.
+## v0.40.117 — Mobile manager event card readable layout
+
+- Mobile manager only: increased event card text readability after the previous ultra-compact pass.
+- Rebuilt manager event card action buttons into two rows:
+  - row 1: `Оплатить` / `Мои оплаты` / `Удалить`;
+  - row 2: `Передать` / `Соавтор` or `Удалить соавтора`.
+- Fixed the mobile event `Дата` field so it stays inside the card width.
+- Compressed the internal summary boxes below the estimate table to the height of their text.
+- Bumped frontend cache-bust to `0.40.117`.
+
+No backend, admin, department-head or Telegram bot logic was changed.
