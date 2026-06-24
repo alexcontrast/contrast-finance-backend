@@ -12116,3 +12116,471 @@ button.soft-loading::after {
   }
 }
 
+/* v0.40.115 — mobile manager width containment after plan panel. */
+@media (max-width: 920px) {
+  body.manager-mode,
+  body[data-cf-role="manager"] {
+    overflow-x: hidden !important;
+  }
+
+  body.manager-mode #dashboardScreen,
+  body.manager-mode #dashboardScreen > .card,
+  body.manager-mode .manager-dashboard-v113,
+  body.manager-mode .manager-plan-panel,
+  body.manager-mode .manager-plan-panel-v113,
+  body.manager-mode .manager-workspace,
+  body.manager-mode .manager-workspace-v113,
+  body.manager-mode .manager-sidebar-card,
+  body.manager-mode .manager-detail-card,
+  body.manager-mode .manager-detail-card-v113,
+  body.manager-mode .manager-event-card,
+  body[data-cf-role="manager"] #dashboardScreen,
+  body[data-cf-role="manager"] #dashboardScreen > .card,
+  body[data-cf-role="manager"] .manager-dashboard-v113,
+  body[data-cf-role="manager"] .manager-plan-panel,
+  body[data-cf-role="manager"] .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-workspace,
+  body[data-cf-role="manager"] .manager-workspace-v113,
+  body[data-cf-role="manager"] .manager-sidebar-card,
+  body[data-cf-role="manager"] .manager-detail-card,
+  body[data-cf-role="manager"] .manager-detail-card-v113,
+  body[data-cf-role="manager"] .manager-event-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  body.manager-mode #dashboardScreen > .card,
+  body[data-cf-role="manager"] #dashboardScreen > .card {
+    padding: 12px !important;
+    overflow-x: hidden !important;
+    border-radius: 24px !important;
+  }
+
+  body.manager-mode .manager-dashboard-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v113 {
+    gap: 12px !important;
+  }
+
+  body.manager-mode .manager-plan-panel,
+  body.manager-mode .manager-plan-panel-v113,
+  body[data-cf-role="manager"] .manager-plan-panel,
+  body[data-cf-role="manager"] .manager-plan-panel-v113 {
+    gap: 10px !important;
+    padding: 14px 12px !important;
+    border-radius: 22px !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-plan-head-v113,
+  body.manager-mode .manager-plan-panel > div:first-child,
+  body[data-cf-role="manager"] .manager-plan-head-v113,
+  body[data-cf-role="manager"] .manager-plan-panel > div:first-child {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 6px !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body.manager-mode .manager-plan-panel .overview-label,
+  body[data-cf-role="manager"] .manager-plan-panel .overview-label {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
+    letter-spacing: .12em !important;
+  }
+
+  body.manager-mode .manager-plan-panel h3,
+  body[data-cf-role="manager"] .manager-plan-panel h3 {
+    min-width: 0 !important;
+    max-width: 42vw !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-plan-main,
+  body.manager-mode .manager-plan-main-v113,
+  body[data-cf-role="manager"] .manager-plan-main,
+  body[data-cf-role="manager"] .manager-plan-main-v113 {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 8px !important;
+  }
+
+  body.manager-mode .manager-plan-fact-v113,
+  body.manager-mode .manager-plan-row strong:first-child,
+  body[data-cf-role="manager"] .manager-plan-fact-v113,
+  body[data-cf-role="manager"] .manager-plan-row strong:first-child {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    font-size: clamp(21px, 6.4vw, 28px) !important;
+    line-height: .98 !important;
+    letter-spacing: -.045em !important;
+  }
+
+  body.manager-mode .manager-plan-subline-v113,
+  body.manager-mode .manager-plan-row,
+  body[data-cf-role="manager"] .manager-plan-subline-v113,
+  body[data-cf-role="manager"] .manager-plan-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: 5px 6px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    font-size: 11.5px !important;
+    line-height: 1.05 !important;
+  }
+
+  body.manager-mode .manager-plan-subline-v113 span,
+  body.manager-mode .manager-plan-row strong,
+  body[data-cf-role="manager"] .manager-plan-subline-v113 span,
+  body[data-cf-role="manager"] .manager-plan-row strong {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11.5px !important;
+    line-height: 1.05 !important;
+  }
+
+  body.manager-mode .manager-plan-subline-v113 span:first-child,
+  body[data-cf-role="manager"] .manager-plan-subline-v113 span:first-child {
+    grid-column: 1 / -1 !important;
+  }
+
+  body.manager-mode .manager-plan-events-badge-v113,
+  body.manager-mode .manager-plan-row strong:nth-child(3),
+  body[data-cf-role="manager"] .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-plan-row strong:nth-child(3) {
+    justify-self: start !important;
+    width: auto !important;
+    max-width: 100% !important;
+    min-height: 21px !important;
+    padding: 0 7px !important;
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+  }
+
+  body.manager-mode .manager-plan-panel .progress-line,
+  body[data-cf-role="manager"] .manager-plan-panel .progress-line {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 8px !important;
+  }
+
+  body.manager-mode .manager-plan-panel .muted,
+  body.manager-mode .manager-plan-muted-v113,
+  body[data-cf-role="manager"] .manager-plan-panel .muted,
+  body[data-cf-role="manager"] .manager-plan-muted-v113 {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11.5px !important;
+    line-height: 1.15 !important;
+  }
+
+  body.manager-mode .manager-sidebar-card,
+  body[data-cf-role="manager"] .manager-sidebar-card,
+  body.manager-mode .manager-detail-card,
+  body[data-cf-role="manager"] .manager-detail-card,
+  body.manager-mode .manager-event-card,
+  body[data-cf-role="manager"] .manager-event-card {
+    padding: 12px !important;
+    border-radius: 22px !important;
+    overflow-x: hidden !important;
+  }
+
+  body.manager-mode .manager-sidebar-card h3,
+  body[data-cf-role="manager"] .manager-sidebar-card h3 {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 20px !important;
+  }
+
+  body.manager-mode .manager-sidebar-card h3::before,
+  body[data-cf-role="manager"] .manager-sidebar-card h3::before {
+    width: 30px !important;
+  }
+
+  body.manager-mode .manager-sidebar-card > .muted,
+  body[data-cf-role="manager"] .manager-sidebar-card > .muted {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: 11px !important;
+  }
+
+  body.manager-mode .manager-mini-list,
+  body[data-cf-role="manager"] .manager-mini-list {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 8px !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-mini-card,
+  body[data-cf-role="manager"] .manager-mini-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    padding: 10px !important;
+    gap: 5px !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-mini-card > *,
+  body[data-cf-role="manager"] .manager-mini-card > * {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  body.manager-mode .manager-mini-card [data-mini-title],
+  body[data-cf-role="manager"] .manager-mini-card [data-mini-title] {
+    font-size: 15px !important;
+    line-height: 1.05 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-mini-card [data-mini-meta],
+  body[data-cf-role="manager"] .manager-mini-card [data-mini-meta] {
+    font-size: 10.8px !important;
+    line-height: 1.15 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-mini-card [data-mini-calc],
+  body[data-cf-role="manager"] .manager-mini-card [data-mini-calc] {
+    font-size: 10.2px !important;
+    line-height: 1.1 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-card-pills,
+  body[data-cf-role="manager"] .manager-mini-card .mini-card-pills,
+  body.manager-mode .manager-mini-card .mini-badge-row,
+  body[data-cf-role="manager"] .manager-mini-card .mini-badge-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 5px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-pill,
+  body[data-cf-role="manager"] .manager-mini-card .mini-pill,
+  body.manager-mode .manager-mini-card .mini-badge-row .status-badge,
+  body.manager-mode .manager-mini-card .mini-badge-row .coauthor-badge,
+  body[data-cf-role="manager"] .manager-mini-card .mini-badge-row .status-badge,
+  body[data-cf-role="manager"] .manager-mini-card .mini-badge-row .coauthor-badge {
+    display: inline-flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding: 5px 4px !important;
+    border-radius: 999px !important;
+    overflow: hidden !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    font-size: 9.8px !important;
+    line-height: 1 !important;
+    letter-spacing: -.035em !important;
+  }
+
+  body.manager-mode .manager-mini-card .mini-pill strong,
+  body[data-cf-role="manager"] .manager-mini-card .mini-pill strong {
+    font-size: inherit !important;
+    line-height: inherit !important;
+    min-width: 0 !important;
+  }
+
+  body.manager-mode .manager-event-head,
+  body[data-cf-role="manager"] .manager-event-head,
+  body.manager-mode .manager-event-fields,
+  body[data-cf-role="manager"] .manager-event-fields,
+  body.manager-mode .estimate-tabs,
+  body[data-cf-role="manager"] .estimate-tabs,
+  body.manager-mode .manager-summary-grid,
+  body[data-cf-role="manager"] .manager-summary-grid,
+  body.manager-mode .external-estimate-totals,
+  body[data-cf-role="manager"] .external-estimate-totals,
+  body.manager-mode .manager-card-bottom-actions,
+  body[data-cf-role="manager"] .manager-card-bottom-actions {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  body.manager-mode .manager-event-head h2,
+  body[data-cf-role="manager"] .manager-event-head h2 {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    font-size: 19px !important;
+    line-height: 1.04 !important;
+  }
+
+  body.manager-mode .event-badge-row,
+  body[data-cf-role="manager"] .event-badge-row {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    gap: 5px !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .event-badge-row .status,
+  body.manager-mode .event-badge-row .status-badge,
+  body.manager-mode .event-badge-row .coauthor-badge,
+  body[data-cf-role="manager"] .event-badge-row .status,
+  body[data-cf-role="manager"] .event-badge-row .status-badge,
+  body[data-cf-role="manager"] .event-badge-row .coauthor-badge {
+    max-width: 100% !important;
+    padding: 5px 7px !important;
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-event-head .inline-actions,
+  body[data-cf-role="manager"] .manager-event-head .inline-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 6px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body.manager-mode .manager-event-head .inline-actions button,
+  body[data-cf-role="manager"] .manager-event-head .inline-actions button,
+  body.manager-mode .estimate-tabs button,
+  body[data-cf-role="manager"] .estimate-tabs button,
+  body.manager-mode .manager-card-bottom-actions button,
+  body[data-cf-role="manager"] .manager-card-bottom-actions button {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    padding: 7px 5px !important;
+    font-size: 10.5px !important;
+    line-height: 1.05 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  body.manager-mode .manager-event-fields input,
+  body.manager-mode .manager-event-fields select,
+  body.manager-mode .manager-event-fields textarea,
+  body[data-cf-role="manager"] .manager-event-fields input,
+  body[data-cf-role="manager"] .manager-event-fields select,
+  body[data-cf-role="manager"] .manager-event-fields textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    font-size: 12px !important;
+  }
+
+  body.manager-mode .manager-summary-grid,
+  body.manager-mode .manager-summary-grid-six,
+  body.manager-mode .external-estimate-totals,
+  body[data-cf-role="manager"] .manager-summary-grid,
+  body[data-cf-role="manager"] .manager-summary-grid-six,
+  body[data-cf-role="manager"] .external-estimate-totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  body.manager-mode .manager-summary-grid .metric,
+  body.manager-mode .external-estimate-totals .metric,
+  body[data-cf-role="manager"] .manager-summary-grid .metric,
+  body[data-cf-role="manager"] .external-estimate-totals .metric {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 8px !important;
+    overflow: hidden !important;
+  }
+
+  body.manager-mode .manager-summary-grid .metric .label,
+  body.manager-mode .external-estimate-totals .metric .label,
+  body[data-cf-role="manager"] .manager-summary-grid .metric .label,
+  body[data-cf-role="manager"] .external-estimate-totals .metric .label {
+    font-size: 9.5px !important;
+    line-height: 1.1 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  body.manager-mode .manager-summary-grid .metric .value,
+  body.manager-mode .external-estimate-totals .metric .value,
+  body[data-cf-role="manager"] .manager-summary-grid .metric .value,
+  body[data-cf-role="manager"] .external-estimate-totals .metric .value {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-size: clamp(13px, 3.7vw, 16px) !important;
+    line-height: 1 !important;
+    letter-spacing: -.035em !important;
+  }
+
+  body.manager-mode #managerEstimatePanel,
+  body[data-cf-role="manager"] #managerEstimatePanel,
+  body.manager-mode #managerEstimatePanel .estimate-table-wrap,
+  body[data-cf-role="manager"] #managerEstimatePanel .estimate-table-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  body.manager-mode #managerEstimatePanel .estimate-table,
+  body[data-cf-role="manager"] #managerEstimatePanel .estimate-table {
+    width: max-content !important;
+    min-width: 680px !important;
+    max-width: none !important;
+  }
+}
+

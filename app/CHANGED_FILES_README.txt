@@ -1,12 +1,9 @@
-Changed files in app for v0.40.46:
-- api/routes/events.py
-- api/routes/payment_requests.py
-- services/event_calculator.py
-- services/google_sheets_archive_export.py
-- telegram_bot/main.py
-- web/app.js
-- web/styles.css
+Changed files for v0.40.115:
+- CHANGELOG.md
+- app/web/app.js
+- app/web/styles.css
+- app/web/index.html
 
-Also changed outside app:
-- tools/google_sheets_export_webapp.gs
-- CHANGELOG_v0.40.46.txt
+Scope:
+- Only mobile manager cabinet CSS/asset cache-bust.
+- Admin, department-head mobile cabinets, desktop version, backend and Telegram bot were not changed.
