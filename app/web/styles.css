@@ -11659,3 +11659,118 @@ button.soft-loading::after {
     line-height: 1.2;
   }
 }
+
+
+/* v0.40.108 — department-head plan card typography tuning.
+   Desktop structure from v0.40.107 is kept intact; only font sizes are reduced.
+   Mobile department name is moved to the right of the title line, matching desktop. */
+@media (min-width: 721px) {
+  .department-head-plan-label-v107 {
+    font-size: 13px !important;
+    letter-spacing: .15em !important;
+  }
+
+  .department-head-plan-name-v107 {
+    font-size: 26px !important;
+    line-height: 1 !important;
+    letter-spacing: -.045em !important;
+  }
+
+  .department-head-plan-fact-v107 {
+    font-size: clamp(36px, 3.25vw, 52px) !important;
+    line-height: .98 !important;
+    letter-spacing: -.06em !important;
+  }
+
+  .department-head-plan-subline-v107 {
+    font-size: 16px !important;
+    line-height: 1.08 !important;
+    gap: 10px !important;
+  }
+
+  .department-head-plan-subline-v107 .department-head-events-word-badge,
+  .department-head-plan-subline-v107 .overview-events-badge {
+    min-width: 136px !important;
+    height: 28px !important;
+    padding: 0 14px !important;
+    font-size: 14px !important;
+  }
+
+  .department-head-plan-muted-v107 {
+    font-size: 14px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .department-head-plan-mobile-v107 {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "label name"
+      "fact fact"
+      "subline subline"
+      "progress progress"
+      "muted muted" !important;
+    align-items: start !important;
+    column-gap: 10px !important;
+    row-gap: 7px !important;
+    padding: 16px 16px 14px !important;
+  }
+
+  .department-head-plan-mobile-label-v107 {
+    grid-area: label !important;
+    margin: 0 !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    letter-spacing: .14em !important;
+    white-space: nowrap !important;
+  }
+
+  .department-head-plan-mobile-name-v107 {
+    grid-area: name !important;
+    justify-self: end !important;
+    align-self: start !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    text-align: right !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    letter-spacing: .16em !important;
+  }
+
+  .department-head-plan-mobile-fact-v107 {
+    grid-area: fact !important;
+    margin: 0 !important;
+    font-size: 27px !important;
+    line-height: 1 !important;
+    letter-spacing: -.055em !important;
+  }
+
+  .department-head-plan-mobile-subline-v107 {
+    grid-area: subline !important;
+    margin: 0 0 4px !important;
+    font-size: 12px !important;
+    line-height: 1.08 !important;
+    gap: 6px !important;
+  }
+
+  .department-head-plan-mobile-subline-v107 .department-head-events-word-badge,
+  .department-head-plan-mobile-subline-v107 .overview-events-badge {
+    height: 24px !important;
+    padding: 0 10px !important;
+    font-size: 11px !important;
+  }
+
+  .department-head-plan-mobile-v107 .progress-line {
+    grid-area: progress !important;
+    height: 10px !important;
+    margin: 0 0 4px !important;
+  }
+
+  .department-head-plan-mobile-muted-v107 {
+    grid-area: muted !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
+  }
+}

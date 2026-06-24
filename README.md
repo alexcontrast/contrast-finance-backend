@@ -1,5 +1,5 @@
-Contrast Finance 2.0 backend/frontend package.
+# Contrast Finance v0.40.108
 
-Version: v0.40.107
+Точечная визуальная правка карточки «Общий план отдела» у главдепа.
 
-This patch redraws the department-head overview plan card with isolated frontend classes. Backend and Apps Script are unchanged.
+Изменения: `app/web/styles.css`, `app/web/index.html`, `CHANGELOG.md`, `README.md`.
