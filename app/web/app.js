@@ -3517,7 +3517,7 @@ function attachMonthYearSelectors() {
   const handler = () => {
     const nextMonth = selectedMonthValue();
     const user = state.bootstrap?.user;
-    const nextKey = `${user?.role || "guest"}:${nextMonth}`;
+    const nextKey = currentDashboardLoadKey();
 
     if (state.month === nextMonth && state.lastLoadedDashboardMonth === nextMonth && !cfGlobalMap("dashboardInflightByKey")[nextKey]) return;
 
@@ -3990,7 +3990,8 @@ async function api(path, options = {}) {
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
 
   const isGet = method === "GET" && !options.body;
-  const inflightKey = isGet ? normalizeInflightGetPath(safePath) : null;
+  const authPart = state.token ? `auth:${state.token.slice(-24)}` : "auth:guest";
+  const inflightKey = isGet ? `${authPart}:${normalizeInflightGetPath(safePath)}` : null;
   const inflightMap = isGet ? cfGlobalMap("apiGetInflightByKey") : null;
 
   if (isGet && inflightMap[inflightKey]) {
@@ -4075,7 +4076,9 @@ function cfGlobalMap(name) {
 function currentDashboardLoadKey() {
   const user = state.bootstrap?.user;
   const role = user?.role || "guest";
-  return `${role}:${selectedMonthValue()}`;
+  const userPart = user?.id ? `u${user.id}` : "u0";
+  const departmentPart = user?.department_id ? `d${user.department_id}` : "d0";
+  return `${role}:${userPart}:${departmentPart}:${selectedMonthValue()}`;
 }
 
 function clearDashboardInflightKey(key) {
@@ -4591,6 +4594,83 @@ function showDashboardShell() {
     if (user?.role === "admin") userBadge.classList.add("hidden");
     else userBadge.classList.remove("hidden");
   }
+}
+
+function resetDashboardUiAndRoleState(message = "Загружаем кабинет…") {
+  state.dashboardRequestSeq = (state.dashboardRequestSeq || 0) + 1;
+  state.adminData = null;
+  state.departmentHeadData = null;
+  state.closingPanelData = null;
+  state.closingEditingExpenseId = null;
+  state.adminEventEditModeId = null;
+  state.selectedManagerEventId = null;
+  state.currentManagerEvent = null;
+  state.managerPaymentRequests = [];
+  state.managerDraftItemsByEventId = {};
+  state.managerDraftDeletedByEventId = {};
+  state.managerDraftEventsById = {};
+  state.adminManualTaxOverrideByEventId = {};
+  state.eventModalPayloadById = {};
+  state.eventModalPayloadMonth = null;
+  state.managerEventPayloadById = {};
+  state.managerEventPayloadMonth = null;
+  state.adminDashboardLoadingByMonth = {};
+  state.adminDashboardBundleLoadingByMonth = {};
+  state.adminDashboardBundleCacheByMonth = {};
+  state.departmentDashboardBundleLoadingByMonth = {};
+  state.departmentDashboardBundleCacheByMonth = {};
+  state.managerDashboardLoadingByMonth = {};
+  state.managerDashboardCacheByMonth = {};
+  state.managerDashboardBundleLoadingByMonth = {};
+  state.managerDashboardBundleCacheByMonth = {};
+  state.managerPaymentRequestsLoadingByMonth = {};
+  state.managerPaymentRequestsCacheByMonth = {};
+  state.managerEventDetailLoadingById = {};
+  state.managerEventRequestsLoadingById = {};
+  state.dashboardLoadingByKey = {};
+  state.dashboardLoadingKey = null;
+  state.dashboardLoadingPromise = null;
+  state.lastLoadedDashboardMonth = null;
+
+  if (state.monthYearChangeTimer) {
+    window.clearTimeout(state.monthYearChangeTimer);
+    state.monthYearChangeTimer = null;
+  }
+  if (state.managerMonthReloadTimer) {
+    window.clearTimeout(state.managerMonthReloadTimer);
+    state.managerMonthReloadTimer = null;
+  }
+
+  const summaryCards = $("summaryCards");
+  if (summaryCards) summaryCards.innerHTML = "";
+  const tabs = $("adminTabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    tabs.classList.add("hidden");
+  }
+  const content = $("dashboardContent");
+  if (content) content.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
+  const title = $("dashboardTitle");
+  if (title) title.textContent = "Кабинет";
+  const hint = $("dashboardHint");
+  if (hint) hint.textContent = "";
+
+  const backdrop = $("eventModalBackdrop");
+  if (backdrop) {
+    backdrop.classList.add("hidden");
+    backdrop.classList.remove("pin-modal-mode", "profile-modal-mode", "payment-modal-mode", "admin-event-edit-mode", "manager-requests-modal-mode");
+  }
+}
+
+function clearAuthScopedInflightRequests() {
+  ["apiGetInflightByKey", "dashboardInflightByKey"].forEach((name) => {
+    const map = cfGlobalMap(name);
+    Object.keys(map).forEach((key) => delete map[key]);
+  });
+}
+
+function resetRoleBodyClasses() {
+  document.body.classList.remove("admin-mode", "department-head-mode", "manager-mode");
 }
 
 function metric(label, value) {
@@ -12712,7 +12792,9 @@ function renderDashboardLoading(role) {
 async function loadDashboard() {
   const user = state.bootstrap.user;
   const month = selectedMonthValue();
-  const loadKey = `${user.role}:${month}`;
+  const userPart = user?.id ? `u${user.id}` : "u0";
+  const departmentPart = user?.department_id ? `d${user.department_id}` : "d0";
+  const loadKey = `${user.role}:${userPart}:${departmentPart}:${month}`;
   const globalInflight = cfGlobalMap("dashboardInflightByKey");
 
   if (globalInflight[loadKey]) {
@@ -12826,20 +12908,25 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.90 loaded");
+  console.info("Contrast Finance web app v0.40.109 loaded");
   if (!state.token) {
+    resetDashboardUiAndRoleState("");
+    resetRoleBodyClasses();
     showLogin();
     return;
   }
 
   try {
     const bootStartedAt = perfNow();
+    resetDashboardUiAndRoleState("Загружаем кабинет…");
+    resetRoleBodyClasses();
     state.bootstrap = await timedApi("bootstrap", "/app/bootstrap");
     showDashboardShell();
     console.info(`PERF web shell-after-bootstrap=${perfSeconds(bootStartedAt)}s`);
 
     const user = state.bootstrap.user;
     updateHeaderUserInfo(user);
+    resetDashboardUiAndRoleState("Загружаем данные месяца…");
 
     const pinBtn = document.getElementById("changePinOpenBtn");
     const logoutBtn = document.getElementById("logoutBtn");
@@ -12864,6 +12951,10 @@ async function boot() {
     console.warn(error);
     localStorage.removeItem("cf_token");
     state.token = "";
+    state.bootstrap = null;
+    clearAuthScopedInflightRequests();
+    resetDashboardUiAndRoleState("");
+    resetRoleBodyClasses();
     showLogin();
   }
 }
@@ -12888,6 +12979,9 @@ async function login() {
 
         state.token = data.access_token;
         localStorage.setItem("cf_token", state.token);
+        clearAuthScopedInflightRequests();
+        resetDashboardUiAndRoleState("Загружаем кабинет…");
+        resetRoleBodyClasses();
         await boot();
         return;
       } catch (error) {
@@ -13010,6 +13104,9 @@ $("logoutBtn").addEventListener("click", () => {
   localStorage.removeItem("cf_token");
   state.token = "";
   state.bootstrap = null;
+  clearAuthScopedInflightRequests();
+  resetDashboardUiAndRoleState("");
+  resetRoleBodyClasses();
   const pinInput = $("loginPin");
   if (pinInput) pinInput.value = "";
   showLogin();
