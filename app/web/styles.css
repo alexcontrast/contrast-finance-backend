@@ -10197,3 +10197,130 @@ button.soft-loading::after {
     line-height: 1.12 !important;
   }
 }
+
+
+/* v0.40.100 — restore department-head desktop overview card to admin-style plan card. */
+@media (min-width: 721px) {
+  body.department-head-mode .department-head-plan-panel {
+    position: relative !important;
+    display: block !important;
+    min-height: 272px !important;
+    padding: 36px 44px 34px !important;
+    border-radius: 30px !important;
+    overflow: hidden !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel.department-sanzhar {
+    background: linear-gradient(135deg, rgba(225, 241, 255, .96), rgba(245, 251, 255, .92)) !important;
+    border-color: rgba(120, 188, 255, .72) !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel.department-raufal {
+    background: linear-gradient(135deg, rgba(255, 239, 226, .96), rgba(255, 250, 245, .92)) !important;
+    border-color: rgba(255, 183, 145, .76) !important;
+  }
+
+  body.department-head-mode .department-head-plan-topline {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 32px !important;
+    margin: 0 0 38px !important;
+    padding: 0 !important;
+  }
+
+  body.department-head-mode .department-head-plan-copy {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .overview-label {
+    margin: 0 0 18px !important;
+    font-size: 22px !important;
+    line-height: 1 !important;
+    letter-spacing: .34em !important;
+    text-transform: uppercase !important;
+    font-weight: 950 !important;
+    color: var(--accent-strong) !important;
+  }
+
+  body.department-head-mode .department-head-total {
+    display: block !important;
+    text-align: left !important;
+    min-width: 0 !important;
+  }
+
+  body.department-head-mode .department-head-total > div {
+    margin: 0 0 18px !important;
+    font-size: clamp(48px, 5.4vw, 92px) !important;
+    line-height: .90 !important;
+    letter-spacing: -.08em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+  }
+
+  body.department-head-mode .department-head-total .overview-subline-with-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: 14px !important;
+    flex-wrap: wrap !important;
+    margin: 0 !important;
+    font-size: 28px !important;
+    line-height: 1.08 !important;
+    letter-spacing: -.04em !important;
+    font-weight: 950 !important;
+    color: rgba(43, 54, 35, .68) !important;
+  }
+
+  body.department-head-mode .department-head-events-word-badge {
+    position: static !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 190px !important;
+    max-width: none !important;
+    height: 42px !important;
+    padding: 0 22px !important;
+    border-radius: 999px !important;
+    white-space: nowrap !important;
+    font-size: 20px !important;
+    line-height: 1 !important;
+    font-weight: 950 !important;
+    letter-spacing: -.02em !important;
+  }
+
+  body.department-head-mode .department-head-overview-name {
+    flex: 0 0 auto !important;
+    margin: 4px 0 0 !important;
+    max-width: 34% !important;
+    text-align: right !important;
+    font-size: clamp(30px, 2.9vw, 46px) !important;
+    line-height: .96 !important;
+    letter-spacing: -.06em !important;
+    font-weight: 1000 !important;
+    color: #151917 !important;
+  }
+
+  body.department-head-mode .department-head-main-progress {
+    display: block !important;
+    margin: 0 !important;
+    gap: 0 !important;
+  }
+
+  body.department-head-mode .department-head-plan-panel .progress-line {
+    width: 100% !important;
+    height: 34px !important;
+    margin: 0 !important;
+    border-radius: 999px !important;
+  }
+
+  body.department-head-mode .department-head-overview-muted {
+    margin-top: 18px !important;
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    letter-spacing: -.035em !important;
+    font-weight: 850 !important;
+    color: rgba(43, 54, 35, .64) !important;
+  }
+}

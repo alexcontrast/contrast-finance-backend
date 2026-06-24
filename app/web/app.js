@@ -5031,18 +5031,21 @@ function renderDepartmentHeadManagerRows(managers = []) {
 function renderDepartmentHeadOverview(data) {
   const percent = asNumber(data.completion_percent);
   const calc = data.calculation || {};
+  const departmentName = data.department_name || "Отдел";
   return `
-    <section class="manager-plan-panel department-head-plan-panel ${departmentClassByName(data.department_name)}">
-      <div class="department-head-card-head">
-        <div class="department-head-card-title-block">
-          <div class="overview-label">Отдел</div>
-          <h3 class="department-head-overview-name">${escapeHtml(data.department_name || "Отдел")}</h3>
+    <section class="manager-plan-panel department-head-plan-panel ${departmentClassByName(departmentName)}">
+      <div class="department-head-card-head department-head-plan-topline">
+        <div class="department-head-plan-copy">
+          <div class="overview-label">Общий план отдела</div>
+          <div class="department-head-total">
+            <div>${formatMoney(data.fact_income_amount)} ₸</div>
+            <span class="overview-subline-with-badge">
+              Цель: ${formatMoney(data.plan_amount)} ₸ · ${percent}%
+              ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}
+            </span>
+          </div>
         </div>
-        <div class="department-head-total">
-          <div>${formatMoney(data.fact_income_amount)} ₸</div>
-          <span class="overview-subline-with-badge">${percent}% · цель ${formatMoney(data.plan_amount)} ₸</span>
-        </div>
-        ${overviewEventsBadge(data.events_count, "Мероприятий отдела за выбранный месяц")}
+        <h3 class="department-head-overview-name">${escapeHtml(departmentName)}</h3>
       </div>
 
       <div class="manager-plan-main department-head-main-progress">
