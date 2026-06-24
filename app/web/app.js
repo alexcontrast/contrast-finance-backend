@@ -11302,9 +11302,9 @@ function openManagerCreateModal() {
 
 function renderManagerDashboardLayout(data) {
   return `
-    <div class="manager-dashboard-v113">
-      ${renderManagerTopActions(data)}
+    <div class="manager-dashboard-v113 manager-dashboard-v119">
       ${renderManagerPlanPanel(data)}
+      ${renderManagerTopActions(data)}
       <div class="manager-workspace manager-workspace-v113">
         ${renderManagerEventList(data)}
         <main id="managerEventDetail" class="manager-detail-card manager-detail-card-v113">
@@ -13663,7 +13663,7 @@ function renderManagerDashboard(data, paymentRequests = []) {
   $("adminTabs").classList.add("hidden");
   renderSummary([]);
 
-  $("dashboardTitle").textContent = "Мои мероприятия";
+  $("dashboardTitle").textContent = "";
   $("dashboardHint").textContent = "";
 
   $("dashboardContent").innerHTML = renderManagerDashboardLayout(normalizedData);

@@ -13179,3 +13179,172 @@ button.soft-loading::after {
     text-overflow: ellipsis !important;
   }
 }
+
+
+/* v0.40.119 — desktop manager plan polish and web action row.
+   Scope: manager cabinet only. Mobile two-row action layout from v0.40.118 stays inside max-width media. */
+body.manager-mode #dashboardTitle,
+body[data-cf-role="manager"] #dashboardTitle {
+  display: none !important;
+}
+
+body.manager-mode .manager-dashboard-v119,
+body[data-cf-role="manager"] .manager-dashboard-v119 {
+  gap: 14px;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-panel-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-panel-v113 {
+  border: 1px solid rgba(47, 107, 255, .18);
+  background:
+    radial-gradient(circle at top left, rgba(47,107,255,.18), transparent 36%),
+    linear-gradient(135deg, rgba(47,107,255,.10), rgba(255,255,255,.96));
+  box-shadow: 0 16px 42px rgba(15, 23, 42, .08);
+  border-radius: 22px;
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: minmax(180px, .42fr) minmax(320px, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113 .overview-label,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 .overview-label {
+  margin: 0;
+  color: #2f6bff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-head-v113 h3,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-head-v113 h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -.04em;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-main-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-main-v113 {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-fact-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-fact-v113 {
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: .95;
+  letter-spacing: -.06em;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-subline-v116,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-subline-v116 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-target-v116,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-target-v116 {
+  min-width: 0;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-events-badge-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-events-badge-v113 {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(47,107,255,.13);
+  border: 1px solid rgba(47,107,255,.22);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-panel-v113 .progress-line,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-panel-v113 .progress-line {
+  height: 10px;
+  margin: 2px 0 0;
+  border-radius: 999px;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-plan-muted-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-muted-v113 {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+body.manager-mode .manager-dashboard-v119 .manager-top-actions-v113,
+body[data-cf-role="manager"] .manager-dashboard-v119 .manager-top-actions-v113 {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px 0 4px;
+}
+
+body.manager-mode .manager-dashboard-v119 #managerCreateEventShortcut,
+body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut {
+  min-height: 38px;
+  padding: 9px 16px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+@media (min-width: 921px) {
+  body.manager-mode .manager-event-actions-v118,
+  body[data-cf-role="manager"] .manager-event-actions-v118 {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+    width: auto !important;
+    max-width: none !important;
+  }
+
+  body.manager-mode .manager-event-actions-v118 .manager-event-actions-row,
+  body[data-cf-role="manager"] .manager-event-actions-v118 .manager-event-actions-row {
+    display: contents !important;
+  }
+
+  body.manager-mode .manager-event-actions-v118 button,
+  body[data-cf-role="manager"] .manager-event-actions-v118 button {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    white-space: nowrap !important;
+  }
+}
+
+@media (max-width: 920px) {
+  body.manager-mode #dashboardTitle,
+  body[data-cf-role="manager"] #dashboardTitle {
+    display: none !important;
+  }
+}
