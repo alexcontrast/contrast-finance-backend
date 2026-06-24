@@ -1,8 +1,11 @@
-# v0.40.109 — reset old dashboard on role switch
+# v0.40.110 — Admin paid instant update + manager percent lock
 
-- Исправлен визуальный flash старого кабинета после выхода и входа в другую роль.
-- При logout/login теперь очищается видимая разметка кабинета: summary, tabs, dashboard content, модалки и role-specific state.
-- Старые незавершённые dashboard-запросы больше не могут дорисовать предыдущий кабинет после смены пользователя/роли: увеличивается `dashboardRequestSeq`.
-- Глобальный GET in-flight cache теперь учитывает текущий auth token, поэтому `/app/bootstrap` не переиспользует ответ старого пользователя.
-- Dashboard in-flight key теперь включает роль, user id, department id и месяц.
-- Backend и Apps Script не менялись.
+## Fixed
+- Admin event modal customer payment (`Оплачено`) now updates immediately in the open modal after saving, without requiring a page refresh.
+- The open event modal payload now patches `customer_paid_amount` and `customer_remaining_amount` locally after `/events/{id}/customer-payment` succeeds.
+- Manager-side event PATCH no longer overwrites `manager_percent`; only admin actions can change the manager percent.
+- This prevents a manager sending a draft/revision event to review from accidentally resetting an admin-set manager percent back to 21%.
+
+## Scope
+- Changed `app/web/app.js`, `app/web/index.html`, `app/api/routes/events.py`.
+- No Apps Script changes.

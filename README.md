@@ -1,18 +1,8 @@
-# Contrast Finance v0.40.109
+# Contrast Finance Backend v0.40.110
 
-Точечный frontend-патч для сброса старого кабинета при выходе и входе в другую роль.
+Patch for two issues:
 
-## Что проверить
+1. Admin modal customer payment amount now refreshes immediately after saving.
+2. Manager percent is protected from manager-side event saves/status changes, so admin overrides are not reset by draft/review transitions.
 
-1. Войти главдепом, дождаться загрузки кабинета.
-2. Выйти.
-3. Войти админом или менеджером.
-4. До загрузки новых данных должен показываться только пустой экран загрузки, без старой главдеповской разметки.
-5. Повторить обратно: менеджер → главдеп / админ → главдеп.
-
-## Изменённые файлы
-
-- `app/web/app.js`
-- `app/web/index.html`
-
-Backend и Apps Script не менялись.
+Deploy as usual by replacing the app files and redeploying the backend/web service.

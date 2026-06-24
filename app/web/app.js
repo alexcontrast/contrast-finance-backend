@@ -4721,16 +4721,47 @@ function customerPaymentMetric(event, summary, editable = true) {
 
 function patchCustomerPaymentMetric(updatedEvent) {
   const eventId = String(updatedEvent?.id || "");
-  if (!eventId) return;
+  if (!eventId) return false;
   const metricEl = document.querySelector(`[data-customer-paid-metric="${eventId}"]`);
   const payload = state.currentEventModalPayload;
-  if (!metricEl || !payload?.summary) return;
+  if (!metricEl || !payload?.summary) return false;
+  const effectiveEvent = payload?.event?.id && String(payload.event.id) === eventId
+    ? { ...payload.event, ...updatedEvent }
+    : updatedEvent;
   const wrapper = document.createElement("div");
-  wrapper.innerHTML = customerPaymentMetric(updatedEvent, payload.summary, state.bootstrap?.user?.role === "admin").trim();
+  wrapper.innerHTML = customerPaymentMetric(effectiveEvent, payload.summary, state.bootstrap?.user?.role === "admin").trim();
   const next = wrapper.firstElementChild;
-  if (!next) return;
+  if (!next) return false;
   metricEl.replaceWith(next);
   attachCustomerPaymentActions(next);
+  return true;
+}
+
+function patchCustomerPaymentPayload(updatedEvent) {
+  const eventId = String(updatedEvent?.id || "");
+  if (!eventId) return null;
+  const payload = state.currentEventModalPayload?.event?.id && String(state.currentEventModalPayload.event.id) === eventId
+    ? state.currentEventModalPayload
+    : state.eventModalPayloadById?.[eventId];
+  if (!payload?.event) return null;
+
+  payload.event = { ...payload.event, ...updatedEvent };
+  if (payload.summary) {
+    const paid = asNumber(updatedEvent.customer_paid_amount ?? payload.event.customer_paid_amount ?? 0);
+    const turnover = customerTurnoverAmount(payload.summary);
+    payload.summary = {
+      ...payload.summary,
+      customer_paid_amount: paid,
+      customer_remaining_amount: Math.max(0, turnover - paid),
+    };
+  }
+
+  if (!state.eventModalPayloadById) state.eventModalPayloadById = {};
+  state.eventModalPayloadById[eventId] = payload;
+  if (state.currentEventModalPayload?.event?.id && String(state.currentEventModalPayload.event.id) === eventId) {
+    state.currentEventModalPayload = payload;
+  }
+  return payload;
 }
 
 async function saveEventCustomerPayment(eventId, button = null) {
@@ -4759,8 +4790,19 @@ async function saveEventCustomerPayment(eventId, button = null) {
 
     if (!state.customerPaymentEditByEventId) state.customerPaymentEditByEventId = {};
     state.customerPaymentEditByEventId[String(eventId)] = false;
+
+    const selectedStatus = document.getElementById("eventModalRequestStatusFilter")?.value || "all";
     patchEventState(updatedEvent);
-    patchCustomerPaymentMetric(updatedEvent);
+    const patchedPayload = patchCustomerPaymentPayload(updatedEvent);
+
+    // Если открыта модалка этого мероприятия — перерисовываем её сразу из обновлённого payload,
+    // чтобы новая сумма "Оплачено" и остаток появились без перезагрузки страницы.
+    if (patchedPayload && state.currentEventModalPayload?.event?.id && String(state.currentEventModalPayload.event.id) === String(eventId)) {
+      renderEventModalPayload(patchedPayload, selectedStatus);
+    } else {
+      patchCustomerPaymentMetric(updatedEvent);
+    }
+
     rerenderAdminEventListIfOpen();
   } finally {
     if (button) {
@@ -12908,7 +12950,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.40.109 loaded");
+  console.info("Contrast Finance web app v0.40.110 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

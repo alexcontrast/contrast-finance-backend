@@ -253,7 +253,12 @@ def update_event(
     else:
         event.status = payload.status
     event.client_calc_type = payload.client_calc_type
-    event.manager_percent = normalize_manager_percent(payload.manager_percent)
+    # Важно: менеджерский PATCH мероприятия не должен затирать процент менеджера.
+    # Процент меняется только админом через админ-редактирование или отдельный endpoint
+    # /events/{event_id}/manager-percent. Иначе старый черновик/локальный draft менеджера
+    # может прислать дефолтные 21% и сбросить админский override при отправке на проверку.
+    if current_user.role == "admin":
+        event.manager_percent = normalize_manager_percent(payload.manager_percent)
     event.agency_commission_amount = payload.agency_commission_amount
     event.agency_commission_spread_enabled = payload.agency_commission_spread_enabled
     event.simplified_bank_tax_percent = payload.simplified_bank_tax_percent
