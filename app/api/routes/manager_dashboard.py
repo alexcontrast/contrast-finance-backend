@@ -514,7 +514,7 @@ def get_manager_dashboard_bundle(
 
         manager_name = user_by_id.get(event.manager_id).name if event.manager_id in user_by_id else None
         request_reads = [
-            enrich_payment_request_read_fast(request, event.client_name, event.title, manager_name)
+            enrich_payment_request_read_fast(request, event.client_name, event.title, event.event_date, manager_name)
             for request in payment_requests
         ]
         for request_read in request_reads:

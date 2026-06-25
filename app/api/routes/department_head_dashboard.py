@@ -581,7 +581,7 @@ def get_department_head_dashboard_bundle(
             items=[EventItemRead.model_validate(item) for item in items],
             summary=build_event_summary_read_for_bundle(event, items),
             requests=[
-                enrich_payment_request_read_fast(request, event.client_name, event.title, manager_name)
+                enrich_payment_request_read_fast(request, event.client_name, event.title, event.event_date, manager_name)
                 for request in event_payment_requests
             ],
         )

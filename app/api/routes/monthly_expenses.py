@@ -101,6 +101,32 @@ def allocated_amounts_for_expense(db: Session, expense: MonthlyExpense) -> tuple
     return q(money(expense.sanzhar_amount)), q(money(expense.raufal_amount))
 
 
+def allocated_amounts_for_expense_with_plan(expense: MonthlyExpense, plan: MonthlyPlan | None) -> tuple[Decimal, Decimal]:
+    """Fast allocation for list endpoints: avoid one MonthlyPlan query per expense."""
+    if expense.allocation_type == "default_split":
+        sanzhar_percent = money(plan.sanzhar_share_percent) if plan is not None else Decimal("66.67")
+        sanzhar = q(money(expense.amount) * sanzhar_percent / Decimal("100"))
+        return sanzhar, q(money(expense.amount) - sanzhar)
+
+    return q(money(expense.sanzhar_amount)), q(money(expense.raufal_amount))
+
+
+def expense_to_read_with_plan(expense: MonthlyExpense, plan: MonthlyPlan | None) -> MonthlyExpenseRead:
+    sanzhar_amount, raufal_amount = allocated_amounts_for_expense_with_plan(expense, plan)
+    return MonthlyExpenseRead(
+        id=expense.id,
+        month=expense.month,
+        title=expense.title,
+        amount=expense.amount,
+        allocation_type=expense.allocation_type,
+        sanzhar_amount=sanzhar_amount,
+        raufal_amount=raufal_amount,
+        comment=expense.comment,
+        created_by_user_id=expense.created_by_user_id,
+        created_at=expense.created_at,
+        updated_at=expense.updated_at,
+    )
+
 
 def calculate_allocation_for_existing_amount(
     expense: MonthlyExpense,
@@ -185,27 +211,47 @@ def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(
 @router.get("/monthly-expenses", response_model=list[MonthlyExpenseRead])
 def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db)):
     started_at = time.perf_counter()
+    month_date = parse_month(month) if month else None
+
     query_started_at = started_at
     query = select(MonthlyExpense)
 
-    if month:
-        month_date = parse_month(month)
-        query = query.where(
-            extract("year", MonthlyExpense.month) == month_date.year,
-            extract("month", MonthlyExpense.month) == month_date.month,
-        )
+    if month_date:
+        # MonthlyExpense.month is normalized to the first day of the month, so an equality
+        # filter is enough and lets PostgreSQL use a normal index if one exists.
+        query = query.where(MonthlyExpense.month == month_date)
 
     result = db.execute(query.order_by(MonthlyExpense.month.desc(), MonthlyExpense.id.desc()))
     expenses = result.scalars().all()
     query_s = time.perf_counter() - query_started_at
+
+    plan_started_at = time.perf_counter()
+    plans_by_month: dict[date, MonthlyPlan | None] = {}
+    if month_date:
+        plans_by_month[month_date] = db.execute(
+            select(MonthlyPlan).where(MonthlyPlan.month == month_date)
+        ).scalar_one_or_none()
+    else:
+        unique_months = {normalize_month(expense.month) for expense in expenses}
+        if unique_months:
+            plans = db.execute(select(MonthlyPlan).where(MonthlyPlan.month.in_(unique_months))).scalars().all()
+            plans_by_month = {plan.month: plan for plan in plans}
+            for expense_month in unique_months:
+                plans_by_month.setdefault(expense_month, None)
+    plan_s = time.perf_counter() - plan_started_at
+
     response_started_at = time.perf_counter()
-    response = [expense_to_read(db, expense) for expense in expenses]
+    response = [
+        expense_to_read_with_plan(expense, plans_by_month.get(normalize_month(expense.month)))
+        for expense in expenses
+    ]
     response_s = time.perf_counter() - response_started_at
     logger.info(
-        "PERF monthly-expenses month=%s count=%s query=%.3fs response=%.3fs total=%.3fs",
+        "PERF monthly-expenses month=%s count=%s query=%.3fs plan=%.3fs response=%.3fs total=%.3fs",
         month,
         len(response),
         query_s,
+        plan_s,
         response_s,
         time.perf_counter() - started_at,
     )

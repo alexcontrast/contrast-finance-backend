@@ -1,10 +1,10 @@
-# Contrast Finance 2.0 — v0.5.2
+# Contrast Finance 2.0 — v0.5.3
 
-Hotfix for `v0.5.1 — Admin plans and closing diagnostics`.
+База: стабильная версия 0.5 + диагностические патчи 0.5.1/0.5.2.
 
-Fixes backend startup crash caused by missing imports in `monthly_expenses.py`:
+Цель патча: убрать мусорные Pydantic warnings и ускорить вкладку админки «Закрыть месяц», где самым медленным оказался запрос `/monthly-expenses`.
 
-- `import logging`
-- `import time`
-
-Deploy this version instead of v0.5.1, then open admin tabs `Задать планы` and `Закрыть месяц` and collect `PERF ...` logs from browser console and Railway logs.
+Изменения:
+- `event_date` и `manager_name` в payload-заявках больше не перепутаны.
+- `/monthly-expenses` не делает N+1 запросы к `monthly_plans`.
+- `/monthly-expenses` использует прямой фильтр по нормализованному месяцу.

@@ -452,6 +452,7 @@ def enrich_payment_request_for_event_fast(
         request,
         event.client_name,
         event.title,
+        event.event_date,
         manager_name_for_event_fast(db, event, current_user),
     )
 
