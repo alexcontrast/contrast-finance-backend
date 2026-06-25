@@ -1,7 +1,12 @@
-# Contrast Finance 2.0 — v0.5.11
+# Contrast Finance 2.0 — v0.5.12
 
-Patch: **Legacy import creates editable drafts**.
+Hotfix for the legacy 2026 import page.
 
-This version changes only the real legacy import behavior for January–April 2026. Historical events imported from `/legacy-events-2026` are assigned to manager `Тест` as editable drafts (`status=draft`, `money_status=waiting_money`) so they can be checked and corrected through the manager cabinet before being accepted or transferred.
+Install the full archive if the `/legacy-events-2026` page still shows old v0.5.9/v0.5.10 text.
 
-The import still does not create payment requests, Telegram cards, payment queues, or any live payment workflow.
+Expected page:
+- title: `Импорт мероприятий 2026`;
+- version text: `Страница v0.5.12`;
+- buttons: `Запустить dry-run`, `Импортировать в базу`, `Очистить отчёт`;
+- import creates editable draft events for manager `Тест`;
+- no payments, payment requests or Telegram messages are created.

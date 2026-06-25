@@ -1,12 +1,11 @@
-# CHANGELOG
+# v0.5.12 — Legacy import page route hotfix
 
-## v0.5.11 — Legacy import creates editable drafts
+Base: v0.5.11.
 
-- Changed real legacy import for January–April 2026: imported events are now created as editable drafts.
-- Event status is now `draft` instead of `accepted`.
-- Money status is now `waiting_money` instead of `cash_received`.
-- Target manager remains `Тест` by default.
-- Import still creates only events and event_items.
-- No payment requests, Telegram cards, payment queues or live payment workflow are created.
-- Duplicate protection by `legacy_event_id` is preserved.
-- Cache-bust updated to `0.5.11`.
+Fixed:
+- Updated `/legacy-events-2026` server-rendered page version/title from old dry-run text to v0.5.12 import page.
+- Changed visible copy to say real import creates editable draft events.
+- Ensured changed-only package includes `app/api/routes/legacy_events_2026.py`, because v0.5.11 changed-only omitted the route file and could leave the migration page stuck at v0.5.9/v0.5.10 while the main app loaded v0.5.11.
+- Updated web cache-bust to 0.5.12.
+
+No business logic changes beyond existing v0.5.11 behavior: import creates draft events/items only, no payments/requests/Telegram.

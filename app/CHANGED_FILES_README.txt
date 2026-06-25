@@ -1,10 +1,9 @@
-v0.5.11 — Legacy import creates editable drafts
-
-Changed files:
-- app/services/legacy_events_2026_importer.py
-- app/web/index.html
+Changed in v0.5.12:
+- app/api/routes/legacy_events_2026.py
 - app/web/app.js
+- app/web/index.html
 - CHANGELOG.md
 - README.md
+- app/CHANGED_FILES_README.txt
 
-Historical legacy import now creates editable draft events assigned to manager Тест: status=draft, money_status=waiting_money. No payments, requests, Telegram messages or payment queues are created.
+Important: v0.5.11 changed-only did not include legacy_events_2026.py, so the migration page could remain old. This changed-only archive includes the route file.
