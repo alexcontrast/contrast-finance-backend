@@ -1,9 +1,18 @@
-# CHANGELOG
+# v0.5.1 — Admin plans and closing diagnostics
 
-## v0.40.125 — Mobile manager payments modal hard fix
+База: стабильная версия Contrast Finance 2.0 / 0.5.
 
-- Fixed mobile manager `Мои оплаты` modal header: the title stays in the top-left and no longer collapses vertically.
-- Fixed the `Закрыть` button: it is compact and pinned to the top-right, overriding the base mobile `button { width: 100%; }` rule.
-- Fixed payment groups/cards in `Мои оплаты`: all groups and request rows now use the full modal width instead of `fit-content`, so cards no longer have different widths.
-- Updated cache-bust to `0.40.125`.
-- Scope: mobile manager payments modal only. Backend, Telegram bot, admin and department-head cabinets were not changed.
+Диагностический патч без изменения бизнес-логики.
+
+Что добавлено:
+- Browser console PERF-логи для вкладок админки `Задать планы` и `Закрыть месяц`.
+- Browser console PERF-логи для этапов render/attach, загрузки планов, загрузки расходов, расчёта закрытия месяца.
+- Backend PERF-логи для `/monthly-plans`, `/monthly-expenses`, `/monthly-closings/calculate`.
+- Cache-bust фронта обновлён до `0.5.1`.
+
+Что не менялось:
+- расчёты;
+- интерфейс;
+- Telegram-бот;
+- мобильные кабинеты;
+- Google Sheets export.

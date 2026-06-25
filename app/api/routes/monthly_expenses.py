@@ -17,6 +17,7 @@ from app.schemas.monthly_expense import (
 
 
 router = APIRouter(tags=["monthly_expenses"])
+logger = logging.getLogger("contrast.performance")
 
 
 def money(value) -> Decimal:
@@ -181,6 +182,8 @@ def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(
 
 @router.get("/monthly-expenses", response_model=list[MonthlyExpenseRead])
 def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db)):
+    started_at = time.perf_counter()
+    query_started_at = started_at
     query = select(MonthlyExpense)
 
     if month:
@@ -191,7 +194,20 @@ def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db
         )
 
     result = db.execute(query.order_by(MonthlyExpense.month.desc(), MonthlyExpense.id.desc()))
-    return [expense_to_read(db, expense) for expense in result.scalars().all()]
+    expenses = result.scalars().all()
+    query_s = time.perf_counter() - query_started_at
+    response_started_at = time.perf_counter()
+    response = [expense_to_read(db, expense) for expense in expenses]
+    response_s = time.perf_counter() - response_started_at
+    logger.info(
+        "PERF monthly-expenses month=%s count=%s query=%.3fs response=%.3fs total=%.3fs",
+        month,
+        len(response),
+        query_s,
+        response_s,
+        time.perf_counter() - started_at,
+    )
+    return response
 
 
 @router.get("/monthly-expenses/summary", response_model=MonthlyExpenseSummaryRead)

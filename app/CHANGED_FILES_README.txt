@@ -1,11 +1,9 @@
-v0.40.125 — Mobile manager payments modal hard fix
-
-Replace these files if applying changed-only:
+v0.5.1 diagnostics changed files:
 - app/web/app.js
-- app/web/styles.css
 - app/web/index.html
+- app/api/routes/monthly.py
+- app/api/routes/monthly_expenses.py
+- app/api/routes/monthly_closings.py
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
-
-Scope: mobile manager `Мои оплаты` modal only.
