@@ -14067,6 +14067,16 @@ async function loadClosingByMonth(month) {
   }
 }
 
+function closingFromDashboardCache(month = state.month) {
+  if (state.adminData && state.adminData.month === month && state.adminData.closing) {
+    return state.adminData.closing;
+  }
+  const cached = state.closingPanelData && state.closingPanelData.month === month
+    ? state.closingPanelData.closing
+    : null;
+  return cached || null;
+}
+
 async function loadClosingPanelData(options = {}) {
   const totalStartedAt = perfNow();
   const month = state.month;
@@ -14076,28 +14086,24 @@ async function loadClosingPanelData(options = {}) {
     : null;
 
   if (!includeCalculation) {
-    const [expenses, closing] = await Promise.allSettled([
-      timedApi("closing/monthly-expenses", `/monthly-expenses?month=${month}&_=${Date.now()}`),
-      timedAction("closing/by-month", () => loadClosingByMonth(month)),
-    ]);
-
+    const expenses = await timedApi("closing/monthly-expenses", `/monthly-expenses?month=${month}&_=${Date.now()}`);
     const result = {
       month,
-      expenses: expenses.status === "fulfilled" && Array.isArray(expenses.value) ? expenses.value : [],
+      expenses: Array.isArray(expenses) ? expenses : [],
       calc: cached?.calc || null,
-      closing: closing.status === "fulfilled" ? closing.value : cached?.closing || null,
-      error: expenses.status === "rejected" ? expenses.reason?.message : null,
+      closing: closingFromDashboardCache(month) || cached?.closing || null,
+      error: null,
       calcPending: true,
     };
-    perfLog("closing/load-data total", totalStartedAt, `includeCalculation=false expenses=${result.expenses.length}`);
+    perfLog("closing/load-data total", totalStartedAt, `includeCalculation=false expenses=${result.expenses.length} closing=dashboard-cache`);
     return result;
   }
 
-  const [expenses, calcResult, closing] = await Promise.allSettled([
+  const [expenses, calcResult] = await Promise.allSettled([
     timedApi("closing/monthly-expenses", `/monthly-expenses?month=${month}&_=${Date.now()}`),
     timedApi("closing/calculate", `/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
-    timedAction("closing/by-month", () => loadClosingByMonth(month)),
   ]);
+  const closing = { status: "fulfilled", value: closingFromDashboardCache(month) || cached?.closing || null };
 
   if (calcResult.status === "rejected") {
     const result = {
@@ -14235,10 +14241,10 @@ function scheduleClosingCalculationRefresh(delayMs = 900) {
     state.closingCalcRefreshSeq = requestSeq;
 
     try {
-      const [calcResult, closing] = await Promise.allSettled([
-        timedApi("closing/calculate-refresh", `/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
-        timedAction("closing/by-month-refresh", () => loadClosingByMonth(month)),
-      ]);
+      const calcResult = await timedApi("closing/calculate-refresh", `/monthly-closings/calculate?month=${month}&_=${Date.now()}`)
+        .then((value) => ({ status: "fulfilled", value }))
+        .catch((reason) => ({ status: "rejected", reason }));
+      const closing = { status: "fulfilled", value: closingFromDashboardCache(month) || null };
 
       if (requestSeq !== state.closingCalcRefreshSeq || state.month !== month) return;
 
@@ -14520,7 +14526,7 @@ async function reopenSelectedMonth() {
 }
 
 async function recalculateSelectedMonthClosing() {
-  const existingClosing = await loadClosingByMonth(state.month);
+  const existingClosing = closingFromDashboardCache(state.month);
   const isClosed = existingClosing?.status === "closed";
 
   if (!isClosed) {
@@ -15188,7 +15194,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.3 loaded");
+  console.info("Contrast Finance web app v0.5.4 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

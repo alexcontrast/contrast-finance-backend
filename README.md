@@ -1,10 +1,18 @@
-# Contrast Finance 2.0 — v0.5.3
+# Contrast Finance 2.0 — v0.5.4
 
-База: стабильная версия 0.5 + диагностические патчи 0.5.1/0.5.2.
+Patch over stable 0.5 / v0.5.3.
 
-Цель патча: убрать мусорные Pydantic warnings и ускорить вкладку админки «Закрыть месяц», где самым медленным оказался запрос `/monthly-expenses`.
+This patch reduces extra requests in the admin `Закрыть месяц` tab. It does not change calculations or business logic.
 
-Изменения:
-- `event_date` и `manager_name` в payload-заявках больше не перепутаны.
-- `/monthly-expenses` не делает N+1 запросы к `monthly_plans`.
-- `/monthly-expenses` использует прямой фильтр по нормализованному месяцу.
+## Deploy
+
+Deploy as usual on Railway. Then hard-refresh the browser.
+
+## Check
+
+Open admin → `Закрыть месяц` and check browser console:
+
+- `PERF web closing/monthly-expenses` should remain around the v0.5.3 value.
+- There should be no initial `PERF web closing/by-month` line.
+- There should be no `PERF web closing/by-month-refresh` line during background calculation.
+- `PERF web closing/refresh-panel total` should be closer to `/monthly-expenses` time.
