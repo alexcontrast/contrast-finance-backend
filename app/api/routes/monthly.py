@@ -1,6 +1,4 @@
 from datetime import datetime
-import logging
-import time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,7 +18,6 @@ from app.services.event_calculator import calculate_event_summary_values, q
 
 
 router = APIRouter(tags=["monthly"])
-logger = logging.getLogger("contrast.performance")
 
 
 def money(value) -> Decimal:
@@ -148,15 +145,7 @@ def list_monthly_plans(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
-    started_at = time.perf_counter()
-    plans = db.execute(select(MonthlyPlan).order_by(MonthlyPlan.month.desc())).scalars().all()
-    logger.info(
-        "PERF monthly-plans user_id=%s count=%s total=%.3fs",
-        getattr(current_admin, "id", None),
-        len(plans),
-        time.perf_counter() - started_at,
-    )
-    return plans
+    return db.execute(select(MonthlyPlan).order_by(MonthlyPlan.month.desc())).scalars().all()
 
 
 @router.get("/monthly-dashboard", response_model=CompanyDashboardRead)

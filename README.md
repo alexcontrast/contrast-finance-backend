@@ -1,18 +1,10 @@
-# Contrast Finance 2.0 — v0.5.4
+# Contrast Finance 2.0 — v0.5.5
 
-Patch over stable 0.5 / v0.5.3.
+`v0.5.5` — чистовой патч после диагностики производительности вкладок админки.
 
-This patch reduces extra requests in the admin `Закрыть месяц` tab. It does not change calculations or business logic.
+Патч убирает временный диагностический шум из браузерной консоли и Railway logs, но оставляет найденные и проверенные ускорения.
 
-## Deploy
-
-Deploy as usual on Railway. Then hard-refresh the browser.
-
-## Check
-
-Open admin → `Закрыть месяц` and check browser console:
-
-- `PERF web closing/monthly-expenses` should remain around the v0.5.3 value.
-- There should be no initial `PERF web closing/by-month` line.
-- There should be no `PERF web closing/by-month-refresh` line during background calculation.
-- `PERF web closing/refresh-panel total` should be closer to `/monthly-expenses` time.
+## Проверка после деплоя
+- Сайт должен загрузиться с `Contrast Finance web app v0.5.5 loaded`.
+- В Railway не должно быть `PERF monthly-expenses`, `PERF monthly-plans`, `PERF monthly-closing-calculate`.
+- Во вкладке `Закрыть месяц` не должно быть лишнего запроса `/monthly-closings/by-month` при первом открытии.

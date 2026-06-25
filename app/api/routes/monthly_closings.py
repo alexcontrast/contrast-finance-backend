@@ -1,6 +1,4 @@
 from datetime import date, datetime
-import logging
-import time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,7 +21,6 @@ from app.services.event_calculator import calculate_event_summary_values, q
 
 
 router = APIRouter(tags=["monthly_closings"])
-logger = logging.getLogger("contrast.performance")
 
 
 def money(value) -> Decimal:
@@ -181,36 +178,24 @@ def head_salary(income: Decimal, expenses: Decimal, percent: Decimal) -> Decimal
 
 
 def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateRead:
-    started_at = time.perf_counter()
-    step_started_at = started_at
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
-    plan_s = time.perf_counter() - step_started_at
     if plan is None:
-        logger.info("PERF monthly-closing-calculate month=%s error=no_plan plan_sql=%.3fs total=%.3fs", month_date, plan_s, time.perf_counter() - started_at)
         raise HTTPException(status_code=404, detail="Monthly plan not found")
 
-    step_started_at = time.perf_counter()
     sanzhar = get_department_by_name(db, "Санжар")
     raufal = get_department_by_name(db, "Рауфаль")
-    departments_s = time.perf_counter() - step_started_at
 
     if sanzhar is None or raufal is None:
         raise HTTPException(status_code=400, detail="Departments Санжар and Рауфаль must exist")
 
-    step_started_at = time.perf_counter()
     sanzhar_plan = department_plan_amount(plan, "Санжар")
     raufal_plan = department_plan_amount(plan, "Рауфаль")
-    plan_calc_s = time.perf_counter() - step_started_at
 
-    step_started_at = time.perf_counter()
     incomes_by_department_id = get_department_income_amounts(db, month_date.year, month_date.month)
-    incomes_s = time.perf_counter() - step_started_at
     sanzhar_income = incomes_by_department_id.get(sanzhar.id, Decimal("0.00"))
     raufal_income = incomes_by_department_id.get(raufal.id, Decimal("0.00"))
 
-    step_started_at = time.perf_counter()
     expenses_by_department = get_department_expense_amounts(db, month_date, plan)
-    expenses_s = time.perf_counter() - step_started_at
     sanzhar_expenses = expenses_by_department.get("Санжар", Decimal("0.00"))
     raufal_expenses = expenses_by_department.get("Рауфаль", Decimal("0.00"))
 
@@ -229,8 +214,7 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
     founders_total = q(sanzhar_remaining + raufal_remaining)
     founder_amount = q(founders_total / Decimal("3"))
 
-    response_started_at = time.perf_counter()
-    response = MonthlyClosingCalculateRead(
+    return MonthlyClosingCalculateRead(
         month=month_date,
         company_plan_amount=q(plan.company_plan_amount),
 
@@ -257,19 +241,6 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
 
         status="draft",
     )
-    response_s = time.perf_counter() - response_started_at
-    logger.info(
-        "PERF monthly-closing-calculate month=%s plan_sql=%.3fs departments_sql=%.3fs plan_calc=%.3fs incomes=%.3fs expenses=%.3fs response=%.3fs total=%.3fs",
-        month_date,
-        plan_s,
-        departments_s,
-        plan_calc_s,
-        incomes_s,
-        expenses_s,
-        response_s,
-        time.perf_counter() - started_at,
-    )
-    return response
 
 
 @router.get("/monthly-closings/calculate", response_model=MonthlyClosingCalculateRead)

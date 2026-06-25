@@ -1,6 +1,4 @@
 from datetime import date, datetime
-import logging
-import time
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,7 +17,6 @@ from app.schemas.monthly_expense import (
 
 
 router = APIRouter(tags=["monthly_expenses"])
-logger = logging.getLogger("contrast.performance")
 
 
 def money(value) -> Decimal:
@@ -210,10 +207,8 @@ def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(
 
 @router.get("/monthly-expenses", response_model=list[MonthlyExpenseRead])
 def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db)):
-    started_at = time.perf_counter()
     month_date = parse_month(month) if month else None
 
-    query_started_at = started_at
     query = select(MonthlyExpense)
 
     if month_date:
@@ -223,9 +218,7 @@ def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db
 
     result = db.execute(query.order_by(MonthlyExpense.month.desc(), MonthlyExpense.id.desc()))
     expenses = result.scalars().all()
-    query_s = time.perf_counter() - query_started_at
 
-    plan_started_at = time.perf_counter()
     plans_by_month: dict[date, MonthlyPlan | None] = {}
     if month_date:
         plans_by_month[month_date] = db.execute(
@@ -238,24 +231,10 @@ def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db
             plans_by_month = {plan.month: plan for plan in plans}
             for expense_month in unique_months:
                 plans_by_month.setdefault(expense_month, None)
-    plan_s = time.perf_counter() - plan_started_at
-
-    response_started_at = time.perf_counter()
-    response = [
+    return [
         expense_to_read_with_plan(expense, plans_by_month.get(normalize_month(expense.month)))
         for expense in expenses
     ]
-    response_s = time.perf_counter() - response_started_at
-    logger.info(
-        "PERF monthly-expenses month=%s count=%s query=%.3fs plan=%.3fs response=%.3fs total=%.3fs",
-        month,
-        len(response),
-        query_s,
-        plan_s,
-        response_s,
-        time.perf_counter() - started_at,
-    )
-    return response
 
 
 @router.get("/monthly-expenses/summary", response_model=MonthlyExpenseSummaryRead)

@@ -14078,7 +14078,6 @@ function closingFromDashboardCache(month = state.month) {
 }
 
 async function loadClosingPanelData(options = {}) {
-  const totalStartedAt = perfNow();
   const month = state.month;
   const includeCalculation = Boolean(options.includeCalculation);
   const cached = state.closingPanelData && state.closingPanelData.month === month
@@ -14086,7 +14085,7 @@ async function loadClosingPanelData(options = {}) {
     : null;
 
   if (!includeCalculation) {
-    const expenses = await timedApi("closing/monthly-expenses", `/monthly-expenses?month=${month}&_=${Date.now()}`);
+    const expenses = await api(`/monthly-expenses?month=${month}&_=${Date.now()}`);
     const result = {
       month,
       expenses: Array.isArray(expenses) ? expenses : [],
@@ -14095,13 +14094,12 @@ async function loadClosingPanelData(options = {}) {
       error: null,
       calcPending: true,
     };
-    perfLog("closing/load-data total", totalStartedAt, `includeCalculation=false expenses=${result.expenses.length} closing=dashboard-cache`);
     return result;
   }
 
   const [expenses, calcResult] = await Promise.allSettled([
-    timedApi("closing/monthly-expenses", `/monthly-expenses?month=${month}&_=${Date.now()}`),
-    timedApi("closing/calculate", `/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
+    api(`/monthly-expenses?month=${month}&_=${Date.now()}`),
+    api(`/monthly-closings/calculate?month=${month}&_=${Date.now()}`),
   ]);
   const closing = { status: "fulfilled", value: closingFromDashboardCache(month) || cached?.closing || null };
 
@@ -14114,7 +14112,6 @@ async function loadClosingPanelData(options = {}) {
       error: calcResult.reason?.message || "Не удалось рассчитать закрытие месяца",
       calcPending: false,
     };
-    perfLog("closing/load-data total", totalStartedAt, `includeCalculation=true error=calculate expenses=${result.expenses.length}`);
     return result;
   }
 
@@ -14126,7 +14123,6 @@ async function loadClosingPanelData(options = {}) {
     error: expenses.status === "rejected" ? expenses.reason?.message : null,
     calcPending: false,
   };
-  perfLog("closing/load-data total", totalStartedAt, `includeCalculation=true expenses=${result.expenses.length}`);
   return result;
 }
 
@@ -14241,7 +14237,7 @@ function scheduleClosingCalculationRefresh(delayMs = 900) {
     state.closingCalcRefreshSeq = requestSeq;
 
     try {
-      const calcResult = await timedApi("closing/calculate-refresh", `/monthly-closings/calculate?month=${month}&_=${Date.now()}`)
+      const calcResult = await api(`/monthly-closings/calculate?month=${month}&_=${Date.now()}`)
         .then((value) => ({ status: "fulfilled", value }))
         .catch((reason) => ({ status: "rejected", reason }));
       const closing = { status: "fulfilled", value: closingFromDashboardCache(month) || null };
@@ -14281,7 +14277,6 @@ function markClosingCalculationPending() {
 }
 
 async function refreshClosingPanel(options = {}) {
-  const totalStartedAt = perfNow();
   const panel = document.getElementById("closingPanel");
   if (!panel) return;
 
@@ -14292,11 +14287,8 @@ async function refreshClosingPanel(options = {}) {
 
   try {
     const data = await loadClosingPanelData({ includeCalculation });
-    const renderStartedAt = perfNow();
     cacheClosingPanelData(data);
     renderClosingPanelFromCache();
-    perfLog("closing/render-from-cache", renderStartedAt, `includeCalculation=${includeCalculation}`);
-    perfLog("closing/refresh-panel total", totalStartedAt, `includeCalculation=${includeCalculation}`);
     if (!includeCalculation && !data.error) {
       scheduleClosingCalculationRefresh(250);
     }
@@ -14596,18 +14588,16 @@ async function attachClosingPanel() {
 }
 
 async function ensureMonthlyPlansLoadedForEditor() {
-  const totalStartedAt = perfNow();
   const editor = document.getElementById("plansEditor");
   if (!editor) return false;
 
   const year = Number(editor.dataset.plansYear || planEditorYear());
   if (Number(state.monthlyPlansYear) === year) {
-    perfLog("plans/ensure-loaded", totalStartedAt, `year=${year} cache=memory count=${(state.monthlyPlans || []).length}`);
     return true;
   }
 
   try {
-    const plans = await timedApi("plans/monthly-plans", `/monthly-plans?_=${Date.now()}`);
+    const plans = await api(`/monthly-plans?_=${Date.now()}`);
     state.monthlyPlans = Array.isArray(plans) ? plans : [];
     state.monthlyPlansYear = year;
   } catch (error) {
@@ -14617,13 +14607,10 @@ async function ensureMonthlyPlansLoadedForEditor() {
 
   const content = document.getElementById("dashboardContent");
   if (content && state.activeAdminTab === "plans") {
-    const renderStartedAt = perfNow();
     content.innerHTML = renderPlansSkeleton(state.adminData || emptyAdminDashboard(state.month));
-    perfLog("plans/render-after-load", renderStartedAt, `year=${year}`);
     attachPlansModal();
   }
 
-  perfLog("plans/ensure-loaded", totalStartedAt, `year=${year} cache=api count=${state.monthlyPlans.length}`);
   return false;
 }
 
@@ -14776,13 +14763,11 @@ function attachManagerDeleteButtons() {
 }
 
 async function attachPlansModal() {
-  const totalStartedAt = perfNow();
   const editor = document.getElementById("plansEditor");
   if (!editor) return;
 
   const loaded = await ensureMonthlyPlansLoadedForEditor();
   if (!loaded) {
-    perfLog("plans/attach", totalStartedAt, "loaded=false");
     return;
   }
 
@@ -14817,10 +14802,7 @@ async function attachPlansModal() {
   const saveButton = document.getElementById("savePlansYearBtn");
   if (saveButton) saveButton.addEventListener("click", savePlansYear);
 
-  const calcStartedAt = perfNow();
   updatePlansCalculatedCells();
-  perfLog("plans/update-calculated", calcStartedAt);
-  perfLog("plans/attach", totalStartedAt, "loaded=true");
 }
 
 
@@ -15194,7 +15176,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.4 loaded");
+  console.info("Contrast Finance web app v0.5.5 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
