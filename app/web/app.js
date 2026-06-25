@@ -6180,7 +6180,7 @@ async function api(path, options = {}) {
   const inflightMap = isGet ? cfGlobalMap("apiGetInflightByKey") : null;
 
   if (isGet && inflightMap[inflightKey]) {
-    console.info(`PERF web api GET in-flight reuse ${inflightKey}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web api GET in-flight reuse ${inflightKey}`);
     return inflightMap[inflightKey];
   }
 
@@ -6226,7 +6226,7 @@ async function timedApi(label, path, options = {}) {
   try {
     return await api(path, options);
   } finally {
-    console.info(`PERF web ${label} ${loggedPath}=${perfSeconds(startedAt)}s`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web ${label} ${loggedPath}=${perfSeconds(startedAt)}s`);
   }
 }
 
@@ -6235,13 +6235,13 @@ async function timedAction(label, task) {
   try {
     return await task();
   } finally {
-    console.info(`PERF web ${label}=${perfSeconds(startedAt)}s`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web ${label}=${perfSeconds(startedAt)}s`);
   }
 }
 
 function perfLog(label, startedAt, extra = "") {
   const suffix = extra ? ` ${extra}` : "";
-  console.info(`PERF web ${label}=${perfSeconds(startedAt)}s${suffix}`);
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web ${label}=${perfSeconds(startedAt)}s${suffix}`);
 }
 
 function cachedValue(cache, key, ttlMs) {
@@ -8977,7 +8977,7 @@ function cachedEventModalPayload(eventId) {
 async function loadEventModalPayload(eventId, options = {}) {
   const cachedPayload = options.force ? null : cachedEventModalPayload(eventId);
   if (cachedPayload) {
-    console.info(`PERF web event-modal-detail cache event=${eventId}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web event-modal-detail cache event=${eventId}`);
     return cachedPayload;
   }
 
@@ -9995,7 +9995,7 @@ async function runGoogleSheetsExport(dryRun, button) {
   if (statusEl) statusEl.textContent = dryRun ? "Собираю месяц для проверки…" : "Выгружаю месяц в Google Sheets…";
   const startedAt = perfNow();
   const result = await api(`/google-sheets/export-month?month=${encodeURIComponent(month)}&dry_run=${dryRun ? "true" : "false"}`, { method: "POST" });
-  console.info(`PERF web google-sheets-export-month dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web google-sheets-export-month dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
 
   const sheets = (result.updated_sheets || []).join(", ");
   const message = result.dry_run
@@ -10013,7 +10013,7 @@ async function runGoogleSheetsYearExport(dryRun, button) {
   if (statusEl) statusEl.textContent = dryRun ? "Собираю год для проверки…" : "Выгружаю все месяцы, оплаты и годовую статистику…";
   const startedAt = perfNow();
   const result = await api(`/google-sheets/export-year?year=${encodeURIComponent(year)}&dry_run=${dryRun ? "true" : "false"}`, { method: "POST" });
-  console.info(`PERF web google-sheets-export-year dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web google-sheets-export-year dry_run=${dryRun ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
 
   const sheets = (result.updated_sheets || []).join(", ");
   const message = result.dry_run
@@ -10335,7 +10335,7 @@ function renderManagerEventList(data) {
 async function renderManagerEventDetail(eventId, options = {}) {
   const key = `${eventId || "none"}:${options.useDraft ? "draft" : "server"}`;
   if (!options.useDraft && state.managerEventDetailLoadingById && state.managerEventDetailLoadingById[key]) {
-    console.info(`PERF web manager-event-detail in-flight reuse key=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-event-detail in-flight reuse key=${key}`);
     return state.managerEventDetailLoadingById[key];
   }
 
@@ -10390,7 +10390,7 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
         const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
         state.managerPaymentRequests = [...cachedPayload.requests, ...otherRequests];
       }
-      console.info(`PERF web manager-event-detail cache event=${eventId}`);
+      if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-event-detail cache event=${eventId}`);
     } else {
       [event, items, summary] = await Promise.all([
         api(`/events/${eventId}`),
@@ -10749,7 +10749,7 @@ async function saveDraftEvent(eventId, options = {}) {
 
   const payload = eventPayloadForSave(draftEvent);
   if (!options.force && !eventNeedsSave(eventId, payload)) {
-    console.info(`PERF web manager-event-save-skip event=${eventId}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-event-save-skip event=${eventId}`);
     return draftEvent;
   }
 
@@ -11761,7 +11761,7 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
   const wasTemp = item.is_temp || String(item.id || "").startsWith("tmp-");
 
   if (!wasTemp && !options.force && !itemNeedsSave(eventId, item, payload)) {
-    console.info(`PERF web manager-item-save-skip item=${item.id}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-item-save-skip item=${item.id}`);
     return item;
   }
 
@@ -11811,7 +11811,7 @@ async function saveDraftItems(eventId) {
     .filter((item) => itemNeedsSave(eventId, item))
     .map((item) => saveSingleDraftItem(eventId, item, { force: true }));
 
-  console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${persistedDeletedIds.length} delete_requests=${deleteTasks.length} total=${items.length}`);
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${persistedDeletedIds.length} delete_requests=${deleteTasks.length} total=${items.length}`);
 
   await Promise.all([...deleteTasks, ...saveTasks]);
 
@@ -12058,7 +12058,7 @@ async function checkTaxForItem(itemId) {
 
     alert(error.message || "КГД не ответил");
   } finally {
-    console.info(`PERF web kgd-estimate-check total=${perfSeconds(kgdStartedAt)}s item=${originalItemId}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web kgd-estimate-check total=${perfSeconds(kgdStartedAt)}s item=${originalItemId}`);
   }
 }
 
@@ -12298,7 +12298,7 @@ async function refreshManagerPaymentRequestsForEvent(eventId) {
   const key = String(eventId);
 
   if (state.managerEventRequestsLoadingById && state.managerEventRequestsLoadingById[key]) {
-    console.info(`PERF web event-payment-requests in-flight reuse event=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web event-payment-requests in-flight reuse event=${key}`);
     return state.managerEventRequestsLoadingById[key];
   }
 
@@ -13253,7 +13253,7 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
     if (successMessage) showToast(successMessage);
   } finally {
     setButtonLoading(button, false);
-    console.info(`PERF web manager-${targetStatus}-action total=${perfSeconds(startedAt)}s`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-${targetStatus}-action total=${perfSeconds(startedAt)}s`);
   }
 }
 
@@ -13282,7 +13282,7 @@ async function prepareInvoicePaymentItem(eventId, item) {
     await persistItemBeforePayment(eventId, item);
   } else {
     patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
-    console.info(`PERF web manager-payment-prepare-invoice-skip-persist item=${item.id}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-payment-prepare-invoice-skip-persist item=${item.id}`);
   }
 
   return invoiceContext.contractor_name || item.contractor_name || item.contractor_name_snapshot || item.internal_note || `БИН ${item.iin_bin}`;
@@ -13355,7 +13355,7 @@ async function prepareSimplePaymentItem(eventId, item, method) {
     await persistItemBeforePayment(eventId, item);
   } else {
     patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
-    console.info(`PERF web manager-payment-prepare-simple-skip-persist item=${item.id}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-payment-prepare-simple-skip-persist item=${item.id}`);
   }
 
   return item;
@@ -13450,7 +13450,7 @@ async function submitManagerPayment(eventId) {
     }
   } finally {
     setButtonLoading(button, false);
-    console.info(`PERF web manager-payment-create total=${perfSeconds(startedAt)}s`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-payment-create total=${perfSeconds(startedAt)}s`);
   }
 }
 
@@ -14818,7 +14818,7 @@ function restoreUsersFromCache() {
     if (Date.now() - Number(cached.saved_at) > USERS_CACHE_TTL_MS) return false;
     state.users = cached.users;
     state.usersCacheLoadedAt = Number(cached.saved_at);
-    console.info(`PERF web users-cache hit count=${state.users.length}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web users-cache hit count=${state.users.length}`);
     return true;
   } catch (error) {
     console.warn("Не удалось прочитать кэш пользователей", error);
@@ -14845,14 +14845,14 @@ async function loadUsersForAdmin(options = {}) {
     && (Date.now() - state.usersCacheLoadedAt < USERS_CACHE_TTL_MS);
 
   if (!force && memoryFresh) {
-    console.info(`PERF web users-memory-cache hit count=${state.users.length}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web users-memory-cache hit count=${state.users.length}`);
     return state.users;
   }
 
   if (!force && restoreUsersFromCache()) return state.users;
 
   if (!force && state.usersLoadingPromise) {
-    console.info("PERF web users in-flight reuse");
+    if (CF_PERF_LOGS_ENABLED) console.info("PERF web users in-flight reuse");
     return state.usersLoadingPromise;
   }
 
@@ -14878,7 +14878,7 @@ async function loadUsersForAdmin(options = {}) {
 async function loadAdminDashboardData(month) {
   const key = String(month || "");
   if (state.adminDashboardLoadingByMonth && state.adminDashboardLoadingByMonth[key]) {
-    console.info(`PERF web admin-dashboard in-flight reuse month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web admin-dashboard in-flight reuse month=${key}`);
     return state.adminDashboardLoadingByMonth[key];
   }
 
@@ -14897,12 +14897,12 @@ async function loadManagerDashboardData(month) {
   const key = String(month || "");
   const cached = cachedValue(state.managerDashboardCacheByMonth, key, 1500);
   if (cached) {
-    console.info(`PERF web manager-dashboard cache month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-dashboard cache month=${key}`);
     return cached;
   }
 
   if (state.managerDashboardLoadingByMonth && state.managerDashboardLoadingByMonth[key]) {
-    console.info(`PERF web manager-dashboard in-flight reuse month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-dashboard in-flight reuse month=${key}`);
     return state.managerDashboardLoadingByMonth[key];
   }
 
@@ -14921,12 +14921,12 @@ async function loadManagerPaymentRequestsData(month) {
   const key = String(month || state.month || "");
   const cached = cachedValue(state.managerPaymentRequestsCacheByMonth, key, 1500);
   if (cached) {
-    console.info(`PERF web payment-requests cache month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web payment-requests cache month=${key}`);
     return cached;
   }
 
   if (state.managerPaymentRequestsLoadingByMonth && state.managerPaymentRequestsLoadingByMonth[key]) {
-    console.info(`PERF web payment-requests in-flight reuse month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web payment-requests in-flight reuse month=${key}`);
     return state.managerPaymentRequestsLoadingByMonth[key];
   }
 
@@ -14969,13 +14969,13 @@ async function loadManagerDashboardBundleData(month) {
   const key = String(month || "");
   const cached = cachedValue(state.managerDashboardBundleCacheByMonth, key, 1500);
   if (cached) {
-    console.info(`PERF web manager-dashboard-bundle cache month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-dashboard-bundle cache month=${key}`);
     cacheManagerEventPayloads(cached.event_payloads || {}, key);
     return cached;
   }
 
   if (state.managerDashboardBundleLoadingByMonth && state.managerDashboardBundleLoadingByMonth[key]) {
-    console.info(`PERF web manager-dashboard-bundle in-flight reuse month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-dashboard-bundle in-flight reuse month=${key}`);
     return state.managerDashboardBundleLoadingByMonth[key];
   }
 
@@ -14999,13 +14999,13 @@ async function loadAdminDashboardBundleData(month) {
   const key = String(month || "");
   const cached = cachedValue(state.adminDashboardBundleCacheByMonth, key, 1500);
   if (cached) {
-    console.info(`PERF web admin-dashboard-bundle cache month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web admin-dashboard-bundle cache month=${key}`);
     cacheEventModalPayloads(cached.event_payloads || {}, key);
     return cached;
   }
 
   if (state.adminDashboardBundleLoadingByMonth && state.adminDashboardBundleLoadingByMonth[key]) {
-    console.info(`PERF web admin-dashboard-bundle in-flight reuse month=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web admin-dashboard-bundle in-flight reuse month=${key}`);
     return state.adminDashboardBundleLoadingByMonth[key];
   }
 
@@ -15027,13 +15027,13 @@ async function loadDepartmentDashboardBundleData(month, departmentId) {
   const key = `${departmentId || ""}:${month || ""}`;
   const cached = cachedValue(state.departmentDashboardBundleCacheByMonth, key, 1500);
   if (cached) {
-    console.info(`PERF web department-dashboard-bundle cache key=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web department-dashboard-bundle cache key=${key}`);
     cacheEventModalPayloads(cached.event_payloads || {}, month);
     return cached;
   }
 
   if (state.departmentDashboardBundleLoadingByMonth && state.departmentDashboardBundleLoadingByMonth[key]) {
-    console.info(`PERF web department-dashboard-bundle in-flight reuse key=${key}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web department-dashboard-bundle in-flight reuse key=${key}`);
     return state.departmentDashboardBundleLoadingByMonth[key];
   }
 
@@ -15066,12 +15066,12 @@ async function loadDashboard() {
   const globalInflight = cfGlobalMap("dashboardInflightByKey");
 
   if (globalInflight[loadKey]) {
-    console.info(`PERF web loadDashboard global in-flight reuse key=${loadKey}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web loadDashboard global in-flight reuse key=${loadKey}`);
     return globalInflight[loadKey];
   }
 
   if (state.dashboardLoadingByKey && state.dashboardLoadingByKey[loadKey]) {
-    console.info(`PERF web loadDashboard local in-flight reuse key=${loadKey}`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web loadDashboard local in-flight reuse key=${loadKey}`);
     return state.dashboardLoadingByKey[loadKey];
   }
 
@@ -15105,13 +15105,13 @@ async function loadDashboard() {
         ]);
         const dashboard = bundle?.dashboard || emptyAdminDashboard(month);
         if (isStale()) {
-          console.info(`PERF web skip stale admin-dashboard render key=${loadKey}`);
+          if (CF_PERF_LOGS_ENABLED) console.info(`PERF web skip stale admin-dashboard render key=${loadKey}`);
           return;
         }
         cacheEventModalPayloads(bundle?.event_payloads || {}, month);
         const renderStartedAt = perfNow();
         renderAdminDashboard(dashboard);
-        console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
+        if (CF_PERF_LOGS_ENABLED) console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
       } catch (error) {
         if (!isStale()) {
           console.warn("Не удалось загрузить admin-dashboard за период", month, error);
@@ -15130,10 +15130,10 @@ async function loadDashboard() {
           cacheEventModalPayloads(bundle?.event_payloads || {}, month);
           const renderStartedAt = perfNow();
           renderDepartmentDashboard(dashboard);
-          console.info(`PERF web render-department-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
+          if (CF_PERF_LOGS_ENABLED) console.info(`PERF web render-department-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
           state.lastLoadedDashboardMonth = month;
         } else {
-          console.info(`PERF web skip stale department-dashboard render key=${loadKey}`);
+          if (CF_PERF_LOGS_ENABLED) console.info(`PERF web skip stale department-dashboard render key=${loadKey}`);
         }
       } catch (error) {
         if (!isStale()) {
@@ -15149,13 +15149,13 @@ async function loadDashboard() {
       const dashboard = bundle?.dashboard || emptyManagerDashboard(month);
       const requests = bundle?.payment_requests || [];
       if (isStale()) {
-        console.info(`PERF web skip stale manager-dashboard render key=${loadKey}`);
+        if (CF_PERF_LOGS_ENABLED) console.info(`PERF web skip stale manager-dashboard render key=${loadKey}`);
         return;
       }
       cacheManagerEventPayloads(bundle?.event_payloads || {}, month);
       const renderStartedAt = perfNow();
       renderManagerDashboard(dashboard, requests);
-      console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
+      if (CF_PERF_LOGS_ENABLED) console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
     } catch (error) {
       if (!isStale()) {
         console.warn("Не удалось загрузить manager-dashboard за период", month, error);
@@ -15176,7 +15176,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.5 loaded");
+  console.info("Contrast Finance web app v0.5.6 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
@@ -15190,7 +15190,7 @@ async function boot() {
     resetRoleBodyClasses();
     state.bootstrap = await timedApi("bootstrap", "/app/bootstrap");
     showDashboardShell();
-    console.info(`PERF web shell-after-bootstrap=${perfSeconds(bootStartedAt)}s`);
+    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web shell-after-bootstrap=${perfSeconds(bootStartedAt)}s`);
 
     const user = state.bootstrap.user;
     updateHeaderUserInfo(user);

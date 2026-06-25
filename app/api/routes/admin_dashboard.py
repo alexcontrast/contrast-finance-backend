@@ -472,27 +472,7 @@ def get_admin_dashboard(
     def delta(start_name: str, end_name: str) -> float:
         return perf_marks[end_name] - perf_marks[start_name]
 
-    logger.warning(
-        "PERF admin-dashboard month=%s include_drafts=%s events=%s items=%s requests=%s shares=%s expenses=%s "
-        "base_sql=%.3fs events_sql=%.3fs events_calc=%.3fs departments_calc=%.3fs "
-        "payments_sql=%.3fs payments_rows=%.3fs closing_sql=%.3fs response_model=%.3fs total=%.3fs",
-        month,
-        include_drafts,
-        len(events),
-        items_count,
-        requests_count,
-        shares_count,
-        len(monthly_expenses),
-        delta("parse", "base_sql"),
-        delta("base_sql", "events_sql"),
-        delta("events_sql", "events_calc"),
-        delta("events_calc", "departments_calc"),
-        delta("departments_calc", "payments_sql"),
-        delta("payments_sql", "payments_rows"),
-        delta("payments_rows", "closing_sql"),
-        delta("closing_sql", "response_model"),
-        perf_marks["response_model"] - perf_total_started,
-    )
+    # PERF admin-dashboard log removed in v0.5.6
 
     return dashboard
 
@@ -745,25 +725,5 @@ def get_admin_dashboard_bundle(
     items_count = len(active_items)
     requests_count = sum(len(event.payment_requests or []) for event in events)
     shares_count = sum(len(event.shares or []) for event in events)
-    logger.warning(
-        "PERF admin-dashboard-bundle month=%s include_drafts=%s events=%s items=%s requests=%s shares=%s users=%s expenses=%s "
-        "base_sql=%.3fs events_sql=%.3fs paid_sync=%.3fs payloads=%.3fs departments_calc=%.3fs payments_rows=%.3fs response_model=%.3fs total=%.3fs",
-        month,
-        include_drafts,
-        len(events),
-        items_count,
-        requests_count,
-        shares_count,
-        len(all_users),
-        len(monthly_expenses),
-        delta("parse", "base_sql"),
-        delta("base_sql", "events_sql"),
-        delta("events_sql", "paid_sync"),
-        delta("paid_sync", "payloads"),
-        delta("payloads", "departments_calc"),
-        delta("departments_calc", "payments_rows"),
-        delta("payments_rows", "response_model"),
-        perf_marks["response_model"] - perf_total_started,
-    )
-
+    # PERF admin-dashboard-bundle log removed in v0.5.6
     return response

@@ -1,20 +1,9 @@
 # CHANGELOG
 
-## v0.5.5 — Admin diagnostics cleanup
+## v0.5.6 — Remove remaining PERF logs
 
-База: `v0.5.4 — Admin closing tab request reduction`.
-
-### Что изменено
-- Убраны временные диагностические `PERF`-логи, добавленные для проверки вкладок админки `Задать планы` и `Закрыть месяц`.
-- Сохранены ускорения из `v0.5.3` и `v0.5.4`:
-  - `/monthly-expenses` использует прямой фильтр по месяцу и не делает повторный запрос плана на каждый расход;
-  - вкладка `Закрыть месяц` берёт статус закрытия из `admin-dashboard-bundle` и не делает лишние `/monthly-closings/by-month` запросы.
-- Убраны backend perf-логи из `monthly_expenses.py`, `monthly.py`, `monthly_closings.py`.
-- Обновлён cache-bust фронта до `0.5.5`.
-
-### Не менялось
-- Расчёты закрытия месяца.
-- Расходы и планы по смыслу данных.
-- Кабинеты менеджера/главдепов.
-- Telegram-бот.
-- Google Sheets экспорт.
+- Убраны оставшиеся `PERF web ...` логи из браузерной консоли.
+- Убран backend-лог `PERF admin-dashboard-bundle ...` из Railway.
+- Оптимизации v0.5.3/v0.5.4 сохранены: быстрый `/monthly-expenses` и отсутствие лишнего `/monthly-closings/by-month` при открытии вкладки `Закрыть месяц`.
+- Бизнес-логика, расчёты, интерфейсы, Telegram-бот и Google Sheets не менялись.
+- Cache-bust обновлён до `0.5.6`.
