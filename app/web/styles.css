@@ -13496,3 +13496,88 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
   }
 }
 
+
+
+/* v0.40.123 — desktop manager goal readability and compact department-head goal card.
+   Scope: desktop web only. Manager mobile and admin/mobile head layouts are not touched. */
+@media (min-width: 921px) {
+  body.manager-mode .manager-dashboard-v119 .manager-plan-target-v116,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-target-v116 {
+    color: #111827 !important;
+    font-weight: 950 !important;
+  }
+
+  body.manager-mode .manager-dashboard-v119 .manager-plan-events-badge-v113,
+  body[data-cf-role="manager"] .manager-dashboard-v119 .manager-plan-events-badge-v113 {
+    background: rgba(82, 186, 0, .26) !important;
+    border-color: rgba(82, 186, 0, .42) !important;
+    color: #123300 !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (min-width: 921px) {
+  body.department-head-mode .department-head-plan-card-v107 {
+    margin: 10px 0 14px !important;
+    border-radius: 22px !important;
+  }
+
+  body.department-head-mode .department-head-plan-desktop-v107 {
+    min-height: 150px !important;
+    padding: 20px 28px 18px !important;
+    border-radius: 22px !important;
+    column-gap: 24px !important;
+    row-gap: 7px !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+
+  body.department-head-mode .department-head-plan-label-v107 {
+    font-size: 10.5px !important;
+    line-height: 1 !important;
+    letter-spacing: .14em !important;
+  }
+
+  body.department-head-mode .department-head-plan-name-v107 {
+    font-size: 21px !important;
+    line-height: 1 !important;
+    letter-spacing: -.04em !important;
+  }
+
+  body.department-head-mode .department-head-plan-fact-v107 {
+    margin-top: 0 !important;
+    font-size: clamp(28px, 2.45vw, 40px) !important;
+    line-height: .96 !important;
+    letter-spacing: -.055em !important;
+  }
+
+  body.department-head-mode .department-head-plan-subline-v107 {
+    gap: 8px !important;
+    font-size: 12.5px !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.025em !important;
+    font-weight: 900 !important;
+  }
+
+  body.department-head-mode .department-head-plan-subline-v107 .department-head-events-word-badge,
+  body.department-head-mode .department-head-plan-subline-v107 .overview-events-badge {
+    min-width: 0 !important;
+    height: 22px !important;
+    padding: 0 10px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+  }
+
+  body.department-head-mode .department-head-plan-progress-v107 {
+    margin: 7px 0 0 !important;
+  }
+
+  body.department-head-mode .department-head-plan-progress-v107 .progress-line {
+    height: 12px !important;
+  }
+
+  body.department-head-mode .department-head-plan-muted-v107 {
+    font-size: 11.5px !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.015em !important;
+  }
+}
