@@ -1,3 +1,5 @@
+const CF_PERF_LOGS_ENABLED = false;
+
 
 function injectManagerUxStyles() {
   if (document.getElementById("managerUxStyles")) return;
@@ -15176,7 +15178,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.7 loaded");
+  console.info("Contrast Finance web app v0.5.8 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

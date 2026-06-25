@@ -1,38 +1,11 @@
-# v0.5.7 — Legacy events 2026 dry-run
+# v0.5.8 — Login hotfix after legacy dry-run
 
-База: v0.5.6 стабильная рабочая версия.
+## Fixed
+- Fixed frontend crash on login after v0.5.7: `ReferenceError: Can't find variable: CF_PERF_LOGS_ENABLED`.
+- Added explicit global frontend flag `const CF_PERF_LOGS_ENABLED = false;` before any calls to `timedApi`, `timedAction`, `perfLog` or other guarded PERF logs.
+- Updated cache-bust to `0.5.8`.
 
-## Добавлено
-- Новый dry-run импорт исторических мероприятий из старой Google Sheets/XLSX таблицы за январь–апрель 2026.
-- Страница `/legacy-events-2026` для загрузки `.xlsx`, ввода `LEGACY_MIGRATION_TOKEN` и запуска проверки без изменения базы.
-- Endpoint `POST /api/legacy-events-2026/dry-run`.
-- Парсер читает только листы:
-  - `Январь 2026`
-  - `Февраль 2026`
-  - `Март 2026`
-  - `Апрель 2026`
-- Dry-run показывает:
-  - количество мероприятий;
-  - бюджет;
-  - доход / остаток;
-  - факт расходов;
-  - агентские;
-  - НДС;
-  - вычеты;
-  - налоги net;
-  - ЗП менеджера;
-  - детализацию по каждому мероприятию.
-- В отчёте проверяется наличие целевого менеджера `Тест`.
-- Даты нормализуются по названию листа: год 2026 и месяц листа, день берётся из ячейки даты.
-
-## Важно
-- Это только dry-run: база данных не меняется.
-- Оплаты, заявки на оплату и Telegram-карточки не импортируются.
-- Добавлена зависимость `openpyxl==3.1.5` для чтения `.xlsx`.
-
-## Не менялось
-- Основная логика сайта.
-- Telegram-бот.
-- Google Sheets экспорт.
-- Расчёты текущих мероприятий.
-- Админка/менеджер/главдепы, кроме добавления отдельной страницы dry-run.
+## Not changed
+- Business logic is unchanged.
+- Legacy 2026 dry-run page and endpoint are preserved.
+- Backend, Telegram bot, calculations and import behavior are unchanged.

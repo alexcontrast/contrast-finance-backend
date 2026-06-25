@@ -1,22 +1,7 @@
-# Contrast Finance v0.5.7
+# Contrast Finance v0.5.8
 
-Патч для dry-run импорта исторических мероприятий за январь–апрель 2026 из старой Google Sheets/XLSX таблицы.
+Hotfix over v0.5.7. Use this build instead of v0.5.7 if login fails with:
 
-## Как проверить
-1. Деплой v0.5.7.
-2. Открыть `/legacy-events-2026`.
-3. Ввести `LEGACY_MIGRATION_TOKEN`.
-4. Оставить менеджера `Тест`.
-5. Загрузить старый файл `.xlsx`.
-6. Нажать `Запустить dry-run`.
-7. Проверить таблицу найденных мероприятий и суммы:
-   - бюджет;
-   - доход;
-   - факт;
-   - НДС;
-   - вычеты;
-   - агентские;
-   - налоги;
-   - ЗП менеджера.
+`ReferenceError: Can't find variable: CF_PERF_LOGS_ENABLED`
 
-Dry-run не пишет данные в базу.
+The fix only declares the missing frontend flag and updates cache-bust.
