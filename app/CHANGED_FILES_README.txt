@@ -1,13 +1,10 @@
-v0.40.123 changed files
+v0.40.124 — Mobile manager payments modal alignment
 
-Copy/replace only these files if applying as changed-only patch:
-
-- app/web/styles.css
+Изменённые файлы:
+- app/web/app.js
 - app/web/index.html
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Scope:
-- desktop manager plan readability
-- desktop department-head goal card compact height
+Правки ограничены мобильной модалкой менеджера «Мои оплаты».

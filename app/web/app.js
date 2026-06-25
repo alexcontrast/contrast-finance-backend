@@ -5230,6 +5230,151 @@ function injectManagerUxStyles() {
     font-size: 10px !important;
     line-height: 1 !important;
   }
+
+  /* v0.40.124: mobile manager "Мои оплаты" modal header + full-width payment cards */
+  @media (max-width: 760px) {
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal {
+      width: calc(100vw - 16px) !important;
+      max-width: calc(100vw - 16px) !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      padding: 12px !important;
+      overflow-x: hidden !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head {
+      width: 100% !important;
+      display: grid !important;
+      grid-template-columns: minmax(0, 1fr) auto !important;
+      align-items: start !important;
+      justify-content: stretch !important;
+      gap: 8px !important;
+      padding: 0 0 10px !important;
+      margin: 0 !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head > div,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head > div {
+      min-width: 0 !important;
+      width: 100% !important;
+      display: block !important;
+      text-align: left !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head .eyebrow,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head .eyebrow {
+      display: none !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalTitle,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalTitle {
+      margin: 0 !important;
+      padding: 0 !important;
+      text-align: left !important;
+      font-size: 18px !important;
+      line-height: 1.05 !important;
+      white-space: normal !important;
+      overflow-wrap: anywhere !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalCloseBtn,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalCloseBtn {
+      justify-self: end !important;
+      align-self: start !important;
+      margin: 0 !important;
+      min-height: 28px !important;
+      height: 28px !important;
+      padding: 4px 10px !important;
+      border-radius: 10px !important;
+      font-size: 11px !important;
+      line-height: 1 !important;
+      white-space: nowrap !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalContent,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalContent,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-modal,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-modal,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .compact-grouped-payments,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .compact-grouped-payments,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-group.compact,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-group.compact,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-list.compact,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-list.compact {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+      overflow-x: hidden !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-group.compact,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-group.compact {
+      padding: 8px !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-row.compact,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-row.compact {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      box-sizing: border-box !important;
+      grid-template-columns: minmax(0, 1fr) auto !important;
+      justify-content: stretch !important;
+      align-items: center !important;
+      gap: 6px 8px !important;
+      padding: 8px !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-amount,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-amount,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-method,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-method,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-status,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-status,
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action {
+      min-width: 0 !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-amount,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-amount {
+      grid-column: 1 / 2 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-method,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-method {
+      grid-column: 1 / 2 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-status,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-status {
+      grid-column: 2 / 3 !important;
+      grid-row: 1 / 2 !important;
+      justify-self: end !important;
+    }
+
+    body.manager-mode #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action,
+    body[data-cf-role="manager"] #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action {
+      grid-column: 2 / 3 !important;
+      grid-row: 2 / 3 !important;
+      justify-content: flex-end !important;
+      justify-self: end !important;
+    }
+  }
+
 }
 
 `;
