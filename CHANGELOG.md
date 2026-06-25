@@ -1,20 +1,12 @@
-# v0.5.9 — Legacy dry-run page hard feedback fix
+# CHANGELOG
 
-Base: v0.5.8.
+## v0.5.11 — Legacy import creates editable drafts
 
-## Fixed
-- Reworked `/legacy-events-2026` dry-run page so the UI always shows whether the XLSX file is selected.
-- Added explicit status messages before upload, during backend request, and on every error path.
-- Made dry-run buttons `type="button"` and bound handlers directly to `#dryBtn` / `#fileInput`.
-- Replaced `res.json()` with `res.text()` + guarded JSON parsing, so backend HTML/proxy/token errors are visible instead of silently failing.
-- Added visible file name and size after file selection.
-
-## Unchanged
-- No database writes.
-- No real import yet.
-- No payment requests / Telegram / active queue import.
-- Main web app, backend business logic, Telegram bot, admin/manager/head dashboards are unchanged.
-
-## Local validation
-- `python3 -m py_compile app/api/routes/legacy_events_2026.py`
-- Local dry-run parser check on `Отчет по мероприятиям (1).xlsx`: 74 events found for Jan-Apr 2026.
+- Changed real legacy import for January–April 2026: imported events are now created as editable drafts.
+- Event status is now `draft` instead of `accepted`.
+- Money status is now `waiting_money` instead of `cash_received`.
+- Target manager remains `Тест` by default.
+- Import still creates only events and event_items.
+- No payment requests, Telegram cards, payment queues or live payment workflow are created.
+- Duplicate protection by `legacy_event_id` is preserved.
+- Cache-bust updated to `0.5.11`.

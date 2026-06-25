@@ -1,13 +1,7 @@
-# Contrast Finance v0.5.9
+# Contrast Finance 2.0 — v0.5.11
 
-Hotfix for the legacy Jan-Apr 2026 dry-run page.
+Patch: **Legacy import creates editable drafts**.
 
-After deploy:
-1. Open `/legacy-events-2026`.
-2. Enter `LEGACY_MIGRATION_TOKEN`.
-3. Keep manager as `Тест`.
-4. Select the `.xlsx` report.
-5. The page should immediately show the selected file name and size.
-6. Press `Запустить dry-run`.
+This version changes only the real legacy import behavior for January–April 2026. Historical events imported from `/legacy-events-2026` are assigned to manager `Тест` as editable drafts (`status=draft`, `money_status=waiting_money`) so they can be checked and corrected through the manager cabinet before being accepted or transferred.
 
-This version does not write anything to the database. It only reads the XLSX and displays detected events/budgets.
+The import still does not create payment requests, Telegram cards, payment queues, or any live payment workflow.

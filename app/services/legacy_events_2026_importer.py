@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.event import Event
+from app.models.event_item import EventItem
 from app.models.user import User
 
 try:
@@ -230,6 +232,7 @@ class ParsedEvent:
     manager_salary: Decimal
     line_count: int
     lines_preview: list[dict[str, Any]]
+    lines: list[ParsedLine] = field(default_factory=list, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -354,6 +357,7 @@ def parse_event_block(sheet_name: str, sheet_month: int, rows: list[tuple[int, l
         manager_salary=manager_salary,
         line_count=len(lines),
         lines_preview=[line.as_dict() for line in lines[:8]],
+        lines=lines,
     )
 
 
@@ -376,19 +380,18 @@ def manager_lookup(db: Session | None, target_manager_name: str) -> dict[str, An
     }
 
 
-def dry_run_legacy_events_2026_xlsx(raw_xlsx: bytes, *, target_manager_name: str = "Тест", db: Session | None = None) -> dict[str, Any]:
+
+
+def parse_legacy_events_2026_xlsx(raw_xlsx: bytes) -> tuple[list[ParsedEvent], list[dict[str, Any]], dict[str, Any], list[str]]:
     if load_workbook is None:
-        return {
-            "ok": False,
-            "error": "openpyxl is not installed. Add openpyxl to requirements.txt and redeploy.",
-        }
+        raise RuntimeError("openpyxl is not installed. Add openpyxl to requirements.txt and redeploy.")
 
     warnings: list[str] = []
     workbook = load_workbook(BytesIO(raw_xlsx), data_only=True, read_only=True)
     sheet_names = set(workbook.sheetnames)
     missing = [sheet for sheet in TARGET_SHEETS if sheet not in sheet_names]
     if missing:
-        return {"ok": False, "error": f"В файле нет нужных листов: {', '.join(missing)}"}
+        raise ValueError(f"В файле нет нужных листов: {', '.join(missing)}")
 
     events: list[ParsedEvent] = []
     sheet_summaries: list[dict[str, Any]] = []
@@ -441,6 +444,33 @@ def dry_run_legacy_events_2026_xlsx(raw_xlsx: bytes, *, target_manager_name: str
         "taxes_net": money_out(sum((event.taxes_net for event in events), Decimal("0.00"))),
         "manager_salary": money_out(sum((event.manager_salary for event in events), Decimal("0.00"))),
     }
+    return events, sheet_summaries, totals, warnings
+
+
+def legacy_event_id_for(event: ParsedEvent) -> str:
+    month = TARGET_SHEETS.get(event.sheet, 0)
+    return f"legacy-2026-{month:02d}-row-{event.source_row}"
+
+
+def legacy_item_key_for(event: ParsedEvent, line: ParsedLine, idx: int) -> str:
+    return f"{legacy_event_id_for(event)}-item-{idx:03d}-row-{line.row}"
+
+
+def dry_run_legacy_events_2026_xlsx(raw_xlsx: bytes, *, target_manager_name: str = "Тест", db: Session | None = None) -> dict[str, Any]:
+    if load_workbook is None:
+        return {
+            "ok": False,
+            "error": "openpyxl is not installed. Add openpyxl to requirements.txt and redeploy.",
+        }
+    try:
+        events, sheet_summaries, totals, warnings = parse_legacy_events_2026_xlsx(raw_xlsx)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    existing_legacy_ids: set[str] = set()
+    if db is not None and events:
+        ids = [legacy_event_id_for(event) for event in events]
+        existing_legacy_ids = set(db.execute(select(Event.legacy_event_id).where(Event.legacy_event_id.in_(ids))).scalars().all())
 
     return {
         "ok": True,
@@ -450,11 +480,165 @@ def dry_run_legacy_events_2026_xlsx(raw_xlsx: bytes, *, target_manager_name: str
         "target_manager": manager_lookup(db, target_manager_name),
         "sheets": sheet_summaries,
         "totals": totals,
-        "events": [event.as_dict() for event in events],
+        "events": [event.as_dict() | {"legacy_event_id": legacy_event_id_for(event), "already_imported": legacy_event_id_for(event) in existing_legacy_ids} for event in events],
+        "existing_events": len(existing_legacy_ids),
         "warnings": warnings,
         "notes": [
             "Импорт оплат/заявок/Telegram не выполняется.",
             "Для дат год и месяц берутся из названия листа; день берётся из ячейки даты.",
-            "Это только dry-run: база данных не меняется.",
+            "Это dry-run: база данных не меняется.",
+            "Боевой импорт пропускает уже загруженные legacy_event_id, чтобы не создать дубли.",
+        ],
+    }
+
+
+def event_line_item_type(line: ParsedLine) -> str:
+    key = label_key(line.name)
+    if line.kind == "manager_salary" or ("менедж" in key and ("зп" in key or "%" in key)):
+        return "manager_salary"
+    if key == "координатор" or line.kind == "coordinator":
+        return "coordinator"
+    return "regular"
+
+
+def import_legacy_events_2026_xlsx(raw_xlsx: bytes, *, target_manager_name: str = "Тест", db: Session, imported_by: str = "legacy_page") -> dict[str, Any]:
+    if load_workbook is None:
+        return {"ok": False, "error": "openpyxl is not installed. Add openpyxl to requirements.txt and redeploy."}
+    manager = db.execute(select(User).where(func.lower(User.name) == target_manager_name.strip().lower()).limit(1)).scalar_one_or_none()
+    if not manager:
+        return {"ok": False, "error": f"Менеджер '{target_manager_name}' не найден"}
+    if not manager.department_id:
+        return {"ok": False, "error": f"У менеджера '{manager.name}' не указан отдел"}
+
+    try:
+        events, sheet_summaries, totals, warnings = parse_legacy_events_2026_xlsx(raw_xlsx)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    stats = {
+        "events_found": len(events),
+        "events_created": 0,
+        "events_skipped_existing": 0,
+        "items_created": 0,
+        "payment_requests_created": 0,
+    }
+    imported_events: list[dict[str, Any]] = []
+
+    try:
+        for parsed in events:
+            legacy_id = legacy_event_id_for(parsed)
+            existing = db.execute(select(Event).where(Event.legacy_event_id == legacy_id).limit(1)).scalar_one_or_none()
+            if existing:
+                stats["events_skipped_existing"] += 1
+                imported_events.append({
+                    "legacy_event_id": legacy_id,
+                    "title": parsed.title,
+                    "event_date": parsed.event_date,
+                    "status": "skipped_existing",
+                    "event_id": existing.id,
+                })
+                continue
+
+            event = Event(
+                legacy_event_id=legacy_id,
+                client_name=parsed.title or "Архив 2026",
+                title=parsed.title or "Архивное мероприятие 2026",
+                event_date=date.fromisoformat(parsed.event_date),
+                department_id=manager.department_id,
+                manager_id=manager.id,
+                status="draft",
+                money_status="waiting_money",
+                client_calc_type="cash",
+                manager_percent=Decimal("21.00"),
+                agency_commission_amount=Decimal("0.00"),
+                customer_paid_amount=parsed.total_budget,
+                agency_commission_spread_enabled="false",
+                simplified_bank_tax_percent=None,
+            )
+            db.add(event)
+            db.flush()
+            stats["events_created"] += 1
+
+            if parsed.lines:
+                source_lines = parsed.lines
+            else:
+                source_lines = [
+                    ParsedLine(
+                        row=parsed.source_row,
+                        name="Бюджет по старой таблице",
+                        kind="regular",
+                        cost=parsed.total_budget,
+                        fact=max(Decimal("0.00"), parsed.total_budget - parsed.total_income),
+                    )
+                ]
+
+            created_item_index = 0
+            for idx, line in enumerate(source_lines, start=1):
+                if not line.name:
+                    continue
+                if line.cost == 0 and line.fact == 0 and line.vat == 0 and line.deduction == 0 and line.commission == 0:
+                    continue
+                created_item_index += 1
+                item_type = event_line_item_type(line)
+                fact_value = line.fact if line.fact != 0 else Decimal("0.00")
+                item = EventItem(
+                    legacy_item_key=legacy_item_key_for(parsed, line, created_item_index),
+                    event_id=event.id,
+                    item_type=item_type,
+                    external_name=line.name[:255],
+                    external_price=line.cost,
+                    external_quantity=Decimal("1.00"),
+                    external_days=Decimal("1.00"),
+                    external_amount=line.cost,
+                    external_note=f"Импорт январь–апрель 2026: {parsed.sheet}, строка {line.row}; старый менеджер: {parsed.old_manager or '—'}",
+                    amount_fact=fact_value,
+                    paid_amount=Decimal("0.00"),
+                    payment_method="invoice" if (line.vat or line.deduction) else "cash",
+                    iin_bin=None,
+                    iin_bin_locked=False,
+                    tax_check_status=None,
+                    vat_amount=line.vat,
+                    deduction_amount=line.deduction,
+                    internal_note=(
+                        f"legacy_source=google_sheets_2026_jan_apr; legacy_event={legacy_id}; "
+                        f"kind={line.kind}; old_manager={parsed.old_manager or '—'}; "
+                        f"legacy_commission={money_out(line.commission)}"
+                    ),
+                    sort_order=created_item_index,
+                    is_deleted=False,
+                )
+                db.add(item)
+                stats["items_created"] += 1
+
+            imported_events.append({
+                "legacy_event_id": legacy_id,
+                "title": parsed.title,
+                "event_date": parsed.event_date,
+                "event_id": event.id,
+                "items": len(source_lines),
+                "status": "created",
+            })
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "ok": True,
+        "dry_run": False,
+        "source": "legacy_google_sheets_xlsx",
+        "period": "2026-01..2026-04",
+        "target_manager": manager_lookup(db, target_manager_name),
+        "sheets": sheet_summaries,
+        "totals": totals,
+        "stats": stats,
+        "events": imported_events,
+        "warnings": warnings,
+        "notes": [
+            "Созданы только мероприятия и строки сметы.",
+            "Оплаты, заявки и Telegram не создавались.",
+            "Повторный запуск пропускает уже импортированные legacy_event_id.",
+            f"Импортировано пользователем/источником: {imported_by}.",
         ],
     }
