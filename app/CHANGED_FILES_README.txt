@@ -1,9 +1,7 @@
-v0.5.1 diagnostics changed files:
-- app/web/app.js
-- app/web/index.html
-- app/api/routes/monthly.py
+v0.5.2 changed files:
 - app/api/routes/monthly_expenses.py
-- app/api/routes/monthly_closings.py
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
+
+Purpose: hotfix missing imports for diagnostics logger/time measurement.
