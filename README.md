@@ -1,7 +1,13 @@
-# Contrast Finance v0.5.8
+# Contrast Finance v0.5.9
 
-Hotfix over v0.5.7. Use this build instead of v0.5.7 if login fails with:
+Hotfix for the legacy Jan-Apr 2026 dry-run page.
 
-`ReferenceError: Can't find variable: CF_PERF_LOGS_ENABLED`
+After deploy:
+1. Open `/legacy-events-2026`.
+2. Enter `LEGACY_MIGRATION_TOKEN`.
+3. Keep manager as `Тест`.
+4. Select the `.xlsx` report.
+5. The page should immediately show the selected file name and size.
+6. Press `Запустить dry-run`.
 
-The fix only declares the missing frontend flag and updates cache-bust.
+This version does not write anything to the database. It only reads the XLSX and displays detected events/budgets.
