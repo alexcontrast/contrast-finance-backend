@@ -1,13 +1,17 @@
-v0.5.6 — Remove remaining PERF logs
+v0.5.7 — Legacy events 2026 dry-run
 
-Изменённые файлы:
-- app/web/app.js
+Изменённые/добавленные файлы:
+- requirements.txt
+- app/main.py
+- app/api/routes/legacy_events_2026.py
+- app/services/legacy_events_2026_importer.py
 - app/web/index.html
-- app/api/routes/admin_dashboard.py
+- app/web/app.js
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Смысл:
-- убрать оставшиеся PERF-логи из консоли и Railway после диагностики;
-- сохранить оптимизации v0.5.3/v0.5.4 без изменения бизнес-логики.
+Назначение:
+- Добавлена отдельная страница /legacy-events-2026 и dry-run endpoint для проверки импорта исторических мероприятий из старого XLSX за Январь-Апрель 2026.
+- База в dry-run не меняется.
+- Оплаты/заявки/Telegram не импортируются.
