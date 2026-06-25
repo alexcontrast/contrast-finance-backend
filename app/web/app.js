@@ -9276,7 +9276,7 @@ async function handlePaymentRequestActionCompleted(updatedRequest, sourceElement
   await withLoading(loadDashboard, "Обновляем данные…");
 }
 
-async function openEventModal(eventId) {
+async function openEventModal(eventId, options = {}) {
   resetEventModalModes();
   // openEventModal_resetSharedChrome_v03715
 
@@ -9285,8 +9285,8 @@ async function openEventModal(eventId) {
   $("eventModalContent").innerHTML = `<div class="empty-state">Загрузка...</div>`;
 
   try {
-    const payload = await loadEventModalPayload(eventId);
-    renderEventModalPayload(payload, "all");
+    const payload = await loadEventModalPayload(eventId, { force: Boolean(options.force) });
+    renderEventModalPayload(payload, options.selectedRequestStatus || "all");
   } catch (error) {
     $("eventModalContent").innerHTML = `<div class="error">${error.message}</div>`;
   }
@@ -13510,7 +13510,9 @@ function attachManagerCreateWorkspaceActions() {
           await saveDraftItems(eventId);
           showToast("Изменения сохранены");
           await closeAdminEventEditMode(eventId, false);
-          await openEventModal(eventId);
+          if (state.eventModalPayloadById) delete state.eventModalPayloadById[String(eventId)];
+          state.currentEventModalPayload = null;
+          await openEventModal(eventId, { force: true });
           await loadDashboard();
         }, "Сохраняем изменения…");
       } catch (error) {
@@ -15178,7 +15180,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.12 loaded");
+  console.info("Contrast Finance web app v0.5.13 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

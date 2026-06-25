@@ -1,12 +1,17 @@
-# Contrast Finance 2.0 — v0.5.12
+# Contrast Finance v0.5.13
 
-Hotfix for the legacy 2026 import page.
+Точечный frontend hotfix поверх v0.5.12.
 
-Install the full archive if the `/legacy-events-2026` page still shows old v0.5.9/v0.5.10 text.
+## Что исправлено
 
-Expected page:
-- title: `Импорт мероприятий 2026`;
-- version text: `Страница v0.5.12`;
-- buttons: `Запустить dry-run`, `Импортировать в базу`, `Очистить отчёт`;
-- import creates editable draft events for manager `Тест`;
-- no payments, payment requests or Telegram messages are created.
+После сохранения изменений в админской модалке редактирования мероприятия данные сохранялись в базу, но открытая модалка могла показывать старые значения из frontend cache. Теперь после успешного сохранения модалка принудительно обновляет payload мероприятия из backend.
+
+## Затронутые файлы
+
+- `app/web/app.js`
+- `app/web/index.html`
+- `CHANGELOG.md`
+- `README.md`
+- `app/CHANGED_FILES_README.txt`
+
+Backend, Telegram-бот, импорт, расчёты и бизнес-логика не менялись.
