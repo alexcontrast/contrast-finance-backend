@@ -1,17 +1,15 @@
-# Contrast Finance v0.40.124
+# Contrast Finance 2.0 — v0.40.125
 
-Патч поверх v0.40.123.
+Patch: Mobile manager payments modal hard fix.
 
-## Что изменено
+Changed files:
+- `app/web/app.js`
+- `app/web/styles.css`
+- `app/web/index.html`
+- `CHANGELOG.md`
+- `README.md`
+- `app/CHANGED_FILES_README.txt`
 
-- Мобильный кабинет менеджера: модальное окно «Мои оплаты».
-- Шапка модалки выровнена: заголовок слева сверху, кнопка закрытия справа сверху.
-- Карточки оплат выровнены по одинаковой ширине окна.
-
-## Что не менялось
-
-- Backend.
-- Telegram-бот.
-- Админка.
-- Кабинеты главдепов.
-- Веб-версия менеджера.
+Notes:
+- The previous v0.40.124 rules did not win against old modal/card sizing and the global mobile `button { width: 100%; }` rule.
+- v0.40.125 adds a later injected override so the modal header and payment cards are forced into the intended mobile layout.

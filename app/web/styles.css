@@ -13581,3 +13581,14 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
     letter-spacing: -.015em !important;
   }
 }
+
+
+/* v0.40.125 — static mirror for mobile manager "Мои оплаты" modal. Final precedence is in app.js injected style. */
+@media (max-width: 920px) {
+  #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalCloseBtn,
+  #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head button.ghost {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: max-content !important;
+  }
+}

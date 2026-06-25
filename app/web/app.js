@@ -5384,6 +5384,197 @@ function injectManagerUxStyles() {
 
 injectManagerUxStyles();
 
+function injectManagerPaymentsModalFixV125() {
+  if (document.getElementById("managerPaymentsModalFixV125")) return;
+  const style = document.createElement("style");
+  style.id = "managerPaymentsModalFixV125";
+  style.textContent = `
+    /* v0.40.125 — hard mobile fix for manager "Мои оплаты" modal.
+       Reason: base mobile rule button{width:100%} made Close full-width and squeezed title to vertical letters;
+       older fit-content rules made payment groups/cards different widths. */
+    @media (max-width: 920px) {
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal {
+        width: calc(100vw - 18px) !important;
+        max-width: calc(100vw - 18px) !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        padding: 10px !important;
+        overflow-x: hidden !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: start !important;
+        gap: 8px !important;
+        margin: 0 0 10px !important;
+        padding: 0 !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head > div {
+        min-width: 0 !important;
+        width: auto !important;
+        max-width: 100% !important;
+        display: block !important;
+        text-align: left !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head .eyebrow {
+        display: none !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalTitle {
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        text-align: left !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        overflow-wrap: normal !important;
+        word-break: normal !important;
+        font-size: 20px !important;
+        line-height: 1.1 !important;
+        letter-spacing: -.03em !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalCloseBtn,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .modal-head button.ghost {
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: max-content !important;
+        min-height: 30px !important;
+        height: 30px !important;
+        padding: 4px 12px !important;
+        border-radius: 12px !important;
+        font-size: 12px !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+        justify-self: end !important;
+        align-self: start !important;
+        margin: 0 !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode #eventModalContent,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-modal,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .compact-payments-modal,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .grouped-payments-modal,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .compact-grouped-payments {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        overflow-x: hidden !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .compact-grouped-payments {
+        display: grid !important;
+        gap: 10px !important;
+        justify-items: stretch !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-group.compact,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-list.compact,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-row.compact {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-group.compact {
+        padding: 10px !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-title.compact {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        gap: 8px !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-position-title.compact span {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow-wrap: anywhere !important;
+        word-break: normal !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-event-requests-list.compact {
+        display: grid !important;
+        gap: 8px !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-row.compact {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        justify-content: stretch !important;
+        gap: 6px 8px !important;
+        padding: 9px !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-amount,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-method,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-status,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-amount,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-method {
+        grid-column: 1 / 2 !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-status {
+        grid-column: 2 / 3 !important;
+        grid-row: 1 / 2 !important;
+        justify-self: end !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action {
+        grid-column: 2 / 3 !important;
+        grid-row: 2 / 3 !important;
+        justify-self: end !important;
+      }
+
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-payment-request-action button,
+      #eventModalBackdrop.manager-payments-modal.manager-requests-modal-mode .manager-request-cancel-btn {
+        width: auto !important;
+        min-width: 86px !important;
+        max-width: 110px !important;
+        height: 30px !important;
+        min-height: 30px !important;
+        padding: 4px 10px !important;
+        border-radius: 12px !important;
+        font-size: 12px !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+injectManagerPaymentsModalFixV125();
+
 const state = {
   token: localStorage.getItem("cf_token") || "",
   bootstrap: null,

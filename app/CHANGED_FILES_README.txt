@@ -1,10 +1,11 @@
-v0.40.124 — Mobile manager payments modal alignment
+v0.40.125 — Mobile manager payments modal hard fix
 
-Изменённые файлы:
+Replace these files if applying changed-only:
 - app/web/app.js
+- app/web/styles.css
 - app/web/index.html
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Правки ограничены мобильной модалкой менеджера «Мои оплаты».
+Scope: mobile manager `Мои оплаты` modal only.

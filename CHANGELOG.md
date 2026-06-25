@@ -1,15 +1,9 @@
 # CHANGELOG
 
-## v0.40.124 — Mobile manager payments modal alignment
+## v0.40.125 — Mobile manager payments modal hard fix
 
-- Исправлена мобильная модалка менеджера «Мои оплаты»: заголовок выровнен в левый верхний угол, кнопка закрытия — в правый верхний.
-- Карточки оплат внутри модалки теперь занимают одинаковую ширину окна и не подстраиваются под содержимое.
-- Ограничено только мобильным кабинетом менеджера.
-- Cache-bust обновлён до `0.40.124`.
-
-## v0.40.123 — Desktop manager readable goal and compact department-head goal
-
-- В веб-кабинете менеджера строка `Цель + процент` стала чёрной и жирной.
-- Бейдж количества мероприятий затемнён для читаемости.
-- В веб-кабинете главдепа главное окно цели уменьшено по высоте за счёт меньших элементов.
-- Cache-bust обновлён до `0.40.123`.
+- Fixed mobile manager `Мои оплаты` modal header: the title stays in the top-left and no longer collapses vertically.
+- Fixed the `Закрыть` button: it is compact and pinned to the top-right, overriding the base mobile `button { width: 100%; }` rule.
+- Fixed payment groups/cards in `Мои оплаты`: all groups and request rows now use the full modal width instead of `fit-content`, so cards no longer have different widths.
+- Updated cache-bust to `0.40.125`.
+- Scope: mobile manager payments modal only. Backend, Telegram bot, admin and department-head cabinets were not changed.
