@@ -1,16 +1,11 @@
-# v0.5.18 — Legacy import cleanup, keep head percent override
+# CHANGELOG
 
-Base: v0.5.17.
+## v0.5.19 — Alembic stale migration cleanup start hotfix
 
-## What changed
-- Removed temporary legacy import web routes/pages after the January–April 2026 import was completed.
-- Removed legacy import services/scripts used only for one-time data transfer.
-- Removed `openpyxl` dependency because XLSX import page is no longer needed.
-- Kept the admin closing-month feature for manual department-head salary percent override.
-- Kept Alembic migration `0010_head_pct_overrides` because it is required for the new monthly override fields.
-- Updated web cache-bust to `0.5.18`.
-
-## Not changed
-- Existing imported events remain in the database.
-- Manager/admin/department-head dashboards are not functionally changed except the head percent override feature already introduced in v0.5.16/v0.5.17.
-- Telegram bot, Google Sheets export, payment requests and calculations were not changed.
+- Fixed Railway startup failure: `Multiple head revisions are present for given argument 'head'`.
+- Cause: a stale v0.5.16 migration file (`0010_monthly_closing_head_percent_overrides.py`) could remain in deployments made with changed-only patches, creating a second Alembic head alongside the valid short migration.
+- Added `scripts/start.sh` that removes the stale long migration file before running Alembic.
+- Changed `Procfile` to run `sh scripts/start.sh`.
+- Alembic now upgrades explicitly to `0010_head_pct_overrides`.
+- Kept the admin month-closing head department percent override feature.
+- No changes to Telegram bot, imports, payments, Google Sheets export, manager cabinet, or calculations beyond the existing head percent override.

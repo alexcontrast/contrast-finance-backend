@@ -1,12 +1,19 @@
-# Contrast Finance 2.0 — v0.5.18
+# Contrast Finance v0.5.19
 
-Clean build after completing the January–April 2026 historical events import.
+Hotfix for Alembic startup after the admin head department percent override patch.
 
-This version removes the temporary import pages and scripts, while keeping the admin feature for manually overriding department-head salary percent in the `Закрыть месяц` tab.
+Use the full archive for deploy. It removes the temporary legacy import code and includes a startup script that deletes the stale long Alembic migration file if it exists from an earlier changed-only deploy.
 
-## Important
-Use the full archive when deploying this version, so temporary import files are physically absent from the deployment.
+Expected startup path:
 
-## Checks
-- `node --check app/web/app.js`
-- `py_compile` for changed/affected backend files
+```bash
+sh scripts/start.sh
+```
+
+The script runs:
+
+```bash
+rm -f alembic/versions/0010_monthly_closing_head_percent_overrides.py
+alembic upgrade 0010_head_pct_overrides
+uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+```
