@@ -1,4 +1,4 @@
-v0.5.14 — Manager action dropdown viewport fix
+v0.5.15 — Manager internal estimate tax labels
 
 Changed files:
 - app/web/app.js
@@ -6,3 +6,5 @@ Changed files:
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
+
+No backend or calculation changes.

@@ -10939,7 +10939,7 @@ function updateInternalSummaryCards() {
     ["Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total)],
     ["Комиссия", formatMoney(summary.agency_commission_amount ?? 0)],
     [managerPercentLabel(state.currentManagerEvent, summary), formatMoney(summary.manager_salary)],
-    [`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary))],
+    [`Налоги ${summary.tax_rate_percent || 0}% К УПЛАТЕ`, formatMoney(internalTaxesNet(summary))],
     ["НДС", formatMoney(internalVatNet(summary))],
     ["Доход компании", formatMoney(summary.final_company_income)],
   ];
@@ -11044,8 +11044,8 @@ function refreshDraftVisibleCalculations(eventId) {
         ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
         ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}
         ${metric(managerPercentLabel(state.currentManagerEvent, summary), formatMoney(summary.manager_salary))}
-        ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
-        ${metric("НДС", formatMoney(internalVatNet(summary)))}
+        ${metric(`Налоги ${summary.tax_rate_percent || 0}% К УПЛАТЕ`, formatMoney(internalTaxesNet(summary)))}
+        ${metric("НДС К УПЛАТЕ", formatMoney(internalVatNet(summary)))}
         <div class="card metric income-metric">
           <div class="label">Доход компании</div>
           <div class="value">${formatMoney(summary.final_company_income)}</div>
@@ -11637,8 +11637,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
           ${metric("Оборот", formatMoney(summary.turnover_with_vat ?? summary.external_total))}
           ${metric("Комиссия", formatMoney(summary.agency_commission_amount ?? 0))}
           ${metric(managerPercentLabel(event, summary), formatMoney(summary.manager_salary))}
-          ${metric(`Налоги ${summary.tax_rate_percent || 0}%`, formatMoney(internalTaxesNet(summary)))}
-          ${metric("НДС", formatMoney(internalVatNet(summary)))}
+          ${metric(`Налоги ${summary.tax_rate_percent || 0}% К УПЛАТЕ`, formatMoney(internalTaxesNet(summary)))}
+          ${metric("НДС К УПЛАТЕ", formatMoney(internalVatNet(summary)))}
           <div class="card metric income-metric">
             <div class="label">Доход компании</div>
             <div class="value">${formatMoney(summary.final_company_income)}</div>
@@ -15293,7 +15293,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.14 loaded");
+  console.info("Contrast Finance web app v0.5.15 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
