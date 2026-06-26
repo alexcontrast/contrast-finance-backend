@@ -60,7 +60,9 @@ class AdminClosingRead(BaseModel):
     is_closed: bool
     status: str | None = None
     sanzhar_head_salary: Decimal | None = None
+    sanzhar_head_percent_override: Decimal | None = None
     raufal_head_salary: Decimal | None = None
+    raufal_head_percent_override: Decimal | None = None
     sanzhar_remaining_after_head: Decimal | None = None
     raufal_remaining_after_head: Decimal | None = None
     founders_total_amount: Decimal | None = None

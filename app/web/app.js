@@ -9831,17 +9831,23 @@ function renderClosingExpenseRows(expenses) {
 }
 
 function closingDepartmentCard(title, prefix, calc) {
+  const headPercent = calc?.[`${prefix}_head_percent`] || 0;
+  const headOverride = calc?.[`${prefix}_head_percent_override`];
+  const overrideLabel = headOverride !== null && headOverride !== undefined ? ` <em class="closing-head-override-label">ручн.</em>` : "";
   return `
     <article class="closing-department-card ${departmentClassByName(title)}">
       <div class="closing-card-head">
-        <h4>${title}</h4>
+        <div class="closing-head-title">
+          <h4>${title}</h4>
+          <button class="closing-icon-btn edit closing-head-percent-edit" data-edit-head-percent="${prefix}" data-head-title="${escapeHtml(title)}" type="button" title="Изменить процент ЗП главы">✎</button>
+        </div>
         <span>${formatPercentValue(calc?.[`${prefix}_completion_percent`] || 0)}%</span>
       </div>
       <div class="closing-lines">
         <div><span>План</span><b>${formatMoney(calc?.[`${prefix}_plan_amount`] || 0)}</b></div>
         <div><span>Факт</span><b>${formatMoney(calc?.[`${prefix}_income_amount`] || 0)}</b></div>
         <div><span>Расходы</span><b>${formatMoney(calc?.[`${prefix}_expense_amount`] || 0)}</b></div>
-        <div><span>Руководитель</span><b>${formatMoney(calc?.[`${prefix}_head_salary`] || 0)} · ${formatPercentValue(calc?.[`${prefix}_head_percent`] || 0)}%</b></div>
+        <div><span>Руководитель</span><b>${formatMoney(calc?.[`${prefix}_head_salary`] || 0)} · ${formatPercentValue(headPercent)}%${overrideLabel}</b></div>
         <div class="total"><span>Остаток</span><b>${formatMoney(calc?.[`${prefix}_remaining_after_head`] || 0)}</b></div>
       </div>
     </article>
@@ -14634,6 +14640,45 @@ async function reopenSelectedMonth() {
   }, "Открываем месяц…");
 }
 
+async function editClosingHeadPercent(prefix, title, button = null) {
+  const currentCalc = state.closingPanelData?.calc || null;
+  const currentPercent = currentCalc?.[`${prefix}_head_percent`] ?? "";
+  const currentOverride = currentCalc?.[`${prefix}_head_percent_override`];
+  const defaultValue = currentOverride !== null && currentOverride !== undefined ? currentOverride : currentPercent;
+  const label = title || (prefix === "sanzhar" ? "Санжар" : "Рауфаль");
+  const raw = window.prompt(
+    `Процент ЗП главдепа «${label}» за ${monthLabelRu(state.month)}.\nВведите нужный процент, например 15.\nОставьте пустым, чтобы вернуть авто-расчёт 10%/15%.`,
+    defaultValue !== null && defaultValue !== undefined ? formatPercentValue(defaultValue) : "",
+  );
+  if (raw === null) return;
+
+  const trimmed = String(raw).trim();
+  const payload = { department: prefix, percent: null };
+  if (trimmed !== "") {
+    const percent = normalizeNumberInput(trimmed);
+    if (percent < 0 || percent > 100) {
+      alert("Процент должен быть от 0 до 100.");
+      return;
+    }
+    payload.percent = String(Math.round(percent * 100) / 100);
+  }
+
+  try {
+    setButtonLoading(button, true, "…");
+    const updatedCalc = await api(`/monthly-closings/head-percent?month=${state.month}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    const current = state.closingPanelData && state.closingPanelData.month === state.month
+      ? state.closingPanelData
+      : { month: state.month, expenses: [], closing: closingFromDashboardCache(state.month) || null };
+    state.closingPanelData = { ...current, calc: updatedCalc, error: null, calcPending: false };
+    renderClosingPanelFromCache();
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
 async function recalculateSelectedMonthClosing() {
   const existingClosing = closingFromDashboardCache(state.month);
   const isClosed = existingClosing?.status === "closed";
@@ -14690,6 +14735,11 @@ function attachClosingPanelEvents() {
   });
   document.querySelectorAll("[data-delete-expense-id]").forEach((button) => {
     button.addEventListener("click", () => deleteClosingExpense(button.dataset.deleteExpenseId, button).catch((error) => alert(error.message)));
+  });
+  document.querySelectorAll("[data-edit-head-percent]").forEach((button) => {
+    button.addEventListener("click", () => {
+      editClosingHeadPercent(button.dataset.editHeadPercent, button.dataset.headTitle, button).catch((error) => alert(error.message));
+    });
   });
 
   setClosingCustomSplitVisibility();
@@ -15293,7 +15343,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.15 loaded");
+  console.info("Contrast Finance web app v0.5.16 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

@@ -1,10 +1,12 @@
-# Changelog
+# v0.5.16 — Admin closing head percent override
 
-## v0.5.15 — Manager internal estimate tax labels
+- Added manual monthly override for department-head salary percent in Admin → “Закрыть месяц”.
+- Added pencil controls next to departments in the closing calculation.
+- Added protected endpoint `PATCH /monthly-closings/head-percent`.
+- Added persistent monthly override columns for `Санжар` and `Рауфаль` department-head salary percent.
+- Closing calculation now uses manual override when set, otherwise keeps automatic 10% / 15% logic.
+- If a month is already closed, changing the override recalculates and updates the saved closing snapshot.
+- Added Alembic migration `0010_monthly_closing_head_percent_overrides`.
+- Updated cache-bust to `0.5.16`.
 
-- В кабинете менеджера во внутренней смете подписи карточек под таблицей уточнены:
-  - `Налоги ...% К УПЛАТЕ`
-  - `НДС К УПЛАТЕ`
-- Теперь явно видно, что эти суммы относятся к фактическому расходу по налогам и НДС после учёта вычетов.
-- Изменён только frontend: `app/web/app.js`, `app/web/index.html`.
-- Backend, импорт, Telegram-бот, заявки, расчёты и Google Sheets не менялись.
+No changes to Telegram bot, legacy import, payment requests, Google Sheets export, or manager calculations.

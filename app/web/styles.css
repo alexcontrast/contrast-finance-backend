@@ -13592,3 +13592,38 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
     max-width: max-content !important;
   }
 }
+
+/* v0.5.16: Admin closing head percent override controls */
+.closing-card-head .closing-head-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.closing-card-head .closing-head-title h4 {
+  margin: 0;
+}
+
+.closing-head-percent-edit {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 10px;
+  line-height: 1;
+}
+
+.closing-head-override-label {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.10);
+  color: #1d4ed8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}

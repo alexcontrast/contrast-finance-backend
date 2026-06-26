@@ -20,6 +20,7 @@ class MonthlyClosing(Base):
     sanzhar_expense_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     sanzhar_completion_percent: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False, default=Decimal("0.00"))
     sanzhar_head_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("10.00"))
+    sanzhar_head_percent_override: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     sanzhar_head_salary: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     sanzhar_remaining_after_head: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
 
@@ -28,6 +29,7 @@ class MonthlyClosing(Base):
     raufal_expense_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     raufal_completion_percent: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False, default=Decimal("0.00"))
     raufal_head_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("10.00"))
+    raufal_head_percent_override: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     raufal_head_salary: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
     raufal_remaining_after_head: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
 

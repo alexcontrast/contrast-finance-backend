@@ -15,7 +15,11 @@ from app.models.monthly_closing import MonthlyClosing
 from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_plan import MonthlyPlan
 from app.models.user import User
-from app.schemas.monthly_closing import MonthlyClosingCalculateRead, MonthlyClosingRead
+from app.schemas.monthly_closing import (
+    MonthlyClosingCalculateRead,
+    MonthlyClosingHeadPercentUpdate,
+    MonthlyClosingRead,
+)
 from app.services.auth import require_roles
 from app.services.event_calculator import calculate_event_summary_values, q
 
@@ -177,6 +181,35 @@ def head_salary(income: Decimal, expenses: Decimal, percent: Decimal) -> Decimal
     return q(base * percent / Decimal("100"))
 
 
+def head_percent_with_override(auto_percent: Decimal, override_percent: Decimal | None) -> Decimal:
+    return q(override_percent) if override_percent is not None else q(auto_percent)
+
+
+def apply_calculated_to_closing(closing: MonthlyClosing, calculated: MonthlyClosingCalculateRead) -> None:
+    closing.company_plan_amount = calculated.company_plan_amount
+
+    closing.sanzhar_plan_amount = calculated.sanzhar_plan_amount
+    closing.sanzhar_income_amount = calculated.sanzhar_income_amount
+    closing.sanzhar_expense_amount = calculated.sanzhar_expense_amount
+    closing.sanzhar_completion_percent = calculated.sanzhar_completion_percent
+    closing.sanzhar_head_percent = calculated.sanzhar_head_percent
+    closing.sanzhar_head_salary = calculated.sanzhar_head_salary
+    closing.sanzhar_remaining_after_head = calculated.sanzhar_remaining_after_head
+
+    closing.raufal_plan_amount = calculated.raufal_plan_amount
+    closing.raufal_income_amount = calculated.raufal_income_amount
+    closing.raufal_expense_amount = calculated.raufal_expense_amount
+    closing.raufal_completion_percent = calculated.raufal_completion_percent
+    closing.raufal_head_percent = calculated.raufal_head_percent
+    closing.raufal_head_salary = calculated.raufal_head_salary
+    closing.raufal_remaining_after_head = calculated.raufal_remaining_after_head
+
+    closing.founders_total_amount = calculated.founders_total_amount
+    closing.founder_one_amount = calculated.founder_one_amount
+    closing.founder_two_amount = calculated.founder_two_amount
+    closing.founder_three_amount = calculated.founder_three_amount
+
+
 def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateRead:
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
     if plan is None:
@@ -202,8 +235,12 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
     sanzhar_completion = completion_percent(sanzhar_income, sanzhar_plan)
     raufal_completion = completion_percent(raufal_income, raufal_plan)
 
-    sanzhar_head_pct = head_percent(sanzhar_income, sanzhar_plan)
-    raufal_head_pct = head_percent(raufal_income, raufal_plan)
+    closing_overrides = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
+    sanzhar_head_override = closing_overrides.sanzhar_head_percent_override if closing_overrides is not None else None
+    raufal_head_override = closing_overrides.raufal_head_percent_override if closing_overrides is not None else None
+
+    sanzhar_head_pct = head_percent_with_override(head_percent(sanzhar_income, sanzhar_plan), sanzhar_head_override)
+    raufal_head_pct = head_percent_with_override(head_percent(raufal_income, raufal_plan), raufal_head_override)
 
     sanzhar_head_salary = head_salary(sanzhar_income, sanzhar_expenses, sanzhar_head_pct)
     raufal_head_salary = head_salary(raufal_income, raufal_expenses, raufal_head_pct)
@@ -223,6 +260,7 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
         sanzhar_expense_amount=q(sanzhar_expenses),
         sanzhar_completion_percent=q(sanzhar_completion),
         sanzhar_head_percent=q(sanzhar_head_pct),
+        sanzhar_head_percent_override=q(sanzhar_head_override) if sanzhar_head_override is not None else None,
         sanzhar_head_salary=q(sanzhar_head_salary),
         sanzhar_remaining_after_head=q(sanzhar_remaining),
 
@@ -231,6 +269,7 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
         raufal_expense_amount=q(raufal_expenses),
         raufal_completion_percent=q(raufal_completion),
         raufal_head_percent=q(raufal_head_pct),
+        raufal_head_percent_override=q(raufal_head_override) if raufal_head_override is not None else None,
         raufal_head_salary=q(raufal_head_salary),
         raufal_remaining_after_head=q(raufal_remaining),
 
@@ -251,6 +290,49 @@ def calculate_monthly_closing(
 ):
     month_date = parse_month(month)
     return calculate_closing(db, month_date)
+
+
+@router.patch("/monthly-closings/head-percent", response_model=MonthlyClosingCalculateRead)
+def update_monthly_closing_head_percent(
+    month: str,
+    payload: MonthlyClosingHeadPercentUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
+    month_date = parse_month(month)
+    department = str(payload.department or "").lower().strip()
+    if department not in {"sanzhar", "raufal"}:
+        raise HTTPException(status_code=400, detail="department must be sanzhar or raufal")
+
+    percent = payload.percent
+    if percent is not None:
+        percent = q(percent)
+        if percent < 0 or percent > 100:
+            raise HTTPException(status_code=400, detail="percent must be between 0 and 100")
+
+    closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
+    now = datetime.utcnow()
+    if closing is None:
+        closing = MonthlyClosing(month=month_date, status="draft", created_at=now, updated_at=now)
+        db.add(closing)
+        db.flush()
+
+    if department == "sanzhar":
+        closing.sanzhar_head_percent_override = percent
+    else:
+        closing.raufal_head_percent_override = percent
+    closing.updated_at = now
+    db.add(closing)
+    db.flush()
+
+    calculated = calculate_closing(db, month_date)
+    if closing.status == "closed":
+        apply_calculated_to_closing(closing, calculated)
+        closing.updated_at = now
+        db.add(closing)
+
+    db.commit()
+    return calculated
 
 
 @router.post("/monthly-closings/close", response_model=MonthlyClosingRead)
@@ -276,28 +358,7 @@ def close_month(
         closing = existing
         closing.updated_at = now
 
-    closing.company_plan_amount = calculated.company_plan_amount
-
-    closing.sanzhar_plan_amount = calculated.sanzhar_plan_amount
-    closing.sanzhar_income_amount = calculated.sanzhar_income_amount
-    closing.sanzhar_expense_amount = calculated.sanzhar_expense_amount
-    closing.sanzhar_completion_percent = calculated.sanzhar_completion_percent
-    closing.sanzhar_head_percent = calculated.sanzhar_head_percent
-    closing.sanzhar_head_salary = calculated.sanzhar_head_salary
-    closing.sanzhar_remaining_after_head = calculated.sanzhar_remaining_after_head
-
-    closing.raufal_plan_amount = calculated.raufal_plan_amount
-    closing.raufal_income_amount = calculated.raufal_income_amount
-    closing.raufal_expense_amount = calculated.raufal_expense_amount
-    closing.raufal_completion_percent = calculated.raufal_completion_percent
-    closing.raufal_head_percent = calculated.raufal_head_percent
-    closing.raufal_head_salary = calculated.raufal_head_salary
-    closing.raufal_remaining_after_head = calculated.raufal_remaining_after_head
-
-    closing.founders_total_amount = calculated.founders_total_amount
-    closing.founder_one_amount = calculated.founder_one_amount
-    closing.founder_two_amount = calculated.founder_two_amount
-    closing.founder_three_amount = calculated.founder_three_amount
+    apply_calculated_to_closing(closing, calculated)
 
     closing.status = "closed"
     closing.closed_by_user_id = closed_by_user_id or current_admin.id
