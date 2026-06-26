@@ -1,18 +1,12 @@
-# Contrast Finance 2.0 — v0.5.17
+# Contrast Finance 2.0 — v0.5.18
 
-Hotfix build for the admin monthly closing head percent override feature.
+Clean build after completing the January–April 2026 historical events import.
 
-## Why this build exists
-v0.5.16 added the correct feature, but its Alembic migration revision id was longer than the production `alembic_version.version_num VARCHAR(32)` field:
+This version removes the temporary import pages and scripts, while keeping the admin feature for manually overriding department-head salary percent in the `Закрыть месяц` tab.
 
-`0010_monthly_closing_head_percent_overrides`
+## Important
+Use the full archive when deploying this version, so temporary import files are physically absent from the deployment.
 
-PostgreSQL rejected the version update with `StringDataRightTruncation`.
-
-## Fix
-- Migration file is renamed to `alembic/versions/0010_head_pct_overrides.py`.
-- Migration revision id is now `0010_head_pct_overrides`.
-- The column changes are idempotent.
-
-## Feature kept
-In admin web → `Закрыть месяц`, the department head salary percent can be manually overridden per month/department through the pencil button near the department name. Blank value resets to auto 10%/15%.
+## Checks
+- `node --check app/web/app.js`
+- `py_compile` for changed/affected backend files

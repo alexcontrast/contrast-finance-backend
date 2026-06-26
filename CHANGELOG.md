@@ -1,16 +1,16 @@
-# v0.5.17 — Admin head percent migration id hotfix
+# v0.5.18 — Legacy import cleanup, keep head percent override
 
-Hotfix over v0.5.16.
+Base: v0.5.17.
 
-## Fixed
-- Fixed Alembic startup failure caused by the too-long migration revision id `0010_monthly_closing_head_percent_overrides` not fitting into the existing `alembic_version.version_num VARCHAR(32)` column.
-- Replaced it with the short revision id `0010_head_pct_overrides`.
-- Made the migration idempotent with `ADD COLUMN IF NOT EXISTS` / `DROP COLUMN IF EXISTS` for extra safety after a failed deployment attempt.
-
-## Unchanged from v0.5.16
-- Admin web tab `Закрыть месяц`: head department salary percent can be overridden per month/department using the pencil near the department name.
-- Empty prompt value resets override to automatic 10% / 15% logic.
-- Existing closed month snapshot is recalculated after override changes.
+## What changed
+- Removed temporary legacy import web routes/pages after the January–April 2026 import was completed.
+- Removed legacy import services/scripts used only for one-time data transfer.
+- Removed `openpyxl` dependency because XLSX import page is no longer needed.
+- Kept the admin closing-month feature for manual department-head salary percent override.
+- Kept Alembic migration `0010_head_pct_overrides` because it is required for the new monthly override fields.
+- Updated web cache-bust to `0.5.18`.
 
 ## Not changed
-- Telegram bot, legacy import, manager cabinet, payment requests, Google Sheets export and business calculations outside this feature.
+- Existing imported events remain in the database.
+- Manager/admin/department-head dashboards are not functionally changed except the head percent override feature already introduced in v0.5.16/v0.5.17.
+- Telegram bot, Google Sheets export, payment requests and calculations were not changed.
