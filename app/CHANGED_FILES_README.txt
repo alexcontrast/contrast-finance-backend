@@ -1,13 +1,21 @@
-v0.5.17 — Admin head percent migration id hotfix
+v0.5.18 — Legacy import cleanup, keep head percent override
 
 Changed files:
-- alembic/versions/0010_head_pct_overrides.py
-- app/web/app.js
+- app/main.py
 - app/web/index.html
+- app/web/app.js
+- requirements.txt
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Reason:
-- v0.5.16 migration revision id was too long for alembic_version.version_num VARCHAR(32).
-- v0.5.17 uses short revision id 0010_head_pct_overrides and keeps the same feature.
+Deleted temporary import files from full archive:
+- app/api/routes/legacy_events_2026.py
+- app/api/routes/legacy_migration.py
+- app/services/legacy_events_2026_importer.py
+- app/services/legacy_importer.py
+
+Kept required DB migration for the head percent override:
+- alembic/versions/0010_head_pct_overrides.py
+
+Deploy full archive to physically remove deleted files. Changed-only is safe for runtime because routes are no longer imported, but full archive is cleaner.

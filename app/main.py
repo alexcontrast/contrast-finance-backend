@@ -22,8 +22,6 @@ from app.api.routes.web import router as web_router
 from app.api.routes.users_import import router as users_import_router
 from app.api.routes.users_manage import router as users_manage_router
 from app.api.routes.health import router as health_router
-from app.api.routes.legacy_migration import router as legacy_migration_router
-from app.api.routes.legacy_events_2026 import router as legacy_events_2026_router
 from app.api.routes.google_sheets_export import router as google_sheets_export_router
 from app.core.config import get_settings
 from app.services.google_sheets_daily_export import (
@@ -50,8 +48,6 @@ async def stop_background_jobs():
     await stop_daily_google_sheets_export_scheduler()
 
 app.include_router(health_router)
-app.include_router(legacy_migration_router)
-app.include_router(legacy_events_2026_router)
 app.include_router(google_sheets_export_router)
 app.include_router(departments_router)
 app.include_router(events_router)
