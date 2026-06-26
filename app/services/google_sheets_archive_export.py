@@ -472,6 +472,10 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
         department_head_percent(raufal_income, department_plan_amount(plan, "Рауфаль")),
     )
     department_heads_salary = q0(sanzhar_head_salary + raufal_head_salary)
+    department_head_salary_map = {
+        "Санжар": decimal_to_int(sanzhar_head_salary),
+        "Рауфаль": decimal_to_int(raufal_head_salary),
+    }
     expenses_with_heads = q0(base_expenses + department_heads_salary)
 
     monthly_totals["base_expenses"] = decimal_to_int(base_expenses)
@@ -506,6 +510,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
         "manager_salary": manager_salary,
         "department_income": department_income,
         "department_plans": department_plans,
+        "department_head_salary": department_head_salary_map,
     }
 
 
@@ -537,15 +542,19 @@ def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
     for department_name in sorted(department_names):
         income_by_month = {}
         plan_by_month = {}
+        head_salary_by_month = {}
         for key, section in zip(month_keys, month_sections):
             income_by_month[key] = int(section.get("department_income", {}).get(department_name, 0))
             plan_by_month[key] = int(section.get("department_plans", {}).get(department_name, 0))
+            head_salary_by_month[key] = int(section.get("department_head_salary", {}).get(department_name, 0))
         department_rows.append({
             "department": department_name,
             "income_by_month": income_by_month,
             "plan_by_month": plan_by_month,
+            "head_salary_by_month": head_salary_by_month,
             "income_total": sum(income_by_month.values()),
             "plan_total": sum(plan_by_month.values()),
+            "head_salary_total": sum(head_salary_by_month.values()),
         })
 
     manager_names: set[str] = set()

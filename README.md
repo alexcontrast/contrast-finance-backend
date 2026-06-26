@@ -1,6 +1,23 @@
-# Contrast Finance v0.5.20
+# Contrast Finance v0.5.21
 
-This patch modernizes the admin Google archive tab into a yearly `Статистика` tab.
+Патч визуальной и структурной доработки админской вкладки `Статистика`.
 
-Recommended deployment: use `contrast-finance-v0.5.20_CHANGED_ONLY.zip`.
-No files need to be deleted for this patch.
+## Что проверять после деплоя
+
+1. Открыть админку → вкладка `Статистика`.
+2. Верхний блок должен показывать только компактную подпись `Годовая статистика`, выбор года и кнопки.
+3. Общие KPI должны быть в 2 ряда карточек.
+4. Блок месяцев должен называться `Динамика года` и содержать колонки `Оборот / План / Доход` + `ИТОГО`.
+5. Таблица отделов должна быть в 6 строк со столбцами месяцев + `ИТОГО`.
+6. Таблица менеджеров должна показывать `доход (ЗП)` по месяцам + `ИТОГО`.
+7. Выполненные планы должны подсвечиваться зелёным.
+
+## Изменённые файлы
+
+- `app/web/app.js`
+- `app/web/styles.css`
+- `app/web/index.html`
+- `app/services/google_sheets_archive_export.py`
+- `CHANGELOG.md`
+- `README.md`
+- `app/CHANGED_FILES_README.txt`

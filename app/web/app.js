@@ -10040,27 +10040,15 @@ function selectedGoogleExportYearValue() {
 
 function renderGoogleSheetsExportPanel(data) {
   const year = selectedYearValue();
-  const eventsCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
-  const requestsCount = (data.payment_requests || []).length;
   return `
     <section class="google-export-panel statistics-panel">
-      <div class="google-export-card statistics-export-card">
-        <div class="google-export-head">
-          <div>
-            <div class="overview-label">Статистика</div>
-            <h3>Годовая статистика</h3>
-            <p class="muted">Итоги по компании, отделам и менеджерам за выбранный год.</p>
-          </div>
-          <label class="google-export-year-control">
+      <div class="google-export-card statistics-export-card statistics-export-card-compact">
+        <div class="statistics-top-label">Годовая статистика</div>
+        <div class="google-export-actions statistics-only-actions">
+          <label class="google-export-year-control statistics-year-inline">
             <span>Год</span>
             <select id="googleExportYearSelect">${googleExportYearOptions(year)}</select>
           </label>
-        </div>
-        <div class="google-export-stats">
-          <span>${eventsCount} мероприятий в текущем месяце</span>
-          <span>${requestsCount} заявок в текущем месяце</span>
-        </div>
-        <div class="google-export-actions">
           <button id="googleExportMonthBtn" type="button" class="secondary">Выгрузить месяц</button>
           <button id="googleExportYearBtn" type="button">Выгрузить год</button>
           <button id="statisticsRefreshBtn" type="button" class="secondary">Обновить статистику</button>
@@ -10085,6 +10073,26 @@ function statPercent(value, plan) {
   return `${Math.round((income / target) * 100)}%`;
 }
 
+function statNumber(value) {
+  return formatMoney(Number(value || 0));
+}
+
+function statPlanDone(value, plan) {
+  const income = Number(value || 0);
+  const target = Number(plan || 0);
+  return target > 0 && income >= target;
+}
+
+function statCellClass(value, plan, extra = "") {
+  return `${extra} ${statPlanDone(value, plan) ? " statistics-done-cell" : ""}`.trim();
+}
+
+function statIncomeSalaryCell(income, salary, plan, extraClass = "") {
+  const value = `${statMoney(income)}${Number(salary || 0) ? ` (${statMoney(salary)})` : ""}`;
+  const cls = statCellClass(income, plan, extraClass);
+  return `<td${cls ? ` class="${cls}"` : ""}>${escapeHtml(value)}</td>`;
+}
+
 function annualMonthLabel(monthKey) {
   const month = String(monthKey || "").slice(5, 7);
   const found = MONTHS_RU.find(([value]) => value === month);
@@ -10097,64 +10105,98 @@ function renderAnnualStatisticsTables(stats) {
   const months = stats.months || [];
   const departmentRows = stats.department_rows || [];
   const managerRows = stats.manager_rows || [];
+  const monthHeaders = (months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("");
 
-  const companyCards = [
-    ["План", statMoney(totals.plan)],
+  const companyTopCards = [
     ["Оборот", statMoney(totals.turnover)],
-    ["Доход компании", statMoney(totals.company_income)],
-    ["Чистый доход", statMoney(totals.clean_income ?? totals.income_after_expenses)],
-    ["Расходы", statMoney(totals.expenses)],
+    ["Доход", statMoney(totals.company_income)],
+    ["Расход", statMoney(totals.expenses)],
+    ["Чистый доход", statMoney(totals.clean_income ?? totals.income_after_expenses), "statistics-kpi-card-accent"],
+  ];
+  const companyBottomCards = [
+    ["Мероприятия", statNumber(totals.events_count), "statistics-kpi-card-accent-soft"],
     ["НДС к уплате", statMoney(totals.vat_to_pay)],
     ["Налоги к уплате", statMoney(totals.tax_to_pay)],
-    ["Мероприятия", formatMoney(totals.events_count)],
   ];
 
-  const monthRows = months.map((month) => `
-    <tr>
-      <td><strong>${escapeHtml(month.title || annualMonthLabel(month.month))}</strong></td>
-      <td>${statMoney(month.plan)}</td>
-      <td>${statMoney(month.turnover)}</td>
-      <td>${statMoney(month.company_income)}</td>
-      <td>${statMoney(month.expenses)}</td>
-      <td>${statMoney(month.clean_income ?? month.income_after_expenses)}</td>
-      <td>${statMoney(month.vat_to_pay)}</td>
-      <td>${statMoney(month.tax_to_pay)}</td>
-      <td>${formatMoney(month.events_count)}</td>
+  const monthRows = months.map((month) => {
+    const done = statPlanDone(month.company_income, month.plan);
+    return `
+      <tr>
+        <td><strong>${escapeHtml(month.title || annualMonthLabel(month.month))}</strong></td>
+        <td>${statMoney(month.turnover)}</td>
+        <td>${statMoney(month.plan)}</td>
+        <td${done ? ` class="statistics-done-cell"` : ""}>${statMoney(month.company_income)}</td>
+      </tr>
+    `;
+  }).join("");
+  const monthTotalDone = statPlanDone(totals.company_income, totals.plan);
+  const monthTotalRow = `
+    <tr class="statistics-total-row">
+      <td><strong>ИТОГО</strong></td>
+      <td>${statMoney(totals.turnover)}</td>
+      <td>${statMoney(totals.plan)}</td>
+      <td${monthTotalDone ? ` class="statistics-done-cell"` : ""}>${statMoney(totals.company_income)}</td>
     </tr>
-  `).join("");
+  `;
 
-  const departmentTableRows = departmentRows.map((row) => `
+  const departmentsByName = Object.fromEntries(departmentRows.map((row) => [String(row.department || ""), row]));
+  const departmentOrder = ["Санжар", "Рауфаль"];
+  const departmentStatRows = departmentOrder.flatMap((name) => {
+    const row = departmentsByName[name] || { department: name, income_by_month: {}, plan_by_month: {}, head_salary_by_month: {} };
+    const incomeByMonth = row.income_by_month || {};
+    const planByMonth = row.plan_by_month || {};
+    const salaryByMonth = row.head_salary_by_month || {};
+    const planTotal = Number(row.plan_total || Object.values(planByMonth).reduce((sum, value) => sum + Number(value || 0), 0));
+    const incomeTotal = Number(row.income_total || Object.values(incomeByMonth).reduce((sum, value) => sum + Number(value || 0), 0));
+    const salaryTotal = Number(row.head_salary_total || Object.values(salaryByMonth).reduce((sum, value) => sum + Number(value || 0), 0));
+    return [
+      {
+        label: `${name} план`,
+        values: months.map((month) => ({ text: statMoney(planByMonth[month.month]), value: planByMonth[month.month], plan: null })),
+        total: statMoney(planTotal),
+      },
+      {
+        label: `${name} доход`,
+        values: months.map((month) => ({ text: statMoney(incomeByMonth[month.month]), value: incomeByMonth[month.month], plan: planByMonth[month.month] })),
+        total: statMoney(incomeTotal),
+        totalDone: statPlanDone(incomeTotal, planTotal),
+      },
+      {
+        label: `${name} ЗП`,
+        values: months.map((month) => ({ text: statMoney(salaryByMonth[month.month]), value: salaryByMonth[month.month], plan: null })),
+        total: statMoney(salaryTotal),
+      },
+    ];
+  }).map((row) => `
     <tr>
-      <td><strong>${escapeHtml(row.department || "—")}</strong></td>
-      <td>${statMoney(row.income_total)}</td>
-      <td>${statMoney(row.plan_total)}</td>
-      <td><span class="statistics-percent-badge">${statPercent(row.income_total, row.plan_total)}</span></td>
-      ${(months || []).map((month) => `<td>${statMoney((row.income_by_month || {})[month.month])}</td>`).join("")}
+      <td><strong>${escapeHtml(row.label)}</strong></td>
+      ${row.values.map((cell) => `<td${statPlanDone(cell.value, cell.plan) ? ` class="statistics-done-cell"` : ""}>${escapeHtml(cell.text)}</td>`).join("")}
+      <td${row.totalDone ? ` class="statistics-done-cell"` : ""}><strong>${escapeHtml(row.total)}</strong></td>
     </tr>
   `).join("");
 
   const managerTableRows = managerRows.map((row) => `
     <tr>
       <td><strong>${escapeHtml(row.manager || "—")}</strong></td>
-      <td>${statMoney(row.income_total)}</td>
-      <td>${statMoney(row.salary_total)}</td>
-      <td>${statMoney(row.plan_total)}</td>
-      <td><span class="statistics-percent-badge">${statPercent(row.income_total, row.plan_total)}</span></td>
-      ${(months || []).map((month) => `<td>${statMoney((row.income_by_month || {})[month.month])}</td>`).join("")}
+      ${(months || []).map((month) => statIncomeSalaryCell((row.income_by_month || {})[month.month], (row.salary_by_month || {})[month.month], (row.plan_by_month || {})[month.month])).join("")}
+      ${statIncomeSalaryCell(row.income_total, row.salary_total, row.plan_total, "statistics-total-cell")}
     </tr>
   `).join("");
 
   return `
-    <div class="statistics-section">
-      <div class="statistics-section-head">
-        <div>
-          <div class="overview-label">Компания</div>
-          <h3>Итоги ${escapeHtml(stats.year || "")}</h3>
-        </div>
+    <div class="statistics-section statistics-company-section">
+      <div class="statistics-kpi-grid statistics-kpi-grid-four">
+        ${companyTopCards.map(([label, value, cls]) => `
+          <div class="statistics-kpi-card ${cls || ""}">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `).join("")}
       </div>
-      <div class="statistics-kpi-grid">
-        ${companyCards.map(([label, value]) => `
-          <div class="statistics-kpi-card">
+      <div class="statistics-kpi-grid statistics-kpi-grid-three">
+        ${companyBottomCards.map(([label, value, cls]) => `
+          <div class="statistics-kpi-card ${cls || ""}">
             <span>${escapeHtml(label)}</span>
             <strong>${escapeHtml(value)}</strong>
           </div>
@@ -10163,72 +10205,59 @@ function renderAnnualStatisticsTables(stats) {
     </div>
 
     <div class="statistics-section">
-      <div class="statistics-section-head">
-        <div>
-          <div class="overview-label">Месяцы</div>
-          <h3>Динамика по году</h3>
-        </div>
+      <div class="statistics-section-head statistics-section-head-compact">
+        <div class="overview-label">Динамика года</div>
       </div>
-      <div class="statistics-table-wrap">
-        <table class="statistics-table">
+      <div class="statistics-table-wrap statistics-table-no-scroll">
+        <table class="statistics-table statistics-dynamics-table">
           <thead>
             <tr>
               <th>Месяц</th>
-              <th>План</th>
               <th>Оборот</th>
+              <th>План</th>
               <th>Доход</th>
-              <th>Расходы</th>
-              <th>Чистый доход</th>
-              <th>НДС</th>
-              <th>Налоги</th>
-              <th>Мер.</th>
             </tr>
           </thead>
-          <tbody>${monthRows}</tbody>
+          <tbody>${monthRows}${monthTotalRow}</tbody>
         </table>
       </div>
     </div>
 
     <div class="statistics-section">
-      <div class="statistics-section-head">
+      <div class="statistics-section-head statistics-section-head-compact">
         <div>
           <div class="overview-label">Отделы</div>
           <h3>Доходы и планы отделов</h3>
         </div>
       </div>
-      <div class="statistics-table-wrap">
-        <table class="statistics-table statistics-wide-table">
+      <div class="statistics-table-wrap statistics-table-no-scroll">
+        <table class="statistics-table statistics-annual-grid-table statistics-department-grid-table">
           <thead>
             <tr>
-              <th>Отдел</th>
-              <th>Доход</th>
-              <th>План</th>
-              <th>%</th>
-              ${(months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("")}
+              <th>Показатель</th>
+              ${monthHeaders}
+              <th>ИТОГО</th>
             </tr>
           </thead>
-          <tbody>${departmentTableRows}</tbody>
+          <tbody>${departmentStatRows}</tbody>
         </table>
       </div>
     </div>
 
     <div class="statistics-section">
-      <div class="statistics-section-head">
+      <div class="statistics-section-head statistics-section-head-compact">
         <div>
           <div class="overview-label">Менеджеры</div>
           <h3>Доходы менеджеров</h3>
         </div>
       </div>
-      <div class="statistics-table-wrap">
-        <table class="statistics-table statistics-wide-table">
+      <div class="statistics-table-wrap statistics-table-no-scroll">
+        <table class="statistics-table statistics-annual-grid-table statistics-manager-grid-table">
           <thead>
             <tr>
               <th>Менеджер</th>
-              <th>Доход</th>
-              <th>ЗП</th>
-              <th>План</th>
-              <th>%</th>
-              ${(months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("")}
+              ${monthHeaders}
+              <th>ИТОГО</th>
             </tr>
           </thead>
           <tbody>${managerTableRows}</tbody>
@@ -15533,7 +15562,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.20 loaded");
+  console.info("Contrast Finance web app v0.5.21 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

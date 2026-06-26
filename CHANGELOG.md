@@ -1,24 +1,22 @@
-# v0.5.20 — Admin Statistics tab
+# CHANGELOG
 
-Base: v0.5.19.
+## v0.5.21 — Admin annual statistics layout polish
 
-## Changes
-- Renamed admin tab `Google архив` to `Статистика`.
-- Moved `Статистика` tab to the right side of the admin tabs row.
-- Kept archive actions at the top: `Выгрузить месяц` and `Выгрузить год`.
-- Removed visible dry-run/check buttons from this tab.
-- Added annual statistics view inside admin UI:
-  - company yearly KPI cards;
-  - monthly company dynamics table;
-  - department income/plan table;
-  - manager income/salary/plan table.
-- Added admin endpoint `GET /google-sheets/year-statistics?year=YYYY`, reusing the same annual statistics builder as the Google sheet `Годовая статистика`.
-- Updated cache-bust to `0.5.20`.
+- Доработана админская вкладка `Статистика` по новой структуре годовой статистики.
+- Верхний блок упрощён: зелёная подпись `Годовая статистика`, кнопки выгрузки/обновления без лишнего описательного текста и плашек текущего месяца.
+- Общие показатели компании перестроены в 2 ряда карточек:
+  - `Оборот`, `Доход`, `Расход`, `Чистый доход`;
+  - `Мероприятия`, `НДС к уплате`, `Налоги к уплате`.
+- Блок месяцев переименован в `Динамика года`; таблица сокращена до `Оборот / План / Доход` и строки `ИТОГО`.
+- В `Динамике года` доход месяца подсвечивается системным зелёным, если выполнен план.
+- Таблица отделов перестроена в 6 строк: `Санжар план`, `Санжар доход`, `Санжар ЗП`, `Рауфаль план`, `Рауфаль доход`, `Рауфаль ЗП`; добавлен столбец `ИТОГО`.
+- Таблица менеджеров теперь показывает по месяцам `доход (ЗП)` и столбец `ИТОГО`; выполненный план подсвечивается зелёным.
+- Таблицы ужаты по шрифтам/отступам и рассчитаны на отображение без горизонтального скролла в веб-админке.
+- В годовой statistics payload добавлена помесячная ЗП главдепов по отделам (`head_salary_by_month`, `head_salary_total`) для отображения в админке.
 
-## Not changed
-- Google Sheets export logic.
-- Telegram bot.
-- Payment requests.
-- Manager and department head cabinets.
-- Monthly closing calculations and head percent override logic.
-- Database schema / Alembic migrations.
+Не менялось:
+- Telegram-бот;
+- импорт исторических мероприятий;
+- заявки и оплаты;
+- закрытие месяца по логике;
+- Google Sheets export логика по смыслу.
