@@ -1,26 +1,18 @@
-# Contrast Finance 2.0 — v0.5.16
+# Contrast Finance 2.0 — v0.5.17
 
-Patch over v0.5.15.
+Hotfix build for the admin monthly closing head percent override feature.
 
-Purpose: allow admin to manually set department-head salary percent for a specific month in the desktop Admin closing tab.
+## Why this build exists
+v0.5.16 added the correct feature, but its Alembic migration revision id was longer than the production `alembic_version.version_num VARCHAR(32)` field:
 
-## Changed
+`0010_monthly_closing_head_percent_overrides`
 
-- Admin → “Закрыть месяц”: pencil button next to each department in the calculation block.
-- Admin can enter a custom head salary percent for the selected month.
-- Empty value resets the department back to automatic 10% / 15% calculation.
-- Overrides are stored per month and per department.
-- Closing and recalculation use the override.
-- Closed month snapshot updates if the override is changed after closing.
+PostgreSQL rejected the version update with `StringDataRightTruncation`.
 
-## Changed files
+## Fix
+- Migration file is renamed to `alembic/versions/0010_head_pct_overrides.py`.
+- Migration revision id is now `0010_head_pct_overrides`.
+- The column changes are idempotent.
 
-- `app/api/routes/monthly_closings.py`
-- `app/models/monthly_closing.py`
-- `app/schemas/monthly_closing.py`
-- `app/schemas/admin_dashboard.py`
-- `app/api/routes/admin_dashboard.py`
-- `app/web/app.js`
-- `app/web/styles.css`
-- `app/web/index.html`
-- `alembic/versions/0010_monthly_closing_head_percent_overrides.py`
+## Feature kept
+In admin web → `Закрыть месяц`, the department head salary percent can be manually overridden per month/department through the pencil button near the department name. Blank value resets to auto 10%/15%.

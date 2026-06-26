@@ -1,12 +1,16 @@
-# v0.5.16 — Admin closing head percent override
+# v0.5.17 — Admin head percent migration id hotfix
 
-- Added manual monthly override for department-head salary percent in Admin → “Закрыть месяц”.
-- Added pencil controls next to departments in the closing calculation.
-- Added protected endpoint `PATCH /monthly-closings/head-percent`.
-- Added persistent monthly override columns for `Санжар` and `Рауфаль` department-head salary percent.
-- Closing calculation now uses manual override when set, otherwise keeps automatic 10% / 15% logic.
-- If a month is already closed, changing the override recalculates and updates the saved closing snapshot.
-- Added Alembic migration `0010_monthly_closing_head_percent_overrides`.
-- Updated cache-bust to `0.5.16`.
+Hotfix over v0.5.16.
 
-No changes to Telegram bot, legacy import, payment requests, Google Sheets export, or manager calculations.
+## Fixed
+- Fixed Alembic startup failure caused by the too-long migration revision id `0010_monthly_closing_head_percent_overrides` not fitting into the existing `alembic_version.version_num VARCHAR(32)` column.
+- Replaced it with the short revision id `0010_head_pct_overrides`.
+- Made the migration idempotent with `ADD COLUMN IF NOT EXISTS` / `DROP COLUMN IF EXISTS` for extra safety after a failed deployment attempt.
+
+## Unchanged from v0.5.16
+- Admin web tab `Закрыть месяц`: head department salary percent can be overridden per month/department using the pencil near the department name.
+- Empty prompt value resets override to automatic 10% / 15% logic.
+- Existing closed month snapshot is recalculated after override changes.
+
+## Not changed
+- Telegram bot, legacy import, manager cabinet, payment requests, Google Sheets export and business calculations outside this feature.
