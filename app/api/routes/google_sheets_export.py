@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -7,7 +7,9 @@ from app.db.session import get_db
 from app.models.user import User
 from app.services.auth import require_roles
 from app.services.google_sheets_archive_export import (
+    build_annual_stats_sheet,
     build_export_payload,
+    build_month_export_sections,
     build_year_export_payload,
     build_year_export_payloads,
     payload_updated_sheet_names,
@@ -43,6 +45,22 @@ def export_month_to_google_sheets(
             "updated_sheets": payload_updated_sheet_names(payload),
         }
     return post_to_apps_script(payload)
+
+
+@router.get("/google-sheets/year-statistics")
+def get_google_sheets_year_statistics(
+    year: int | None = Query(None, description="Year in YYYY format; defaults to selected/current year"),
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
+    export_year = int(year or datetime.now().year)
+    month_sections = [build_month_export_sections(db, date(export_year, month_num, 1)) for month_num in range(1, 13)]
+    annual_stats = build_annual_stats_sheet(export_year, month_sections)
+    return {
+        "ok": True,
+        "year": export_year,
+        "statistics": annual_stats,
+    }
 
 
 @router.post("/google-sheets/export-year")

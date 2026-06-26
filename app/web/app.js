@@ -5708,6 +5708,7 @@ const state = {
   monthYearSelectorsAttached: false,
   monthlyPlans: [],
   monthlyPlansYear: null,
+  annualStatisticsCacheByYear: {},
   closingPanelData: null,
   closingEditingExpenseId: null,
   closingCalcRefreshTimer: null,
@@ -7284,12 +7285,12 @@ function renderAdminTabs() {
     ["requests_archive", "Архив заявок"],
     ["plans", "Задать планы"],
     ["closing", "Закрыть месяц"],
-    ["google_export", "Google архив"],
+    ["google_export", "Статистика"],
   ];
 
   $("adminTabs").classList.remove("hidden");
   $("adminTabs").innerHTML = tabs.map(([key, label]) => `
-    <button class="tab-btn ${state.activeAdminTab === key ? "active" : ""}" data-admin-tab="${key}">
+    <button class="tab-btn ${key === "google_export" ? "admin-statistics-tab" : ""} ${state.activeAdminTab === key ? "active" : ""}" data-admin-tab="${key}">
       ${label}
     </button>
   `).join("");
@@ -9994,6 +9995,8 @@ function renderAdminEmptyDashboard(month, error = null) {
     $("dashboardContent").innerHTML = renderPlansSkeleton(data);
   } else if (state.activeAdminTab === "closing") {
     $("dashboardContent").innerHTML = renderClosingSkeleton(data);
+  } else if (state.activeAdminTab === "google_export") {
+    $("dashboardContent").innerHTML = renderGoogleSheetsExportPanel(data);
   } else {
     $("dashboardContent").innerHTML = `
       <div class="empty-state">
@@ -10040,38 +10043,223 @@ function renderGoogleSheetsExportPanel(data) {
   const eventsCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
   const requestsCount = (data.payment_requests || []).length;
   return `
-    <section class="google-export-panel">
-      <div class="google-export-card">
+    <section class="google-export-panel statistics-panel">
+      <div class="google-export-card statistics-export-card">
         <div class="google-export-head">
           <div>
-            <div class="overview-label">Google Sheets архив</div>
-            <h3>Выгрузка архива</h3>
-            <p class="muted">Автоэкспорт запускается каждый день в 00:00.</p>
+            <div class="overview-label">Статистика</div>
+            <h3>Годовая статистика</h3>
+            <p class="muted">Итоги по компании, отделам и менеджерам за выбранный год.</p>
           </div>
           <label class="google-export-year-control">
-            <span>Год архива</span>
+            <span>Год</span>
             <select id="googleExportYearSelect">${googleExportYearOptions(year)}</select>
           </label>
         </div>
         <div class="google-export-stats">
-          <span>${eventsCount} мероприятий</span>
-          <span>${requestsCount} заявок</span>
+          <span>${eventsCount} мероприятий в текущем месяце</span>
+          <span>${requestsCount} заявок в текущем месяце</span>
         </div>
         <div class="google-export-actions">
-          <div class="google-export-action-row google-export-action-row-month">
-            <button id="googleExportDryRunBtn" type="button" class="secondary">Проверить месяц</button>
-            <button id="googleExportMonthBtn" type="button" class="secondary">Выгрузить месяц</button>
-          </div>
-          <div class="google-export-action-row google-export-action-row-year">
-            <button id="googleExportYearDryRunBtn" type="button" class="secondary">Проверить год</button>
-            <button id="googleExportYearBtn" type="button">Выгрузить весь год</button>
-          </div>
+          <button id="googleExportMonthBtn" type="button" class="secondary">Выгрузить месяц</button>
+          <button id="googleExportYearBtn" type="button">Выгрузить год</button>
+          <button id="statisticsRefreshBtn" type="button" class="secondary">Обновить статистику</button>
         </div>
         <div id="googleExportStatus" class="google-export-status muted"></div>
+      </div>
+      <div id="annualStatisticsPanel" class="annual-statistics-panel">
+        <div class="statistics-loading-card">Загружаю годовую статистику…</div>
       </div>
     </section>
   `;
 }
+
+function statMoney(value) {
+  return `${formatMoney(value)} ₸`;
+}
+
+function statPercent(value, plan) {
+  const income = Number(value || 0);
+  const target = Number(plan || 0);
+  if (!target) return "—";
+  return `${Math.round((income / target) * 100)}%`;
+}
+
+function annualMonthLabel(monthKey) {
+  const month = String(monthKey || "").slice(5, 7);
+  const found = MONTHS_RU.find(([value]) => value === month);
+  return found ? found[1].slice(0, 3) : monthKey;
+}
+
+function renderAnnualStatisticsTables(stats) {
+  if (!stats) return `<div class="statistics-loading-card">Статистика пока не загружена.</div>`;
+  const totals = stats.totals || {};
+  const months = stats.months || [];
+  const departmentRows = stats.department_rows || [];
+  const managerRows = stats.manager_rows || [];
+
+  const companyCards = [
+    ["План", statMoney(totals.plan)],
+    ["Оборот", statMoney(totals.turnover)],
+    ["Доход компании", statMoney(totals.company_income)],
+    ["Чистый доход", statMoney(totals.clean_income ?? totals.income_after_expenses)],
+    ["Расходы", statMoney(totals.expenses)],
+    ["НДС к уплате", statMoney(totals.vat_to_pay)],
+    ["Налоги к уплате", statMoney(totals.tax_to_pay)],
+    ["Мероприятия", formatMoney(totals.events_count)],
+  ];
+
+  const monthRows = months.map((month) => `
+    <tr>
+      <td><strong>${escapeHtml(month.title || annualMonthLabel(month.month))}</strong></td>
+      <td>${statMoney(month.plan)}</td>
+      <td>${statMoney(month.turnover)}</td>
+      <td>${statMoney(month.company_income)}</td>
+      <td>${statMoney(month.expenses)}</td>
+      <td>${statMoney(month.clean_income ?? month.income_after_expenses)}</td>
+      <td>${statMoney(month.vat_to_pay)}</td>
+      <td>${statMoney(month.tax_to_pay)}</td>
+      <td>${formatMoney(month.events_count)}</td>
+    </tr>
+  `).join("");
+
+  const departmentTableRows = departmentRows.map((row) => `
+    <tr>
+      <td><strong>${escapeHtml(row.department || "—")}</strong></td>
+      <td>${statMoney(row.income_total)}</td>
+      <td>${statMoney(row.plan_total)}</td>
+      <td><span class="statistics-percent-badge">${statPercent(row.income_total, row.plan_total)}</span></td>
+      ${(months || []).map((month) => `<td>${statMoney((row.income_by_month || {})[month.month])}</td>`).join("")}
+    </tr>
+  `).join("");
+
+  const managerTableRows = managerRows.map((row) => `
+    <tr>
+      <td><strong>${escapeHtml(row.manager || "—")}</strong></td>
+      <td>${statMoney(row.income_total)}</td>
+      <td>${statMoney(row.salary_total)}</td>
+      <td>${statMoney(row.plan_total)}</td>
+      <td><span class="statistics-percent-badge">${statPercent(row.income_total, row.plan_total)}</span></td>
+      ${(months || []).map((month) => `<td>${statMoney((row.income_by_month || {})[month.month])}</td>`).join("")}
+    </tr>
+  `).join("");
+
+  return `
+    <div class="statistics-section">
+      <div class="statistics-section-head">
+        <div>
+          <div class="overview-label">Компания</div>
+          <h3>Итоги ${escapeHtml(stats.year || "")}</h3>
+        </div>
+      </div>
+      <div class="statistics-kpi-grid">
+        ${companyCards.map(([label, value]) => `
+          <div class="statistics-kpi-card">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+
+    <div class="statistics-section">
+      <div class="statistics-section-head">
+        <div>
+          <div class="overview-label">Месяцы</div>
+          <h3>Динамика по году</h3>
+        </div>
+      </div>
+      <div class="statistics-table-wrap">
+        <table class="statistics-table">
+          <thead>
+            <tr>
+              <th>Месяц</th>
+              <th>План</th>
+              <th>Оборот</th>
+              <th>Доход</th>
+              <th>Расходы</th>
+              <th>Чистый доход</th>
+              <th>НДС</th>
+              <th>Налоги</th>
+              <th>Мер.</th>
+            </tr>
+          </thead>
+          <tbody>${monthRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="statistics-section">
+      <div class="statistics-section-head">
+        <div>
+          <div class="overview-label">Отделы</div>
+          <h3>Доходы и планы отделов</h3>
+        </div>
+      </div>
+      <div class="statistics-table-wrap">
+        <table class="statistics-table statistics-wide-table">
+          <thead>
+            <tr>
+              <th>Отдел</th>
+              <th>Доход</th>
+              <th>План</th>
+              <th>%</th>
+              ${(months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>${departmentTableRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="statistics-section">
+      <div class="statistics-section-head">
+        <div>
+          <div class="overview-label">Менеджеры</div>
+          <h3>Доходы менеджеров</h3>
+        </div>
+      </div>
+      <div class="statistics-table-wrap">
+        <table class="statistics-table statistics-wide-table">
+          <thead>
+            <tr>
+              <th>Менеджер</th>
+              <th>Доход</th>
+              <th>ЗП</th>
+              <th>План</th>
+              <th>%</th>
+              ${(months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>${managerTableRows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function loadAnnualStatistics(force = false) {
+  const year = selectedGoogleExportYearValue();
+  const panel = $("annualStatisticsPanel");
+  if (!panel) return null;
+  state.annualStatisticsCacheByYear = state.annualStatisticsCacheByYear || {};
+  if (!force && state.annualStatisticsCacheByYear[year]) {
+    panel.innerHTML = renderAnnualStatisticsTables(state.annualStatisticsCacheByYear[year]);
+    return state.annualStatisticsCacheByYear[year];
+  }
+  panel.innerHTML = `<div class="statistics-loading-card">Загружаю годовую статистику ${escapeHtml(year)}…</div>`;
+  try {
+    const result = await api(`/google-sheets/year-statistics?year=${encodeURIComponent(year)}`);
+    const stats = result.statistics || null;
+    state.annualStatisticsCacheByYear[year] = stats;
+    panel.innerHTML = renderAnnualStatisticsTables(stats);
+    return stats;
+  } catch (error) {
+    panel.innerHTML = `<div class="statistics-loading-card error">Не удалось загрузить статистику: ${escapeHtml(error.message || String(error))}</div>`;
+    return null;
+  }
+}
+
 
 async function runGoogleSheetsExport(dryRun, button) {
   const month = selectedMonthValue();
@@ -10106,36 +10294,20 @@ async function runGoogleSheetsYearExport(dryRun, button) {
   if (statusEl) {
     statusEl.innerHTML = `${escapeHtml(message)}${result.google_sheet_url ? ` <a href="${escapeHtml(result.google_sheet_url)}" target="_blank" rel="noopener">Открыть таблицу</a>` : ""}`;
   }
+  if (!dryRun) {
+    state.annualStatisticsCacheByYear = {};
+    if (state.activeAdminTab === "google_export") loadAnnualStatistics(true);
+  }
   return result;
 }
 
 function attachGoogleSheetsExportPanel() {
-  const dryRunBtn = $("googleExportDryRunBtn");
-  if (dryRunBtn) {
-    dryRunBtn.addEventListener("click", async () => {
-      await runPatchUpdateAction(dryRunBtn, () => runGoogleSheetsExport(true, dryRunBtn), null, {
-        loadingText: "Проверяю…",
-        errorPrefix: "Не удалось проверить выгрузку",
-      });
-    });
-  }
-
   const exportBtn = $("googleExportMonthBtn");
   if (exportBtn) {
     exportBtn.addEventListener("click", async () => {
       await runPatchUpdateAction(exportBtn, () => runGoogleSheetsExport(false, exportBtn), null, {
         loadingText: "Выгружаю месяц…",
         errorPrefix: "Не удалось выгрузить месяц в Google Sheets",
-      });
-    });
-  }
-
-  const yearDryRunBtn = $("googleExportYearDryRunBtn");
-  if (yearDryRunBtn) {
-    yearDryRunBtn.addEventListener("click", async () => {
-      await runPatchUpdateAction(yearDryRunBtn, () => runGoogleSheetsYearExport(true, yearDryRunBtn), null, {
-        loadingText: "Проверяю год…",
-        errorPrefix: "Не удалось проверить годовую выгрузку",
       });
     });
   }
@@ -10149,7 +10321,25 @@ function attachGoogleSheetsExportPanel() {
       });
     });
   }
+
+  const refreshBtn = $("statisticsRefreshBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      await runPatchUpdateAction(refreshBtn, () => loadAnnualStatistics(true), null, {
+        loadingText: "Обновляю…",
+        errorPrefix: "Не удалось обновить статистику",
+      });
+    });
+  }
+
+  const yearSelect = $("googleExportYearSelect");
+  if (yearSelect) {
+    yearSelect.addEventListener("change", () => loadAnnualStatistics(true));
+  }
+
+  loadAnnualStatistics(false);
 }
+
 
 
 function renderAdminDashboard(data) {
@@ -15343,7 +15533,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.19 loaded");
+  console.info("Contrast Finance web app v0.5.20 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
