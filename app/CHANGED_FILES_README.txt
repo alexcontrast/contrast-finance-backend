@@ -1,21 +1,12 @@
-v0.5.18 — Legacy import cleanup, keep head percent override
+v0.5.19 changed files:
 
-Changed files:
-- app/main.py
+- Procfile
+- scripts/start.sh
 - app/web/index.html
 - app/web/app.js
-- requirements.txt
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Deleted temporary import files from full archive:
-- app/api/routes/legacy_events_2026.py
-- app/api/routes/legacy_migration.py
-- app/services/legacy_events_2026_importer.py
-- app/services/legacy_importer.py
-
-Kept required DB migration for the head percent override:
-- alembic/versions/0010_head_pct_overrides.py
-
-Deploy full archive to physically remove deleted files. Changed-only is safe for runtime because routes are no longer imported, but full archive is cleaner.
+Important:
+Use the full archive if possible. The startup script removes stale v0.5.16 migration file `alembic/versions/0010_monthly_closing_head_percent_overrides.py` if it was left by a changed-only deploy.
