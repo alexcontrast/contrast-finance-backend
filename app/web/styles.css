@@ -13631,9 +13631,10 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
 /* v0.5.20: admin statistics tab and annual statistics panel */
 body.admin-mode #adminTabs .admin-statistics-tab {
   margin-left: auto;
-  border-color: rgba(93, 180, 60, 0.26);
-  background: rgba(248, 251, 245, 0.92);
-  color: #24341f;
+  border-color: rgba(93, 180, 60, 0.46);
+  background: linear-gradient(135deg, rgba(93, 180, 60, 0.18), rgba(239, 248, 229, 0.98));
+  color: #2f6f1f;
+  box-shadow: 0 8px 18px rgba(93, 180, 60, 0.12);
   font-weight: 900;
 }
 body.admin-mode #adminTabs .admin-statistics-tab.active {

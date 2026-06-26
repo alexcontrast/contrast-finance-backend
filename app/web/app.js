@@ -10276,7 +10276,16 @@ async function loadAnnualStatistics(force = false) {
   }
   panel.innerHTML = `<div class="statistics-loading-card">Загружаю годовую статистику ${escapeHtml(year)}…</div>`;
   try {
-    const result = await api(`/google-sheets/year-statistics?year=${encodeURIComponent(year)}`);
+    let result;
+    try {
+      result = await api(`/google-sheets/year-statistics?year=${encodeURIComponent(year)}`);
+    } catch (firstError) {
+      const firstMessage = String(firstError?.message || firstError || "");
+      if (!/502|503|504|timeout|fetch/i.test(firstMessage)) throw firstError;
+      panel.innerHTML = `<div class="statistics-loading-card">Первая загрузка не ответила, пробую ещё раз…</div>`;
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      result = await api(`/google-sheets/year-statistics?year=${encodeURIComponent(year)}`);
+    }
     const stats = result.statistics || null;
     state.annualStatisticsCacheByYear[year] = stats;
     panel.innerHTML = renderAnnualStatisticsTables(stats);
@@ -15560,7 +15569,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.23 loaded");
+  console.info("Contrast Finance web app v0.5.24 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

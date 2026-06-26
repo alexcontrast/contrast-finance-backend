@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.event import Event
 from app.models.event_item import EventItem
+from app.models.monthly_closing import MonthlyClosing
 from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_plan import MonthlyPlan
 from app.models.payment_request import PaymentRequest
@@ -345,6 +346,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     month_num = month_date.month
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
     expenses = db.execute(
         select(MonthlyExpense).where(
             extract("year", MonthlyExpense.month) == year,
@@ -461,15 +463,27 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
 
     sanzhar_income = department_income_dec.get("Санжар", Decimal("0.00"))
     raufal_income = department_income_dec.get("Рауфаль", Decimal("0.00"))
+    sanzhar_auto_head_percent = department_head_percent(sanzhar_income, department_plan_amount(plan, "Санжар"))
+    raufal_auto_head_percent = department_head_percent(raufal_income, department_plan_amount(plan, "Рауфаль"))
+    sanzhar_head_percent = (
+        money(closing.sanzhar_head_percent_override)
+        if closing is not None and closing.sanzhar_head_percent_override is not None
+        else sanzhar_auto_head_percent
+    )
+    raufal_head_percent = (
+        money(closing.raufal_head_percent_override)
+        if closing is not None and closing.raufal_head_percent_override is not None
+        else raufal_auto_head_percent
+    )
     sanzhar_head_salary = department_head_salary(
         sanzhar_income,
         department_expenses.get("Санжар", Decimal("0.00")),
-        department_head_percent(sanzhar_income, department_plan_amount(plan, "Санжар")),
+        sanzhar_head_percent,
     )
     raufal_head_salary = department_head_salary(
         raufal_income,
         department_expenses.get("Рауфаль", Decimal("0.00")),
-        department_head_percent(raufal_income, department_plan_amount(plan, "Рауфаль")),
+        raufal_head_percent,
     )
     department_heads_salary = q0(sanzhar_head_salary + raufal_head_salary)
     department_head_salary_map = {
