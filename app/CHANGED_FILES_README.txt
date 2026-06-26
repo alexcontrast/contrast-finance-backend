@@ -1,4 +1,4 @@
-v0.5.13 — Admin event edit modal fresh refresh
+v0.5.14 — Manager action dropdown viewport fix
 
 Changed files:
 - app/web/app.js
@@ -6,6 +6,3 @@ Changed files:
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
-
-Purpose:
-- Force-refresh admin event modal after saving edits so it no longer displays stale cached data.

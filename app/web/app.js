@@ -5571,6 +5571,82 @@ function injectManagerPaymentsModalFixV125() {
         white-space: nowrap !important;
       }
     }
+
+
+    /* v0.5.14: меню Передать/Соавтор фиксируется к кнопке и влезает в экран */
+    .manager-action-dropdown {
+      position: fixed !important;
+      right: auto !important;
+      left: 12px;
+      top: 12px;
+      box-sizing: border-box;
+      width: min(360px, calc(100vw - 24px));
+      max-width: calc(100vw - 24px);
+      z-index: 10050 !important;
+    }
+
+    .manager-action-dropdown .icon-btn,
+    .manager-action-dropdown [data-manager-action-close] {
+      width: auto !important;
+      min-width: 32px !important;
+      height: 32px !important;
+      flex: 0 0 auto !important;
+      padding: 0 10px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    .manager-action-dropdown-head strong {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .manager-action-choice {
+      width: 100% !important;
+      box-sizing: border-box;
+      min-width: 0;
+    }
+
+    .manager-action-choice-name,
+    .manager-action-choice-department {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 640px) {
+      .manager-action-dropdown {
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+        left: 10px !important;
+        right: auto !important;
+        padding: 8px !important;
+        border-radius: 16px !important;
+      }
+
+      .manager-action-dropdown-list {
+        gap: 6px !important;
+      }
+
+      .manager-action-choice {
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        gap: 8px !important;
+        padding: 10px 11px !important;
+        border-radius: 12px !important;
+      }
+
+      .manager-action-choice-name {
+        font-size: 13px !important;
+      }
+
+      .manager-action-choice-department {
+        font-size: 11px !important;
+      }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -12177,6 +12253,43 @@ function renderManagerActionDropdown(eventId, action, managers) {
   `;
 }
 
+function positionManagerActionDropdown(dropdown, button) {
+  if (!dropdown || !button) return;
+
+  const margin = window.innerWidth <= 640 ? 10 : 12;
+  const gap = 8;
+  const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+  const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+  const width = Math.min(viewportWidth - margin * 2, window.innerWidth <= 640 ? viewportWidth - margin * 2 : 360);
+  const rect = button.getBoundingClientRect();
+
+  dropdown.style.position = "fixed";
+  dropdown.style.width = `${Math.max(260, width)}px`;
+  dropdown.style.maxWidth = `${Math.max(260, viewportWidth - margin * 2)}px`;
+  dropdown.style.right = "auto";
+  dropdown.style.zIndex = "10050";
+
+  let left;
+  if (viewportWidth <= 640) {
+    left = margin;
+  } else {
+    left = rect.right - width;
+    left = Math.max(margin, Math.min(left, viewportWidth - width - margin));
+  }
+
+  let top = rect.bottom + gap;
+  dropdown.style.left = `${left}px`;
+  dropdown.style.top = `${top}px`;
+  dropdown.style.maxHeight = `${Math.max(180, viewportHeight - top - margin)}px`;
+
+  const dropdownRect = dropdown.getBoundingClientRect();
+  if (dropdownRect.bottom > viewportHeight - margin && rect.top - dropdownRect.height - gap > margin) {
+    top = rect.top - dropdownRect.height - gap;
+    dropdown.style.top = `${Math.max(margin, top)}px`;
+    dropdown.style.maxHeight = `${Math.max(180, viewportHeight - Math.max(margin, top) - margin)}px`;
+  }
+}
+
 async function openManagerActionDropdown(button, eventId, action) {
   const alreadyOpen = button.classList.contains("action-open");
   closeManagerActionDropdown();
@@ -12189,16 +12302,16 @@ async function openManagerActionDropdown(button, eventId, action) {
   wrapper.dataset.managerActionDropdown = "1";
   wrapper.innerHTML = `<div class="manager-action-empty">Загружаем менеджеров…</div>`;
 
-  const actionsHost = button.closest(".inline-actions") || button.parentElement;
-  actionsHost.style.position = "relative";
-  actionsHost.appendChild(wrapper);
+  document.body.appendChild(wrapper);
+  positionManagerActionDropdown(wrapper, button);
 
   try {
     const managers = await getActionManagers();
     wrapper.outerHTML = renderManagerActionDropdown(eventId, action, managers);
 
-    const dropdown = actionsHost.querySelector("[data-manager-action-dropdown]");
+    const dropdown = document.querySelector("[data-manager-action-dropdown]");
     if (!dropdown) return;
+    requestAnimationFrame(() => positionManagerActionDropdown(dropdown, button));
 
     dropdown.querySelector("[data-manager-action-close]")?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -15180,7 +15293,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.13 loaded");
+  console.info("Contrast Finance web app v0.5.14 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
@@ -15412,6 +15525,9 @@ document.addEventListener("click", (event) => {
   closeManagerActionDropdown();
 });
 
-window.addEventListener("resize", () => scheduleMiniBadgeFit());
+window.addEventListener("resize", () => {
+  scheduleMiniBadgeFit();
+  closeManagerActionDropdown();
+});
 
 boot();
