@@ -13953,3 +13953,45 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     font-size: 9px;
   }
 }
+
+/* v0.5.23: annual statistics table cleanup and alignment */
+.statistics-table th,
+.statistics-table td {
+  text-align: center;
+}
+.statistics-table th:first-child,
+.statistics-table td:first-child {
+  text-align: left;
+}
+.statistics-dynamics-table {
+  table-layout: auto !important;
+  font-size: 12px;
+}
+.statistics-dynamics-table th,
+.statistics-dynamics-table td {
+  padding: 9px 7px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.statistics-dynamics-table th:first-child,
+.statistics-dynamics-table td:first-child {
+  width: 70px;
+}
+.statistics-dynamics-table th:nth-child(6),
+.statistics-dynamics-table td:nth-child(6) {
+  font-weight: 950;
+}
+.statistics-department-income-row td {
+  font-weight: 950;
+}
+.statistics-manager-grid-table tbody tr {
+  vertical-align: middle;
+}
+@media (max-width: 1180px) {
+  .statistics-dynamics-table th,
+  .statistics-dynamics-table td {
+    padding: 7px 4px;
+    font-size: 11px;
+  }
+}

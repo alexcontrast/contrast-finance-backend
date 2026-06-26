@@ -1,9 +1,10 @@
-Changed files for v0.5.22:
-- app/web/app.js
-- app/web/styles.css
-- app/web/index.html
-- CHANGELOG.md
-- README.md
-- app/CHANGED_FILES_README.txt
+v0.5.23 changed files:
 
-No backend, DB migration, bot, import, requests, manager cabinet or Google export logic changes.
+app/web/app.js
+app/web/styles.css
+app/web/index.html
+CHANGELOG.md
+README.md
+app/CHANGED_FILES_README.txt
+
+Deploy changed-only is enough. No file deletion required.

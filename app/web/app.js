@@ -10105,6 +10105,7 @@ function renderAnnualStatisticsTables(stats) {
   const months = stats.months || [];
   const departmentRows = stats.department_rows || [];
   const managerRows = stats.manager_rows || [];
+  const sortedManagerRows = [...managerRows].sort((a, b) => Number(b.income_total || 0) - Number(a.income_total || 0));
   const monthHeaders = (months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("");
 
   const companyTopCards = [
@@ -10168,6 +10169,7 @@ function renderAnnualStatisticsTables(stats) {
       },
       {
         label: `${name} доход`,
+        rowClass: "statistics-department-income-row",
         values: months.map((month) => ({ text: statMoney(incomeByMonth[month.month]), value: incomeByMonth[month.month], plan: planByMonth[month.month] })),
         total: statMoney(incomeTotal),
         totalDone: statPlanDone(incomeTotal, planTotal),
@@ -10179,14 +10181,14 @@ function renderAnnualStatisticsTables(stats) {
       },
     ];
   }).map((row) => `
-    <tr>
+    <tr${row.rowClass ? ` class="${row.rowClass}"` : ""}>
       <td><strong>${escapeHtml(row.label)}</strong></td>
       ${row.values.map((cell) => `<td${statPlanDone(cell.value, cell.plan) ? ` class="statistics-done-cell"` : ""}>${escapeHtml(cell.text)}</td>`).join("")}
       <td${row.totalDone ? ` class="statistics-done-cell"` : ""}><strong>${escapeHtml(row.total)}</strong></td>
     </tr>
   `).join("");
 
-  const managerTableRows = managerRows.map((row) => `
+  const managerTableRows = sortedManagerRows.map((row) => `
     <tr>
       <td><strong>${escapeHtml(row.manager || "—")}</strong></td>
       ${(months || []).map((month) => statIncomeSalaryCell((row.income_by_month || {})[month.month], (row.salary_by_month || {})[month.month], (row.plan_by_month || {})[month.month])).join("")}
@@ -10195,25 +10197,6 @@ function renderAnnualStatisticsTables(stats) {
   `).join("");
 
   return `
-    <div class="statistics-section statistics-company-section">
-      <div class="statistics-kpi-grid statistics-kpi-grid-four">
-        ${companyTopCards.map(([label, value, cls]) => `
-          <div class="statistics-kpi-card ${cls || ""}">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(value)}</strong>
-          </div>
-        `).join("")}
-      </div>
-      <div class="statistics-kpi-grid statistics-kpi-grid-three">
-        ${companyBottomCards.map(([label, value, cls]) => `
-          <div class="statistics-kpi-card ${cls || ""}">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(value)}</strong>
-          </div>
-        `).join("")}
-      </div>
-    </div>
-
     <div class="statistics-section">
       <div class="statistics-section-head statistics-section-head-compact">
         <div class="overview-label">Динамика года</div>
@@ -15577,7 +15560,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.22 loaded");
+  console.info("Contrast Finance web app v0.5.23 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
