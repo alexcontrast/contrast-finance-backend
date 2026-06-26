@@ -1,12 +1,9 @@
-Changed in v0.5.21:
-
+Changed files for v0.5.22:
 - app/web/app.js
 - app/web/styles.css
 - app/web/index.html
-- app/services/google_sheets_archive_export.py
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Purpose:
-Admin Statistics tab annual layout polish.
+No backend, DB migration, bot, import, requests, manager cabinet or Google export logic changes.

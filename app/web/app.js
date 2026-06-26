@@ -10127,6 +10127,11 @@ function renderAnnualStatisticsTables(stats) {
         <td>${statMoney(month.turnover)}</td>
         <td>${statMoney(month.plan)}</td>
         <td${done ? ` class="statistics-done-cell"` : ""}>${statMoney(month.company_income)}</td>
+        <td>${statMoney(month.expenses)}</td>
+        <td class="statistics-clean-income-cell">${statMoney(month.clean_income ?? month.income_after_expenses)}</td>
+        <td>${statMoney(month.vat_to_pay)}</td>
+        <td>${statMoney(month.tax_to_pay)}</td>
+        <td>${formatMoney(month.events_count)}</td>
       </tr>
     `;
   }).join("");
@@ -10137,6 +10142,11 @@ function renderAnnualStatisticsTables(stats) {
       <td>${statMoney(totals.turnover)}</td>
       <td>${statMoney(totals.plan)}</td>
       <td${monthTotalDone ? ` class="statistics-done-cell"` : ""}>${statMoney(totals.company_income)}</td>
+      <td>${statMoney(totals.expenses)}</td>
+      <td class="statistics-clean-income-cell"><strong>${statMoney(totals.clean_income ?? totals.income_after_expenses)}</strong></td>
+      <td>${statMoney(totals.vat_to_pay)}</td>
+      <td>${statMoney(totals.tax_to_pay)}</td>
+      <td>${formatMoney(totals.events_count)}</td>
     </tr>
   `;
 
@@ -10216,6 +10226,11 @@ function renderAnnualStatisticsTables(stats) {
               <th>Оборот</th>
               <th>План</th>
               <th>Доход</th>
+              <th>Расход</th>
+              <th>Чистый доход</th>
+              <th>НДС</th>
+              <th>Налоги</th>
+              <th>Мер.</th>
             </tr>
           </thead>
           <tbody>${monthRows}${monthTotalRow}</tbody>
@@ -15562,7 +15577,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.21 loaded");
+  console.info("Contrast Finance web app v0.5.22 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

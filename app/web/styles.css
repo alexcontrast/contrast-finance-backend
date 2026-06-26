@@ -13925,3 +13925,31 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     max-width: 92px;
   }
 }
+
+/* v0.5.22: restore full annual dynamics columns and emphasize clean income */
+.statistics-dynamics-table {
+  font-size: 10px;
+}
+.statistics-dynamics-table th,
+.statistics-dynamics-table td {
+  width: auto;
+  padding: 6px 5px;
+  font-size: 10px;
+  line-height: 1.15;
+  letter-spacing: 0;
+  white-space: normal;
+}
+.statistics-dynamics-table th:first-child,
+.statistics-dynamics-table td:first-child {
+  width: 12%;
+}
+.statistics-dynamics-table .statistics-clean-income-cell {
+  font-weight: 950;
+}
+@media (max-width: 1180px) {
+  .statistics-dynamics-table th,
+  .statistics-dynamics-table td {
+    padding: 5px 3px;
+    font-size: 9px;
+  }
+}
