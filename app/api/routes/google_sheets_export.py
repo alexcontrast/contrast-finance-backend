@@ -1,4 +1,6 @@
 from datetime import date, datetime
+import logging
+from time import perf_counter
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -19,6 +21,7 @@ from app.services.google_sheets_archive_export import (
 
 
 router = APIRouter(tags=["google_sheets_export"])
+logger = logging.getLogger("contrast.performance")
 
 
 @router.post("/google-sheets/export-month")
@@ -53,9 +56,33 @@ def get_google_sheets_year_statistics(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
+    started = perf_counter()
     export_year = int(year or datetime.now().year)
-    month_sections = [build_month_export_sections(db, date(export_year, month_num, 1)) for month_num in range(1, 13)]
+    month_sections = []
+    month_timings: list[str] = []
+    events_count = 0
+    requests_count = 0
+    for month_num in range(1, 13):
+        month_started = perf_counter()
+        section = build_month_export_sections(db, date(export_year, month_num, 1))
+        month_sections.append(section)
+        events_count += len(section.get("events") or [])
+        requests_count += len(section.get("payment_request_rows") or [])
+        month_timings.append(f"{month_num:02d}:{perf_counter() - month_started:.3f}s")
+    stats_started = perf_counter()
     annual_stats = build_annual_stats_sheet(export_year, month_sections)
+    stats_time = perf_counter() - stats_started
+    total_time = perf_counter() - started
+    logger.info(
+        "PERF admin-year-statistics year=%s months=%s events=%s requests=%s build_stats=%.3fs total=%.3fs timings=%s",
+        export_year,
+        len(month_sections),
+        events_count,
+        requests_count,
+        stats_time,
+        total_time,
+        ",".join(month_timings),
+    )
     return {
         "ok": True,
         "year": export_year,

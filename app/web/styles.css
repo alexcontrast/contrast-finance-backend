@@ -14117,3 +14117,83 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   min-width: 0;
   max-width: none;
 }
+
+/* v0.5.28: statistics mobile tables and manager plan alignment */
+.statistics-manager-grid-table .statistics-manager-plan-row td.statistics-number-cell {
+  text-align: center !important;
+}
+
+@media (max-width: 720px) {
+  body.admin-mode .annual-statistics-panel,
+  body.admin-mode .statistics-panel,
+  body.admin-mode .statistics-section {
+    min-width: 0;
+  }
+
+  body.admin-mode .statistics-table-wrap,
+  body.admin-mode .statistics-table-no-scroll {
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 14px;
+  }
+
+  body.admin-mode .statistics-table {
+    table-layout: auto !important;
+    width: max-content;
+    max-width: none;
+    border-collapse: separate;
+  }
+
+  body.admin-mode .statistics-dynamics-table {
+    min-width: 820px;
+  }
+
+  body.admin-mode .statistics-department-grid-table {
+    min-width: 980px;
+  }
+
+  body.admin-mode .statistics-manager-grid-table {
+    min-width: 1180px;
+  }
+
+  body.admin-mode .statistics-table th,
+  body.admin-mode .statistics-table td {
+    padding: 8px 8px;
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: nowrap;
+    text-align: center !important;
+  }
+
+  body.admin-mode .statistics-table th:first-child,
+  body.admin-mode .statistics-table td:first-child {
+    text-align: left !important;
+  }
+
+  body.admin-mode .statistics-manager-grid-table th:nth-child(2),
+  body.admin-mode .statistics-manager-grid-table td:nth-child(2) {
+    text-align: left !important;
+  }
+
+  body.admin-mode .statistics-manager-grid-table td.statistics-number-cell,
+  body.admin-mode .statistics-manager-grid-table .statistics-manager-plan-row td.statistics-number-cell {
+    text-align: center !important;
+  }
+
+  body.admin-mode .statistics-manager-grid-table .statistics-manager-name-cell {
+    min-width: 104px;
+    max-width: 104px;
+    width: 104px;
+  }
+
+  body.admin-mode .statistics-manager-grid-table .statistics-manager-metric-cell {
+    min-width: 112px;
+    max-width: 112px;
+    width: 112px;
+  }
+
+  body.admin-mode .statistics-section {
+    padding: 12px;
+  }
+}

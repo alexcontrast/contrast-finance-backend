@@ -10193,8 +10193,8 @@ function renderAnnualStatisticsTables(stats) {
   const managerPlanRow = `
     <tr class="statistics-manager-plan-row statistics-manager-group-plan-row">
       <td colspan="2"><strong>План менеджера</strong></td>
-      ${(months || []).map((month) => `<td>${escapeHtml(statMoney(managerPlanByMonth[month.month]))}</td>`).join("")}
-      <td><strong>${escapeHtml(statMoney(managerPlanTotal))}</strong></td>
+      ${(months || []).map((month) => `<td class="statistics-number-cell">${escapeHtml(statMoney(managerPlanByMonth[month.month]))}</td>`).join("")}
+      <td class="statistics-number-cell statistics-total-cell"><strong>${escapeHtml(statMoney(managerPlanTotal))}</strong></td>
     </tr>
   `;
 
@@ -15598,7 +15598,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.27 loaded");
+  console.info("Contrast Finance web app v0.5.28 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
