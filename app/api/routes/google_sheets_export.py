@@ -22,6 +22,7 @@ from app.services.google_sheets_archive_export import (
 
 router = APIRouter(tags=["google_sheets_export"])
 logger = logging.getLogger("contrast.performance")
+uvicorn_logger = logging.getLogger("uvicorn.error")
 
 
 @router.post("/google-sheets/export-month")
@@ -73,16 +74,15 @@ def get_google_sheets_year_statistics(
     annual_stats = build_annual_stats_sheet(export_year, month_sections)
     stats_time = perf_counter() - stats_started
     total_time = perf_counter() - started
-    logger.info(
-        "PERF admin-year-statistics year=%s months=%s events=%s requests=%s build_stats=%.3fs total=%.3fs timings=%s",
-        export_year,
-        len(month_sections),
-        events_count,
-        requests_count,
-        stats_time,
-        total_time,
-        ",".join(month_timings),
+    perf_message = (
+        f"PERF admin-year-statistics year={export_year} "
+        f"months={len(month_sections)} events={events_count} requests={requests_count} "
+        f"build_stats={stats_time:.3f}s total={total_time:.3f}s "
+        f"timings={','.join(month_timings)}"
     )
+    logger.info(perf_message)
+    uvicorn_logger.info(perf_message)
+    print(perf_message, flush=True)
     return {
         "ok": True,
         "year": export_year,
