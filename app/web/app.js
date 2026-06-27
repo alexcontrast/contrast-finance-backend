@@ -10304,21 +10304,17 @@ async function loadAnnualStatistics(force = false) {
     return state.annualStatisticsCacheByYear[year];
   }
   panel.innerHTML = `<div class="statistics-loading-card">Загружаю годовую статистику ${escapeHtml(year)}…</div>`;
-  const startedAt = perfNow();
   try {
     let result;
-    let retried = false;
     try {
       result = await api(`/google-sheets/year-statistics?year=${encodeURIComponent(year)}`);
     } catch (firstError) {
       const firstMessage = String(firstError?.message || firstError || "");
       if (!/502|503|504|timeout|fetch/i.test(firstMessage)) throw firstError;
-      retried = true;
       panel.innerHTML = `<div class="statistics-loading-card">Первая загрузка не ответила, пробую ещё раз…</div>`;
       await new Promise((resolve) => setTimeout(resolve, 700));
       result = await api(`/google-sheets/year-statistics?year=${encodeURIComponent(year)}`);
     }
-    console.info(`PERF web admin-year-statistics year=${year} retried=${retried ? "true" : "false"} total=${perfSeconds(startedAt)}s`);
     const stats = result.statistics || null;
     state.annualStatisticsCacheByYear[year] = stats;
     panel.innerHTML = renderAnnualStatisticsTables(stats);

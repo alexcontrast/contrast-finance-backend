@@ -1,7 +1,4 @@
 from datetime import date, datetime
-import logging
-from time import perf_counter
-
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -22,10 +19,6 @@ from app.services.google_sheets_archive_export import (
 
 
 router = APIRouter(tags=["google_sheets_export"])
-logger = logging.getLogger("contrast.performance")
-uvicorn_logger = logging.getLogger("uvicorn.error")
-
-
 @router.post("/google-sheets/export-month")
 def export_month_to_google_sheets(
     month: str = Query(..., description="Month in YYYY-MM format"),
@@ -58,26 +51,9 @@ def get_google_sheets_year_statistics(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
-    started = perf_counter()
     export_year = int(year or datetime.now().year)
-    sections_started = perf_counter()
-    month_sections, statistics_meta = build_year_statistics_sections(db, export_year)
-    sections_time = perf_counter() - sections_started
-    stats_started = perf_counter()
+    month_sections, _statistics_meta = build_year_statistics_sections(db, export_year)
     annual_stats = build_annual_stats_sheet(export_year, month_sections)
-    stats_time = perf_counter() - stats_started
-    total_time = perf_counter() - started
-    perf_message = (
-        f"PERF admin-year-statistics-fast year={export_year} "
-        f"months={len(month_sections)} events={statistics_meta.get('events_count', 0)} "
-        f"requests={statistics_meta.get('requests_count', 0)} "
-        f"load_sections={sections_time:.3f}s build_stats={stats_time:.3f}s total={total_time:.3f}s "
-        f"sources={statistics_meta.get('source_timings', '')} "
-        f"months_timing={statistics_meta.get('month_timings', '')}"
-    )
-    logger.info(perf_message)
-    uvicorn_logger.info(perf_message)
-    print(perf_message, flush=True)
     return {
         "ok": True,
         "year": export_year,

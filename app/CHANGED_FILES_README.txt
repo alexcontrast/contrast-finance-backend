@@ -1,11 +1,7 @@
-v0.5.30 changed files:
-
+v0.5.31 changed files:
 - app/api/routes/google_sheets_export.py
-- app/services/google_sheets_archive_export.py
-- app/web/index.html
 - app/web/app.js
-- CHANGELOG.md
-- README.md
-- app/CHANGED_FILES_README.txt
+- app/web/styles.css
+- app/web/index.html
 
-Удалять файлы не нужно.
+Удалять файлы не нужно. БД/Alembic не менялись.
