@@ -1,9 +1,10 @@
-v0.5.26 changed files:
+v0.5.27 changed files:
+
+- app/services/google_sheets_archive_export.py
 - app/web/app.js
 - app/web/styles.css
 - app/web/index.html
 - CHANGELOG.md
 - README.md
-- app/CHANGED_FILES_README.txt
 
-Backend, database and Alembic were not changed.
+No DB/Alembic changes. No files to delete.

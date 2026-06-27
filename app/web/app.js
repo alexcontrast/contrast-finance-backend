@@ -10094,8 +10094,8 @@ function statIncomeSalaryCell(income, salary, plan, extraClass = "") {
 }
 
 function statValueCell(value, plan = null, extraClass = "") {
-  const cls = statCellClass(value, plan, extraClass);
-  return `<td${cls ? ` class="${cls}"` : ""}>${escapeHtml(statMoney(value))}</td>`;
+  const cls = statCellClass(value, plan, `statistics-number-cell ${extraClass}`.trim());
+  return `<td class="${cls}">${escapeHtml(statMoney(value))}</td>`;
 }
 
 function annualMonthLabel(monthKey) {
@@ -15598,7 +15598,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.26 loaded");
+  console.info("Contrast Finance web app v0.5.27 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

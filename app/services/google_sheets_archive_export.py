@@ -215,6 +215,25 @@ def add_event_values_to_managers(
         manager_salary[manager_name] = manager_salary.get(manager_name, Decimal("0.00")) + allocated_decimal(salary, share_percent)
 
 
+def coordinator_payout_from_items(items: list[EventItem]) -> Decimal:
+    """Return the real coordinator payout from estimate rows.
+
+    Coordinator rows may come either from the new typed coordinator item or
+    from legacy/imported rows named "Координатор". The coordinator gets 50%
+    of the estimate amount, not the full row amount.
+    """
+    total = Decimal("0.00")
+    for item in items:
+        if item.is_deleted:
+            continue
+        item_name = (item.external_name or "").strip().lower().replace("ё", "е")
+        is_coordinator = item.item_type == "coordinator" or item_name == "координатор"
+        if not is_coordinator:
+            continue
+        total += money(item.external_amount) * Decimal("0.50")
+    return q0(total)
+
+
 def department_plan_amount(plan: MonthlyPlan | None, department_name: str) -> Decimal:
     if plan is None:
         return Decimal("0.00")
@@ -374,6 +393,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     events_payload: list[dict] = []
     manager_income_dec: dict[str, Decimal] = {}
     manager_salary_dec: dict[str, Decimal] = {}
+    manager_coordinator_dec: dict[str, Decimal] = {}
     department_income_dec: dict[str, Decimal] = {}
 
     users = db.execute(select(User).options(selectinload(User.department))).scalars().all()
@@ -398,12 +418,16 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
             "deductions_total": decimal_to_int(summary_raw.get("deductions_total")),
             "manager_salary": decimal_to_int(summary_raw.get("manager_salary")),
             "manager_percent": decimal_to_float(summary_raw.get("manager_percent")),
+            "coordinator_fact_amount": decimal_to_int(summary_raw.get("coordinator_fact_amount")),
+            "coordinator_company_share": decimal_to_int(summary_raw.get("coordinator_company_share")),
             "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
         }
 
         event_final_income = money(summary["final_company_income"])
         event_manager_salary = money(summary["manager_salary"])
+        event_coordinator_amount = coordinator_payout_from_items(list(event.items or []))
         add_event_values_to_managers(manager_income_dec, manager_salary_dec, event, event_final_income, event_manager_salary, user_by_id)
+        add_event_values_to_managers(manager_coordinator_dec, {}, event, event_coordinator_amount, Decimal("0.00"), user_by_id)
         add_event_income_to_departments(department_income_dec, event, event_final_income, user_by_id)
 
         event_requests = list(event.payment_requests or [])
@@ -455,6 +479,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     department_expenses = split_monthly_expenses(expenses, plan)
     manager_income = {name: decimal_to_int(amount) for name, amount in sorted(manager_income_dec.items())}
     manager_salary = {name: decimal_to_int(amount) for name, amount in sorted(manager_salary_dec.items())}
+    manager_coordinator = {name: decimal_to_int(amount) for name, amount in sorted(manager_coordinator_dec.items())}
     department_income = {name: decimal_to_int(amount) for name, amount in sorted(department_income_dec.items())}
     department_plans = {
         "Санжар": decimal_to_int(department_plan_amount(plan, "Санжар")),
@@ -522,6 +547,7 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
         },
         "manager_income": manager_income,
         "manager_salary": manager_salary,
+        "manager_coordinator": manager_coordinator,
         "department_income": department_income,
         "department_plans": department_plans,
         "department_head_salary": department_head_salary_map,
@@ -575,24 +601,29 @@ def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
     for section in month_sections:
         manager_names.update(section.get("manager_income", {}).keys())
         manager_names.update(section.get("manager_salary", {}).keys())
+        manager_names.update(section.get("manager_coordinator", {}).keys())
 
     manager_rows = []
     for manager_name in sorted(manager_names):
         income_by_month = {}
         salary_by_month = {}
+        coordinator_by_month = {}
         plan_by_month = {}
         for key, section in zip(month_keys, month_sections):
             annual_month = section.get("annual_month", {})
             income_by_month[key] = int(section.get("manager_income", {}).get(manager_name, 0))
             salary_by_month[key] = int(section.get("manager_salary", {}).get(manager_name, 0))
+            coordinator_by_month[key] = int(section.get("manager_coordinator", {}).get(manager_name, 0))
             plan_by_month[key] = int(annual_month.get("manager_personal_plan", 0))
         manager_rows.append({
             "manager": manager_name,
             "income_by_month": income_by_month,
             "salary_by_month": salary_by_month,
+            "coordinator_by_month": coordinator_by_month,
             "plan_by_month": plan_by_month,
             "income_total": sum(income_by_month.values()),
             "salary_total": sum(salary_by_month.values()),
+            "coordinator_total": sum(coordinator_by_month.values()),
             "plan_total": sum(plan_by_month.values()),
         })
 

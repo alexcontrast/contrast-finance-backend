@@ -14104,3 +14104,16 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
 .statistics-manager-grid-table .statistics-manager-group-plan-row td {
   border-bottom: 2px solid rgba(40, 70, 35, .12);
 }
+
+
+/* v0.5.27: manager statistics numeric alignment and coordinator payout source */
+.statistics-table td.statistics-number-cell,
+.statistics-manager-grid-table .statistics-manager-group-subrow td.statistics-number-cell,
+.statistics-manager-grid-table .statistics-manager-income-row td.statistics-number-cell {
+  text-align: center !important;
+}
+.statistics-manager-grid-table .statistics-manager-group-subrow td.statistics-number-cell {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
