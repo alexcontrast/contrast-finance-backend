@@ -10063,7 +10063,7 @@ function renderGoogleSheetsExportPanel(data) {
 }
 
 function statMoney(value) {
-  return `${formatMoney(value)} ₸`;
+  return formatMoney(value);
 }
 
 function statPercent(value, plan) {
@@ -10093,6 +10093,11 @@ function statIncomeSalaryCell(income, salary, plan, extraClass = "") {
   return `<td${cls ? ` class="${cls}"` : ""}>${escapeHtml(value)}</td>`;
 }
 
+function statValueCell(value, plan = null, extraClass = "") {
+  const cls = statCellClass(value, plan, extraClass);
+  return `<td${cls ? ` class="${cls}"` : ""}>${escapeHtml(statMoney(value))}</td>`;
+}
+
 function annualMonthLabel(monthKey) {
   const month = String(monthKey || "").slice(5, 7);
   const found = MONTHS_RU.find(([value]) => value === month);
@@ -10108,18 +10113,6 @@ function renderAnnualStatisticsTables(stats) {
   const sortedManagerRows = [...managerRows].sort((a, b) => Number(b.income_total || 0) - Number(a.income_total || 0));
   const monthHeaders = (months || []).map((month) => `<th>${escapeHtml(annualMonthLabel(month.month))}</th>`).join("");
 
-  const companyTopCards = [
-    ["Оборот", statMoney(totals.turnover)],
-    ["Доход", statMoney(totals.company_income)],
-    ["Расход", statMoney(totals.expenses)],
-    ["Чистый доход", statMoney(totals.clean_income ?? totals.income_after_expenses), "statistics-kpi-card-accent"],
-  ];
-  const companyBottomCards = [
-    ["Мероприятия", statNumber(totals.events_count), "statistics-kpi-card-accent-soft"],
-    ["НДС к уплате", statMoney(totals.vat_to_pay)],
-    ["Налоги к уплате", statMoney(totals.tax_to_pay)],
-  ];
-
   const monthRows = months.map((month) => {
     const done = statPlanDone(month.company_income, month.plan);
     return `
@@ -10128,7 +10121,8 @@ function renderAnnualStatisticsTables(stats) {
         <td>${statMoney(month.turnover)}</td>
         <td>${statMoney(month.plan)}</td>
         <td${done ? ` class="statistics-done-cell"` : ""}>${statMoney(month.company_income)}</td>
-        <td>${statMoney(month.expenses)}</td>
+        <td>${statMoney(month.base_expenses ?? month.expenses)}</td>
+        <td>${statMoney(month.department_heads_salary)}</td>
         <td class="statistics-clean-income-cell">${statMoney(month.clean_income ?? month.income_after_expenses)}</td>
         <td>${statMoney(month.vat_to_pay)}</td>
         <td>${statMoney(month.tax_to_pay)}</td>
@@ -10143,7 +10137,8 @@ function renderAnnualStatisticsTables(stats) {
       <td>${statMoney(totals.turnover)}</td>
       <td>${statMoney(totals.plan)}</td>
       <td${monthTotalDone ? ` class="statistics-done-cell"` : ""}>${statMoney(totals.company_income)}</td>
-      <td>${statMoney(totals.expenses)}</td>
+      <td>${statMoney(totals.base_expenses ?? totals.expenses)}</td>
+      <td>${statMoney(totals.department_heads_salary)}</td>
       <td class="statistics-clean-income-cell"><strong>${statMoney(totals.clean_income ?? totals.income_after_expenses)}</strong></td>
       <td>${statMoney(totals.vat_to_pay)}</td>
       <td>${statMoney(totals.tax_to_pay)}</td>
@@ -10188,13 +10183,45 @@ function renderAnnualStatisticsTables(stats) {
     </tr>
   `).join("");
 
-  const managerTableRows = sortedManagerRows.map((row) => `
-    <tr>
-      <td><strong>${escapeHtml(row.manager || "—")}</strong></td>
-      ${(months || []).map((month) => statIncomeSalaryCell((row.income_by_month || {})[month.month], (row.salary_by_month || {})[month.month], (row.plan_by_month || {})[month.month])).join("")}
-      ${statIncomeSalaryCell(row.income_total, row.salary_total, row.plan_total, "statistics-total-cell")}
+  const managerPlanByMonth = {};
+  (months || []).forEach((month) => {
+    const plans = sortedManagerRows.map((row) => Number((row.plan_by_month || {})[month.month] || 0)).filter((value) => value > 0);
+    managerPlanByMonth[month.month] = plans.length ? plans[0] : Number(month.manager_personal_plan || 0);
+  });
+  const managerPlanTotal = Object.values(managerPlanByMonth).reduce((sum, value) => sum + Number(value || 0), 0);
+
+  const managerPlanRow = `
+    <tr class="statistics-manager-plan-row statistics-manager-group-plan-row">
+      <td colspan="2"><strong>План менеджера</strong></td>
+      ${(months || []).map((month) => `<td>${escapeHtml(statMoney(managerPlanByMonth[month.month]))}</td>`).join("")}
+      <td><strong>${escapeHtml(statMoney(managerPlanTotal))}</strong></td>
     </tr>
-  `).join("");
+  `;
+
+  const managerTableRows = sortedManagerRows.map((row) => {
+    const incomeByMonth = row.income_by_month || {};
+    const salaryByMonth = row.salary_by_month || {};
+    const coordinatorByMonth = row.coordinator_by_month || {};
+    const planByMonth = row.plan_by_month || {};
+    return `
+      <tr class="statistics-manager-group-start statistics-manager-income-row">
+        <th class="statistics-manager-name-cell" rowspan="3" scope="rowgroup"><strong>${escapeHtml(row.manager || "—")}</strong></th>
+        <td class="statistics-manager-metric-cell statistics-manager-metric-income"><strong>Доход в компанию</strong></td>
+        ${(months || []).map((month) => statValueCell(incomeByMonth[month.month], planByMonth[month.month])).join("")}
+        ${statValueCell(row.income_total, row.plan_total, "statistics-total-cell")}
+      </tr>
+      <tr class="statistics-manager-group-subrow">
+        <td class="statistics-manager-metric-cell">ЗП</td>
+        ${(months || []).map((month) => statValueCell(salaryByMonth[month.month])).join("")}
+        ${statValueCell(row.salary_total, null, "statistics-total-cell")}
+      </tr>
+      <tr class="statistics-manager-group-subrow statistics-manager-group-end">
+        <td class="statistics-manager-metric-cell">Координатор</td>
+        ${(months || []).map((month) => statValueCell(coordinatorByMonth[month.month])).join("")}
+        ${statValueCell(row.coordinator_total, null, "statistics-total-cell")}
+      </tr>
+    `;
+  }).join("");
 
   return `
     <div class="statistics-section">
@@ -10210,6 +10237,7 @@ function renderAnnualStatisticsTables(stats) {
               <th>План</th>
               <th>Доход</th>
               <th>Расход</th>
+              <th>ЗП Главдепов</th>
               <th>Чистый доход</th>
               <th>НДС</th>
               <th>Налоги</th>
@@ -10254,11 +10282,12 @@ function renderAnnualStatisticsTables(stats) {
           <thead>
             <tr>
               <th>Менеджер</th>
+              <th>Показатель</th>
               ${monthHeaders}
               <th>ИТОГО</th>
             </tr>
           </thead>
-          <tbody>${managerTableRows}</tbody>
+          <tbody>${managerPlanRow}${managerTableRows}</tbody>
         </table>
       </div>
     </div>
@@ -15569,7 +15598,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.24 loaded");
+  console.info("Contrast Finance web app v0.5.26 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

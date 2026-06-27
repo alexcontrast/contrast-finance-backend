@@ -1,10 +1,9 @@
-v0.5.23 changed files:
+v0.5.26 changed files:
+- app/web/app.js
+- app/web/styles.css
+- app/web/index.html
+- CHANGELOG.md
+- README.md
+- app/CHANGED_FILES_README.txt
 
-app/web/app.js
-app/web/styles.css
-app/web/index.html
-CHANGELOG.md
-README.md
-app/CHANGED_FILES_README.txt
-
-Deploy changed-only is enough. No file deletion required.
+Backend, database and Alembic were not changed.

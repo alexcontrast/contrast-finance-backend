@@ -13996,3 +13996,111 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     font-size: 11px;
   }
 }
+
+/* v0.5.25: annual statistics expense split and detailed manager rows */
+.statistics-dynamics-table {
+  font-size: 13px;
+}
+.statistics-dynamics-table th,
+.statistics-dynamics-table td {
+  padding: 10px 8px;
+  font-size: 13px;
+}
+.statistics-dynamics-table th:first-child,
+.statistics-dynamics-table td:first-child {
+  width: 74px;
+}
+.statistics-dynamics-table th:nth-child(7),
+.statistics-dynamics-table td:nth-child(7) {
+  font-weight: 950;
+}
+.statistics-manager-grid-table th:nth-child(2),
+.statistics-manager-grid-table td:nth-child(2) {
+  text-align: left;
+  width: 92px;
+  min-width: 92px;
+  max-width: 92px;
+}
+.statistics-manager-grid-table th:first-child,
+.statistics-manager-grid-table td:first-child {
+  width: 96px;
+  min-width: 96px;
+  max-width: 96px;
+}
+.statistics-manager-grid-table th:not(:first-child):not(:nth-child(2)),
+.statistics-manager-grid-table td:not(:first-child):not(:nth-child(2)) {
+  width: calc((100% - 188px) / 13);
+}
+.statistics-manager-plan-row td {
+  background: #f8fbf5 !important;
+  font-weight: 850;
+}
+.statistics-manager-income-row td {
+  border-top: 2px solid rgba(40, 70, 35, .12);
+}
+@media (max-width: 1180px) {
+  .statistics-dynamics-table th,
+  .statistics-dynamics-table td {
+    padding: 8px 4px;
+    font-size: 11px;
+  }
+  .statistics-manager-grid-table th:first-child,
+  .statistics-manager-grid-table td:first-child {
+    width: 76px;
+    min-width: 76px;
+    max-width: 76px;
+  }
+  .statistics-manager-grid-table th:nth-child(2),
+  .statistics-manager-grid-table td:nth-child(2) {
+    width: 74px;
+    min-width: 74px;
+    max-width: 74px;
+  }
+  .statistics-manager-grid-table th:not(:first-child):not(:nth-child(2)),
+  .statistics-manager-grid-table td:not(:first-child):not(:nth-child(2)) {
+    width: calc((100% - 150px) / 13);
+  }
+}
+
+
+/* v0.5.26: unmistakable grouped manager statistics table */
+.statistics-manager-grid-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.statistics-manager-grid-table th,
+.statistics-manager-grid-table td {
+  vertical-align: middle;
+}
+.statistics-manager-grid-table .statistics-manager-name-cell {
+  text-align: left !important;
+  font-weight: 950;
+  background: #f3f9ed;
+  border-top: 2px solid rgba(93, 180, 60, .28);
+  border-bottom: 2px solid rgba(93, 180, 60, .16);
+  border-right: 1px solid rgba(93, 180, 60, .18);
+  color: #1f4f18;
+}
+.statistics-manager-grid-table .statistics-manager-group-start td {
+  border-top: 2px solid rgba(93, 180, 60, .28);
+}
+.statistics-manager-grid-table .statistics-manager-group-end td,
+.statistics-manager-grid-table .statistics-manager-group-end th {
+  border-bottom: 2px solid rgba(93, 180, 60, .16);
+}
+.statistics-manager-grid-table .statistics-manager-metric-cell {
+  text-align: left !important;
+  font-weight: 700;
+  color: #47524a;
+  background: #fbfdf8;
+}
+.statistics-manager-grid-table .statistics-manager-metric-income {
+  font-weight: 950;
+  color: #26351f;
+}
+.statistics-manager-grid-table .statistics-manager-group-subrow td:not(.statistics-manager-metric-cell) {
+  color: #536057;
+}
+.statistics-manager-grid-table .statistics-manager-group-plan-row td {
+  border-bottom: 2px solid rgba(40, 70, 35, .12);
+}
