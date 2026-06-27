@@ -554,6 +554,218 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     }
 
 
+def build_year_statistics_sections(db: Session, year: int | str) -> tuple[list[dict], dict]:
+    """Build annual statistics sections with one yearly data pass.
+
+    The admin Statistics tab does not need payment registry rows or monthly
+    Google-sheet payloads. The previous endpoint reused build_month_export_sections
+    twelve times, which loaded users/plans/expenses/events/requests month by
+    month and took ~19s for 2026. This helper loads yearly source data once and
+    builds the same annual statistics shape for the UI.
+    """
+    total_started = perf_counter()
+    parsed_year = parse_year(year)
+    year_start = date(parsed_year, 1, 1)
+    year_end = date(parsed_year + 1, 1, 1)
+    timings: dict[str, float] = {}
+
+    started = perf_counter()
+    users = db.execute(select(User).options(selectinload(User.department))).scalars().all()
+    user_by_id = {user.id: user for user in users}
+    timings["users"] = perf_counter() - started
+
+    started = perf_counter()
+    plans = db.execute(
+        select(MonthlyPlan).where(MonthlyPlan.month >= year_start, MonthlyPlan.month < year_end)
+    ).scalars().all()
+    plan_by_month = {plan.month.month: plan for plan in plans if plan.month}
+    timings["plans"] = perf_counter() - started
+
+    started = perf_counter()
+    closings = db.execute(
+        select(MonthlyClosing).where(MonthlyClosing.month >= year_start, MonthlyClosing.month < year_end)
+    ).scalars().all()
+    closing_by_month = {closing.month.month: closing for closing in closings if closing.month}
+    timings["closings"] = perf_counter() - started
+
+    started = perf_counter()
+    expenses = db.execute(
+        select(MonthlyExpense).where(MonthlyExpense.month >= year_start, MonthlyExpense.month < year_end)
+    ).scalars().all()
+    expenses_by_month: dict[int, list[MonthlyExpense]] = {month: [] for month in range(1, 13)}
+    for expense in expenses:
+        if expense.month:
+            expenses_by_month.setdefault(expense.month.month, []).append(expense)
+    timings["expenses"] = perf_counter() - started
+
+    started = perf_counter()
+    events = db.execute(
+        select(Event)
+        .where(Event.event_date >= year_start)
+        .where(Event.event_date < year_end)
+        .where(Event.status != "cancelled")
+        .options(
+            selectinload(Event.manager),
+            selectinload(Event.department),
+            selectinload(Event.items),
+            selectinload(Event.shares),
+        )
+        .order_by(Event.event_date.asc(), Event.id.asc())
+    ).scalars().all()
+    events_by_month: dict[int, list[Event]] = {month: [] for month in range(1, 13)}
+    for event in events:
+        if event.event_date:
+            events_by_month.setdefault(event.event_date.month, []).append(event)
+    timings["events"] = perf_counter() - started
+
+    month_sections: list[dict] = []
+    month_timings: list[str] = []
+    for month_num in range(1, 13):
+        month_started = perf_counter()
+        month_date = date(parsed_year, month_num, 1)
+        section = build_year_statistics_month_section(
+            month_date=month_date,
+            events=events_by_month.get(month_num, []),
+            plan=plan_by_month.get(month_num),
+            closing=closing_by_month.get(month_num),
+            expenses=expenses_by_month.get(month_num, []),
+            user_by_id=user_by_id,
+        )
+        month_sections.append(section)
+        month_timings.append(f"{month_num:02d}:{perf_counter() - month_started:.3f}s")
+
+    meta = {
+        "events_count": len(events),
+        "requests_count": 0,
+        "source_timings": ",".join(f"{name}:{value:.3f}s" for name, value in timings.items()),
+        "month_timings": ",".join(month_timings),
+        "total_time": perf_counter() - total_started,
+    }
+    return month_sections, meta
+
+
+def build_year_statistics_month_section(
+    *,
+    month_date: date,
+    events: list[Event],
+    plan: MonthlyPlan | None,
+    closing: MonthlyClosing | None,
+    expenses: list[MonthlyExpense],
+    user_by_id: dict[int, User],
+) -> dict:
+    year = month_date.year
+    month_num = month_date.month
+    events_payload: list[dict] = []
+    manager_income_dec: dict[str, Decimal] = {}
+    manager_salary_dec: dict[str, Decimal] = {}
+    manager_coordinator_dec: dict[str, Decimal] = {}
+    department_income_dec: dict[str, Decimal] = {}
+
+    for event in events:
+        active_items = [item for item in list(event.items or []) if not item.is_deleted]
+        summary_raw = calculate_event_summary_values(event, active_items)
+        summary = {
+            "turnover": decimal_to_int(summary_raw.get("turnover_with_vat")),
+            "vat_to_pay": decimal_to_int(summary_raw.get("vat_to_pay")),
+            "client_vat": decimal_to_int(summary_raw.get("client_vat_amount")),
+            "contractor_vat_credit": decimal_to_int(summary_raw.get("contractor_vat_credit")),
+            "tax_to_pay": decimal_to_int(summary_raw.get("taxes_net")),
+            "taxes_total": decimal_to_int(summary_raw.get("taxes_total")),
+            "deductions_total": decimal_to_int(summary_raw.get("deductions_total")),
+            "manager_salary": decimal_to_int(summary_raw.get("manager_salary")),
+            "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
+        }
+
+        event_final_income = money(summary["final_company_income"])
+        event_manager_salary = money(summary["manager_salary"])
+        event_coordinator_amount = coordinator_payout_from_items(active_items)
+        add_event_values_to_managers(manager_income_dec, manager_salary_dec, event, event_final_income, event_manager_salary, user_by_id)
+        add_event_values_to_managers(manager_coordinator_dec, {}, event, event_coordinator_amount, Decimal("0.00"), user_by_id)
+        add_event_income_to_departments(department_income_dec, event, event_final_income, user_by_id)
+
+        events_payload.append({
+            "client_calc_type_code": event.client_calc_type,
+            "summary": summary,
+        })
+
+    monthly_totals = build_monthly_tax_totals(events_payload)
+    monthly_totals["plan"] = decimal_to_int(plan.company_plan_amount) if plan else 0
+    monthly_totals["manager_personal_plan"] = (
+        decimal_to_int(money(plan.company_plan_amount) * money(plan.manager_personal_plan_percent) / Decimal("100"))
+        if plan
+        else 0
+    )
+    monthly_totals["events_count"] = len(events_payload)
+
+    base_expenses = sum((money(expense.amount) for expense in expenses), Decimal("0.00"))
+    department_expenses = split_monthly_expenses(expenses, plan)
+    manager_income = {name: decimal_to_int(amount) for name, amount in sorted(manager_income_dec.items())}
+    manager_salary = {name: decimal_to_int(amount) for name, amount in sorted(manager_salary_dec.items())}
+    manager_coordinator = {name: decimal_to_int(amount) for name, amount in sorted(manager_coordinator_dec.items())}
+    department_income = {name: decimal_to_int(amount) for name, amount in sorted(department_income_dec.items())}
+    department_plans = {
+        "Санжар": decimal_to_int(department_plan_amount(plan, "Санжар")),
+        "Рауфаль": decimal_to_int(department_plan_amount(plan, "Рауфаль")),
+    }
+
+    sanzhar_income = department_income_dec.get("Санжар", Decimal("0.00"))
+    raufal_income = department_income_dec.get("Рауфаль", Decimal("0.00"))
+    sanzhar_auto_head_percent = department_head_percent(sanzhar_income, department_plan_amount(plan, "Санжар"))
+    raufal_auto_head_percent = department_head_percent(raufal_income, department_plan_amount(plan, "Рауфаль"))
+    sanzhar_head_percent = (
+        money(closing.sanzhar_head_percent_override)
+        if closing is not None and closing.sanzhar_head_percent_override is not None
+        else sanzhar_auto_head_percent
+    )
+    raufal_head_percent = (
+        money(closing.raufal_head_percent_override)
+        if closing is not None and closing.raufal_head_percent_override is not None
+        else raufal_auto_head_percent
+    )
+    sanzhar_head_salary = department_head_salary(
+        sanzhar_income,
+        department_expenses.get("Санжар", Decimal("0.00")),
+        sanzhar_head_percent,
+    )
+    raufal_head_salary = department_head_salary(
+        raufal_income,
+        department_expenses.get("Рауфаль", Decimal("0.00")),
+        raufal_head_percent,
+    )
+    department_heads_salary = q0(sanzhar_head_salary + raufal_head_salary)
+    department_head_salary_map = {
+        "Санжар": decimal_to_int(sanzhar_head_salary),
+        "Рауфаль": decimal_to_int(raufal_head_salary),
+    }
+    expenses_with_heads = q0(base_expenses + department_heads_salary)
+
+    monthly_totals["base_expenses"] = decimal_to_int(base_expenses)
+    monthly_totals["department_heads_salary"] = decimal_to_int(department_heads_salary)
+    monthly_totals["expenses"] = decimal_to_int(expenses_with_heads)
+    monthly_totals["clean_income"] = monthly_totals["company_income"] - monthly_totals["expenses"]
+    monthly_totals["income_after_expenses"] = monthly_totals["clean_income"]
+    monthly_totals["remaining"] = monthly_totals["plan"] - monthly_totals["company_income"]
+
+    return {
+        "month": f"{year}-{month_num:02d}",
+        "month_date": month_date,
+        "payment_request_rows": [],
+        "active_payment_request_rows": [],
+        "archive_payment_request_rows": [],
+        "annual_month": {
+            "month": f"{year}-{month_num:02d}",
+            "title": month_short_title(month_date),
+            **monthly_totals,
+        },
+        "manager_income": manager_income,
+        "manager_salary": manager_salary,
+        "manager_coordinator": manager_coordinator,
+        "department_income": department_income,
+        "department_plans": department_plans,
+        "department_head_salary": department_head_salary_map,
+    }
+
+
 def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
     months = [section["annual_month"] for section in month_sections]
     month_keys = [row["month"] for row in months]

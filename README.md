@@ -1,17 +1,17 @@
-# Contrast Finance v0.5.29
+# Contrast Finance v0.5.30
 
-Патч для диагностики первой долгой загрузки вкладки админки «Статистика».
+Патч ускоряет первую загрузку годовой статистики в админской вкладке `Статистика`.
 
-После деплоя при открытии статистики в Railway logs должна появиться строка вида:
+## Деплой
+
+Достаточно `changed-only`: удалять файлы не нужно.
+
+## Проверка
+
+После открытия вкладки `Статистика` в Railway logs должна появиться строка:
 
 ```text
-PERF admin-year-statistics year=2026 months=12 events=... requests=... build_stats=... total=... timings=01:...,02:...
+PERF admin-year-statistics-fast year=2026 months=12 events=... requests=0 load_sections=... build_stats=... total=... sources=... months_timing=...
 ```
 
-В браузерной консоли появится:
-
-```text
-PERF web admin-year-statistics year=2026 retried=false total=...s
-```
-
-Для деплоя достаточно changed-only.
+Ожидаемо `total` должен стать намного меньше прежних ~19 секунд.

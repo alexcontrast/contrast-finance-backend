@@ -1,17 +1,7 @@
-# v0.5.29 — Admin statistics perf log output fix
+# v0.5.30 — Admin year statistics fast loader
 
-## Исправлено
-- PERF-лог загрузки годовой статистики теперь гарантированно попадает в Railway logs:
-  - через `contrast.performance` logger;
-  - через `uvicorn.error` logger;
-  - через `print(..., flush=True)`.
-- Добавлен браузерный замер в консоль: `PERF web admin-year-statistics year=... retried=... total=...s`.
-- Cache-bust обновлён до `0.5.29`.
-
-## Не менялось
-- Расчёты статистики.
-- БД/Alembic.
-- Telegram-бот.
-- Заявки.
-- Google Sheets export.
-- Менеджерский кабинет и закрытие месяца.
+- Оптимизирован endpoint `GET /google-sheets/year-statistics`: статистика за год больше не собирается через 12 последовательных месячных экспортных расчётов.
+- Добавлен быстрый yearly-pass: планы, закрытия, расходы, пользователи и мероприятия за год загружаются один раз, затем раскладываются по месяцам в памяти.
+- Формат ответа для вкладки `Статистика` сохранён прежним.
+- PERF-лог сохранён и теперь пишет `PERF admin-year-statistics-fast ...` с разбивкой по источникам и месяцам.
+- Google Sheets export, заявки, Telegram-бот, БД/Alembic, менеджерский кабинет и закрытие месяца не менялись.

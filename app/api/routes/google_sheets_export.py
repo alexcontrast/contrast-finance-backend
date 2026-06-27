@@ -14,6 +14,7 @@ from app.services.google_sheets_archive_export import (
     build_month_export_sections,
     build_year_export_payload,
     build_year_export_payloads,
+    build_year_statistics_sections,
     payload_updated_sheet_names,
     post_payload_sequence,
     post_to_apps_script,
@@ -59,26 +60,20 @@ def get_google_sheets_year_statistics(
 ):
     started = perf_counter()
     export_year = int(year or datetime.now().year)
-    month_sections = []
-    month_timings: list[str] = []
-    events_count = 0
-    requests_count = 0
-    for month_num in range(1, 13):
-        month_started = perf_counter()
-        section = build_month_export_sections(db, date(export_year, month_num, 1))
-        month_sections.append(section)
-        events_count += len(section.get("events") or [])
-        requests_count += len(section.get("payment_request_rows") or [])
-        month_timings.append(f"{month_num:02d}:{perf_counter() - month_started:.3f}s")
+    sections_started = perf_counter()
+    month_sections, statistics_meta = build_year_statistics_sections(db, export_year)
+    sections_time = perf_counter() - sections_started
     stats_started = perf_counter()
     annual_stats = build_annual_stats_sheet(export_year, month_sections)
     stats_time = perf_counter() - stats_started
     total_time = perf_counter() - started
     perf_message = (
-        f"PERF admin-year-statistics year={export_year} "
-        f"months={len(month_sections)} events={events_count} requests={requests_count} "
-        f"build_stats={stats_time:.3f}s total={total_time:.3f}s "
-        f"timings={','.join(month_timings)}"
+        f"PERF admin-year-statistics-fast year={export_year} "
+        f"months={len(month_sections)} events={statistics_meta.get('events_count', 0)} "
+        f"requests={statistics_meta.get('requests_count', 0)} "
+        f"load_sections={sections_time:.3f}s build_stats={stats_time:.3f}s total={total_time:.3f}s "
+        f"sources={statistics_meta.get('source_timings', '')} "
+        f"months_timing={statistics_meta.get('month_timings', '')}"
     )
     logger.info(perf_message)
     uvicorn_logger.info(perf_message)
