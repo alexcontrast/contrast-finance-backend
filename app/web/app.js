@@ -10795,6 +10795,357 @@ function externalTotalToPay(items, event) {
     + externalSimplifiedMarkupAmount(items, event);
 }
 
+function clientEstimateMoney(value) {
+  return `${formatMoney(Math.round(asNumber(value)))} ₸`;
+}
+
+function clientEstimateDate(value) {
+  if (!value) return "";
+  const parts = String(value).slice(0, 10).split("-");
+  if (parts.length !== 3) return String(value);
+  const monthName = MONTHS_RU.find(([m]) => m === parts[1])?.[1] || parts[1];
+  return `${Number(parts[2])} ${monthName} ${parts[0]}`;
+}
+
+function clientEstimateFileName(event) {
+  const raw = [`Смета`, event?.client_name || "Клиент", event?.title || "Мероприятие", `Contrast`].join(" " );
+  return `${raw.replace(/[\\/:*?"<>|]+/g, " " ).replace(/\s+/g, " " ).trim().slice(0, 120) || "Смета Contrast"}.pdf`;
+}
+
+function clientEstimateLoadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function clientEstimateWrapText(ctx, text, x, y, maxWidth, lineHeight, options = {}) {
+  const raw = String(text ?? "").replace(/\s+/g, " " ).trim();
+  if (!raw) return y;
+  const words = raw.split(" " );
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width <= maxWidth || !line) {
+      line = test;
+    } else {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+      line = word;
+      if (options.maxLines && Math.round((y - options.startY) / lineHeight) >= options.maxLines) break;
+    }
+  }
+  if (line) ctx.fillText(line, x, y);
+  return y + lineHeight;
+}
+
+function clientEstimateRowHeight(ctx, name, note, nameWidth, noteWidth) {
+  const measureLines = (text, width) => {
+    const raw = String(text ?? "").replace(/\s+/g, " " ).trim();
+    if (!raw) return 1;
+    let lines = 1;
+    let line = "";
+    for (const word of raw.split(" ")) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width <= width || !line) {
+        line = test;
+      } else {
+        lines += 1;
+        line = word;
+      }
+    }
+    return Math.min(lines, 3);
+  };
+  return Math.max(54, 22 + Math.max(measureLines(name, nameWidth), measureLines(note, noteWidth)) * 18);
+}
+
+function clientEstimateDrawFooter(ctx, pageNo, totalPages, w, h) {
+  ctx.save();
+  ctx.font = "18px Arial, sans-serif";
+  ctx.fillStyle = "#6b7280";
+  ctx.textAlign = "right";
+  ctx.fillText(`${pageNo}/${totalPages}`, w - 48, h - 28);
+  ctx.restore();
+}
+
+function clientEstimateDrawPageBase(ctx, canvas, logo, event, pageNo, totalPages, repeatTableHeader = true) {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.fillStyle = "#eaf4ec";
+  ctx.fillRect(0, 0, w, 128);
+  ctx.fillStyle = "#1f7a3d";
+  ctx.fillRect(0, 124, w, 5);
+
+  if (logo) {
+    const logoH = 72;
+    const logoW = Math.min(270, logo.width * (logoH / logo.height));
+    ctx.drawImage(logo, 48, 28, logoW, logoH);
+  } else {
+    ctx.font = "bold 40px Arial, sans-serif";
+    ctx.fillStyle = "#1f7a3d";
+    ctx.fillText("CONTRAST", 48, 75);
+  }
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#1f2937";
+  ctx.font = "bold 30px Arial, sans-serif";
+  ctx.fillText("СМЕТА", w - 48, 55);
+  ctx.font = "18px Arial, sans-serif";
+  ctx.fillStyle = "#374151";
+  ctx.fillText("EVENT агентство полного цикла", w - 48, 84);
+  ctx.fillText("www.contrast.kz", w - 48, 110);
+  ctx.textAlign = "left";
+
+  if (pageNo === 1) {
+    ctx.font = "bold 19px Arial, sans-serif";
+    ctx.fillStyle = "#111827";
+    const left = 48;
+    const top = 168;
+    const colW = (w - 96) / 2;
+    const line = (label, value, x, y) => {
+      ctx.fillStyle = "#6b7280";
+      ctx.font = "bold 15px Arial, sans-serif";
+      ctx.fillText(label.toUpperCase(), x, y);
+      ctx.fillStyle = "#111827";
+      ctx.font = "bold 22px Arial, sans-serif";
+      clientEstimateWrapText(ctx, value || "—", x, y + 28, colW - 24, 24, { maxLines: 2, startY: y + 28 });
+    };
+    line("Компания", event?.client_name || "—", left, top);
+    line("Дата", clientEstimateDate(event?.event_date) || "—", left + colW, top);
+    line("Мероприятие", event?.title || "—", left, top + 92);
+    line("Исполнитель", state.bootstrap?.user?.name || event?.manager_name || "Contrast", left + colW, top + 92);
+
+    ctx.fillStyle = "#fff7ed";
+    ctx.fillRect(48, 358, w - 96, 42);
+    ctx.strokeStyle = "#f59e0b";
+    ctx.strokeRect(48, 358, w - 96, 42);
+    ctx.font = "bold 16px Arial, sans-serif";
+    ctx.fillStyle = "#92400e";
+    ctx.fillText("ВНИМАНИЕ: итоговая сумма указана на основе внешней сметы мероприятия.", 66, 386);
+  }
+
+  clientEstimateDrawFooter(ctx, pageNo, totalPages, w, h);
+}
+
+function clientEstimateDrawTableHeader(ctx, y, columns) {
+  ctx.fillStyle = "#dff0e5";
+  ctx.fillRect(48, y, 1588, 50);
+  ctx.strokeStyle = "#cbd5e1";
+  ctx.lineWidth = 1;
+  ctx.font = "bold 16px Arial, sans-serif";
+  ctx.fillStyle = "#111827";
+  ctx.textAlign = "center";
+  columns.forEach((col) => {
+    ctx.strokeRect(col.x, y, col.w, 50);
+    ctx.fillText(col.title, col.x + col.w / 2, y + 31);
+  });
+  ctx.textAlign = "left";
+  return y + 50;
+}
+
+function clientEstimateDrawTotals(ctx, y, columns, totals, event) {
+  const left = 48;
+  const width = 1588;
+  const labelX = columns[1].x;
+  const valueX = columns[4].x;
+  const valueW = columns[4].w;
+  const drawTotal = (label, value, tone = "normal") => {
+    const rowH = tone === "final" ? 58 : 48;
+    ctx.fillStyle = tone === "final" ? "#1f7a3d" : "#f8fafc";
+    ctx.fillRect(left, y, width, rowH);
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.strokeRect(left, y, width, rowH);
+    ctx.font = tone === "final" ? "bold 24px Arial, sans-serif" : "bold 19px Arial, sans-serif";
+    ctx.fillStyle = tone === "final" ? "#ffffff" : "#111827";
+    ctx.textAlign = "right";
+    ctx.fillText(label, valueX - 18, y + (tone === "final" ? 37 : 31));
+    ctx.fillText(clientEstimateMoney(value), valueX + valueW - 18, y + (tone === "final" ? 37 : 31));
+    ctx.textAlign = "left";
+    y += rowH;
+  };
+
+  drawTotal(`ИТОГО С УЧЕТОМ КОМИССИИ АГЕНТСТВА ${formatPlainNumber(event?.agency_commission_amount)}%`, totals.items + totals.agency);
+  if (totals.simplifiedMarkup > 0) drawTotal(`БАНКОВСКИЕ И НАЛОГОВЫЕ ПЛАТЕЖИ ${formatPlainNumber(event?.simplified_bank_tax_percent)}%`, totals.simplifiedMarkup);
+  if (totals.vat > 0) drawTotal("НДС 16%", totals.vat);
+  drawTotal("ИТОГО:", totals.total, "final");
+  return y;
+}
+
+function clientEstimateMakePdfFromJpegs(jpegs, pageWidthPt = 842, pageHeightPt = 595) {
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const offsets = [0];
+  let length = 0;
+  const addBytes = (bytes) => { chunks.push(bytes); length += bytes.length; };
+  const addString = (str) => addBytes(encoder.encode(str));
+  const base64ToBytes = (dataUrl) => {
+    const base64 = String(dataUrl).split(",")[1] || "";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  };
+
+  const objects = [];
+  objects.push({ body: `<< /Type /Catalog /Pages 2 0 R >>\n` });
+  const kids = jpegs.map((_, index) => `${3 + index * 3} 0 R`).join(" " );
+  objects.push({ body: `<< /Type /Pages /Kids [${kids}] /Count ${jpegs.length} >>\n` });
+  jpegs.forEach((dataUrl, index) => {
+    const pageObj = 3 + index * 3;
+    const imgObj = pageObj + 1;
+    const contentObj = pageObj + 2;
+    objects.push({ body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidthPt} ${pageHeightPt}] /Resources << /XObject << /Im${index} ${imgObj} 0 R >> >> /Contents ${contentObj} 0 R >>\n` });
+    const imgBytes = base64ToBytes(dataUrl);
+    objects.push({
+      head: `<< /Type /XObject /Subtype /Image /Width 1684 /Height 1190 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`,
+      stream: imgBytes,
+      tail: `\nendstream\n`,
+    });
+    const content = `q\n${pageWidthPt} 0 0 ${pageHeightPt} 0 0 cm\n/Im${index} Do\nQ\n`;
+    objects.push({ body: `<< /Length ${content.length} >>\nstream\n${content}endstream\n` });
+  });
+
+  addString("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  objects.forEach((obj, idx) => {
+    offsets[idx + 1] = length;
+    addString(`${idx + 1} 0 obj\n`);
+    if (obj.body) addString(obj.body);
+    else {
+      addString(obj.head);
+      addBytes(obj.stream);
+      addString(obj.tail);
+    }
+    addString("endobj\n");
+  });
+  const xrefOffset = length;
+  addString(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
+  for (let i = 1; i <= objects.length; i += 1) {
+    addString(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
+  }
+  addString(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  return new Blob(chunks, { type: "application/pdf" });
+}
+
+async function generateClientEstimatePdf(eventId) {
+  const event = state.currentManagerEvent || getManagerDashboardEvent(eventId);
+  const items = getDraftItems(eventId).filter((item) => item.item_type !== "manager_salary" && !item.is_deleted && String(item.external_name || "").trim());
+  if (!event || !items.length) {
+    alert("Во внешней смете нет позиций для PDF.");
+    return;
+  }
+
+  const button = document.querySelector(`[data-generate-client-estimate="${eventId}"]`);
+  const oldText = button?.textContent;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Формируем PDF…";
+  }
+
+  try {
+    const logo = await clientEstimateLoadImage("/web/contrast-logo.jpg");
+    const columns = [
+      { key: "no", title: "№пп", x: 48, w: 78 },
+      { key: "name", title: "Наименование", x: 126, w: 470 },
+      { key: "qty", title: "Кол-во, шт.", x: 596, w: 145 },
+      { key: "price", title: "Цена, тг.", x: 741, w: 195 },
+      { key: "amount", title: "Общая стоимость, тенге", x: 936, w: 240 },
+      { key: "note", title: "Примечание", x: 1176, w: 460 },
+    ];
+    const totals = {
+      items: externalItemsTotal(items),
+      agency: externalAgencyCommissionAmount(items, event),
+      vat: externalClientVatAmount(items, event),
+      simplifiedMarkup: externalSimplifiedMarkupAmount(items, event),
+      total: externalTotalToPay(items, event),
+    };
+
+    const canvases = [];
+    let pageNo = 0;
+    let canvas;
+    let ctx;
+    let y;
+    const newPage = () => {
+      pageNo += 1;
+      canvas = document.createElement("canvas");
+      canvas.width = 1684;
+      canvas.height = 1190;
+      ctx = canvas.getContext("2d");
+      clientEstimateDrawPageBase(ctx, canvas, logo, event, pageNo, 1);
+      y = pageNo === 1 ? 426 : 162;
+      y = clientEstimateDrawTableHeader(ctx, y, columns);
+      canvases.push(canvas);
+    };
+
+    newPage();
+    ctx.font = "16px Arial, sans-serif";
+    items.forEach((item, index) => {
+      const qty = asNumber(item.external_quantity || 1) * asNumber(item.external_days || 1);
+      const rowH = clientEstimateRowHeight(ctx, item.external_name, item.external_note, columns[1].w - 20, columns[5].w - 20);
+      if (y + rowH > 1052) {
+        newPage();
+        ctx.font = "16px Arial, sans-serif";
+      }
+      ctx.fillStyle = index % 2 ? "#ffffff" : "#fbfdff";
+      ctx.fillRect(48, y, 1588, rowH);
+      ctx.strokeStyle = "#cbd5e1";
+      columns.forEach((col) => ctx.strokeRect(col.x, y, col.w, rowH));
+
+      ctx.fillStyle = "#111827";
+      ctx.font = "16px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(index + 1), columns[0].x + columns[0].w / 2, y + 31);
+      ctx.fillText(formatPlainNumber(qty), columns[2].x + columns[2].w / 2, y + 31);
+      ctx.fillText(clientEstimateMoney(item.external_price), columns[3].x + columns[3].w / 2, y + 31);
+      ctx.fillText(clientEstimateMoney(externalRowAmount(item)), columns[4].x + columns[4].w / 2, y + 31);
+      ctx.textAlign = "left";
+      ctx.font = "bold 16px Arial, sans-serif";
+      clientEstimateWrapText(ctx, item.external_name, columns[1].x + 10, y + 27, columns[1].w - 20, 18, { maxLines: 3, startY: y + 27 });
+      ctx.font = "15px Arial, sans-serif";
+      clientEstimateWrapText(ctx, item.external_note || "", columns[5].x + 10, y + 27, columns[5].w - 20, 17, { maxLines: 3, startY: y + 27 });
+      y += rowH;
+    });
+
+    const estimatedTotalsHeight = 220;
+    if (y + estimatedTotalsHeight > 1084) {
+      newPage();
+    }
+    clientEstimateDrawTotals(ctx, y + 12, columns, totals, event);
+
+    const totalPages = canvases.length;
+    canvases.forEach((pageCanvas, idx) => {
+      const pageCtx = pageCanvas.getContext("2d");
+      clientEstimateDrawFooter(pageCtx, idx + 1, totalPages, pageCanvas.width, pageCanvas.height);
+    });
+
+    const jpegs = canvases.map((pageCanvas) => pageCanvas.toDataURL("image/jpeg", 0.92));
+    const blob = clientEstimateMakePdfFromJpegs(jpegs);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = clientEstimateFileName(event);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast("PDF-смета сформирована");
+  } catch (error) {
+    console.error("Client estimate PDF failed", error);
+    alert(error.message || "Не удалось сформировать PDF-смету");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = oldText || "Сформировать смету";
+    }
+  }
+}
+
 
 
 function eventSharePercent(event) {
@@ -11688,6 +12039,10 @@ function renderExternalEstimate(items, eventId, event = null) {
         <div class="label">Итого к оплате</div>
         <div class="value">${formatMoney(totalToPay)}</div>
       </div>
+    </div>
+
+    <div class="client-estimate-pdf-actions">
+      <button class="secondary client-estimate-pdf-btn" data-generate-client-estimate="${eventId}">Сформировать смету</button>
     </div>
   `;
 }
@@ -13967,6 +14322,14 @@ function attachManagerCreateWorkspaceActions() {
       } else {
         renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
       }
+    });
+  });
+
+  document.querySelectorAll("[data-generate-client-estimate]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await generateClientEstimatePdf(button.getAttribute("data-generate-client-estimate"));
     });
   });
 

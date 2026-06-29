@@ -14502,3 +14502,20 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     max-width: 72px !important;
   }
 }
+
+/* v0.5.31 — manager web client estimate PDF button */
+.client-estimate-pdf-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px 0 0;
+}
+
+.client-estimate-pdf-btn {
+  min-width: 220px;
+}
+
+@media (max-width: 760px) {
+  .client-estimate-pdf-actions {
+    display: none !important;
+  }
+}
