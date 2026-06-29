@@ -1,16 +1,13 @@
-v0.5.31 changed files:
+v0.5.32 — Client estimate PDF polish
 
+Changed files:
 - app/web/app.js
-  - client-side PDF generation for manager external/client estimate
-  - desktop-only button under external estimate
-  - click handler for `Сформировать смету`
-
-- app/web/styles.css
-  - desktop layout for PDF button
-  - hide PDF button on mobile
-
 - app/web/index.html
-  - cache-bust to 0.5.31
-
+- app/web/contrast-logo-transparent.png
 - CHANGELOG.md
 - README.md
+- app/CHANGED_FILES_README.txt
+
+Deploy:
+- Можно заливать changed-only.
+- Удалять старые файлы не нужно.

@@ -10862,16 +10862,73 @@ function clientEstimateRowHeight(ctx, name, note, nameWidth, noteWidth) {
   return Math.max(54, 22 + Math.max(measureLines(name, nameWidth), measureLines(note, noteWidth)) * 18);
 }
 
-function clientEstimateDrawFooter(ctx, pageNo, totalPages, w, h) {
+function clientEstimateFitText(ctx, text, x, y, maxWidth, options = {}) {
+  const raw = String(text ?? "").replace(/\s+/g, " " ).trim();
+  if (!raw) return;
+  const suffix = options.suffix || "…";
+  let value = raw;
+  while (value.length > 1 && ctx.measureText(value).width > maxWidth) {
+    value = value.slice(0, -1);
+  }
+  if (value !== raw) {
+    while (value.length > 1 && ctx.measureText(`${value}${suffix}`).width > maxWidth) value = value.slice(0, -1);
+    value = `${value}${suffix}`;
+  }
+  ctx.fillText(value, x, y);
+}
+
+function clientEstimatePdfEscape(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function clientEstimateRectToPdf(rect, canvasW, canvasH, pageWidthPt, pageHeightPt) {
+  const x1 = rect.x / canvasW * pageWidthPt;
+  const x2 = (rect.x + rect.w) / canvasW * pageWidthPt;
+  const y1 = pageHeightPt - ((rect.y + rect.h) / canvasH * pageHeightPt);
+  const y2 = pageHeightPt - (rect.y / canvasH * pageHeightPt);
+  return [x1, y1, x2, y2].map((n) => Number(n.toFixed(2)));
+}
+
+function clientEstimateDrawInstagramIcon(ctx, x, y, size) {
+  const radius = Math.max(5, size * 0.23);
+  const gradient = ctx.createLinearGradient(x, y + size, x + size, y);
+  gradient.addColorStop(0, "#feda75");
+  gradient.addColorStop(0.35, "#fa7e1e");
+  gradient.addColorStop(0.65, "#d62976");
+  gradient.addColorStop(1, "#4f5bd5");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + size - radius, y);
+  ctx.quadraticCurveTo(x + size, y, x + size, y + radius);
+  ctx.lineTo(x + size, y + size - radius);
+  ctx.quadraticCurveTo(x + size, y + size, x + size - radius, y + size);
+  ctx.lineTo(x + radius, y + size);
+  ctx.quadraticCurveTo(x, y + size, x, y + size - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.fill();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = Math.max(3, size * 0.075);
+  ctx.beginPath();
+  ctx.arc(x + size / 2, y + size / 2, size * 0.23, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x + size * 0.73, y + size * 0.28, size * 0.055, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+}
+
+function clientEstimateDrawFooter(ctx, w, h) {
   ctx.save();
-  ctx.font = "18px Arial, sans-serif";
+  ctx.font = "15px Arial, sans-serif";
   ctx.fillStyle = "#6b7280";
   ctx.textAlign = "right";
-  ctx.fillText(`${pageNo}/${totalPages}`, w - 48, h - 28);
+  ctx.fillText("Организация мероприятий любого формата и сложности", w - 42, h - 34);
   ctx.restore();
 }
 
-function clientEstimateDrawPageBase(ctx, canvas, logo, event, pageNo, totalPages, repeatTableHeader = true) {
+function clientEstimateDrawPageBase(ctx, canvas, logo, event, links) {
   const w = canvas.width;
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
@@ -10879,106 +10936,130 @@ function clientEstimateDrawPageBase(ctx, canvas, logo, event, pageNo, totalPages
   ctx.fillRect(0, 0, w, h);
 
   ctx.fillStyle = "#eaf4ec";
-  ctx.fillRect(0, 0, w, 128);
+  ctx.fillRect(0, 0, w, 150);
   ctx.fillStyle = "#1f7a3d";
-  ctx.fillRect(0, 124, w, 5);
+  ctx.fillRect(0, 145, w, 5);
 
   if (logo) {
-    const logoH = 72;
-    const logoW = Math.min(270, logo.width * (logoH / logo.height));
-    ctx.drawImage(logo, 48, 28, logoW, logoH);
+    const logoH = 76;
+    const logoW = Math.min(310, logo.width * (logoH / logo.height));
+    ctx.drawImage(logo, 40, 34, logoW, logoH);
   } else {
-    ctx.font = "bold 40px Arial, sans-serif";
+    ctx.font = "bold 38px Arial, sans-serif";
     ctx.fillStyle = "#1f7a3d";
-    ctx.fillText("CONTRAST", 48, 75);
+    ctx.fillText("CONTRAST", 40, 80);
   }
 
   ctx.textAlign = "right";
   ctx.fillStyle = "#1f2937";
-  ctx.font = "bold 30px Arial, sans-serif";
-  ctx.fillText("СМЕТА", w - 48, 55);
-  ctx.font = "18px Arial, sans-serif";
+  ctx.font = "bold 32px Arial, sans-serif";
+  ctx.fillText("СМЕТА", w - 40, 54);
+  ctx.font = "17px Arial, sans-serif";
   ctx.fillStyle = "#374151";
-  ctx.fillText("EVENT агентство полного цикла", w - 48, 84);
-  ctx.fillText("www.contrast.kz", w - 48, 110);
+  ctx.fillText("EVENT агентство полного цикла", w - 40, 82);
+
+  const siteText = "www.contrast.kz";
+  ctx.font = "bold 17px Arial, sans-serif";
+  ctx.fillStyle = "#1f7a3d";
+  const siteW = ctx.measureText(siteText).width;
+  const siteX = w - 40 - siteW;
+  const siteY = 112;
+  ctx.fillText(siteText, w - 40, siteY);
+  ctx.strokeStyle = "#1f7a3d";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(siteX, siteY + 4);
+  ctx.lineTo(w - 40, siteY + 4);
+  ctx.stroke();
+  links.push({ url: "https://www.contrast.kz/", rect: { x: siteX - 3, y: siteY - 18, w: siteW + 6, h: 26 } });
+
+  const btnW = 190;
+  const btnH = 32;
+  const btnX = w - 40 - btnW;
+  const btnY = 122;
+  ctx.fillStyle = "#111827";
+  ctx.beginPath();
+  ctx.roundRect(btnX, btnY, btnW, btnH, 16);
+  ctx.fill();
+  clientEstimateDrawInstagramIcon(ctx, btnX + 9, btnY + 6, 20);
+  ctx.font = "bold 14px Arial, sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "left";
+  ctx.fillText("Instagram", btnX + 38, btnY + 21);
+  links.push({ url: "https://www.instagram.com/contrast_event_astana/", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
   ctx.textAlign = "left";
 
-  if (pageNo === 1) {
-    ctx.font = "bold 19px Arial, sans-serif";
+  const left = 40;
+  const top = 188;
+  const colW = (w - 80) / 2;
+  const managerName = state.bootstrap?.user?.name || event?.manager_name || "Contrast";
+  const managerPhone = formatPhoneKzPretty(state.bootstrap?.user?.phone || event?.manager_phone || event?.managerPhone || "");
+  const managerValue = managerPhone ? `${managerName}  ${managerPhone}` : managerName;
+  const line = (label, value, x, y) => {
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "bold 13px Arial, sans-serif";
+    ctx.fillText(label.toUpperCase(), x, y);
     ctx.fillStyle = "#111827";
-    const left = 48;
-    const top = 168;
-    const colW = (w - 96) / 2;
-    const line = (label, value, x, y) => {
-      ctx.fillStyle = "#6b7280";
-      ctx.font = "bold 15px Arial, sans-serif";
-      ctx.fillText(label.toUpperCase(), x, y);
-      ctx.fillStyle = "#111827";
-      ctx.font = "bold 22px Arial, sans-serif";
-      clientEstimateWrapText(ctx, value || "—", x, y + 28, colW - 24, 24, { maxLines: 2, startY: y + 28 });
-    };
-    line("Компания", event?.client_name || "—", left, top);
-    line("Дата", clientEstimateDate(event?.event_date) || "—", left + colW, top);
-    line("Мероприятие", event?.title || "—", left, top + 92);
-    line("Исполнитель", state.bootstrap?.user?.name || event?.manager_name || "Contrast", left + colW, top + 92);
+    ctx.font = "bold 19px Arial, sans-serif";
+    clientEstimateWrapText(ctx, value || "—", x, y + 27, colW - 26, 22, { maxLines: 2, startY: y + 27 });
+  };
+  line("Компания", event?.client_name || "—", left, top);
+  line("Дата", clientEstimateDate(event?.event_date) || "—", left + colW, top);
+  line("Мероприятие", event?.title || "—", left, top + 78);
+  line("Исполнитель", managerValue, left + colW, top + 78);
 
-    ctx.fillStyle = "#fff7ed";
-    ctx.fillRect(48, 358, w - 96, 42);
-    ctx.strokeStyle = "#f59e0b";
-    ctx.strokeRect(48, 358, w - 96, 42);
-    ctx.font = "bold 16px Arial, sans-serif";
-    ctx.fillStyle = "#92400e";
-    ctx.fillText("ВНИМАНИЕ: итоговая сумма указана на основе внешней сметы мероприятия.", 66, 386);
-  }
-
-  clientEstimateDrawFooter(ctx, pageNo, totalPages, w, h);
+  clientEstimateDrawFooter(ctx, w, h);
 }
 
 function clientEstimateDrawTableHeader(ctx, y, columns) {
   ctx.fillStyle = "#dff0e5";
-  ctx.fillRect(48, y, 1588, 50);
+  ctx.fillRect(40, y, 1110, 40);
   ctx.strokeStyle = "#cbd5e1";
   ctx.lineWidth = 1;
-  ctx.font = "bold 16px Arial, sans-serif";
+  ctx.font = "bold 12px Arial, sans-serif";
   ctx.fillStyle = "#111827";
   ctx.textAlign = "center";
   columns.forEach((col) => {
-    ctx.strokeRect(col.x, y, col.w, 50);
-    ctx.fillText(col.title, col.x + col.w / 2, y + 31);
+    ctx.strokeRect(col.x, y, col.w, 40);
+    clientEstimateFitText(ctx, col.title, col.x + col.w / 2 - ctx.measureText(col.title).width / 2, y + 25, col.w - 8, { suffix: "" });
   });
   ctx.textAlign = "left";
-  return y + 50;
+  return y + 40;
 }
 
 function clientEstimateDrawTotals(ctx, y, columns, totals, event) {
-  const left = 48;
-  const width = 1588;
-  const labelX = columns[1].x;
+  const left = 40;
+  const width = 1110;
   const valueX = columns[4].x;
-  const valueW = columns[4].w;
+  const valueW = columns[4].w + columns[5].w;
   const drawTotal = (label, value, tone = "normal") => {
-    const rowH = tone === "final" ? 58 : 48;
+    const rowH = tone === "final" ? 46 : 38;
     ctx.fillStyle = tone === "final" ? "#1f7a3d" : "#f8fafc";
     ctx.fillRect(left, y, width, rowH);
     ctx.strokeStyle = "#cbd5e1";
     ctx.strokeRect(left, y, width, rowH);
-    ctx.font = tone === "final" ? "bold 24px Arial, sans-serif" : "bold 19px Arial, sans-serif";
+    ctx.font = tone === "final" ? "bold 20px Arial, sans-serif" : "bold 16px Arial, sans-serif";
     ctx.fillStyle = tone === "final" ? "#ffffff" : "#111827";
     ctx.textAlign = "right";
-    ctx.fillText(label, valueX - 18, y + (tone === "final" ? 37 : 31));
-    ctx.fillText(clientEstimateMoney(value), valueX + valueW - 18, y + (tone === "final" ? 37 : 31));
+    ctx.fillText(label, valueX - 14, y + (tone === "final" ? 30 : 25));
+    ctx.fillText(clientEstimateMoney(value), valueX + valueW - 14, y + (tone === "final" ? 30 : 25));
     ctx.textAlign = "left";
     y += rowH;
   };
 
-  drawTotal(`ИТОГО С УЧЕТОМ КОМИССИИ АГЕНТСТВА ${formatPlainNumber(event?.agency_commission_amount)}%`, totals.items + totals.agency);
+  drawTotal(`КОМИССИЯ АГЕНТСТВА ${formatPlainNumber(event?.agency_commission_amount)}%`, totals.agency);
   if (totals.simplifiedMarkup > 0) drawTotal(`БАНКОВСКИЕ И НАЛОГОВЫЕ ПЛАТЕЖИ ${formatPlainNumber(event?.simplified_bank_tax_percent)}%`, totals.simplifiedMarkup);
   if (totals.vat > 0) drawTotal("НДС 16%", totals.vat);
-  drawTotal("ИТОГО:", totals.total, "final");
+  drawTotal("ИТОГО К ОПЛАТЕ:", totals.total, "final");
   return y;
 }
 
-function clientEstimateMakePdfFromJpegs(jpegs, pageWidthPt = 842, pageHeightPt = 595) {
+function clientEstimateMakePdfFromJpegs(jpegs, options = {}) {
+  const pageWidthPt = options.pageWidthPt || 595;
+  const pageHeightPt = options.pageHeightPt || 842;
+  const imageWidth = options.imageWidth || 1190;
+  const imageHeight = options.imageHeight || 1684;
+  const linksByPage = options.linksByPage || [];
   const encoder = new TextEncoder();
   const chunks = [];
   const offsets = [0];
@@ -10993,24 +11074,33 @@ function clientEstimateMakePdfFromJpegs(jpegs, pageWidthPt = 842, pageHeightPt =
     return bytes;
   };
 
-  const objects = [];
-  objects.push({ body: `<< /Type /Catalog /Pages 2 0 R >>\n` });
-  const kids = jpegs.map((_, index) => `${3 + index * 3} 0 R`).join(" " );
-  objects.push({ body: `<< /Type /Pages /Kids [${kids}] /Count ${jpegs.length} >>\n` });
+  const objects = [null, null];
+  const addObject = (obj) => {
+    objects.push(obj);
+    return objects.length;
+  };
+  const pageIds = [];
+
   jpegs.forEach((dataUrl, index) => {
-    const pageObj = 3 + index * 3;
-    const imgObj = pageObj + 1;
-    const contentObj = pageObj + 2;
-    objects.push({ body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidthPt} ${pageHeightPt}] /Resources << /XObject << /Im${index} ${imgObj} 0 R >> >> /Contents ${contentObj} 0 R >>\n` });
     const imgBytes = base64ToBytes(dataUrl);
-    objects.push({
-      head: `<< /Type /XObject /Subtype /Image /Width 1684 /Height 1190 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`,
+    const imgId = addObject({
+      head: `<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`,
       stream: imgBytes,
       tail: `\nendstream\n`,
     });
     const content = `q\n${pageWidthPt} 0 0 ${pageHeightPt} 0 0 cm\n/Im${index} Do\nQ\n`;
-    objects.push({ body: `<< /Length ${content.length} >>\nstream\n${content}endstream\n` });
+    const contentId = addObject({ body: `<< /Length ${content.length} >>\nstream\n${content}endstream\n` });
+    const annotIds = (linksByPage[index] || []).map((link) => {
+      const [x1, y1, x2, y2] = clientEstimateRectToPdf(link.rect, imageWidth, imageHeight, pageWidthPt, pageHeightPt);
+      return addObject({ body: `<< /Type /Annot /Subtype /Link /Rect [${x1} ${y1} ${x2} ${y2}] /Border [0 0 0] /A << /S /URI /URI (${clientEstimatePdfEscape(link.url)}) >> >>\n` });
+    });
+    const annots = annotIds.length ? ` /Annots [${annotIds.map((id) => `${id} 0 R`).join(" " )}]` : "";
+    const pageId = addObject({ body: `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidthPt} ${pageHeightPt}] /Resources << /XObject << /Im${index} ${imgId} 0 R >> >> /Contents ${contentId} 0 R${annots} >>\n` });
+    pageIds.push(pageId);
   });
+
+  objects[0] = { body: `<< /Type /Catalog /Pages 2 0 R >>\n` };
+  objects[1] = { body: `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" " )}] /Count ${pageIds.length} >>\n` };
 
   addString("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
   objects.forEach((obj, idx) => {
@@ -11049,14 +11139,14 @@ async function generateClientEstimatePdf(eventId) {
   }
 
   try {
-    const logo = await clientEstimateLoadImage("/web/contrast-logo.jpg");
+    const logo = await clientEstimateLoadImage("/web/contrast-logo-transparent.png") || await clientEstimateLoadImage("/web/contrast-logo.jpg");
     const columns = [
-      { key: "no", title: "№пп", x: 48, w: 78 },
-      { key: "name", title: "Наименование", x: 126, w: 470 },
-      { key: "qty", title: "Кол-во, шт.", x: 596, w: 145 },
-      { key: "price", title: "Цена, тг.", x: 741, w: 195 },
-      { key: "amount", title: "Общая стоимость, тенге", x: 936, w: 240 },
-      { key: "note", title: "Примечание", x: 1176, w: 460 },
+      { key: "no", title: "№пп", x: 40, w: 50 },
+      { key: "name", title: "Наименование", x: 90, w: 350 },
+      { key: "qty", title: "Кол-во", x: 440, w: 80 },
+      { key: "price", title: "Цена, тг.", x: 520, w: 135 },
+      { key: "amount", title: "Стоимость, тг.", x: 655, w: 165 },
+      { key: "note", title: "Примечание", x: 820, w: 330 },
     ];
     const totals = {
       items: externalItemsTotal(items),
@@ -11066,66 +11156,60 @@ async function generateClientEstimatePdf(eventId) {
       total: externalTotalToPay(items, event),
     };
 
-    const canvases = [];
-    let pageNo = 0;
-    let canvas;
-    let ctx;
-    let y;
-    const newPage = () => {
-      pageNo += 1;
-      canvas = document.createElement("canvas");
-      canvas.width = 1684;
-      canvas.height = 1190;
-      ctx = canvas.getContext("2d");
-      clientEstimateDrawPageBase(ctx, canvas, logo, event, pageNo, 1);
-      y = pageNo === 1 ? 426 : 162;
-      y = clientEstimateDrawTableHeader(ctx, y, columns);
-      canvases.push(canvas);
-    };
+    const canvas = document.createElement("canvas");
+    canvas.width = 1190;
+    canvas.height = 1684;
+    const ctx = canvas.getContext("2d");
+    const links = [];
+    clientEstimateDrawPageBase(ctx, canvas, logo, event, links);
 
-    newPage();
-    ctx.font = "16px Arial, sans-serif";
+    const totalsRows = 2 + (totals.simplifiedMarkup > 0 ? 1 : 0) + (totals.vat > 0 ? 1 : 0);
+    const totalsHeight = totalsRows * 40 + 52;
+    const tableTop = 352;
+    const tableHeaderH = 40;
+    const tableBottom = 1684 - 80 - totalsHeight;
+    const availableRowsHeight = Math.max(260, tableBottom - tableTop - tableHeaderH - 14);
+    const rowH = Math.max(24, Math.min(44, Math.floor(availableRowsHeight / Math.max(1, items.length))));
+    const mainFont = rowH <= 26 ? 12 : rowH <= 32 ? 13 : 14;
+    const noteFont = Math.max(11, mainFont - 1);
+
+    let y = tableTop;
+    y = clientEstimateDrawTableHeader(ctx, y, columns);
+    ctx.textBaseline = "alphabetic";
     items.forEach((item, index) => {
       const qty = asNumber(item.external_quantity || 1) * asNumber(item.external_days || 1);
-      const rowH = clientEstimateRowHeight(ctx, item.external_name, item.external_note, columns[1].w - 20, columns[5].w - 20);
-      if (y + rowH > 1052) {
-        newPage();
-        ctx.font = "16px Arial, sans-serif";
-      }
       ctx.fillStyle = index % 2 ? "#ffffff" : "#fbfdff";
-      ctx.fillRect(48, y, 1588, rowH);
+      ctx.fillRect(40, y, 1110, rowH);
       ctx.strokeStyle = "#cbd5e1";
       columns.forEach((col) => ctx.strokeRect(col.x, y, col.w, rowH));
 
+      const textY = y + Math.round(rowH / 2) + Math.round(mainFont / 2) - 3;
       ctx.fillStyle = "#111827";
-      ctx.font = "16px Arial, sans-serif";
+      ctx.font = `${mainFont}px Arial, sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText(String(index + 1), columns[0].x + columns[0].w / 2, y + 31);
-      ctx.fillText(formatPlainNumber(qty), columns[2].x + columns[2].w / 2, y + 31);
-      ctx.fillText(clientEstimateMoney(item.external_price), columns[3].x + columns[3].w / 2, y + 31);
-      ctx.fillText(clientEstimateMoney(externalRowAmount(item)), columns[4].x + columns[4].w / 2, y + 31);
+      ctx.fillText(String(index + 1), columns[0].x + columns[0].w / 2, textY);
+      clientEstimateFitText(ctx, formatPlainNumber(qty), columns[2].x + 8, textY, columns[2].w - 16, { suffix: "" });
+      ctx.textAlign = "right";
+      clientEstimateFitText(ctx, clientEstimateMoney(item.external_price), columns[3].x + 8, textY, columns[3].w - 16, { suffix: "" });
+      clientEstimateFitText(ctx, clientEstimateMoney(externalRowAmount(item)), columns[4].x + 8, textY, columns[4].w - 16, { suffix: "" });
       ctx.textAlign = "left";
-      ctx.font = "bold 16px Arial, sans-serif";
-      clientEstimateWrapText(ctx, item.external_name, columns[1].x + 10, y + 27, columns[1].w - 20, 18, { maxLines: 3, startY: y + 27 });
-      ctx.font = "15px Arial, sans-serif";
-      clientEstimateWrapText(ctx, item.external_note || "", columns[5].x + 10, y + 27, columns[5].w - 20, 17, { maxLines: 3, startY: y + 27 });
+      ctx.font = `bold ${mainFont}px Arial, sans-serif`;
+      clientEstimateFitText(ctx, item.external_name, columns[1].x + 8, textY, columns[1].w - 16);
+      ctx.font = `${noteFont}px Arial, sans-serif`;
+      clientEstimateFitText(ctx, item.external_note || "", columns[5].x + 8, textY, columns[5].w - 16);
       y += rowH;
     });
 
-    const estimatedTotalsHeight = 220;
-    if (y + estimatedTotalsHeight > 1084) {
-      newPage();
-    }
-    clientEstimateDrawTotals(ctx, y + 12, columns, totals, event);
+    clientEstimateDrawTotals(ctx, y + 14, columns, totals, event);
 
-    const totalPages = canvases.length;
-    canvases.forEach((pageCanvas, idx) => {
-      const pageCtx = pageCanvas.getContext("2d");
-      clientEstimateDrawFooter(pageCtx, idx + 1, totalPages, pageCanvas.width, pageCanvas.height);
+    const jpeg = canvas.toDataURL("image/jpeg", 0.94);
+    const blob = clientEstimateMakePdfFromJpegs([jpeg], {
+      pageWidthPt: 595,
+      pageHeightPt: 842,
+      imageWidth: canvas.width,
+      imageHeight: canvas.height,
+      linksByPage: [links],
     });
-
-    const jpegs = canvases.map((pageCanvas) => pageCanvas.toDataURL("image/jpeg", 0.92));
-    const blob = clientEstimateMakePdfFromJpegs(jpegs);
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -11145,6 +11229,7 @@ async function generateClientEstimatePdf(eventId) {
     }
   }
 }
+
 
 
 
@@ -15991,7 +16076,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.27 loaded");
+  console.info("Contrast Finance web app v0.5.32 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
