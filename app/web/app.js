@@ -11549,13 +11549,40 @@ function focusTableCell(current, direction) {
   return false;
 }
 
+function estimateTextFieldCanMoveCaret(field, direction) {
+  if (!field || !(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return false;
+  if (field instanceof HTMLInputElement) {
+    const textLikeTypes = new Set(["", "text", "search", "tel", "url", "email", "password", "number"]);
+    if (!textLikeTypes.has(String(field.type || "").toLowerCase())) return false;
+  }
+
+  try {
+    const valueLength = String(field.value || "").length;
+    const selectionStart = typeof field.selectionStart === "number" ? field.selectionStart : null;
+    const selectionEnd = typeof field.selectionEnd === "number" ? field.selectionEnd : null;
+    if (selectionStart === null || selectionEnd === null) return false;
+
+    // Если выделен кусок текста, обычная стрелка должна сначала снять выделение/поставить курсор,
+    // а не прыгать в соседнюю ячейку сметы.
+    if (selectionStart !== selectionEnd) return true;
+
+    if (direction === "left") return selectionStart > 0;
+    if (direction === "right") return selectionEnd < valueLength;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
 function attachEstimateKeyboardNavigation() {
   document.querySelectorAll(".estimate-table input, .estimate-table select, .estimate-table textarea").forEach((field) => {
     field.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight") {
+        if (!event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && estimateTextFieldCanMoveCaret(field, "right")) return;
         event.preventDefault();
         focusTableCell(field, "right");
       } else if (event.key === "ArrowLeft") {
+        if (!event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && estimateTextFieldCanMoveCaret(field, "left")) return;
         event.preventDefault();
         focusTableCell(field, "left");
       } else if (event.key === "ArrowDown") {
