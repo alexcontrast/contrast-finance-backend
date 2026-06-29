@@ -1,13 +1,7 @@
-v0.5.32 — Client estimate PDF polish
-
-Changed files:
+Changed files in v0.5.33:
 - app/web/app.js
 - app/web/index.html
 - app/web/contrast-logo-transparent.png
+- app/api/routes/web.py
 - CHANGELOG.md
 - README.md
-- app/CHANGED_FILES_README.txt
-
-Deploy:
-- Можно заливать changed-only.
-- Удалять старые файлы не нужно.

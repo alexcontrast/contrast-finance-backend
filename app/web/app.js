@@ -10973,19 +10973,22 @@ function clientEstimateDrawPageBase(ctx, canvas, logo, event, links) {
   ctx.stroke();
   links.push({ url: "https://www.contrast.kz/", rect: { x: siteX - 3, y: siteY - 18, w: siteW + 6, h: 26 } });
 
-  const btnW = 190;
-  const btnH = 32;
+  const btnW = 182;
+  const btnH = 26;
   const btnX = w - 40 - btnW;
-  const btnY = 122;
-  ctx.fillStyle = "#111827";
+  const btnY = 118;
+  ctx.fillStyle = "#f7fbf8";
+  ctx.strokeStyle = "#1f7a3d";
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(btnX, btnY, btnW, btnH, 16);
+  ctx.roundRect(btnX, btnY, btnW, btnH, 13);
   ctx.fill();
-  clientEstimateDrawInstagramIcon(ctx, btnX + 9, btnY + 6, 20);
-  ctx.font = "bold 14px Arial, sans-serif";
-  ctx.fillStyle = "#ffffff";
+  ctx.stroke();
+  clientEstimateDrawInstagramIcon(ctx, btnX + 8, btnY + 5, 16);
+  ctx.font = "bold 13px Arial, sans-serif";
+  ctx.fillStyle = "#1f2937";
   ctx.textAlign = "left";
-  ctx.fillText("Instagram", btnX + 38, btnY + 21);
+  ctx.fillText("Instagram", btnX + 32, btnY + 18);
   links.push({ url: "https://www.instagram.com/contrast_event_astana/", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
   ctx.textAlign = "left";
 
@@ -11021,7 +11024,7 @@ function clientEstimateDrawTableHeader(ctx, y, columns) {
   ctx.textAlign = "center";
   columns.forEach((col) => {
     ctx.strokeRect(col.x, y, col.w, 40);
-    clientEstimateFitText(ctx, col.title, col.x + col.w / 2 - ctx.measureText(col.title).width / 2, y + 25, col.w - 8, { suffix: "" });
+    ctx.fillText(col.title, col.x + col.w / 2, y + 25);
   });
   ctx.textAlign = "left";
   return y + 40;
@@ -11030,8 +11033,10 @@ function clientEstimateDrawTableHeader(ctx, y, columns) {
 function clientEstimateDrawTotals(ctx, y, columns, totals, event) {
   const left = 40;
   const width = 1110;
-  const valueX = columns[4].x;
-  const valueW = columns[4].w + columns[5].w;
+  const amountCol = columns.find((col) => col.key === "amount") || columns[3];
+  const noteCol = columns.find((col) => col.key === "note") || columns[4];
+  const valueX = amountCol.x;
+  const valueRight = noteCol.x + noteCol.w - 14;
   const drawTotal = (label, value, tone = "normal") => {
     const rowH = tone === "final" ? 46 : 38;
     ctx.fillStyle = tone === "final" ? "#1f7a3d" : "#f8fafc";
@@ -11042,7 +11047,7 @@ function clientEstimateDrawTotals(ctx, y, columns, totals, event) {
     ctx.fillStyle = tone === "final" ? "#ffffff" : "#111827";
     ctx.textAlign = "right";
     ctx.fillText(label, valueX - 14, y + (tone === "final" ? 30 : 25));
-    ctx.fillText(clientEstimateMoney(value), valueX + valueW - 14, y + (tone === "final" ? 30 : 25));
+    ctx.fillText(clientEstimateMoney(value), valueRight, y + (tone === "final" ? 30 : 25));
     ctx.textAlign = "left";
     y += rowH;
   };
@@ -11141,11 +11146,10 @@ async function generateClientEstimatePdf(eventId) {
   try {
     const logo = await clientEstimateLoadImage("/web/contrast-logo-transparent.png") || await clientEstimateLoadImage("/web/contrast-logo.jpg");
     const columns = [
-      { key: "no", title: "№пп", x: 40, w: 50 },
-      { key: "name", title: "Наименование", x: 90, w: 350 },
-      { key: "qty", title: "Кол-во", x: 440, w: 80 },
-      { key: "price", title: "Цена, тг.", x: 520, w: 135 },
-      { key: "amount", title: "Стоимость, тг.", x: 655, w: 165 },
+      { key: "name", title: "Позиция", x: 40, w: 430 },
+      { key: "qty", title: "Кол-во", x: 470, w: 90 },
+      { key: "days", title: "Дни", x: 560, w: 80 },
+      { key: "amount", title: "Сумма", x: 640, w: 180 },
       { key: "note", title: "Примечание", x: 820, w: 330 },
     ];
     const totals = {
@@ -11177,7 +11181,8 @@ async function generateClientEstimatePdf(eventId) {
     y = clientEstimateDrawTableHeader(ctx, y, columns);
     ctx.textBaseline = "alphabetic";
     items.forEach((item, index) => {
-      const qty = asNumber(item.external_quantity || 1) * asNumber(item.external_days || 1);
+      const qty = asNumber(item.external_quantity || 1);
+      const days = asNumber(item.external_days || 1);
       ctx.fillStyle = index % 2 ? "#ffffff" : "#fbfdff";
       ctx.fillRect(40, y, 1110, rowH);
       ctx.strokeStyle = "#cbd5e1";
@@ -11185,18 +11190,21 @@ async function generateClientEstimatePdf(eventId) {
 
       const textY = y + Math.round(rowH / 2) + Math.round(mainFont / 2) - 3;
       ctx.fillStyle = "#111827";
-      ctx.font = `${mainFont}px Arial, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText(String(index + 1), columns[0].x + columns[0].w / 2, textY);
-      clientEstimateFitText(ctx, formatPlainNumber(qty), columns[2].x + 8, textY, columns[2].w - 16, { suffix: "" });
-      ctx.textAlign = "right";
-      clientEstimateFitText(ctx, clientEstimateMoney(item.external_price), columns[3].x + 8, textY, columns[3].w - 16, { suffix: "" });
-      clientEstimateFitText(ctx, clientEstimateMoney(externalRowAmount(item)), columns[4].x + 8, textY, columns[4].w - 16, { suffix: "" });
       ctx.textAlign = "left";
       ctx.font = `bold ${mainFont}px Arial, sans-serif`;
-      clientEstimateFitText(ctx, item.external_name, columns[1].x + 8, textY, columns[1].w - 16);
+      clientEstimateFitText(ctx, item.external_name, columns[0].x + 10, textY, columns[0].w - 20);
+
+      ctx.font = `${mainFont}px Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(formatPlainNumber(qty), columns[1].x + columns[1].w / 2, textY);
+      ctx.fillText(formatPlainNumber(days), columns[2].x + columns[2].w / 2, textY);
+
+      ctx.textAlign = "right";
+      ctx.fillText(clientEstimateMoney(externalRowAmount(item)), columns[3].x + columns[3].w - 10, textY);
+
+      ctx.textAlign = "left";
       ctx.font = `${noteFont}px Arial, sans-serif`;
-      clientEstimateFitText(ctx, item.external_note || "", columns[5].x + 8, textY, columns[5].w - 16);
+      clientEstimateFitText(ctx, item.external_note || "", columns[4].x + 10, textY, columns[4].w - 20);
       y += rowH;
     });
 
@@ -16076,7 +16084,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.32 loaded");
+  console.info("Contrast Finance web app v0.5.33 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
