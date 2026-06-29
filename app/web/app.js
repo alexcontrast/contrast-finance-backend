@@ -10094,8 +10094,8 @@ function statIncomeSalaryCell(income, salary, plan, extraClass = "") {
 }
 
 function statValueCell(value, plan = null, extraClass = "") {
-  const cls = statCellClass(value, plan, `statistics-number-cell ${extraClass}`.trim());
-  return `<td class="${cls}">${escapeHtml(statMoney(value))}</td>`;
+  const cls = statCellClass(value, plan, extraClass);
+  return `<td${cls ? ` class="${cls}"` : ""}>${escapeHtml(statMoney(value))}</td>`;
 }
 
 function annualMonthLabel(monthKey) {
@@ -10191,10 +10191,10 @@ function renderAnnualStatisticsTables(stats) {
   const managerPlanTotal = Object.values(managerPlanByMonth).reduce((sum, value) => sum + Number(value || 0), 0);
 
   const managerPlanRow = `
-    <tr class="statistics-manager-plan-row statistics-manager-group-plan-row">
+    <tr class="statistics-manager-plan-row">
       <td colspan="2"><strong>План менеджера</strong></td>
-      ${(months || []).map((month) => `<td class="statistics-number-cell">${escapeHtml(statMoney(managerPlanByMonth[month.month]))}</td>`).join("")}
-      <td class="statistics-number-cell statistics-total-cell"><strong>${escapeHtml(statMoney(managerPlanTotal))}</strong></td>
+      ${(months || []).map((month) => `<td>${escapeHtml(statMoney(managerPlanByMonth[month.month]))}</td>`).join("")}
+      <td><strong>${escapeHtml(statMoney(managerPlanTotal))}</strong></td>
     </tr>
   `;
 
@@ -10204,19 +10204,19 @@ function renderAnnualStatisticsTables(stats) {
     const coordinatorByMonth = row.coordinator_by_month || {};
     const planByMonth = row.plan_by_month || {};
     return `
-      <tr class="statistics-manager-group-start statistics-manager-income-row">
-        <th class="statistics-manager-name-cell" rowspan="3" scope="rowgroup"><strong>${escapeHtml(row.manager || "—")}</strong></th>
-        <td class="statistics-manager-metric-cell statistics-manager-metric-income"><strong>Доход в компанию</strong></td>
+      <tr class="statistics-manager-income-row">
+        <td rowspan="3"><strong>${escapeHtml(row.manager || "—")}</strong></td>
+        <td><strong>Доход</strong></td>
         ${(months || []).map((month) => statValueCell(incomeByMonth[month.month], planByMonth[month.month])).join("")}
         ${statValueCell(row.income_total, row.plan_total, "statistics-total-cell")}
       </tr>
-      <tr class="statistics-manager-group-subrow">
-        <td class="statistics-manager-metric-cell">ЗП</td>
+      <tr>
+        <td>ЗП менеджера</td>
         ${(months || []).map((month) => statValueCell(salaryByMonth[month.month])).join("")}
         ${statValueCell(row.salary_total, null, "statistics-total-cell")}
       </tr>
-      <tr class="statistics-manager-group-subrow statistics-manager-group-end">
-        <td class="statistics-manager-metric-cell">Координатор</td>
+      <tr>
+        <td>Координатор</td>
         ${(months || []).map((month) => statValueCell(coordinatorByMonth[month.month])).join("")}
         ${statValueCell(row.coordinator_total, null, "statistics-total-cell")}
       </tr>
@@ -15598,7 +15598,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.28 loaded");
+  console.info("Contrast Finance web app v0.5.26 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();

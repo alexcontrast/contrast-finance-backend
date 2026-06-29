@@ -1,7 +1,8 @@
-v0.5.31 changed files:
-- app/api/routes/google_sheets_export.py
+v0.5.26 changed files:
 - app/web/app.js
 - app/web/styles.css
 - app/web/index.html
+- CHANGELOG.md
+- README.md
 
-Удалять файлы не нужно. БД/Alembic не менялись.
+Only mobile admin Statistics tab was changed.

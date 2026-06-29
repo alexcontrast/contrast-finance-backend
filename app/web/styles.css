@@ -14062,207 +14062,212 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   }
 }
 
+/* v0.5.26: mobile-only statistics sticky columns and compact controls */
+@media (max-width: 700px) {
+  .statistics-export-card-compact {
+    padding: 10px 10px;
+    gap: 8px;
+  }
 
-/* v0.5.26: unmistakable grouped manager statistics table */
-.statistics-manager-grid-table {
-  border-collapse: separate;
-  border-spacing: 0;
-}
-.statistics-manager-grid-table th,
-.statistics-manager-grid-table td {
-  vertical-align: middle;
-}
-.statistics-manager-grid-table .statistics-manager-name-cell {
-  text-align: left !important;
-  font-weight: 950;
-  background: #f3f9ed;
-  border-top: 2px solid rgba(93, 180, 60, .28);
-  border-bottom: 2px solid rgba(93, 180, 60, .16);
-  border-right: 1px solid rgba(93, 180, 60, .18);
-  color: #1f4f18;
-}
-.statistics-manager-grid-table .statistics-manager-group-start td {
-  border-top: 2px solid rgba(93, 180, 60, .28);
-}
-.statistics-manager-grid-table .statistics-manager-group-end td,
-.statistics-manager-grid-table .statistics-manager-group-end th {
-  border-bottom: 2px solid rgba(93, 180, 60, .16);
-}
-.statistics-manager-grid-table .statistics-manager-metric-cell {
-  text-align: left !important;
-  font-weight: 700;
-  color: #47524a;
-  background: #fbfdf8;
-}
-.statistics-manager-grid-table .statistics-manager-metric-income {
-  font-weight: 950;
-  color: #26351f;
-}
-.statistics-manager-grid-table .statistics-manager-group-subrow td:not(.statistics-manager-metric-cell) {
-  color: #536057;
-}
-.statistics-manager-grid-table .statistics-manager-group-plan-row td {
-  border-bottom: 2px solid rgba(40, 70, 35, .12);
-}
+  .statistics-only-actions {
+    display: flex;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+  }
 
-
-/* v0.5.27: manager statistics numeric alignment and coordinator payout source */
-.statistics-table td.statistics-number-cell,
-.statistics-manager-grid-table .statistics-manager-group-subrow td.statistics-number-cell,
-.statistics-manager-grid-table .statistics-manager-income-row td.statistics-number-cell {
-  text-align: center !important;
-}
-.statistics-manager-grid-table .statistics-manager-group-subrow td.statistics-number-cell {
-  width: auto;
-  min-width: 0;
-  max-width: none;
-}
-
-/* v0.5.28: statistics mobile tables and manager plan alignment */
-.statistics-manager-grid-table .statistics-manager-plan-row td.statistics-number-cell {
-  text-align: center !important;
-}
-
-@media (max-width: 720px) {
-  body.admin-mode .annual-statistics-panel,
-  body.admin-mode .statistics-panel,
-  body.admin-mode .statistics-section {
+  .statistics-year-inline {
+    flex: 0 0 auto;
+    gap: 3px;
+    margin-right: 0;
     min-width: 0;
   }
 
-  body.admin-mode .statistics-table-wrap,
-  body.admin-mode .statistics-table-no-scroll {
-    overflow-x: auto !important;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    border-radius: 14px;
+  .statistics-year-inline span {
+    font-size: 9px;
   }
 
-  body.admin-mode .statistics-table {
-    table-layout: auto !important;
-    width: max-content;
-    max-width: none;
-    border-collapse: separate;
-  }
-
-  body.admin-mode .statistics-dynamics-table {
-    min-width: 820px;
-  }
-
-  body.admin-mode .statistics-department-grid-table {
-    min-width: 980px;
-  }
-
-  body.admin-mode .statistics-manager-grid-table {
-    min-width: 1180px;
-  }
-
-  body.admin-mode .statistics-table th,
-  body.admin-mode .statistics-table td {
-    padding: 8px 8px;
+  .statistics-year-inline select {
+    width: 58px;
+    min-width: 58px;
+    height: 30px;
+    padding: 4px 18px 4px 6px;
     font-size: 11px;
+  }
+
+  .statistics-only-actions button {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto !important;
+    height: 30px;
+    padding: 4px 5px;
+    border-radius: 10px;
+    font-size: 9px;
+    line-height: 1.05;
+    white-space: normal;
+  }
+
+  .statistics-section {
+    padding: 12px 8px;
+    gap: 10px;
+    border-radius: 18px;
+  }
+
+  .statistics-section-head-compact h3 {
+    font-size: 15px;
+  }
+
+  .statistics-table-no-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .statistics-dynamics-table,
+  .statistics-department-grid-table,
+  .statistics-manager-grid-table {
+    table-layout: fixed !important;
+    width: max-content;
+    min-width: max-content;
+  }
+
+  .statistics-dynamics-table th,
+  .statistics-dynamics-table td,
+  .statistics-department-grid-table th,
+  .statistics-department-grid-table td,
+  .statistics-manager-grid-table th,
+  .statistics-manager-grid-table td {
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .statistics-dynamics-table th:first-child,
+  .statistics-dynamics-table td:first-child,
+  .statistics-department-grid-table th:first-child,
+  .statistics-department-grid-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+    background: #fff !important;
+    box-shadow: 8px 0 12px rgba(40, 70, 35, .08);
+  }
+
+  .statistics-dynamics-table thead th:first-child,
+  .statistics-department-grid-table thead th:first-child {
+    z-index: 6;
+    background: #f3f9ed !important;
+  }
+
+  .statistics-dynamics-table tbody tr:nth-child(even) td:first-child,
+  .statistics-department-grid-table tbody tr:nth-child(even) td:first-child,
+  .statistics-manager-grid-table tbody tr:nth-child(even) td:first-child,
+  .statistics-manager-grid-table tbody tr:nth-child(even) td:nth-child(2) {
+    background: #fbfdf8 !important;
+  }
+
+  .statistics-dynamics-table tbody tr:hover td:first-child,
+  .statistics-department-grid-table tbody tr:hover td:first-child,
+  .statistics-manager-grid-table tbody tr:hover td:first-child,
+  .statistics-manager-grid-table tbody tr:hover td:nth-child(2) {
+    background: #f5faef !important;
+  }
+
+  .statistics-dynamics-table th:not(:first-child),
+  .statistics-dynamics-table td:not(:first-child) {
+    width: 74px;
+    min-width: 74px;
+    max-width: 74px;
+    padding: 7px 4px;
+    font-size: 10px;
     line-height: 1.15;
-    white-space: nowrap;
-    text-align: center !important;
   }
 
-  body.admin-mode .statistics-table th:first-child,
-  body.admin-mode .statistics-table td:first-child {
-    text-align: left !important;
+  .statistics-department-grid-table th:not(:first-child),
+  .statistics-department-grid-table td:not(:first-child) {
+    width: 62px;
+    min-width: 62px;
+    max-width: 62px;
+    padding: 6px 3px;
+    font-size: 9px;
+    line-height: 1.12;
   }
 
-  body.admin-mode .statistics-manager-grid-table th:nth-child(2),
-  body.admin-mode .statistics-manager-grid-table td:nth-child(2) {
-    text-align: left !important;
+  .statistics-manager-grid-table th:first-child,
+  .statistics-manager-grid-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    width: 54px;
+    min-width: 54px;
+    max-width: 54px;
+    padding: 6px 3px;
+    font-size: 9px;
+    line-height: 1.08;
+    background: #fff !important;
+    box-shadow: 8px 0 12px rgba(40, 70, 35, .08);
   }
 
-  body.admin-mode .statistics-manager-grid-table td.statistics-number-cell,
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-plan-row td.statistics-number-cell {
-    text-align: center !important;
+  .statistics-manager-grid-table th:nth-child(2),
+  .statistics-manager-grid-table td:nth-child(2) {
+    position: sticky;
+    left: 54px;
+    z-index: 5;
+    width: 48px;
+    min-width: 48px;
+    max-width: 48px;
+    padding: 6px 3px;
+    font-size: 8.5px;
+    line-height: 1.08;
+    text-align: left;
+    background: #fff !important;
+    box-shadow: 8px 0 12px rgba(40, 70, 35, .06);
   }
 
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-name-cell {
-    min-width: 104px;
-    max-width: 104px;
-    width: 104px;
+  .statistics-manager-grid-table thead th:first-child,
+  .statistics-manager-grid-table thead th:nth-child(2) {
+    z-index: 7;
+    background: #f3f9ed !important;
   }
 
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-metric-cell {
-    min-width: 112px;
-    max-width: 112px;
-    width: 112px;
+  .statistics-manager-grid-table th:not(:first-child):not(:nth-child(2)),
+  .statistics-manager-grid-table td:not(:first-child):not(:nth-child(2)) {
+    width: 56px;
+    min-width: 56px;
+    max-width: 56px;
+    padding: 6px 3px;
+    font-size: 9px;
+    line-height: 1.1;
   }
 
-  body.admin-mode .statistics-section {
-    padding: 12px;
+  .statistics-manager-plan-row td:first-child,
+  .statistics-manager-plan-row td:nth-child(2),
+  .statistics-manager-plan-row td[colspan="2"] {
+    background: #f8fbf5 !important;
+  }
+
+  .statistics-total-row td:first-child,
+  .statistics-total-cell {
+    background: #f3f9ed !important;
   }
 }
 
-/* v0.5.31: mobile statistics manager table sticky identity columns */
-@media (max-width: 720px) {
-  body.admin-mode .statistics-manager-grid-table {
-    min-width: 1320px;
-  }
-
-  body.admin-mode .statistics-manager-grid-table th:first-child,
-  body.admin-mode .statistics-manager-grid-table td:first-child,
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-name-cell {
-    width: 126px !important;
-    min-width: 126px !important;
-    max-width: 126px !important;
-  }
-
-  body.admin-mode .statistics-manager-grid-table th:nth-child(2),
-  body.admin-mode .statistics-manager-grid-table td:nth-child(2),
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-metric-cell {
-    width: 108px !important;
-    min-width: 108px !important;
-    max-width: 108px !important;
-  }
-
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-name-cell {
-    position: sticky !important;
-    left: 0 !important;
-    z-index: 6 !important;
-    white-space: normal !important;
-    overflow-wrap: anywhere !important;
-    word-break: break-word !important;
-    line-height: 1.15 !important;
-    hyphens: auto;
-    background: #f3f9ed !important;
-  }
-
-  body.admin-mode .statistics-manager-grid-table th:nth-child(2),
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-metric-cell {
-    position: sticky !important;
-    left: 126px !important;
-    z-index: 5 !important;
-    white-space: normal !important;
-    overflow-wrap: anywhere !important;
-    word-break: break-word !important;
-    line-height: 1.15 !important;
-    background: #fbfdf8 !important;
-    box-shadow: 1px 0 0 rgba(93, 180, 60, .16);
-  }
-
-  body.admin-mode .statistics-manager-grid-table thead th:first-child {
-    z-index: 8 !important;
-    background: #f3f9ed !important;
-  }
-
-  body.admin-mode .statistics-manager-grid-table thead th:nth-child(2) {
-    z-index: 7 !important;
-    background: #f3f9ed !important;
-  }
-
-  body.admin-mode .statistics-manager-grid-table .statistics-manager-plan-row td:first-child {
-    position: sticky !important;
-    left: 0 !important;
-    z-index: 6 !important;
-    width: 234px !important;
-    min-width: 234px !important;
-    max-width: 234px !important;
-    white-space: normal !important;
+@media (max-width: 700px) {
+  .statistics-manager-grid-table .statistics-manager-plan-row td[colspan="2"] {
+    position: sticky;
+    left: 0;
+    z-index: 6;
+    width: 102px;
+    min-width: 102px;
+    max-width: 102px;
+    padding: 6px 3px;
+    font-size: 9px;
+    line-height: 1.08;
+    text-align: left;
     background: #f8fbf5 !important;
+    box-shadow: 8px 0 12px rgba(40, 70, 35, .08);
   }
 }
