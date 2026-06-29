@@ -14271,3 +14271,136 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     box-shadow: 8px 0 12px rgba(40, 70, 35, .08);
   }
 }
+
+/* v0.5.27: mobile-only statistics sticky columns nowrap polish */
+@media (max-width: 700px) {
+  .statistics-dynamics-table th,
+  .statistics-dynamics-table td,
+  .statistics-department-grid-table th,
+  .statistics-department-grid-table td,
+  .statistics-manager-grid-table th,
+  .statistics-manager-grid-table td {
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+    hyphens: none !important;
+    text-align: center;
+  }
+
+  .statistics-dynamics-table th:first-child,
+  .statistics-dynamics-table td:first-child {
+    width: 76px;
+    min-width: 76px;
+    max-width: 76px;
+    padding: 6px 4px;
+    font-size: 9px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .statistics-department-grid-table th:first-child,
+  .statistics-department-grid-table td:first-child {
+    width: 92px;
+    min-width: 92px;
+    max-width: 92px;
+    padding: 6px 4px;
+    font-size: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .statistics-department-grid-table th:not(:first-child),
+  .statistics-department-grid-table td:not(:first-child) {
+    width: 58px;
+    min-width: 58px;
+    max-width: 58px;
+    padding: 6px 2px;
+    font-size: 8px;
+  }
+
+  .statistics-manager-grid-table th:first-child,
+  .statistics-manager-grid-table td:first-child {
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+    left: 0;
+    padding: 6px 4px;
+    font-size: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: #fff !important;
+    z-index: 8;
+  }
+
+  .statistics-manager-grid-table th:nth-child(2),
+  .statistics-manager-grid-table td:nth-child(2) {
+    width: 52px;
+    min-width: 52px;
+    max-width: 52px;
+    left: 72px;
+    padding: 6px 3px;
+    font-size: 7.5px;
+    line-height: 1.05;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    background: #fff !important;
+    z-index: 8;
+    box-shadow: 8px 0 14px rgba(40, 70, 35, .13);
+  }
+
+  .statistics-manager-grid-table thead th:first-child,
+  .statistics-manager-grid-table thead th:nth-child(2) {
+    background: #f3f9ed !important;
+    z-index: 10;
+    font-size: 7.5px;
+    letter-spacing: 0;
+  }
+
+  .statistics-manager-grid-table th:not(:first-child):not(:nth-child(2)),
+  .statistics-manager-grid-table td:not(:first-child):not(:nth-child(2)) {
+    width: 58px;
+    min-width: 58px;
+    max-width: 58px;
+    padding: 6px 2px;
+    font-size: 8px;
+    line-height: 1.05;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+
+  .statistics-manager-grid-table tbody tr:nth-child(even) td:first-child,
+  .statistics-manager-grid-table tbody tr:nth-child(even) td:nth-child(2) {
+    background: #fbfdf8 !important;
+  }
+
+  .statistics-manager-grid-table tbody tr:hover td:first-child,
+  .statistics-manager-grid-table tbody tr:hover td:nth-child(2) {
+    background: #f5faef !important;
+  }
+
+  .statistics-manager-income-row td:first-child,
+  .statistics-manager-income-row td:nth-child(2),
+  .statistics-manager-grid-table td:nth-child(2) {
+    position: sticky;
+    background-clip: padding-box;
+  }
+
+  .statistics-manager-grid-table .statistics-manager-plan-row td[colspan="2"] {
+    left: 0;
+    width: 124px;
+    min-width: 124px;
+    max-width: 124px;
+    font-size: 8px;
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: #f8fbf5 !important;
+    z-index: 9;
+  }
+
+  .statistics-total-row td:first-child,
+  .statistics-total-cell {
+    white-space: nowrap !important;
+  }
+}

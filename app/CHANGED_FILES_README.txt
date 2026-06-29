@@ -1,8 +1,6 @@
-v0.5.26 changed files:
+Changed files for v0.5.27:
 - app/web/app.js
 - app/web/styles.css
 - app/web/index.html
-- CHANGELOG.md
-- README.md
 
-Only mobile admin Statistics tab was changed.
+Only mobile admin Statistics tab layout changed.

@@ -10211,7 +10211,7 @@ function renderAnnualStatisticsTables(stats) {
         ${statValueCell(row.income_total, row.plan_total, "statistics-total-cell")}
       </tr>
       <tr>
-        <td>ЗП менеджера</td>
+        <td>ЗП</td>
         ${(months || []).map((month) => statValueCell(salaryByMonth[month.month])).join("")}
         ${statValueCell(row.salary_total, null, "statistics-total-cell")}
       </tr>
@@ -15598,7 +15598,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.26 loaded");
+  console.info("Contrast Finance web app v0.5.27 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
