@@ -1,6 +1,6 @@
-Changed files for v0.5.27:
+v0.5.28 changed files:
 - app/web/app.js
 - app/web/styles.css
 - app/web/index.html
 
-Only mobile admin Statistics tab layout changed.
+Удалять файлы не нужно.

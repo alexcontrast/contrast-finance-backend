@@ -14404,3 +14404,44 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     white-space: nowrap !important;
   }
 }
+
+/* v0.5.28: mobile statistics manager sticky row structure fix */
+@media (max-width: 700px) {
+  .statistics-manager-grid-table th:first-child,
+  .statistics-manager-grid-table td:first-child,
+  .statistics-manager-grid-table th:nth-child(2),
+  .statistics-manager-grid-table td:nth-child(2) {
+    position: sticky !important;
+    background-clip: padding-box;
+  }
+
+  .statistics-manager-grid-table th:first-child,
+  .statistics-manager-grid-table td:first-child {
+    left: 0 !important;
+  }
+
+  .statistics-manager-grid-table th:nth-child(2),
+  .statistics-manager-grid-table td:nth-child(2) {
+    left: 72px !important;
+  }
+
+  .statistics-manager-grid-table td.statistics-manager-name-spacer {
+    color: transparent !important;
+  }
+
+  .statistics-manager-grid-table td.statistics-manager-metric-cell {
+    font-weight: 850;
+  }
+
+  .statistics-manager-grid-table td.statistics-manager-metric-cell,
+  .statistics-manager-grid-table th:nth-child(2) {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .statistics-manager-grid-table td:not(:first-child):not(:nth-child(2)) {
+    position: static !important;
+  }
+}
+

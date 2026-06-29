@@ -10203,20 +10203,23 @@ function renderAnnualStatisticsTables(stats) {
     const salaryByMonth = row.salary_by_month || {};
     const coordinatorByMonth = row.coordinator_by_month || {};
     const planByMonth = row.plan_by_month || {};
+    const managerName = escapeHtml(row.manager || "—");
     return `
       <tr class="statistics-manager-income-row">
-        <td rowspan="3"><strong>${escapeHtml(row.manager || "—")}</strong></td>
-        <td><strong>Доход</strong></td>
+        <td class="statistics-manager-name-cell"><strong>${managerName}</strong></td>
+        <td class="statistics-manager-metric-cell"><strong>Доход</strong></td>
         ${(months || []).map((month) => statValueCell(incomeByMonth[month.month], planByMonth[month.month])).join("")}
         ${statValueCell(row.income_total, row.plan_total, "statistics-total-cell")}
       </tr>
-      <tr>
-        <td>ЗП</td>
+      <tr class="statistics-manager-sub-row">
+        <td class="statistics-manager-name-cell statistics-manager-name-spacer" aria-label="${managerName}"></td>
+        <td class="statistics-manager-metric-cell">ЗП</td>
         ${(months || []).map((month) => statValueCell(salaryByMonth[month.month])).join("")}
         ${statValueCell(row.salary_total, null, "statistics-total-cell")}
       </tr>
-      <tr>
-        <td>Координатор</td>
+      <tr class="statistics-manager-sub-row">
+        <td class="statistics-manager-name-cell statistics-manager-name-spacer" aria-label="${managerName}"></td>
+        <td class="statistics-manager-metric-cell">Координатор</td>
         ${(months || []).map((month) => statValueCell(coordinatorByMonth[month.month])).join("")}
         ${statValueCell(row.coordinator_total, null, "statistics-total-cell")}
       </tr>

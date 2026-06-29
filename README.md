@@ -1,11 +1,5 @@
-# Contrast Finance v0.5.27
+# Contrast Finance v0.5.28
 
-Точечный патч мобильной версии вкладки админки `Статистика`.
+Точечный frontend-патч мобильной вкладки админки `Статистика`: исправлен sticky-скролл таблицы `Менеджеры`.
 
-## Файлы
-- `app/web/app.js`
-- `app/web/styles.css`
-- `app/web/index.html`
-
-## Деплой
-Можно ставить changed-only. Удалять файлы не нужно.
+Для деплоя достаточно архива `contrast-finance-v0.5.28_CHANGED_ONLY.zip`.
