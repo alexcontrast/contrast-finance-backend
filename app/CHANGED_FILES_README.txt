@@ -1,7 +1,5 @@
-Changed files in v0.5.33:
+v0.5.34 changed files:
 - app/web/app.js
 - app/web/index.html
-- app/web/contrast-logo-transparent.png
-- app/api/routes/web.py
 - CHANGELOG.md
 - README.md

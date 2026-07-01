@@ -10919,6 +10919,49 @@ function clientEstimateDrawInstagramIcon(ctx, x, y, size) {
   ctx.fill();
 }
 
+
+function clientEstimateDrawGlobeIcon(ctx, x, y, size) {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const r = size * 0.42;
+  ctx.save();
+  ctx.strokeStyle = "#1f7a3d";
+  ctx.lineWidth = Math.max(1.5, size * 0.08);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy);
+  ctx.lineTo(cx + r, cy);
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx, cy + r);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r * 0.48, r, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function clientEstimateDrawLinkButton(ctx, label, iconType, url, x, y, w, h, links) {
+  ctx.save();
+  ctx.fillStyle = "#f7fbf8";
+  ctx.strokeStyle = "#1f7a3d";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.stroke();
+  if (iconType === "instagram") clientEstimateDrawInstagramIcon(ctx, x + 8, y + 5, 16);
+  else clientEstimateDrawGlobeIcon(ctx, x + 8, y + 5, 16);
+  ctx.font = "bold 13px Arial, sans-serif";
+  ctx.fillStyle = "#1f2937";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  clientEstimateFitText(ctx, label, x + 31, y + 18, w - 39);
+  ctx.restore();
+  links.push({ url, rect: { x, y, w, h } });
+}
+
 function clientEstimateDrawFooter(ctx, w, h) {
   ctx.save();
   ctx.font = "15px Arial, sans-serif";
@@ -10952,44 +10995,21 @@ function clientEstimateDrawPageBase(ctx, canvas, logo, event, links) {
 
   ctx.textAlign = "right";
   ctx.fillStyle = "#1f2937";
-  ctx.font = "bold 32px Arial, sans-serif";
+  ctx.font = "bold 38px Arial, sans-serif";
   ctx.fillText("СМЕТА", w - 40, 54);
-  ctx.font = "17px Arial, sans-serif";
+  ctx.font = "18px Arial, sans-serif";
   ctx.fillStyle = "#374151";
-  ctx.fillText("EVENT агентство полного цикла", w - 40, 82);
+  ctx.fillText("EVENT агентство полного цикла", w - 40, 84);
 
-  const siteText = "www.contrast.kz";
-  ctx.font = "bold 17px Arial, sans-serif";
-  ctx.fillStyle = "#1f7a3d";
-  const siteW = ctx.measureText(siteText).width;
-  const siteX = w - 40 - siteW;
-  const siteY = 112;
-  ctx.fillText(siteText, w - 40, siteY);
-  ctx.strokeStyle = "#1f7a3d";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(siteX, siteY + 4);
-  ctx.lineTo(w - 40, siteY + 4);
-  ctx.stroke();
-  links.push({ url: "https://www.contrast.kz/", rect: { x: siteX - 3, y: siteY - 18, w: siteW + 6, h: 26 } });
-
-  const btnW = 182;
-  const btnH = 26;
-  const btnX = w - 40 - btnW;
-  const btnY = 118;
-  ctx.fillStyle = "#f7fbf8";
-  ctx.strokeStyle = "#1f7a3d";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(btnX, btnY, btnW, btnH, 13);
-  ctx.fill();
-  ctx.stroke();
-  clientEstimateDrawInstagramIcon(ctx, btnX + 8, btnY + 5, 16);
-  ctx.font = "bold 13px Arial, sans-serif";
-  ctx.fillStyle = "#1f2937";
-  ctx.textAlign = "left";
-  ctx.fillText("Instagram", btnX + 32, btnY + 18);
-  links.push({ url: "https://www.instagram.com/contrast_event_astana/", rect: { x: btnX, y: btnY, w: btnW, h: btnH } });
+  const btnH = 28;
+  const btnY = 104;
+  const gap = 10;
+  const siteBtnW = 186;
+  const instaBtnW = 148;
+  const instaX = w - 40 - instaBtnW;
+  const siteX = instaX - gap - siteBtnW;
+  clientEstimateDrawLinkButton(ctx, "www.contrast.kz", "site", "https://www.contrast.kz/", siteX, btnY, siteBtnW, btnH, links);
+  clientEstimateDrawLinkButton(ctx, "Instagram", "instagram", "https://www.instagram.com/contrast_event_astana/", instaX, btnY, instaBtnW, btnH, links);
   ctx.textAlign = "left";
 
   const left = 40;
@@ -11000,11 +11020,11 @@ function clientEstimateDrawPageBase(ctx, canvas, logo, event, links) {
   const managerValue = managerPhone ? `${managerName}  ${managerPhone}` : managerName;
   const line = (label, value, x, y) => {
     ctx.fillStyle = "#6b7280";
-    ctx.font = "bold 13px Arial, sans-serif";
+    ctx.font = "bold 14px Arial, sans-serif";
     ctx.fillText(label.toUpperCase(), x, y);
     ctx.fillStyle = "#111827";
-    ctx.font = "bold 19px Arial, sans-serif";
-    clientEstimateWrapText(ctx, value || "—", x, y + 27, colW - 26, 22, { maxLines: 2, startY: y + 27 });
+    ctx.font = "bold 22px Arial, sans-serif";
+    clientEstimateWrapText(ctx, value || "—", x, y + 30, colW - 26, 25, { maxLines: 2, startY: y + 30 });
   };
   line("Компания", event?.client_name || "—", left, top);
   line("Дата", clientEstimateDate(event?.event_date) || "—", left + colW, top);
@@ -11146,11 +11166,12 @@ async function generateClientEstimatePdf(eventId) {
   try {
     const logo = await clientEstimateLoadImage("/web/contrast-logo-transparent.png") || await clientEstimateLoadImage("/web/contrast-logo.jpg");
     const columns = [
-      { key: "name", title: "Позиция", x: 40, w: 430 },
-      { key: "qty", title: "Кол-во", x: 470, w: 90 },
-      { key: "days", title: "Дни", x: 560, w: 80 },
-      { key: "amount", title: "Сумма", x: 640, w: 180 },
-      { key: "note", title: "Примечание", x: 820, w: 330 },
+      { key: "name", title: "Позиция", x: 40, w: 350 },
+      { key: "price", title: "Цена", x: 390, w: 145 },
+      { key: "qty", title: "Кол-во", x: 535, w: 82 },
+      { key: "days", title: "Дни", x: 617, w: 72 },
+      { key: "amount", title: "Сумма", x: 689, w: 165 },
+      { key: "note", title: "Примечание", x: 854, w: 296 },
     ];
     const totals = {
       items: externalItemsTotal(items),
@@ -11196,15 +11217,14 @@ async function generateClientEstimatePdf(eventId) {
 
       ctx.font = `${mainFont}px Arial, sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText(formatPlainNumber(qty), columns[1].x + columns[1].w / 2, textY);
-      ctx.fillText(formatPlainNumber(days), columns[2].x + columns[2].w / 2, textY);
-
-      ctx.textAlign = "right";
-      ctx.fillText(clientEstimateMoney(externalRowAmount(item)), columns[3].x + columns[3].w - 10, textY);
+      ctx.fillText(clientEstimateMoney(item.external_price), columns[1].x + columns[1].w / 2, textY);
+      ctx.fillText(formatPlainNumber(qty), columns[2].x + columns[2].w / 2, textY);
+      ctx.fillText(formatPlainNumber(days), columns[3].x + columns[3].w / 2, textY);
+      ctx.fillText(clientEstimateMoney(externalRowAmount(item)), columns[4].x + columns[4].w / 2, textY);
 
       ctx.textAlign = "left";
       ctx.font = `${noteFont}px Arial, sans-serif`;
-      clientEstimateFitText(ctx, item.external_note || "", columns[4].x + 10, textY, columns[4].w - 20);
+      clientEstimateFitText(ctx, item.external_note || "", columns[5].x + 10, textY, columns[5].w - 20);
       y += rowH;
     });
 
@@ -16084,7 +16104,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.33 loaded");
+  console.info("Contrast Finance web app v0.5.34 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
