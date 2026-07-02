@@ -132,8 +132,8 @@ def calculate_allocation_for_existing_amount(
 ) -> tuple[Decimal, Decimal]:
     amount = q(new_amount)
 
-    if amount <= Decimal("0.00"):
-        raise HTTPException(status_code=400, detail="amount must be greater than zero")
+    if amount == Decimal("0.00"):
+        raise HTTPException(status_code=400, detail="amount must not be zero")
 
     if expense.allocation_type == "default_split":
         sanzhar_percent, _ = default_split_percentages(db, normalize_month(expense.month))
@@ -151,7 +151,7 @@ def calculate_allocation_for_existing_amount(
         old_raufal = money(expense.raufal_amount)
         old_total = q(old_sanzhar + old_raufal)
 
-        if old_total <= Decimal("0.00"):
+        if old_total == Decimal("0.00"):
             sanzhar_percent, _ = default_split_percentages(db, normalize_month(expense.month))
             sanzhar = q(amount * sanzhar_percent / Decimal("100"))
             return sanzhar, q(amount - sanzhar)

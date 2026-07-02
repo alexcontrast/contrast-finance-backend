@@ -292,14 +292,17 @@ def money_number(raw: str) -> Optional[int]:
     text = (raw or "").lower().strip()
     text = text.replace("₸", "").replace("kzt", "").replace("тенге", "").replace("тг", "")
     text = text.replace("\u00a0", " ").strip()
+    sign = -1 if text.startswith("-") else 1
+    if text.startswith(("-", "+")):
+        text = text[1:].strip()
     if re.fullmatch(r"\d+", text):
         digits = text
     elif re.fullmatch(r"\d{1,3}([ .,]\d{3})+", text):
         digits = re.sub(r"[ .,]", "", text)
     else:
         return None
-    amount = int(digits)
-    return amount if amount > 0 else None
+    amount = sign * int(digits)
+    return amount if amount != 0 else None
 
 
 def format_card_number(value: Any) -> str:
@@ -671,12 +674,12 @@ def parse_quick_expense_text(raw_text: str) -> Optional[Dict[str, Any]]:
                 lowered = text.lower().strip()
                 break
 
-    match = re.match(r"^(?P<title>.+?)\s+(?P<amount>\d[\d\s.,]*\d|\d)\s*$", text)
+    match = re.match(r"^(?P<title>.+?)\s+(?P<amount>[+-]?\d[\d\s.,]*\d|[+-]?\d)\s*$", text)
     if not match:
         return None
     title = re.sub(r"\s+", " ", match.group("title").strip(" -—:;,."))
     amount = money_number(match.group("amount"))
-    if not title or len(title) < 2 or not amount:
+    if not title or len(title) < 2 or amount is None:
         return None
     return {
         "title": title[:255],
@@ -695,8 +698,10 @@ def cleanup_pending_expenses() -> None:
 
 
 def expense_confirmation_text(payload: Dict[str, Any], sanzhar_amount: Decimal, raufal_amount: Decimal, split_label: str) -> str:
+    amount = money(payload.get("amount"))
+    kind = "приход" if amount < 0 else "расход"
     return (
-        "Добавить расход?\n\n"
+        f"Добавить {kind}?\n\n"
         f"{payload['title']} — {fmt_money(payload['amount'])}\n"
         f"Месяц: {month_label(payload['month'])}\n"
         f"Деление: {split_label}\n\n"
@@ -2201,7 +2206,7 @@ async def handle_expense_action(update: Update, context: ContextTypes.DEFAULT_TY
         try:
             expense = await asyncio.to_thread(create_monthly_expense_from_telegram, query.from_user.id, payload)
             await query.edit_message_text(
-                f"✅ Расход добавлен:\n{expense.title} — {fmt_money(expense.amount)}\nМесяц: {month_label(expense.month)}",
+                f"✅ {'Приход' if money(expense.amount) < 0 else 'Расход'} добавлен:\n{expense.title} — {fmt_money(expense.amount)}\nМесяц: {month_label(expense.month)}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Удалить расход", callback_data=f"expense:delete:{expense.id}")]]),
             )
         except Exception as err:

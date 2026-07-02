@@ -9789,7 +9789,7 @@ function renderClosingExpenseRows(expenses) {
                     <input
                       class="closing-edit-amount-input"
                       data-edit-expense-amount-id="${expense.id}"
-                      inputmode="numeric"
+                      inputmode="decimal"
                       value="${escapeHtml(integerInputValue(expense.amount))}"
                       aria-label="Новая сумма расхода"
                     />
@@ -9908,7 +9908,7 @@ function renderClosingContent(expenses, calc, closing, error = null, calcPending
       </div>
       <div class="closing-expense-form">
         <input id="closingExpenseTitle" placeholder="Название" />
-        <input id="closingExpenseAmount" inputmode="numeric" placeholder="Сумма" />
+        <input id="closingExpenseAmount" inputmode="decimal" placeholder="Сумма, можно с минусом" />
         <select id="closingExpenseAllocation">
           <option value="default_split">По плану</option>
           <option value="sanzhar_only">Санжар</option>
@@ -15273,8 +15273,8 @@ async function saveClosingExpenseAmount(expenseId, button = null) {
   const input = document.querySelector(`[data-edit-expense-amount-id="${expenseId}"]`);
   const amount = normalizeNumberInput(input?.value || 0);
 
-  if (amount <= 0) {
-    alert("Укажите сумму расхода.");
+  if (amount === 0) {
+    alert("Укажите сумму расхода или прихода. Для прихода введите сумму с минусом, например -50000.");
     input?.focus();
     return;
   }
@@ -15337,8 +15337,8 @@ async function addClosingExpense() {
     titleInput?.focus();
     return;
   }
-  if (amount <= 0) {
-    alert("Укажите сумму расхода.");
+  if (amount === 0) {
+    alert("Укажите сумму расхода или прихода. Для прихода введите сумму с минусом, например -50000.");
     amountInput?.focus();
     return;
   }
@@ -16104,7 +16104,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.34 loaded");
+  console.info("Contrast Finance web app v0.5.35 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
