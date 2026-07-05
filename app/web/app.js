@@ -5674,6 +5674,8 @@ const state = {
   managerDraftItemsByEventId: {},
   managerDraftDeletedByEventId: {},
   managerDraftEventsById: {},
+  managerDraftAutosaveByEventId: {},
+  managerDraftAutosaveTimersByEventId: {},
   managerDraftTempSeq: 1,
   adminEventEditModeId: null,
   adminManualTaxOverrideByEventId: {},
@@ -9002,9 +9004,13 @@ async function openAdminEventEditMode(eventId) {
     // но backend потом отклонял DELETE из-за активных заявок, и весь save падал.
     state.managerPaymentRequests = requests || [];
 
-    const draftEvent = getDraftEvent(event);
+    let draftEvent = getDraftEvent(event);
     state.currentManagerEvent = draftEvent;
-    const draftItems = getDraftItems(eventId, items || []);
+    let draftItems = getDraftItems(eventId, items || []);
+    if (restoreManagerAutosaveSnapshot(eventId)) {
+      draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent || draftEvent;
+      draftItems = getDraftItems(eventId, items || []);
+    }
     const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
     state.currentManagerSummary = previewSummary;
     state.currentManagerItems = draftItems;
@@ -10743,9 +10749,13 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
     }
 
     const dashboardEvent = getManagerDashboardEvent(eventId);
-    const draftEvent = getDraftEvent({ ...(event || {}), ...(dashboardEvent || {}) });
+    let draftEvent = getDraftEvent({ ...(event || {}), ...(dashboardEvent || {}) });
     state.currentManagerEvent = draftEvent;
-    const draftItems = getDraftItems(eventId, items || []);
+    let draftItems = getDraftItems(eventId, items || []);
+    if (restoreManagerAutosaveSnapshot(eventId)) {
+      draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent || draftEvent;
+      draftItems = getDraftItems(eventId, items || []);
+    }
     const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
     state.currentManagerSummary = previewSummary;
     state.currentManagerItems = draftItems;
@@ -11513,11 +11523,13 @@ function attachDraftEventInputs(eventId) {
       setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
       refreshDraftVisibleCalculations(eventId);
       updateCurrentManagerMiniCardLive();
+      markManagerDraftChanged(eventId);
     });
 
     input.addEventListener("change", () => {
       if (input.disabled || !canEditManagerEvent(state.currentManagerEvent)) return;
       setDraftEventValue(eventId, input.getAttribute("data-event-field"), input.value);
+      markManagerDraftChanged(eventId);
       renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
     });
   });
@@ -11691,7 +11703,7 @@ function updateTaxUiInPlace(itemId) {
 
 
 
-function showDraftSavedHint() {
+function showDraftSavedHint(text = "Сохранено", color = "#3d7f00") {
   let hint = document.getElementById("draftSavedHint");
   const head = document.querySelector(".manager-event-actions");
   if (!head) return;
@@ -11702,16 +11714,164 @@ function showDraftSavedHint() {
     hint.style.marginLeft = "10px";
     hint.style.fontSize = "13px";
     hint.style.fontWeight = "700";
-    hint.style.color = "#3d7f00";
+    hint.style.color = color;
     head.appendChild(hint);
   }
 
-  hint.textContent = "Сохранено";
+  hint.style.color = color;
+  hint.textContent = text;
   window.clearTimeout(showDraftSavedHint._timer);
   showDraftSavedHint._timer = window.setTimeout(() => {
     hint.textContent = "";
-  }, 1500);
+  }, 1800);
 }
+
+function managerAutosaveAllowed(eventId) {
+  if (!eventId || isAdminEditingCurrentEvent()) return false;
+  if (state.bootstrap?.user?.role !== "manager") return false;
+  const event = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
+  return canEditManagerEvent(event);
+}
+
+function managerAutosaveStorageKey(eventId) {
+  return `cf_manager_draft_autosave_${eventId}`;
+}
+
+function snapshotManagerDraftForAutosave(eventId) {
+  const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
+  if (!draftEvent) return null;
+  return {
+    version: 1,
+    eventId: String(eventId),
+    savedAt: Date.now(),
+    event: JSON.parse(JSON.stringify(draftEvent)),
+    items: JSON.parse(JSON.stringify(getDraftItems(eventId))),
+    deletedIds: JSON.parse(JSON.stringify(getDraftDeletedIds(eventId))),
+  };
+}
+
+function storeManagerAutosaveSnapshot(eventId) {
+  if (!managerAutosaveAllowed(eventId)) return;
+  const snapshot = snapshotManagerDraftForAutosave(eventId);
+  if (!snapshot) return;
+  try {
+    localStorage.setItem(managerAutosaveStorageKey(eventId), JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn("Не удалось сохранить локальную копию черновика", error);
+  }
+}
+
+function clearManagerAutosaveSnapshot(eventId) {
+  try {
+    localStorage.removeItem(managerAutosaveStorageKey(eventId));
+  } catch (error) {
+    console.warn("Не удалось очистить локальную копию черновика", error);
+  }
+}
+
+function restoreManagerAutosaveSnapshot(eventId) {
+  if (!eventId || isAdminEditingCurrentEvent()) return false;
+  const key = managerAutosaveStorageKey(eventId);
+  let snapshot = null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    snapshot = JSON.parse(raw);
+  } catch (error) {
+    console.warn("Не удалось прочитать локальную копию черновика", error);
+    return false;
+  }
+
+  if (!snapshot || String(snapshot.eventId) !== String(eventId) || !snapshot.event || !Array.isArray(snapshot.items)) return false;
+  state.managerDraftEventsById[String(eventId)] = snapshot.event;
+  state.currentManagerEvent = { ...(state.currentManagerEvent || {}), ...snapshot.event };
+  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = snapshot.items;
+  state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = Array.isArray(snapshot.deletedIds) ? snapshot.deletedIds : [];
+  return true;
+}
+
+function markManagerDraftChanged(eventId) {
+  if (!managerAutosaveAllowed(eventId)) return;
+  storeManagerAutosaveSnapshot(eventId);
+  scheduleManagerDraftAutosave(eventId);
+}
+
+function scheduleManagerDraftAutosave(eventId, delay = 1800) {
+  if (!managerAutosaveAllowed(eventId)) return;
+  const key = String(eventId);
+  if (!state.managerDraftAutosaveTimersByEventId) state.managerDraftAutosaveTimersByEventId = {};
+  window.clearTimeout(state.managerDraftAutosaveTimersByEventId[key]);
+  state.managerDraftAutosaveTimersByEventId[key] = window.setTimeout(() => {
+    flushManagerDraftAutosave(eventId, { silent: true });
+  }, delay);
+}
+
+async function flushManagerDraftAutosave(eventId, options = {}) {
+  if (!managerAutosaveAllowed(eventId)) return false;
+  const key = String(eventId);
+  if (!state.managerDraftAutosaveByEventId) state.managerDraftAutosaveByEventId = {};
+  const record = state.managerDraftAutosaveByEventId[key] || { saving: false, pending: false };
+  state.managerDraftAutosaveByEventId[key] = record;
+
+  if (record.saving) {
+    record.pending = true;
+    return false;
+  }
+
+  window.clearTimeout(state.managerDraftAutosaveTimersByEventId?.[key]);
+  storeManagerAutosaveSnapshot(eventId);
+  record.saving = true;
+  record.pending = false;
+
+  try {
+    const draftEvent = state.managerDraftEventsById?.[key] || state.currentManagerEvent;
+    if (draftEvent) {
+      draftEvent.status = "draft";
+      if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+        state.currentManagerEvent.status = "draft";
+      }
+    }
+
+    await saveDraftItems(eventId);
+    const savedEvent = await saveDraftEvent(eventId);
+    patchManagerEventLocal(eventId, savedEvent || draftEvent);
+    const items = getDraftItems(eventId);
+    patchManagerEventPayloadItems(eventId, items);
+    state.currentManagerItems = items;
+    state.currentManagerSummary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+    clearManagerAutosaveSnapshot(eventId);
+    updateCurrentManagerMiniCardLive();
+    if (!options.silent) showDraftSavedHint("Сохранено");
+    else showDraftSavedHint("Автосохранено");
+    return true;
+  } catch (error) {
+    console.warn("Автосохранение черновика не удалось", error);
+    storeManagerAutosaveSnapshot(eventId);
+    showDraftSavedHint("Ждёт интернет", "#b26a00");
+    return false;
+  } finally {
+    record.saving = false;
+    if (record.pending && managerAutosaveAllowed(eventId)) {
+      record.pending = false;
+      scheduleManagerDraftAutosave(eventId, 900);
+    }
+  }
+}
+
+function flushSelectedManagerDraftAutosaveSoon() {
+  const eventId = state.selectedManagerEventId;
+  if (!eventId || !managerAutosaveAllowed(eventId)) return;
+  flushManagerDraftAutosave(eventId, { silent: true });
+}
+
+window.addEventListener("beforeunload", () => {
+  const eventId = state.selectedManagerEventId;
+  if (eventId) storeManagerAutosaveSnapshot(eventId);
+});
+
+window.addEventListener("online", () => {
+  flushSelectedManagerDraftAutosaveSoon();
+});
 
 
 function attachDraftInputs(eventId) {
@@ -11725,6 +11885,7 @@ function attachDraftInputs(eventId) {
       setDraftItemValue(eventId, itemId, field, input.value);
       refreshDraftVisibleCalculations(eventId);
       updateTaxUiInPlace(itemId);
+      markManagerDraftChanged(eventId);
     });
 
     input.addEventListener("change", () => {
@@ -11732,6 +11893,7 @@ function attachDraftInputs(eventId) {
       const itemId = input.getAttribute("data-item-id");
       const field = input.getAttribute("data-item-field");
       setDraftItemValue(eventId, itemId, field, input.value);
+      markManagerDraftChanged(eventId);
 
       if (["external_price", "external_amount_admin", "amount_fact", "vat_amount", "deduction_amount"].includes(field)) {
         const items = getDraftItems(eventId);
@@ -12092,6 +12254,7 @@ function attachEstimateDragAndDrop() {
       const fromId = event.dataTransfer.getData("text/plain");
       const toId = row.getAttribute("data-event-item-row");
       moveDraftItem(state.selectedManagerEventId, fromId, toId);
+      markManagerDraftChanged(state.selectedManagerEventId);
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
     });
   });
@@ -14121,6 +14284,7 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
     state.currentManagerItems = items;
     patchManagerEventPayloadItems(eventId, items);
 
+    clearManagerAutosaveSnapshot(eventId);
     updateCurrentManagerMiniCardLive();
     rerenderCurrentManagerCard();
     showDraftSavedHint();
@@ -14454,6 +14618,7 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", () => {
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
       addDraftRegularPosition(state.selectedManagerEventId);
+      markManagerDraftChanged(state.selectedManagerEventId);
       if (isAdminEditMode) {
         rerenderCurrentManagerCard();
       } else {
@@ -14470,6 +14635,7 @@ function attachManagerCreateWorkspaceActions() {
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
       if (!confirm("Удалить позицию?")) return;
       deleteDraftItem(state.selectedManagerEventId, button.getAttribute("data-delete-item"));
+      markManagerDraftChanged(state.selectedManagerEventId);
       if (isAdminEditMode) {
         rerenderCurrentManagerCard();
       } else {
@@ -16104,7 +16270,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.35 loaded");
+  console.info("Contrast Finance web app v0.5.36 loaded");
   if (!state.token) {
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
