@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -171,6 +171,66 @@ def list_events(
 
     result = db.execute(query.order_by(Event.event_date.desc(), Event.id.desc()))
     return result.scalars().all()
+
+
+
+
+@router.get("/events/changes")
+def list_event_changes(
+    since: datetime,
+    month: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return visible events changed after the supplied timestamp.
+
+    This is intentionally lightweight: clients use it only as an invalidation
+    signal and fetch the normal dashboard payload when at least one event changed.
+    """
+    query = select(Event.id, Event.updated_at).where(Event.updated_at > since)
+
+    if month:
+        try:
+            year, month_number = [int(part) for part in month.split("-", 1)]
+            start_date = date(year, month_number, 1)
+            next_date = date(year + (month_number == 12), 1 if month_number == 12 else month_number + 1, 1)
+            query = query.where(Event.event_date >= start_date, Event.event_date < next_date)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="month must be YYYY-MM")
+
+    if current_user.role == "admin":
+        pass
+    elif current_user.role == "manager":
+        shared_event_ids = select(EventShare.event_id).where(EventShare.user_id == current_user.id)
+        query = query.where(or_(Event.manager_id == current_user.id, Event.id.in_(shared_event_ids)))
+    elif current_user.role == "department_head":
+        shared_event_ids = (
+            select(EventShare.event_id)
+            .join(User, User.id == EventShare.user_id)
+            .where(User.department_id == current_user.department_id)
+        )
+        event_has_shares = select(EventShare.id).where(EventShare.event_id == Event.id).exists()
+        primary_manager_in_department = (
+            select(User.department_id).where(User.id == Event.manager_id).scalar_subquery()
+            == current_user.department_id
+        )
+        query = query.where(
+            or_(
+                Event.id.in_(shared_event_ids),
+                and_(not_(event_has_shares), primary_manager_in_department),
+            )
+        )
+    else:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    rows = db.execute(query.order_by(Event.updated_at, Event.id)).all()
+    return {
+        "cursor": datetime.utcnow().isoformat(timespec="microseconds"),
+        "events": [
+            {"id": event_id, "updated_at": updated_at.isoformat(timespec="microseconds")}
+            for event_id, updated_at in rows
+        ],
+    }
 
 
 @router.post("/events", response_model=EventRead)

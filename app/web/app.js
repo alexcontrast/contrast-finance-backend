@@ -5716,6 +5716,9 @@ const state = {
   closingCalcRefreshTimer: null,
   closingCalcRefreshSeq: 0,
   authMode: "manager",
+  liveEventSyncTimer: null,
+  liveEventSyncCursor: null,
+  liveEventSyncRunning: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -16145,6 +16148,89 @@ async function loadDepartmentDashboardBundleData(month, departmentId) {
   return state.departmentDashboardBundleLoadingByMonth[key];
 }
 
+
+function clearCurrentDashboardCachesForLiveSync() {
+  const month = String(state.month || selectedMonthValue() || "");
+  delete state.adminDashboardBundleCacheByMonth?.[month];
+  delete state.managerDashboardBundleCacheByMonth?.[month];
+  delete state.managerDashboardCacheByMonth?.[month];
+  if (state.bootstrap?.user?.department_id) {
+    delete state.departmentDashboardBundleCacheByMonth?.[`${state.bootstrap.user.department_id}:${month}`];
+  }
+}
+
+function managerEventHasLocalUnsavedChanges(eventId) {
+  const key = String(eventId || "");
+  const record = state.managerDraftAutosaveByEventId?.[key];
+  if (record?.saving || record?.pending) return true;
+  try {
+    return Boolean(localStorage.getItem(managerAutosaveStorageKey(eventId)));
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function refreshLiveChangedEvents(changedIds) {
+  const ids = new Set((changedIds || []).map(Number).filter(Boolean));
+  if (!ids.size) return;
+
+  const user = state.bootstrap?.user;
+  const selectedManagerEventId = Number(state.selectedManagerEventId || 0);
+  const openAdminEventId = Number(state.currentEventModalPayload?.event?.id || 0);
+  const adminModalOpen = Boolean(openAdminEventId && !$('eventModalBackdrop')?.classList.contains('hidden'));
+  const adminIsEditing = Boolean(state.adminEventEditModeId || $('eventModalBackdrop')?.classList.contains('admin-event-edit-mode'));
+
+  clearCurrentDashboardCachesForLiveSync();
+  await loadDashboard();
+
+  if (user?.role === 'manager' && selectedManagerEventId && ids.has(selectedManagerEventId)) {
+    if (!managerEventHasLocalUnsavedChanges(selectedManagerEventId)) {
+      delete state.managerEventPayloadById?.[String(selectedManagerEventId)];
+      await renderManagerEventDetail(selectedManagerEventId, { noLoading: true });
+      showDraftSavedHint('Обновлено администратором');
+    }
+  }
+
+  if (user?.role === 'admin' && adminModalOpen && ids.has(openAdminEventId) && !adminIsEditing) {
+    delete state.eventModalPayloadById?.[String(openAdminEventId)];
+    await openEventModal(openAdminEventId, { force: true });
+  }
+}
+
+async function pollLiveEventChanges() {
+  if (!state.token || !state.bootstrap?.user || document.hidden || state.liveEventSyncRunning) return;
+  state.liveEventSyncRunning = true;
+  try {
+    const since = state.liveEventSyncCursor || new Date().toISOString();
+    const month = selectedMonthValue();
+    const payload = await api(`/events/changes?since=${encodeURIComponent(since)}&month=${encodeURIComponent(month)}&_=${Date.now()}`);
+    state.liveEventSyncCursor = payload?.cursor || new Date().toISOString();
+    const changedIds = (payload?.events || []).map((item) => Number(item.id)).filter(Boolean);
+    if (changedIds.length) await refreshLiveChangedEvents(changedIds);
+  } catch (error) {
+    console.warn('Live sync мероприятий временно недоступен', error);
+  } finally {
+    state.liveEventSyncRunning = false;
+  }
+}
+
+function startLiveEventSync() {
+  if (state.liveEventSyncTimer) window.clearInterval(state.liveEventSyncTimer);
+  state.liveEventSyncCursor = new Date().toISOString();
+  state.liveEventSyncTimer = window.setInterval(pollLiveEventChanges, 5000);
+}
+
+function stopLiveEventSync() {
+  if (state.liveEventSyncTimer) window.clearInterval(state.liveEventSyncTimer);
+  state.liveEventSyncTimer = null;
+  state.liveEventSyncCursor = null;
+  state.liveEventSyncRunning = false;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) pollLiveEventChanges();
+});
+
 function renderDashboardLoading(role) {
   const title = role === "admin" ? "Админка" : role === "department_head" ? "Кабинет отдела" : "Мои мероприятия";
   if (document.getElementById("dashboardTitle")) document.getElementById("dashboardTitle").textContent = title;
@@ -16270,8 +16356,9 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.36 loaded");
+  console.info("Contrast Finance web app v0.5.37 loaded");
   if (!state.token) {
+    stopLiveEventSync();
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
     showLogin();
@@ -16303,7 +16390,9 @@ async function boot() {
     if (document.getElementById("dashboardHint")) {
       document.getElementById("dashboardHint").textContent = "Загружаем данные месяца…";
     }
-    loadDashboard().catch((error) => {
+    loadDashboard().then(() => {
+      startLiveEventSync();
+    }).catch((error) => {
       console.warn("Не удалось загрузить dashboard", error);
       if (user.role === "admin") renderAdminEmptyDashboard(selectedMonthValue(), error);
       else if (user.role === "manager") renderManagerDashboard(emptyManagerDashboard(selectedMonthValue()), []);
@@ -16314,6 +16403,7 @@ async function boot() {
     localStorage.removeItem("cf_token");
     state.token = "";
     state.bootstrap = null;
+    stopLiveEventSync();
     clearAuthScopedInflightRequests();
     resetDashboardUiAndRoleState("");
     resetRoleBodyClasses();
