@@ -8378,7 +8378,9 @@ function paymentRequestMobileThirdLine(request) {
   const methodValue = String(request?.payment_method || "").toLowerCase();
 
   if (isInvoiceMethod(methodValue) || isInvoiceMethod(method)) {
-    return String(request?.tax_status_label || request?.tax_status || request?.kgd_status || "").trim();
+    const regime = String(request?.tax_status_label || request?.tax_status || request?.kgd_status || "").trim();
+    const legalEntityName = String(request?.contractor_name_snapshot || request?.contractor_name || "").trim();
+    return [regime, legalEntityName].filter(Boolean).join(" / ");
   }
 
   if (methodValue === "card" || method === "На карту") {
@@ -16621,7 +16623,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.45 loaded");
+  console.info("Contrast Finance web app v0.5.46 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
