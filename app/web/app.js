@@ -16203,18 +16203,95 @@ async function loadDepartmentDashboardBundleData(month, departmentId) {
 }
 
 
-function clearCurrentDashboardCachesForLiveSync() {
-  const month = String(state.month || selectedMonthValue() || "");
-  delete state.adminDashboardBundleCacheByMonth?.[month];
-  delete state.managerDashboardBundleCacheByMonth?.[month];
-  delete state.managerDashboardCacheByMonth?.[month];
-  if (state.bootstrap?.user?.department_id) {
-    delete state.departmentDashboardBundleCacheByMonth?.[`${state.bootstrap.user.department_id}:${month}`];
+function liveSyncNodeKey(node) {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
+  if (node.id) return `id:${node.id}`;
+  const itemId = node.getAttribute('data-item-id') || node.getAttribute('data-live-item-id');
+  const itemField = node.getAttribute('data-item-field');
+  if (itemId && itemField) return `item:${itemId}:${itemField}`;
+  if (itemId) return `item-row:${itemId}`;
+  const eventField = node.getAttribute('data-event-field');
+  const eventId = node.getAttribute('data-event-id');
+  if (eventField && eventId) return `event:${eventId}:${eventField}`;
+  if (node.hasAttribute('data-manager-event-id')) return `manager-event:${node.getAttribute('data-manager-event-id')}`;
+  if (eventId) return `event-row:${eventId}`;
+  return null;
+}
+
+function morphLiveNode(current, next) {
+  if (!current || !next) return;
+  if (current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) {
+    current.replaceWith(next.cloneNode(true));
+    return;
   }
+
+  if (current.nodeType === Node.TEXT_NODE) {
+    if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+    return;
+  }
+
+  const active = document.activeElement;
+  const isActiveControl = current === active && /^(INPUT|TEXTAREA|SELECT)$/.test(current.tagName);
+  const scrollTop = current.scrollTop;
+  const scrollLeft = current.scrollLeft;
+
+  for (const attr of [...current.attributes]) {
+    if (!next.hasAttribute(attr.name)) current.removeAttribute(attr.name);
+  }
+  for (const attr of [...next.attributes]) {
+    if (current.getAttribute(attr.name) !== attr.value) current.setAttribute(attr.name, attr.value);
+  }
+
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(current.tagName) && !isActiveControl) {
+    if (current.value !== next.value) current.value = next.value;
+    if ('checked' in current) current.checked = next.checked;
+    if ('disabled' in current) current.disabled = next.disabled;
+  }
+
+  const currentChildren = [...current.childNodes];
+  const keyedCurrent = new Map();
+  currentChildren.forEach((child) => {
+    const key = liveSyncNodeKey(child);
+    if (key && !keyedCurrent.has(key)) keyedCurrent.set(key, child);
+  });
+  const used = new Set();
+  let cursor = current.firstChild;
+
+  [...next.childNodes].forEach((nextChild, index) => {
+    const key = liveSyncNodeKey(nextChild);
+    let match = key ? keyedCurrent.get(key) : null;
+    if (match && used.has(match)) match = null;
+    if (!match) {
+      const positional = currentChildren[index];
+      if (positional && !used.has(positional) && positional.nodeType === nextChild.nodeType && positional.nodeName === nextChild.nodeName) {
+        match = positional;
+      }
+    }
+
+    if (!match) {
+      const clone = nextChild.cloneNode(true);
+      current.insertBefore(clone, cursor);
+      used.add(clone);
+      cursor = clone.nextSibling;
+      return;
+    }
+
+    used.add(match);
+    if (match !== cursor) current.insertBefore(match, cursor);
+    morphLiveNode(match, nextChild);
+    cursor = match.nextSibling;
+  });
+
+  currentChildren.forEach((child) => {
+    if (!used.has(child) && child.parentNode === current && child !== active && !child.contains?.(active)) child.remove();
+  });
+
+  if (scrollTop) current.scrollTop = scrollTop;
+  if (scrollLeft) current.scrollLeft = scrollLeft;
 }
 
 function managerEventHasLocalUnsavedChanges(eventId) {
-  const key = String(eventId || "");
+  const key = String(eventId || '');
   const record = state.managerDraftAutosaveByEventId?.[key];
   if (record?.saving || record?.pending) return true;
   try {
@@ -16224,30 +16301,164 @@ function managerEventHasLocalUnsavedChanges(eventId) {
   }
 }
 
+function patchManagerMiniCardsFromDashboard(dashboard, changedIds) {
+  const temp = document.createElement('div');
+  temp.innerHTML = renderManagerEventList(normalizeManagerDashboardForMonth(dashboard || {}, state.month));
+  changedIds.forEach((eventId) => {
+    const current = document.querySelector(`[data-manager-event-id="${eventId}"]`);
+    const next = temp.querySelector(`[data-manager-event-id="${eventId}"]`);
+    if (current && next) morphLiveNode(current, next);
+    else if (!next && current) current.remove();
+  });
+  scheduleMiniBadgeFit();
+}
+
+function patchAdminEventRowsFromDashboard(dashboard, changedIds) {
+  if (!['overview', 'events', 'events_archive'].includes(state.activeAdminTab)) return;
+  const normalized = normalizeAdminDashboardForMonth(dashboard || {}, state.month);
+  const temp = document.createElement('div');
+  if (state.activeAdminTab === 'overview') temp.innerHTML = renderAdminOverview(normalized);
+  else temp.innerHTML = renderAdminEvents(normalized, state.activeAdminTab === 'events_archive' ? 'archive' : 'active');
+
+  changedIds.forEach((eventId) => {
+    const selector = `[data-event-id="${eventId}"]`;
+    const current = document.querySelector(`#dashboardContent ${selector}`);
+    const next = temp.querySelector(selector);
+    if (current && next) morphLiveNode(current, next);
+    else if (!next && current) current.remove();
+  });
+}
+
+function patchDepartmentEventRowsFromDashboard(dashboard, changedIds) {
+  if (state.activeDepartmentHeadTab !== 'events') return;
+  const temp = document.createElement('div');
+  temp.innerHTML = renderDepartmentHeadEventsTable(dashboard?.events || []);
+  changedIds.forEach((eventId) => {
+    const selector = `[data-event-id="${eventId}"]`;
+    const current = document.querySelector(`#dashboardContent ${selector}`);
+    const next = temp.querySelector(selector);
+    if (current && next) morphLiveNode(current, next);
+    else if (!next && current) current.remove();
+  });
+}
+
+function patchOpenManagerEventPayload(payload) {
+  if (!payload?.event?.id) return false;
+  const eventId = Number(payload.event.id);
+  if (Number(state.selectedManagerEventId || 0) !== eventId) return false;
+  if (managerEventHasLocalUnsavedChanges(eventId)) return false;
+
+  const holder = document.getElementById('managerEventDetail');
+  const currentCard = holder?.querySelector('.manager-event-card');
+  if (!holder || !currentCard) return false;
+
+  const event = getDraftEvent(payload.event);
+  const items = payload.items || [];
+  const summary = calculateDraftSummaryPreview(items, event, payload.summary);
+  const temp = document.createElement('div');
+  temp.innerHTML = renderManagerEventCard(event, items, summary);
+  const nextCard = temp.firstElementChild;
+  if (!nextCard) return false;
+
+  state.currentManagerEvent = event;
+  state.currentManagerItems = items;
+  state.currentManagerSummary = summary;
+  state.managerEventPayloadById[String(eventId)] = payload;
+  morphLiveNode(currentCard, nextCard);
+  attachManagerCreateWorkspaceActions();
+  attachCustomerPaymentActions(holder);
+  attachDraftEventInputs(eventId);
+  attachDraftInputs(eventId);
+  showDraftSavedHint('Обновлено');
+  return true;
+}
+
+function patchOpenAdminEventPayload(payload) {
+  const eventId = Number(payload?.event?.id || 0);
+  const openId = Number(state.currentEventModalPayload?.event?.id || 0);
+  const backdrop = $('eventModalBackdrop');
+  if (!eventId || eventId !== openId || !backdrop || backdrop.classList.contains('hidden')) return false;
+  if (state.adminEventEditModeId || backdrop.classList.contains('admin-event-edit-mode')) return false;
+
+  state.currentEventModalPayload = payload;
+  state.eventModalPayloadById[String(eventId)] = payload;
+  const titleClient = document.querySelector('#eventModalTitle .event-modal-title-client');
+  const titleName = document.querySelector('#eventModalTitle .event-modal-title-name');
+  if (titleClient) titleClient.textContent = payload.event.client_name || '';
+  if (titleName) titleName.textContent = payload.event.title || '';
+
+  const metricValues = document.querySelectorAll('#eventModalContent .modal-metric-cards .card.metric .value');
+  const summary = payload.summary || {};
+  const values = [
+    customerTurnoverAmount(summary),
+    customerTaxesTopAmount(summary),
+    customerVatTopAmount(summary),
+    summary.manager_salary,
+    summary.final_company_income,
+  ];
+  metricValues.forEach((node, index) => {
+    if (index < values.length) node.textContent = formatMoney(values[index] || 0);
+  });
+
+  const tableBody = document.querySelector('#eventModalContent .event-modal-estimate-table tbody');
+  if (tableBody) {
+    const taxesAmount = customerTaxesTopAmount(summary);
+    const vatAmount = customerVatTopAmount(summary);
+    const sortedItems = sortItemsCoordinatorFirst((payload.items || []).filter((item) => item.item_type !== 'manager_salary'));
+    const rowsHtml = sortedItems.map((item) => `
+      <tr data-live-item-id="${item.id}">
+        <td><strong>${escapeHtml(item.external_name || '')}</strong></td>
+        <td>${formatMoney(item.external_amount)}</td>
+        <td>${formatMoney(item.amount_fact)}</td>
+        <td class="paid-col">${paidAmountCellHtml(item, payload.requests || [])}</td>
+        <td class="commission-col">${formatMoney(internalCommissionValue(item))}</td>
+        <td class="vat-col">${formatMoney(itemVatVisible(item))}</td>
+        <td class="deduction-col">${formatMoney(itemDeductionVisible(item))}</td>
+        <td class="method-col">${paymentMethodLabel(item.payment_method)}</td>
+      </tr>`).join('')
+      + adminManagerSalaryEstimateRow(summary, payload.event)
+      + adminEstimateTopRows(payload.event, summary, sortedItems, taxesAmount, vatAmount);
+    const tempBody = document.createElement('tbody');
+    tempBody.innerHTML = rowsHtml;
+    morphLiveNode(tableBody, tempBody);
+  }
+  return true;
+}
+
 async function refreshLiveChangedEvents(changedIds) {
   const ids = new Set((changedIds || []).map(Number).filter(Boolean));
   if (!ids.size) return;
 
   const user = state.bootstrap?.user;
-  const selectedManagerEventId = Number(state.selectedManagerEventId || 0);
-  const openAdminEventId = Number(state.currentEventModalPayload?.event?.id || 0);
-  const adminModalOpen = Boolean(openAdminEventId && !$('eventModalBackdrop')?.classList.contains('hidden'));
-  const adminIsEditing = Boolean(state.adminEventEditModeId || $('eventModalBackdrop')?.classList.contains('admin-event-edit-mode'));
-
-  clearCurrentDashboardCachesForLiveSync();
-  await loadDashboard();
-
-  if (user?.role === 'manager' && selectedManagerEventId && ids.has(selectedManagerEventId)) {
-    if (!managerEventHasLocalUnsavedChanges(selectedManagerEventId)) {
-      delete state.managerEventPayloadById?.[String(selectedManagerEventId)];
-      await renderManagerEventDetail(selectedManagerEventId, { noLoading: true });
-      showDraftSavedHint('Обновлено администратором');
-    }
+  const month = String(state.month || selectedMonthValue() || '');
+  if (user?.role === 'manager') {
+    const bundle = await api(`/manager-dashboard-bundle?month=${encodeURIComponent(month)}&include_drafts=true&_=${Date.now()}`);
+    const dashboard = bundle?.dashboard || emptyManagerDashboard(month);
+    state.managerData = normalizeManagerDashboardForMonth(dashboard, month);
+    state.managerPaymentRequests = bundle?.payment_requests || state.managerPaymentRequests || [];
+    cacheManagerEventPayloads(bundle?.event_payloads || {}, month);
+    patchManagerMiniCardsFromDashboard(dashboard, ids);
+    ids.forEach((eventId) => patchOpenManagerEventPayload(bundle?.event_payloads?.[String(eventId)]));
+    return;
   }
 
-  if (user?.role === 'admin' && adminModalOpen && ids.has(openAdminEventId) && !adminIsEditing) {
-    delete state.eventModalPayloadById?.[String(openAdminEventId)];
-    await openEventModal(openAdminEventId, { force: true });
+  if (user?.role === 'admin') {
+    const bundle = await api(`/admin-dashboard-bundle?month=${encodeURIComponent(month)}&include_drafts=true&_=${Date.now()}`);
+    const dashboard = bundle?.dashboard || emptyAdminDashboard(month);
+    state.adminData = normalizeAdminDashboardForMonth(dashboard, month);
+    cacheEventModalPayloads(bundle?.event_payloads || {}, month);
+    patchAdminEventRowsFromDashboard(dashboard, ids);
+    ids.forEach((eventId) => patchOpenAdminEventPayload(bundle?.event_payloads?.[String(eventId)]));
+    return;
+  }
+
+  if (user?.role === 'department_head') {
+    const bundle = await api(`/department-head-dashboard-bundle?department_id=${encodeURIComponent(user.department_id)}&month=${encodeURIComponent(month)}&include_drafts=true&_=${Date.now()}`);
+    const dashboard = bundle?.dashboard || {};
+    state.departmentHeadData = dashboard;
+    cacheEventModalPayloads(bundle?.event_payloads || {}, month);
+    patchDepartmentEventRowsFromDashboard(dashboard, ids);
+    ids.forEach((eventId) => patchOpenAdminEventPayload(bundle?.event_payloads?.[String(eventId)]));
   }
 }
 
@@ -16410,7 +16621,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.44 loaded");
+  console.info("Contrast Finance web app v0.5.45 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
