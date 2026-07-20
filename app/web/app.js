@@ -9144,7 +9144,7 @@ function renderEventModalPayload(payload, selectedRequestStatus = "all") {
               <td><strong>${item.external_name}</strong></td>
               <td>${formatMoney(item.external_amount)}</td>
               <td>${formatMoney(item.amount_fact)}</td>
-              <td class="paid-col">${formatMoney(item.paid_amount)}</td>
+              <td class="paid-col">${paidAmountCellHtml(item, requests || [])}</td>
               <td class="commission-col">${formatMoney(internalCommissionValue(item))}</td>
               <td class="vat-col">${formatMoney(itemVatVisible(item))}</td>
               <td class="deduction-col">${formatMoney(itemDeductionVisible(item))}</td>
@@ -12463,7 +12463,7 @@ function renderInternalEstimate(items, event, summary = null) {
                 </td>
                 <td class="vat-col">${manualTaxInputHtml(internalVatValue(item), "vat_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
                 <td class="deduction-col">${manualTaxInputHtml(internalDeductionValue(item), "deduction_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
-                <td class="paid-col">${paidAmountCellHtml(item)}</td>
+                <td class="paid-col">${paidAmountCellHtml(item, isAdminEditMode ? (state.currentEventModalPayload?.requests || []) : null)}</td>
                 <td>${deleteButtonHtmlForItem(item)}</td>
               </tr>
             `;
@@ -13367,9 +13367,10 @@ async function refreshManagerPaymentRequestsForEvent(eventId) {
 }
 
 
-function activePaymentRequestsForItem(item) {
+function activePaymentRequestsForItem(item, requestsSource = null) {
   if (!item || String(item.id).startsWith("tmp-")) return [];
-  return (state.managerPaymentRequests || []).filter((request) =>
+  const requests = Array.isArray(requestsSource) ? requestsSource : (state.managerPaymentRequests || []);
+  return requests.filter((request) =>
     Number(request.event_item_id) === Number(item.id) &&
     !["cancelled", "rejected"].includes(request.status)
   );
@@ -13380,8 +13381,8 @@ function activeSelfEmployedRequestForItem(item) {
   return activePaymentRequestsForItem(item).find((request) => request.payment_method === "self_employed") || null;
 }
 
-function paymentRequestDisplayForItem(item) {
-  const requests = activePaymentRequestsForItem(item);
+function paymentRequestDisplayForItem(item, requestsSource = null) {
+  const requests = activePaymentRequestsForItem(item, requestsSource);
   if (requests.length) {
     const amount = requests.reduce((sum, request) => sum + asNumber(request.amount_requested), 0);
     const allPaid = requests.every((request) => request.status === "paid");
@@ -13392,8 +13393,8 @@ function paymentRequestDisplayForItem(item) {
   return { amount: fallbackPaid, allPaid: fallbackPaid > 0, hasRequests: false };
 }
 
-function paidAmountCellHtml(item) {
-  const display = paymentRequestDisplayForItem(item);
+function paidAmountCellHtml(item, requestsSource = null) {
+  const display = paymentRequestDisplayForItem(item, requestsSource);
   const toneClass = display.hasRequests && !display.allPaid ? "paid-amount-pending" : "paid-amount-complete";
   const title = display.hasRequests && !display.allPaid
     ? "Есть неоплаченные заявки по позиции"
@@ -16404,7 +16405,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.41 loaded");
+  console.info("Contrast Finance web app v0.5.42 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

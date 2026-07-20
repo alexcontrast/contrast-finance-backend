@@ -14538,11 +14538,13 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
 
 
 /* v0.5.41 — manager estimate payment state */
-.internal-estimate-table .paid-amount-pending {
+.internal-estimate-table .paid-amount-pending,
+.event-modal-estimate-table .paid-amount-pending {
   color: #8a929c;
   font-weight: 700;
 }
-.internal-estimate-table .paid-amount-complete {
+.internal-estimate-table .paid-amount-complete,
+.event-modal-estimate-table .paid-amount-complete {
   color: #171a1f;
   font-weight: 800;
 }
