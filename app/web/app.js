@@ -6602,7 +6602,7 @@ function renderEventPaymentRequestsTable(requests, selectedStatus = "all") {
                 ${requestPositionMobileCell(request)}
                 ${requestHtmlCell(`<div class="request-main-amount">${formatMoney(request.amount_requested)}</div>`, formatMoney(request.amount_requested), "request-amount-cell nowrap")}
                 ${requestMethodMobileCell(request)}
-                ${requestTextCell(request.tax_status || request.tax_status_label || "", "request-tax-cell")}
+                ${requestHtmlCell(escapeHtml(request.tax_status || request.tax_status_label || ""), request.contractor_name_snapshot || request.contractor_name || "", "request-tax-cell clip-cell")}
                 ${requestHtmlCell(`<span class="status ${request.status} event-request-status-badge" title="${escapeHtml(statusLabel(request.status))}">${statusLabel(request.status)}</span>`, statusLabel(request.status), "request-status-cell nowrap")}
                 ${requestHtmlCell(`<span class="status ${requestMoneyStatus(request)} event-request-status-badge request-money-badge" title="${escapeHtml(statusLabel(requestMoneyStatus(request)))}">${statusLabel(requestMoneyStatus(request))}</span>`, statusLabel(requestMoneyStatus(request)), "request-money-cell nowrap")}
                 <td class="request-actions-cell">
@@ -16623,7 +16623,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.46 loaded");
+  console.info("Contrast Finance web app v0.5.47 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
