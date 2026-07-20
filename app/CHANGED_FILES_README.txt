@@ -1,8 +1,5 @@
-v0.5.37 changed files:
-- app/api/routes/events.py
+v0.5.39 changed files:
 - app/web/app.js
+- app/web/styles.css
 - app/web/index.html
-- CHANGELOG.md
-- README.md
-
-No database migration. No version field.
+No files to delete. No DB migration.

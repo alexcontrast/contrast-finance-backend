@@ -7422,6 +7422,7 @@ function renderDepartmentHeadManagerRows(managers = []) {
           `;
         }).join("")}
       </div>
+      ${isAdminEditMode ? "" : `<div class="manager-save-error" data-manager-save-error="${event.id}" role="alert" aria-live="assertive"></div>`}
     </section>
   `;
 }
@@ -14264,12 +14265,21 @@ function patchManagerPaymentRequestCreated(eventId, createdRequest) {
   incrementCounts(bundle?.event_payloads?.[id]?.event);
 }
 
+function setManagerSaveError(eventId, message = "") {
+  const node = document.querySelector(`[data-manager-save-error="${String(eventId)}"]`);
+  if (!node) return;
+  node.textContent = message;
+  node.classList.toggle("show", Boolean(message));
+}
+
 async function saveManagerEventQuick(eventId, targetStatus, button, successMessage) {
   if (!eventId) return;
   const startedAt = perfNow();
   const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
   if (!draftEvent) return;
 
+  let stage = "подготовка данных";
+  setManagerSaveError(eventId, "");
   setButtonLoading(button, true, targetStatus === "review" ? "Отправляем…" : "Сохраняем…");
   try {
     draftEvent.status = targetStatus;
@@ -14277,8 +14287,11 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
       state.currentManagerEvent.status = targetStatus;
     }
 
+    stage = "сохранение позиций сметы";
     await timedAction(`manager-${targetStatus}-items-save`, () => saveDraftItems(eventId));
-    const savedEvent = await timedAction(`manager-${targetStatus}-event-save`, () => saveDraftEvent(eventId));
+
+    stage = targetStatus === "review" ? "отправка мероприятия на проверку" : "сохранение мероприятия";
+    const savedEvent = await timedAction(`manager-${targetStatus}-event-save`, () => saveDraftEvent(eventId, { force: true }));
     patchManagerEventLocal(eventId, savedEvent || draftEvent);
 
     const items = getDraftItems(eventId);
@@ -14292,6 +14305,13 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
     rerenderCurrentManagerCard();
     showDraftSavedHint();
     if (successMessage) showToast(successMessage);
+  } catch (error) {
+    const reason = String(error?.message || "Неизвестная ошибка");
+    const action = targetStatus === "review" ? "Не удалось отправить мероприятие Саше" : "Не удалось сохранить черновик";
+    const message = `${action}. Этап: ${stage}. Причина: ${reason}`;
+    console.error("Manager event save failed", { eventId, targetStatus, stage, error });
+    setManagerSaveError(eventId, message);
+    showToast(message);
   } finally {
     setButtonLoading(button, false);
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-${targetStatus}-action total=${perfSeconds(startedAt)}s`);
@@ -16356,7 +16376,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.37 loaded");
+  console.info("Contrast Finance web app v0.5.39 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
