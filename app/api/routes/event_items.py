@@ -196,9 +196,11 @@ def bulk_delete_event_items(
     )
     update_sec = time.perf_counter() - update_started_at
     deleted_count = int(result.rowcount or 0)
-    if deleted_count != len(item_ids):
-        db.rollback()
-        raise HTTPException(status_code=404, detail="Одна или несколько позиций не найдены")
+    # Удаление строк сметы должно быть идемпотентным. В локальном черновике
+    # браузера могут остаться ID позиций, которые уже были удалены ранее
+    # (например, после повторного открытия старого черновика). Такие ID не
+    # должны блокировать отправку всего мероприятия на проверку.
+    missing_count = max(0, len(item_ids) - deleted_count)
 
     commit_started_at = time.perf_counter()
     db.commit()
@@ -217,7 +219,13 @@ def bulk_delete_event_items(
         commit_sec,
         _sec(started_at),
     )
-    return {"ok": True, "event_id": event_id, "deleted_item_ids": item_ids}
+    return {
+        "ok": True,
+        "event_id": event_id,
+        "deleted_item_ids": item_ids,
+        "deleted_count": deleted_count,
+        "missing_count": missing_count,
+    }
 
 
 @router.get("/event-items/{item_id}", response_model=EventItemRead)

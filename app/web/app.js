@@ -13294,7 +13294,7 @@ async function openManagerActionDropdown(button, eventId, action) {
 
 
 
-function showToast(message) {
+function showToast(message, durationMs = 2600) {
   let toast = document.getElementById("appToast");
   if (!toast) {
     toast = document.createElement("div");
@@ -13306,7 +13306,7 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.add("show");
   clearTimeout(window.__cfToastTimer);
-  window.__cfToastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+  window.__cfToastTimer = setTimeout(() => toast.classList.remove("show"), Math.max(1000, Number(durationMs) || 2600));
 }
 
 
@@ -14340,7 +14340,7 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
     const message = `${action}. Этап: ${stage}. Причина: ${reason}`;
     console.error("Manager event save failed", { eventId, targetStatus, stage, error });
     setManagerSaveError(eventId, message);
-    showToast(message);
+    showToast(message, 7000);
   } finally {
     setButtonLoading(button, false);
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-${targetStatus}-action total=${perfSeconds(startedAt)}s`);
@@ -16405,7 +16405,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.42 loaded");
+  console.info("Contrast Finance web app v0.5.43 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

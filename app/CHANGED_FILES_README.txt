@@ -1,6 +1,6 @@
-v0.5.42 changed files:
+v0.5.43 changed files:
+- app/api/routes/event_items.py
 - app/web/app.js
-- app/web/styles.css
 - app/web/index.html
 - CHANGELOG.md
 - README.md
