@@ -913,6 +913,14 @@ def refund_paid_payment_request(
     if item_id is not None:
         sync_item_paid_amount_from_requests(db, item_id)
 
+    # A refund changes both the visible request state and the paid amount in the
+    # manager estimate. Touch the parent event so /events/changes notifies other
+    # open cabinets and their cached request payload is refreshed immediately.
+    event = db.get(Event, request.event_id)
+    if event is not None:
+        event.updated_at = now
+        db.add(event)
+
     mark_payment_request_for_telegram_sync(db, request.id)
     db.commit()
 

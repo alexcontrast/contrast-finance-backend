@@ -1,6 +1,8 @@
-v0.5.47 changed files
+v0.5.48 changed files
 
+app/api/routes/payment_requests.py
 app/web/app.js
 app/web/index.html
-
-Изменение: в карточке мероприятия в столбце «КГД» виден налоговый режим, а tooltip показывает название юрлица.
+CHANGELOG.md
+README.md
+app/CHANGED_FILES_README.txt
