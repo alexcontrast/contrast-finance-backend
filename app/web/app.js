@@ -11635,7 +11635,12 @@ function updateInternalRowCells(itemId) {
   if (vatCell) vatCell.textContent = formatMoney(internalVatValue(item));
   if (deductionCell) deductionCell.textContent = formatMoney(internalDeductionValue(item));
   if (commissionCell) commissionCell.textContent = formatMoney(internalCommissionValue(item));
-  if (paidCell) paidCell.textContent = formatMoney(item.paid_amount);
+  if (paidCell) {
+    const display = paymentRequestDisplayForItem(item);
+    paidCell.textContent = formatMoney(display.amount);
+    paidCell.classList.toggle("paid-amount-pending", display.hasRequests && !display.allPaid);
+    paidCell.classList.toggle("paid-amount-complete", !display.hasRequests || display.allPaid);
+  }
 
   const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
   const activeMethod = paymentMethodFromActiveRequest(item);
@@ -12458,7 +12463,7 @@ function renderInternalEstimate(items, event, summary = null) {
                 </td>
                 <td class="vat-col">${manualTaxInputHtml(internalVatValue(item), "vat_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
                 <td class="deduction-col">${manualTaxInputHtml(internalDeductionValue(item), "deduction_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
-                <td class="paid-col"><strong>${formatMoney(item.paid_amount)}</strong></td>
+                <td class="paid-col">${paidAmountCellHtml(item)}</td>
                 <td>${deleteButtonHtmlForItem(item)}</td>
               </tr>
             `;
@@ -13375,6 +13380,28 @@ function activeSelfEmployedRequestForItem(item) {
   return activePaymentRequestsForItem(item).find((request) => request.payment_method === "self_employed") || null;
 }
 
+function paymentRequestDisplayForItem(item) {
+  const requests = activePaymentRequestsForItem(item);
+  if (requests.length) {
+    const amount = requests.reduce((sum, request) => sum + asNumber(request.amount_requested), 0);
+    const allPaid = requests.every((request) => request.status === "paid");
+    return { amount, allPaid, hasRequests: true };
+  }
+
+  const fallbackPaid = asNumber(item?.paid_amount);
+  return { amount: fallbackPaid, allPaid: fallbackPaid > 0, hasRequests: false };
+}
+
+function paidAmountCellHtml(item) {
+  const display = paymentRequestDisplayForItem(item);
+  const toneClass = display.hasRequests && !display.allPaid ? "paid-amount-pending" : "paid-amount-complete";
+  const title = display.hasRequests && !display.allPaid
+    ? "Есть неоплаченные заявки по позиции"
+    : (display.amount > 0 ? "Все заявки по позиции оплачены" : "Заявок по позиции нет");
+  return `<strong class="${toneClass}" title="${title}">${formatMoney(display.amount)}</strong>`;
+}
+
+
 function selfEmployedDeductionBase(item) {
   const fact = asNumber(item?.amount_fact);
   if (fact > 0) return fact;
@@ -13838,7 +13865,8 @@ function renderPaymentPositionState(eventId) {
   if (!item || !info || !amountInput || !methodSelect || !extra) return;
 
   const base = paymentBaseAmountForItem(item);
-  const paid = asNumber(item.paid_amount);
+  const paidDisplay = paymentRequestDisplayForItem(item);
+  const paid = paidDisplay.amount;
   const remaining = paymentRemainingForItem(item);
 
   info.innerHTML = `
@@ -16376,7 +16404,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.40 loaded");
+  console.info("Contrast Finance web app v0.5.41 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

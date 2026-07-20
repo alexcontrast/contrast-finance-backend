@@ -827,7 +827,9 @@ def update_payment_request_status(
         request.money_status = "cash_received"
         request.cash_received_at = datetime.utcnow()
         request.updated_at = datetime.utcnow()
+        event.updated_at = datetime.utcnow()
         db.add(request)
+        db.add(event)
         mark_payment_request_for_telegram_sync(db, request.id)
         db.commit()
         db.refresh(request)
@@ -845,7 +847,9 @@ def update_payment_request_status(
 
         # paid_amount is recalculated from all paid requests below.
 
+    event.updated_at = datetime.utcnow()
     db.add(request)
+    db.add(event)
     db.flush()
     if item is not None:
         sync_item_paid_amount_from_requests(db, item.id)

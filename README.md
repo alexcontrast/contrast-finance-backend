@@ -1,5 +1,5 @@
-# Contrast Finance v0.5.40
+# Contrast Finance v0.5.41
 
-Desktop request tables date correction.
+Точечный патч отображения оплат в смете менеджера.
 
-In admin and department-head `Заявки` / `Архив заявок`, the first column is now the event date. The `Создана` column remains the request creation timestamp.
+Для деплоя достаточно changed-only архива. Миграций БД нет.

@@ -1,6 +1,12 @@
-# v0.5.40 — Desktop requests event date fix
+# CHANGELOG
 
-- In desktop admin and department-head tables for `Заявки` and `Архив заявок`, the first date column now shows the event date instead of the payment request creation date.
-- The separate `Создана` column continues to show the request creation date and time.
-- Mobile request cards were not changed.
-- No backend, database, Telegram bot, Google Sheets, statistics, or manager-cabinet logic changes.
+## v0.5.41 — Manager paid column from payment requests
+
+- Исправлено расхождение: заявка могла быть `Оплачено`, но в смете менеджера колонка `Оплачено` оставалась пустой.
+- `EventItem.paid_amount` больше не перезаписывается устаревшим значением из формы сметы; backend пересчитывает его только по заявкам со статусом `paid`.
+- Внутренняя смета менеджера показывает сумму всех активных заявок по позиции:
+  - серым, пока хотя бы одна заявка не оплачена;
+  - чёрным, когда оплачены все заявки по позиции.
+- Если после оплаченной заявки создаётся новая неоплаченная, общая сумма снова становится серой до её оплаты.
+- Изменение статуса заявки обновляет `event.updated_at`, чтобы live sync подтянул оплату менеджеру без F5.
+- Миграции БД не требуются.

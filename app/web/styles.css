@@ -14535,3 +14535,14 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   white-space: normal;
 }
 .manager-save-error.show { display: block; }
+
+
+/* v0.5.41 — manager estimate payment state */
+.internal-estimate-table .paid-amount-pending {
+  color: #8a929c;
+  font-weight: 700;
+}
+.internal-estimate-table .paid-amount-complete {
+  color: #171a1f;
+  font-weight: 800;
+}

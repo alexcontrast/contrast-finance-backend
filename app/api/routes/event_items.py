@@ -14,7 +14,7 @@ from app.models.payment_request import PaymentRequest
 from app.models.user import User
 from app.schemas.event_item import EventItemCreate, EventItemRead
 from app.services.auth import get_current_user
-from app.services.payment_totals import sync_event_paid_amounts_from_requests
+from app.services.payment_totals import sync_event_paid_amounts_from_requests, sync_item_paid_amount_from_requests
 from app.services.authorization import (
     get_event_or_404,
     get_item_or_404,
@@ -252,7 +252,6 @@ def update_event_item(
     item.external_amount = calculate_external_amount(payload)
     item.external_note = payload.external_note
     item.amount_fact = payload.amount_fact
-    item.paid_amount = payload.paid_amount
     item.payment_method = payload.payment_method
     item.iin_bin = payload.iin_bin
     item.iin_bin_locked = payload.iin_bin_locked
@@ -266,6 +265,9 @@ def update_event_item(
 
     db.add(item)
     db.flush()
+    # paid_amount is derived exclusively from payment requests.
+    # Never trust a stale value coming from the estimate form.
+    sync_item_paid_amount_from_requests(db, item.id)
     flush_sec = _sec(started_at) - item_sql_sec - auth_sec - build_sec
     result = EventItemRead.model_validate(item)
     response_sec = _sec(started_at) - item_sql_sec - auth_sec - build_sec - flush_sec
