@@ -1,5 +1,7 @@
-v0.5.39 changed files:
+v0.5.40 changed files:
 - app/web/app.js
-- app/web/styles.css
 - app/web/index.html
-No files to delete. No DB migration.
+- CHANGELOG.md
+- README.md
+
+No files need to be deleted.

@@ -1,7 +1,6 @@
-# v0.5.39 — Manager review error diagnostics
+# v0.5.40 — Desktop requests event date fix
 
-- Ошибки при `Сохранить черновик` и `Отправить Саше` больше не проглатываются.
-- На карточке мероприятия сразу показывается красный блок с этапом сбоя и реальным сообщением backend.
-- Сообщение также показывается toast-уведомлением.
-- Для перевода на проверку PATCH мероприятия выполняется принудительно, даже если локальное сравнение считает данные неизменёнными.
-- Исправление диагностическое: бизнес-правила отправки и backend не менялись.
+- In desktop admin and department-head tables for `Заявки` and `Архив заявок`, the first date column now shows the event date instead of the payment request creation date.
+- The separate `Создана` column continues to show the request creation date and time.
+- Mobile request cards were not changed.
+- No backend, database, Telegram bot, Google Sheets, statistics, or manager-cabinet logic changes.

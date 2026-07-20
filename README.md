@@ -1,9 +1,5 @@
-# Contrast Finance v0.5.39
+# Contrast Finance v0.5.40
 
-Диагностический frontend-патч для кабинета менеджера.
+Desktop request tables date correction.
 
-При ошибке сохранения или отправки мероприятия на проверку пользователь увидит на самой карточке:
-- на каком этапе произошёл сбой;
-- точный текст ответа backend.
-
-База данных, Alembic и backend не изменялись.
+In admin and department-head `Заявки` / `Архив заявок`, the first column is now the event date. The `Создана` column remains the request creation timestamp.

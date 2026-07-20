@@ -7702,7 +7702,7 @@ function renderDepartmentHeadRequestsTable(requests = []) {
         <tbody>
           ${filtered.map((request) => `
             <tr>
-              ${monthListDateCell(paymentRequestDateValue(request))}
+              ${monthListDateCell(paymentRequestEventDateValue(request) || paymentRequestCreatedDateValue(request))}
               ${paymentRequestCreatedAtCell(request)}
               ${requestTextCell(request.manager_name || "", "request-manager-cell")}
               ${requestTextCell(paymentRequestClientName(request), "request-customer-cell")}
@@ -8450,7 +8450,7 @@ function renderPaymentRequestsTable(requests, title = "Заявки", mode = "re
           <tbody>
             ${filtered.map((request) => `
               <tr>
-                ${monthListDateCell(paymentRequestDateValue(request))}
+                ${monthListDateCell(paymentRequestEventDateValue(request) || paymentRequestCreatedDateValue(request))}
                 ${paymentRequestCreatedAtCell(request)}
                 ${requestTextCell(paymentRequestManagerName(request), "request-manager-cell")}
                 ${requestTextCell(paymentRequestClientName(request), "request-customer-cell")}
@@ -16376,7 +16376,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.39 loaded");
+  console.info("Contrast Finance web app v0.5.40 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
