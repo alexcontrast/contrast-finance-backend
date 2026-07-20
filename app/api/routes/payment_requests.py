@@ -39,6 +39,19 @@ from app.services.authorization import (
 router = APIRouter(tags=["payment_requests"])
 
 
+def ensure_manager_can_create_request_for_event(current_user: User, event: Event) -> None:
+    """Managers cannot create new payment requests for archived events."""
+    if (
+        current_user.role == "manager"
+        and event.status == "accepted"
+        and getattr(event, "money_status", "waiting_money") == "cash_received"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Мероприятие уже в архиве: новые заявки на оплату создавать нельзя",
+        )
+
+
 def tax_status_label(tax_status: str | None) -> str | None:
     labels = {
         "our_vat": "ОУР с НДС",
@@ -607,6 +620,7 @@ def create_payment_request(
     auth_started_at = time.perf_counter()
     # Admin can create; manager only for own event; department_head is read-only.
     event = require_item_event_edit(db, current_user, item)
+    ensure_manager_can_create_request_for_event(current_user, event)
     auth_elapsed = time.perf_counter() - auth_started_at
 
     build_started_at = time.perf_counter()
@@ -712,6 +726,8 @@ def create_manager_salary_payment_request(
 
     if current_user.role not in {"admin", "manager"}:
         raise HTTPException(status_code=403, detail="Only admin or manager can create manager salary request")
+
+    ensure_manager_can_create_request_for_event(current_user, event)
 
     payment_method = normalize_payment_method(payload.payment_method)
     if not payment_method:

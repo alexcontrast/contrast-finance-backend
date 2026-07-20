@@ -1,5 +1,6 @@
-v0.5.43 changed files:
-- app/api/routes/event_items.py
+v0.5.44 changed files:
+- app/api/routes/payment_requests.py
+- app/telegram_bot/main.py
 - app/web/app.js
 - app/web/index.html
 - CHANGELOG.md

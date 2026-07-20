@@ -12503,7 +12503,7 @@ function renderManagerEventCard(event, items = [], summary = null) {
             <span class="status-badge status-tone-review">✏️ Админ-редактирование</span>
           ` : `
             <div class="manager-event-actions-row manager-event-actions-row-main-v118">
-              <button class="secondary" data-manager-event-pay="${event.id}">Оплатить</button>
+              <button class="secondary" data-manager-event-pay="${event.id}" ${eventIsMoneyArchive(event) ? 'disabled title="Мероприятие в архиве: новые заявки на оплату создавать нельзя"' : ""}>Оплатить</button>
               <button class="ghost" data-manager-event-payments="${event.id}">Мои оплаты</button>
               <button class="danger-btn" data-manager-event-delete="${event.id}" title="${eventDeleteTitle}" ${eventDeleteAllowed ? "" : "disabled"} ${eventMoneyStatus(event) === "cash_received" ? 'disabled title="Нельзя удалить: деньги уже в кассе"' : ""}>Удалить</button>
             </div>
@@ -14545,6 +14545,11 @@ async function submitManagerPayment(eventId) {
 }
 
 function openManagerPaymentModal(eventId) {
+  const archivedEvent = managerActionEventById(eventId) || getManagerDashboardEvent(eventId);
+  if (archivedEvent && eventIsMoneyArchive(archivedEvent)) {
+    showToast("Мероприятие уже в архиве: новые заявки на оплату создавать нельзя", "error", 7000);
+    return;
+  }
   resetEventModalModes();
   // openManagerPaymentModal_resetSharedChrome_v03715
 
@@ -16405,7 +16410,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.43 loaded");
+  console.info("Contrast Finance web app v0.5.44 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

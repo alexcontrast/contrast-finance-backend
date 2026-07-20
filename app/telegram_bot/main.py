@@ -555,6 +555,7 @@ def manager_event_query(db: Session, user: User, month: date | None = None):
     query = select(Event).where(
         or_(Event.manager_id == user.id, Event.id.in_(shared_event_ids)),
         Event.status != "cancelled",
+        not_(and_(Event.status == "accepted", Event.money_status == "cash_received")),
         Event.event_date >= bot_min_event_date(),
     )
     if month is not None:
@@ -1151,6 +1152,8 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
         shared = db.execute(select(EventShare).where(EventShare.event_id == event.id, EventShare.user_id == user.id)).scalar_one_or_none()
         if event.manager_id != user.id and shared is None:
             raise RuntimeError("Нет доступа к мероприятию")
+        if event.status == "accepted" and getattr(event, "money_status", "waiting_money") == "cash_received":
+            raise RuntimeError("Мероприятие уже в архиве: новые заявки на оплату создавать нельзя")
 
         method = payment_method_code(payload.get("payment_method"))
         if method is None:
