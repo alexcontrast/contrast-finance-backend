@@ -1,7 +1,7 @@
-Contrast Finance v0.5.53 changed-only
+v0.5.54 changed files
 
-Replace:
-- app/web/app.js
-- app/web/index.html
-
-No migrations. Backend API unchanged.
+app/web/app.js
+app/web/index.html
+CHANGELOG.md
+README.md
+app/CHANGED_FILES_README.txt

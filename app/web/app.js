@@ -7422,7 +7422,6 @@ function renderDepartmentHeadManagerRows(managers = []) {
           `;
         }).join("")}
       </div>
-      ${isAdminEditMode ? "" : `<div class="manager-save-error" data-manager-save-error="${event.id}" role="alert" aria-live="assertive"></div>`}
     </section>
   `;
 }
@@ -16682,7 +16681,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.53 loaded");
+  console.info("Contrast Finance web app v0.5.54 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
