@@ -13,6 +13,14 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class KgdServiceError(RuntimeError):
+    """Техническая ошибка доступа к КГД, не равная результату «контрагент не найден»."""
+
+    def __init__(self, message: str, diagnostics: dict | None = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
+
 def _mask_iin_bin(value: str) -> str:
     digits = normalize_iin_bin(value or "")
     if len(digits) <= 4:
@@ -421,13 +429,9 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     settings = get_settings()
 
     if not settings.KGD_API_KEY:
-        return KgdTaxpayerResult(
-            iin_bin=iin_bin,
-            tax_status="not_found",
-            message="KGD_API_KEY is not configured",
-            source="kgd_live",
-            raw_response={"error": "KGD_API_KEY is not configured"},
-            perf={"total_sec": time.perf_counter() - started_at, "configured": False},
+        raise KgdServiceError(
+            "КГД не настроен на сервере: отсутствует переменная KGD_API_KEY",
+            {"configured": False, "base_url": settings.KGD_BASE_URL},
         )
 
     host = (settings.KGD_BASE_URL or "https://portal.kgd.gov.kz").rstrip("/")
@@ -484,22 +488,28 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
             vat.get("status_code"),
             failure_message,
         )
-        return KgdTaxpayerResult(
-            iin_bin=iin_bin,
-            tax_status="not_found",
-            message=f"КГД временно недоступен. {failure_message}",
-            source="kgd_unavailable",
-            raw_response={"open_data": open_data, "snr": snr, "vat": vat},
-            perf={
-                "configured": True,
-                "total_sec": elapsed,
-                "open_data_http_sec": float(open_data.get("elapsed_sec") or 0),
-                "snr_http_sec": float(snr.get("elapsed_sec") or 0),
-                "vat_http_sec": float(vat.get("elapsed_sec") or 0),
-                "open_data_ok": False,
-                "snr_ok": False,
-                "vat_ok": False,
+        diagnostics = {
+            "configured": True,
+            "base_url": host,
+            "open_data": {
+                "status_code": open_data.get("status_code"),
+                "error": open_data.get("error"),
+                "text": str(open_data.get("text") or "")[:500],
             },
+            "snr": {
+                "status_code": snr.get("status_code"),
+                "error": snr.get("error"),
+                "text": str(snr.get("text") or "")[:500],
+            },
+            "vat": {
+                "status_code": vat.get("status_code"),
+                "error": vat.get("error"),
+                "text": str(vat.get("text") or "")[:500],
+            },
+        }
+        raise KgdServiceError(
+            f"КГД не ответил корректно. {failure_message}",
+            diagnostics,
         )
 
     snr_detected = _detect_snr_regime(snr.get("body") if snr.get("ok") else None)

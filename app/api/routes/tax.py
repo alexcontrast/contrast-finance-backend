@@ -16,7 +16,7 @@ from app.models.taxpayer_check import TaxpayerCheck
 from app.models.user import User
 from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
 from app.schemas.event_item import EventItemCreate, EventItemRead
-from app.services.kgd.client import check_taxpayer
+from app.services.kgd.client import KgdServiceError, check_taxpayer
 from app.services.auth import get_current_user
 from app.services.authorization import get_event_or_404, require_event_edit, require_item_event_edit
 
@@ -207,6 +207,17 @@ def check_event_item_tax(
 
     try:
         kgd_result = check_taxpayer(payload.iin_bin)
+    except KgdServiceError as exc:
+        mark_perf("kgd_error")
+        logger.error(
+            "KGD technical failure item_id=%s user_id=%s role=%s iin_bin=%s diagnostics=%s",
+            item_id,
+            getattr(current_user, "id", None),
+            getattr(current_user, "role", None),
+            _mask_iin_bin(payload.iin_bin),
+            getattr(exc, "diagnostics", {}),
+        )
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         mark_perf("kgd_error")
         logger.warning(

@@ -54,7 +54,7 @@ from app.models.telegram_message import TelegramMessage
 from app.models.user import User
 from app.services.auth import verify_pin
 from app.services.event_calculator import calculate_event_summary_values, q
-from app.services.kgd.client import check_taxpayer
+from app.services.kgd.client import KgdServiceError, check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
@@ -971,7 +971,16 @@ def write_taxpayer_check(db: Session, contractor: Contractor | None, iin_bin: st
 
 
 def apply_invoice_tax_to_item(db: Session, item: EventItem, iin_bin: str) -> Dict[str, Any]:
-    result = check_taxpayer(iin_bin)
+    try:
+        result = check_taxpayer(iin_bin)
+    except KgdServiceError as exc:
+        logger.error(
+            "KGD technical failure bot item_id=%s iin_bin=%s diagnostics=%s",
+            getattr(item, "id", None),
+            mask_iin_bin(iin_bin),
+            getattr(exc, "diagnostics", {}),
+        )
+        raise RuntimeError(str(exc)) from exc
     base = item.amount_fact if item.amount_fact is not None else item.external_amount
     vat, deduction = calculate_tax_values(money(base), result.tax_status)
     contractor = None
