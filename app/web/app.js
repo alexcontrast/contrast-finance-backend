@@ -10735,7 +10735,11 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
     let summary;
 
     if (options.useDraft && state.currentManagerEvent) {
-      [event, items, summary] = [state.currentManagerEvent, state.currentManagerItems || [], state.currentManagerSummary];
+      // Единственный источник истины для редактируемой сметы — managerDraftItemsByEventId.
+      // currentManagerItems мог остаться ссылкой на старый массив после удаления строки,
+      // восстановления локального черновика или materialize tmp→real. Из-за этого Enter
+      // и другие перерисовки иногда возвращали пустые/устаревшие строки.
+      [event, items, summary] = [state.currentManagerEvent, getDraftItems(eventId), state.currentManagerSummary];
     } else if (cachedPayload) {
       event = cachedPayload.event;
       items = cachedPayload.items || [];
@@ -11448,6 +11452,15 @@ function getDraftDeletedIds(eventId) {
   return state.managerDraftDeletedByEventId[key];
 }
 
+function normalizedDraftFieldValue(field, value) {
+  if (field === "iin_bin") return value ? String(value).replace(/\D/g, "") : "";
+  if (field === "payment_method") return String(value || "");
+  if (["external_price", "external_quantity", "external_days", "external_amount_admin", "amount_fact", "vat_amount", "deduction_amount"].includes(field)) {
+    return value === "" || value === null || value === undefined ? 0 : Math.round(normalizeNumberInput(value));
+  }
+  return value === null || value === undefined ? "" : String(value);
+}
+
 function setDraftItemValue(eventId, itemId, field, value) {
   const items = getDraftItems(eventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
@@ -11456,6 +11469,16 @@ function setDraftItemValue(eventId, itemId, field, value) {
   if (field === "payment_method" && itemPaymentMethodLocked(item)) {
     return;
   }
+
+  // Структурные действия (Enter, добавление/удаление строки, смена вкладки)
+  // перед перерисовкой синхронизируют DOM с моделью. Раньше даже повторная запись
+  // того же БИН считалась ручным изменением и сбрасывала успешный КГД, НДС и вычеты.
+  // Повторная запись того же значения теперь является настоящим no-op.
+  const currentComparable = field === "external_amount_admin"
+    ? Math.round(externalRowAmount(item))
+    : normalizedDraftFieldValue(field, item[field]);
+  const nextComparable = normalizedDraftFieldValue(field, value);
+  if (currentComparable === nextComparable) return;
 
   if (field === "iin_bin" && itemHasActiveInvoicePaymentRequest(item) && !isAdminEditingCurrentEvent()) {
     return;
@@ -16659,7 +16682,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.52 loaded");
+  console.info("Contrast Finance web app v0.5.53 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

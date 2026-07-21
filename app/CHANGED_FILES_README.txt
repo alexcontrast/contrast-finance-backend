@@ -1,9 +1,7 @@
-v0.5.52 changed files
+Contrast Finance v0.5.53 changed-only
 
-app/services/kgd/client.py
-app/api/routes/tax.py
-app/telegram_bot/main.py
-app/web/app.js
-app/web/index.html
-CHANGELOG.md
-README.md
+Replace:
+- app/web/app.js
+- app/web/index.html
+
+No migrations. Backend API unchanged.

@@ -1,9 +1,10 @@
-# Contrast Finance v0.5.51
+# Contrast Finance v0.5.53
 
-Точечная стабилизация редактора сметы менеджера. Перед действиями, которые перерисовывают или меняют структуру таблицы, все введённые значения сохраняются в модель черновика.
+Точечный frontend-патч стабильности заполнения сметы менеджером.
 
-Для деплоя достаточно changed-only архива. Миграций нет.
+## Изменено
 
+- `app/web/app.js`
+- `app/web/index.html`
 
-## v0.5.52 KGD diagnostics
-KGD checks now distinguish a real not-found result from configuration, authorization, access and network failures.
+Миграции не требуются. Для деплоя достаточно changed-only архива.
