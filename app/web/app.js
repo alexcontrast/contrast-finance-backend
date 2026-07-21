@@ -12942,19 +12942,29 @@ async function deleteManagerEvent(eventId) {
 }
 
 function syncDraftItemFromRowBeforeTax(itemId) {
-  const items = getDraftItems(state.selectedManagerEventId);
+  const eventId = state.selectedManagerEventId;
+  const items = getDraftItems(eventId);
   const item = items.find((candidate) => String(candidate.id) === String(itemId));
   const row = document.querySelector(`tr[data-event-item-row="${itemId}"]`);
 
   if (!item || !row) return item || null;
 
+  // Смена способа оплаты перерисовывает строку, чтобы показать/скрыть БИН и КГД.
+  // Перед этой перерисовкой обязательно забираем из DOM ВСЕ введённые значения строки.
+  // Раньше здесь читались только способ оплаты, БИН и факт, поэтому несохранённые
+  // наименование/цена/количество/дни могли исчезнуть при выборе «По счету».
+  row.querySelectorAll(`[data-item-field][data-item-id="${itemId}"]`).forEach((fieldElement) => {
+    const field = fieldElement.getAttribute("data-item-field");
+    if (!field || field === "payment_method" || field === "iin_bin") return;
+    setDraftItemValue(eventId, itemId, field, fieldElement.value);
+  });
+
   const paymentSelect = row.querySelector(`[data-item-field="payment_method"][data-item-id="${itemId}"]`);
   const binInput = row.querySelector(`[data-item-field="iin_bin"][data-item-id="${itemId}"]`);
-  const factInput = row.querySelector(`[data-item-field="amount_fact"][data-item-id="${itemId}"]`);
 
   const activeMethod = paymentMethodFromActiveRequest(item);
   if (paymentSelect && !itemPaymentMethodLocked(item)) {
-    item.payment_method = paymentSelect.value || null;
+    setDraftItemValue(eventId, itemId, "payment_method", paymentSelect.value || null);
   } else if (activeMethod) {
     item.payment_method = activeMethod;
   }
@@ -12964,7 +12974,6 @@ function syncDraftItemFromRowBeforeTax(itemId) {
     item.iin_bin_locked = false;
     item.tax_check_status = null;
   }
-  if (factInput && factInput.value !== "") item.amount_fact = Math.round(normalizeNumberInput(factInput.value));
 
   if (item.payment_method !== "invoice") {
     item.iin_bin_locked = false;
@@ -16623,7 +16632,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.48 loaded");
+  console.info("Contrast Finance web app v0.5.49 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

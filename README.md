@@ -1,4 +1,4 @@
-# Contrast Finance v0.5.48
+# Contrast Finance v0.5.49
 
 # Contrast Finance v0.5.46
 
