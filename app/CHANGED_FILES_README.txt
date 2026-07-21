@@ -1,5 +1,4 @@
-v0.5.50 changed files:
-- app/services/kgd/client.py
+v0.5.51 changed files:
 - app/web/app.js
 - app/web/index.html
 - CHANGELOG.md

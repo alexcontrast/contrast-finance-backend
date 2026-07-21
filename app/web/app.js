@@ -12077,6 +12077,28 @@ function draggableHandle(item) {
   return `<span class="drag-handle" draggable="true" data-drag-item="${item.id}" title="Перетащить строку">↕</span>`;
 }
 
+
+function syncAllVisibleDraftRows(eventId) {
+  if (!eventId) return;
+  const holder = (state.bootstrap?.user?.role === "admin" && Number(state.adminEventEditModeId || 0) === Number(eventId || 0))
+    ? $("eventModalContent")
+    : $("managerEventDetail");
+  if (!holder) return;
+
+  const seen = new Set();
+  holder.querySelectorAll("tr[data-event-item-row]").forEach((row) => {
+    const itemId = row.getAttribute("data-event-item-row");
+    if (!itemId || seen.has(String(itemId))) return;
+    seen.add(String(itemId));
+
+    row.querySelectorAll(`[data-item-field][data-item-id="${itemId}"]`).forEach((fieldElement) => {
+      const field = fieldElement.getAttribute("data-item-field");
+      if (!field) return;
+      setDraftItemValue(eventId, itemId, field, fieldElement.value);
+    });
+  });
+}
+
 function addDraftRegularPosition(eventId) {
   const items = getDraftItems(eventId);
   items.push({
@@ -12158,6 +12180,7 @@ function focusTableCell(current, direction) {
     }
 
     if (direction === "enter") {
+      syncAllVisibleDraftRows(state.selectedManagerEventId);
       addDraftRegularPosition(state.selectedManagerEventId);
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
       setTimeout(() => {
@@ -12264,6 +12287,7 @@ function attachEstimateDragAndDrop() {
       row.classList.remove("drag-over-row");
       const fromId = event.dataTransfer.getData("text/plain");
       const toId = row.getAttribute("data-event-item-row");
+      syncAllVisibleDraftRows(state.selectedManagerEventId);
       moveDraftItem(state.selectedManagerEventId, fromId, toId);
       markManagerDraftChanged(state.selectedManagerEventId);
       renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
@@ -14651,6 +14675,7 @@ function attachManagerCreateWorkspaceActions() {
 
   document.querySelectorAll("[data-estimate-tab]").forEach((button) => {
     button.addEventListener("click", () => {
+      syncAllVisibleDraftRows(state.selectedManagerEventId);
       state.managerEstimateTab = button.getAttribute("data-estimate-tab");
       if (isAdminEditMode) {
         const content = $("eventModalContent");
@@ -14685,6 +14710,7 @@ function attachManagerCreateWorkspaceActions() {
     button.classList.toggle("disabled-action", !managerCardCanEdit);
     button.addEventListener("click", () => {
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
+      syncAllVisibleDraftRows(state.selectedManagerEventId);
       addDraftRegularPosition(state.selectedManagerEventId);
       markManagerDraftChanged(state.selectedManagerEventId);
       if (isAdminEditMode) {
@@ -14702,6 +14728,7 @@ function attachManagerCreateWorkspaceActions() {
       if (button.disabled) return;
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
       if (!confirm("Удалить позицию?")) return;
+      syncAllVisibleDraftRows(state.selectedManagerEventId);
       deleteDraftItem(state.selectedManagerEventId, button.getAttribute("data-delete-item"));
       markManagerDraftChanged(state.selectedManagerEventId);
       if (isAdminEditMode) {
@@ -16632,7 +16659,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.50 loaded");
+  console.info("Contrast Finance web app v0.5.51 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
