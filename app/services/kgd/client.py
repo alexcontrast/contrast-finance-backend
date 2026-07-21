@@ -95,9 +95,31 @@ def check_taxpayer_stub(iin_bin: str) -> KgdTaxpayerResult:
     )
 
 
-def _fetch_json(label: str, url: str, headers: dict[str, str], timeout_seconds: int = 20) -> dict:
+def _fetch_json(
+    label: str,
+    url: str,
+    headers: dict[str, str],
+    timeout_seconds: int = 20,
+    method: str = "GET",
+    json_payload: dict | None = None,
+) -> dict:
     started_at = time.perf_counter()
-    request = urllib.request.Request(url=url, headers=headers, method="GET")
+    request_headers = {
+        "Accept": "application/json",
+        "User-Agent": "ContrastFinance/0.5.50",
+        **headers,
+    }
+    data = None
+    if json_payload is not None:
+        data = json.dumps(json_payload).encode("utf-8")
+        request_headers["Content-Type"] = "application/json"
+
+    request = urllib.request.Request(
+        url=url,
+        headers=request_headers,
+        data=data,
+        method=method,
+    )
 
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
@@ -129,16 +151,17 @@ def _fetch_json(label: str, url: str, headers: dict[str, str], timeout_seconds: 
 
     body = _safe_json_parse(text)
     return {
-        "ok": 200 <= int(status_code) < 300,
+        "ok": 200 <= int(status_code) < 300 and body is not None,
         "label": label,
         "status_code": status_code,
         "body": body,
         "text": text[:2000],
         "text_len": len(text or ""),
         "elapsed_sec": time.perf_counter() - started_at,
-        "error": None if 200 <= int(status_code) < 300 else f"HTTP {status_code}",
+        "error": None if 200 <= int(status_code) < 300 and body is not None else (
+            "Ответ КГД не является JSON" if 200 <= int(status_code) < 300 else f"HTTP {status_code}"
+        ),
     }
-
 
 def _safe_json_parse(text: str) -> Any:
     try:
@@ -302,6 +325,97 @@ def _detect_vat_status(vat_body: Any) -> dict:
     }
 
 
+def _localized_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("ru", "kk", "en", "nameRu", "nameKz", "name"):
+            child = value.get(key)
+            if child not in (None, ""):
+                return str(child).strip()
+    return ""
+
+
+def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | None:
+    if not isinstance(body, dict):
+        return None
+
+    returned_xin = normalize_iin_bin(str(body.get("xin") or body.get("taxpayerCode") or ""))
+    if returned_xin and returned_xin != iin_bin:
+        return None
+
+    contractor_name = _localized_text(body.get("name"))
+    tax_mode = _localized_text(body.get("taxMode"))
+    vat_info = _localized_text(body.get("vatInfo"))
+    joined_mode = tax_mode.lower()
+    joined_vat = vat_info.lower()
+
+    # Пустой объект / явное отсутствие данных не считаем найденным контрагентом.
+    meaningful = contractor_name or tax_mode or vat_info or body.get("regDate")
+    if not meaningful:
+        return None
+
+    vat_credit_allowed = not any(
+        token in joined_vat
+        for token in ("нет данных", "не состоит", "не является", "без ндс", "снят")
+    ) and any(token in joined_vat for token in ("ндс", "плательщик", "состоит"))
+
+    if any(token in joined_mode for token in ("общеустанов", "общеустановленный", "оур", "general")):
+        tax_status = "our_vat" if vat_credit_allowed else "our_no_vat"
+        regime = "ОУР"
+    elif any(token in joined_mode for token in ("упрощ", "упрощенной декларации", "simplified")):
+        tax_status = "simplified"
+        regime = "Упрощенка"
+    elif tax_mode:
+        tax_status = "snr"
+        regime = "СНР"
+    else:
+        return None
+
+    vat_status = "Плательщик НДС" if vat_credit_allowed else (vat_info or "Без НДС")
+    message = " / ".join(part for part in (contractor_name, regime, vat_status) if part)
+
+    return KgdTaxpayerResult(
+        iin_bin=iin_bin,
+        tax_status=tax_status,
+        message=message or "КГД проверка выполнена",
+        source="kgd_open_data",
+        contractor_name=contractor_name or None,
+        regime_name=tax_mode,
+        regime_source="open_data_taxMode",
+        vat_status=vat_status,
+        vat_credit_allowed=vat_credit_allowed,
+        raw_response={
+            "open_data": body,
+            "normalized": {
+                "binIin": iin_bin,
+                "contractorName": contractor_name,
+                "regime": regime,
+                "regimeName": tax_mode,
+                "regimeSource": "open_data_taxMode",
+                "vatStatus": vat_status,
+                "vatCreditAllowed": vat_credit_allowed,
+                "deductionPercent": 10 if tax_status in {"our_vat", "our_no_vat"} else 0,
+            },
+        },
+    )
+
+
+def _kgd_failure_message(*responses: dict) -> str:
+    parts = []
+    for response in responses:
+        if not response:
+            continue
+        label = response.get("label") or "КГД"
+        status = response.get("status_code")
+        error = response.get("error")
+        if status:
+            parts.append(f"{label}: HTTP {status}")
+        elif error:
+            parts.append(f"{label}: {error}")
+    return "; ".join(parts) or "КГД временно не ответил"
+
+
 def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     started_at = time.perf_counter()
     settings = get_settings()
@@ -319,6 +433,35 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     host = (settings.KGD_BASE_URL or "https://portal.kgd.gov.kz").rstrip("/")
     headers = {"X-Portal-Token": settings.KGD_API_KEY}
 
+    # Новый официальный единый сервис КГД (2026): имя + налоговый режим + НДС.
+    # Он используется первым; старые SNR/VAT endpoint'ы ниже остаются резервом.
+    open_data_url = f"{host}/services/isnaportal/public/get-sur-data"
+    open_data = _fetch_json(
+        "КГД сведения по контрагенту",
+        open_data_url,
+        headers,
+        method="POST",
+        json_payload={"xin": iin_bin},
+    )
+    open_data_result = _detect_open_data_result(open_data.get("body") if open_data.get("ok") else None, iin_bin)
+    if open_data_result is not None:
+        elapsed = time.perf_counter() - started_at
+        open_data_result.perf = {
+            "configured": True,
+            "total_sec": elapsed,
+            "open_data_http_sec": float(open_data.get("elapsed_sec") or elapsed),
+            "open_data_ok": True,
+            "open_data_status_code": open_data.get("status_code"),
+        }
+        logger.warning(
+            "PERF kgd-client iin_bin=%s source=kgd_open_data tax_status=%s open_data_ok=True status=%s total=%.3fs",
+            _mask_iin_bin(iin_bin),
+            open_data_result.tax_status,
+            open_data.get("status_code"),
+            elapsed,
+        )
+        return open_data_result
+
     encoded = urllib.parse.quote(iin_bin)
     snr_url = f"{host}/services/isnaportalsync/public/snr-search/search?uin={encoded}"
     vat_url = f"{host}/services/isnaportalsync/public/search-payer-data?taxpayerCode={encoded}"
@@ -330,6 +473,35 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     vat_done_at = time.perf_counter()
 
     detect_started_at = time.perf_counter()
+    if not snr.get("ok") and not vat.get("ok"):
+        failure_message = _kgd_failure_message(open_data, snr, vat)
+        elapsed = time.perf_counter() - started_at
+        logger.error(
+            "KGD unavailable iin_bin=%s open_data=%s snr=%s vat=%s message=%s",
+            _mask_iin_bin(iin_bin),
+            open_data.get("status_code"),
+            snr.get("status_code"),
+            vat.get("status_code"),
+            failure_message,
+        )
+        return KgdTaxpayerResult(
+            iin_bin=iin_bin,
+            tax_status="not_found",
+            message=f"КГД временно недоступен. {failure_message}",
+            source="kgd_unavailable",
+            raw_response={"open_data": open_data, "snr": snr, "vat": vat},
+            perf={
+                "configured": True,
+                "total_sec": elapsed,
+                "open_data_http_sec": float(open_data.get("elapsed_sec") or 0),
+                "snr_http_sec": float(snr.get("elapsed_sec") or 0),
+                "vat_http_sec": float(vat.get("elapsed_sec") or 0),
+                "open_data_ok": False,
+                "snr_ok": False,
+                "vat_ok": False,
+            },
+        )
+
     snr_detected = _detect_snr_regime(snr.get("body") if snr.get("ok") else None)
     vat_detected = _detect_vat_status(vat.get("body") if vat.get("ok") else None)
 

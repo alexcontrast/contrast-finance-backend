@@ -1,3 +1,6 @@
+# CHANGELOG
+
+## v0.5.50
 # Contrast Finance — v0.5.49
 
 ## Исправлено
