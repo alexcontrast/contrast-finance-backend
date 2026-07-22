@@ -1,11 +1,8 @@
-v0.5.55 changed files
+v0.5.56 changed files
 
-- app/api/routes/event_items.py
-- app/api/routes/coordinator.py
-- alembic/versions/0011_coordinator_singleton.py
-- scripts/start.sh
+- app/services/kgd/client.py
 - README.md
 - CHANGELOG.md
 - app/CHANGED_FILES_README.txt
 
-Deploy normally. Migration 0011_coord_singleton runs automatically and removes existing active coordinator duplicates safely.
+Deploy normally. No database migration is required. Unlock and re-run the KGD check for affected estimate items after deploy.

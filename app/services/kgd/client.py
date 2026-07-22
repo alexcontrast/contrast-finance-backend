@@ -344,6 +344,69 @@ def _localized_text(value: Any) -> str:
     return ""
 
 
+def _detect_open_data_vat(vat_info: str, vat_date: Any) -> bool | None:
+    """Return the current VAT state from the unified KGD response.
+
+    The 2026 open-data API exposes both a localized ``vatInfo`` label and a
+    separate ``vatDate``.  The label is not stable enough to be the only
+    signal: in real responses it can use different wording or contain only a
+    Kazakh value.  A non-empty date confirms VAT registration unless the label
+    explicitly says that the registration was cancelled.
+    """
+    joined_vat = " ".join(str(vat_info or "").lower().split())
+
+    # A current deregistration/cancellation status must win even when KGD also
+    # returns the historical registration date.
+    inactive_tokens = (
+        "снят",
+        "исключ",
+        "прекращ",
+        "аннулир",
+        "приостанов",
+        "не состоит",
+        "не является",
+        "не плательщик",
+        "не зарегистрирован",
+        "без ндс",
+        "есептен шығар",
+        "есебінен шығар",
+        "тіркеуден шығар",
+        "тіркелмеген",
+        "тұрмайды",
+        "төлеуші емес",
+        "табылмайды",
+        "deregister",
+        "unregistered",
+        "not registered",
+        "not vat",
+        "not a vat",
+    )
+    if any(token in joined_vat for token in inactive_tokens):
+        return False
+
+    has_vat_date = vat_date not in (None, "") and bool(str(vat_date).strip())
+    no_data_tokens = ("нет данных", "мәлімет жоқ", "no data")
+    if not has_vat_date and any(token in joined_vat for token in no_data_tokens):
+        return False
+
+    active_tokens = (
+        "ндс",
+        "плательщик",
+        "состоит",
+        "ққс",
+        "төлеуші",
+        "vat",
+        "registered",
+    )
+    if any(token in joined_vat for token in active_tokens):
+        return True
+
+    if has_vat_date:
+        return True
+
+    return None
+
+
 def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | None:
     if not isinstance(body, dict):
         return None
@@ -355,20 +418,21 @@ def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | Non
     contractor_name = _localized_text(body.get("name"))
     tax_mode = _localized_text(body.get("taxMode"))
     vat_info = _localized_text(body.get("vatInfo"))
+    vat_date = body.get("vatDate")
     joined_mode = tax_mode.lower()
-    joined_vat = vat_info.lower()
 
     # Пустой объект / явное отсутствие данных не считаем найденным контрагентом.
-    meaningful = contractor_name or tax_mode or vat_info or body.get("regDate")
+    meaningful = contractor_name or tax_mode or vat_info or vat_date or body.get("regDate")
     if not meaningful:
         return None
 
-    vat_credit_allowed = not any(
-        token in joined_vat
-        for token in ("нет данных", "не состоит", "не является", "без ндс", "снят")
-    ) and any(token in joined_vat for token in ("ндс", "плательщик", "состоит"))
+    vat_credit_allowed = _detect_open_data_vat(vat_info, vat_date)
 
     if any(token in joined_mode for token in ("общеустанов", "общеустановленный", "оур", "general")):
+        # Не превращаем неизвестный статус НДС в «без НДС». В этом редком
+        # случае check_taxpayer_live продолжит проверку через резервный VAT API.
+        if vat_credit_allowed is None:
+            return None
         tax_status = "our_vat" if vat_credit_allowed else "our_no_vat"
         regime = "ОУР"
     elif any(token in joined_mode for token in ("упрощ", "упрощенной декларации", "simplified")):
@@ -392,7 +456,7 @@ def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | Non
         regime_name=tax_mode,
         regime_source="open_data_taxMode",
         vat_status=vat_status,
-        vat_credit_allowed=vat_credit_allowed,
+        vat_credit_allowed=bool(vat_credit_allowed),
         raw_response={
             "open_data": body,
             "normalized": {
@@ -402,7 +466,8 @@ def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | Non
                 "regimeName": tax_mode,
                 "regimeSource": "open_data_taxMode",
                 "vatStatus": vat_status,
-                "vatCreditAllowed": vat_credit_allowed,
+                "vatCreditAllowed": bool(vat_credit_allowed),
+                "vatDate": vat_date or "",
                 "deductionPercent": 10 if tax_status in {"our_vat", "our_no_vat"} else 0,
             },
         },
