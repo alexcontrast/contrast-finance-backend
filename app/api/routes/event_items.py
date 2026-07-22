@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.session import get_db
+from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
 from app.models.user import User
@@ -29,6 +30,7 @@ router = APIRouter(tags=["event_items"])
 logger = logging.getLogger(__name__)
 
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
+COORDINATOR_ITEM_TYPE = "coordinator"
 
 
 def money(value) -> Decimal:
@@ -60,6 +62,35 @@ def active_item_payment_requests_count(db: Session, item_id: int) -> int:
         )
         .count()
     )
+
+
+def lock_event_for_coordinator_write(db: Session, event_id: int) -> None:
+    """Serialize creation/update of the singleton coordinator row for one event."""
+    db.execute(
+        select(Event.id)
+        .where(Event.id == int(event_id))
+        .with_for_update()
+    ).scalar_one()
+
+
+def active_coordinator_item(
+    db: Session,
+    event_id: int,
+    exclude_item_id: int | None = None,
+) -> EventItem | None:
+    statement = (
+        select(EventItem)
+        .where(
+            EventItem.event_id == int(event_id),
+            EventItem.item_type == COORDINATOR_ITEM_TYPE,
+            EventItem.is_deleted == False,  # noqa: E712
+        )
+        .order_by(EventItem.updated_at.desc(), EventItem.id.desc())
+        .with_for_update()
+    )
+    if exclude_item_id is not None:
+        statement = statement.where(EventItem.id != int(exclude_item_id))
+    return db.execute(statement).scalars().first()
 
 
 @router.get("/events/{event_id}/items", response_model=list[EventItemRead])
@@ -94,33 +125,66 @@ def create_event_item(
     require_event_edit(current_user, event)
     auth_sec = _sec(started_at)
 
-    item = EventItem(
-        event_id=event_id,
-        item_type=payload.item_type,
-        external_name=payload.external_name,
-        external_price=payload.external_price,
-        external_quantity=payload.external_quantity,
-        external_days=payload.external_days,
-        external_amount=calculate_external_amount(payload),
-        external_note=payload.external_note,
-        amount_fact=payload.amount_fact,
-        paid_amount=payload.paid_amount,
-        payment_method=payload.payment_method,
-        iin_bin=payload.iin_bin,
-        iin_bin_locked=payload.iin_bin_locked,
-        tax_check_status=payload.tax_check_status,
-        vat_amount=payload.vat_amount,
-        deduction_amount=payload.deduction_amount,
-        internal_note=payload.internal_note,
-        sort_order=payload.sort_order,
-        is_deleted=False,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
+    item = None
+    coordinator_reused = False
+    if payload.item_type == COORDINATOR_ITEM_TYPE:
+        # Autosave and a manual save can reach POST at almost the same time.
+        # Lock the parent event even when no coordinator exists yet, then reuse
+        # the singleton row instead of creating a second one.
+        lock_event_for_coordinator_write(db, event_id)
+        item = active_coordinator_item(db, event_id)
+
+    if item is None:
+        item = EventItem(
+            event_id=event_id,
+            item_type=payload.item_type,
+            external_name=payload.external_name,
+            external_price=payload.external_price,
+            external_quantity=payload.external_quantity,
+            external_days=payload.external_days,
+            external_amount=calculate_external_amount(payload),
+            external_note=payload.external_note,
+            amount_fact=payload.amount_fact,
+            paid_amount=payload.paid_amount,
+            payment_method=payload.payment_method,
+            iin_bin=payload.iin_bin,
+            iin_bin_locked=payload.iin_bin_locked,
+            tax_check_status=payload.tax_check_status,
+            vat_amount=payload.vat_amount,
+            deduction_amount=payload.deduction_amount,
+            internal_note=payload.internal_note,
+            sort_order=payload.sort_order,
+            is_deleted=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+    else:
+        coordinator_reused = True
+        item.item_type = COORDINATOR_ITEM_TYPE
+        item.external_name = payload.external_name
+        item.external_price = payload.external_price
+        item.external_quantity = payload.external_quantity
+        item.external_days = payload.external_days
+        item.external_amount = calculate_external_amount(payload)
+        item.external_note = payload.external_note
+        item.amount_fact = payload.amount_fact
+        item.payment_method = payload.payment_method
+        item.iin_bin = payload.iin_bin
+        item.iin_bin_locked = payload.iin_bin_locked
+        item.tax_check_status = payload.tax_check_status
+        item.vat_amount = payload.vat_amount
+        item.deduction_amount = payload.deduction_amount
+        item.internal_note = payload.internal_note
+        item.sort_order = payload.sort_order
+        item.updated_at = datetime.utcnow()
     build_sec = _sec(started_at) - auth_sec
 
     db.add(item)
     db.flush()
+    if coordinator_reused:
+        # paid_amount is derived from paid requests and must not be overwritten
+        # by a stale autosave payload while reusing the singleton row.
+        sync_item_paid_amount_from_requests(db, item.id)
     flush_sec = _sec(started_at) - auth_sec - build_sec
     result = EventItemRead.model_validate(item)
     response_sec = _sec(started_at) - auth_sec - build_sec - flush_sec
@@ -128,9 +192,10 @@ def create_event_item(
     commit_sec = _sec(started_at) - auth_sec - build_sec - flush_sec - response_sec
 
     logger.warning(
-        "PERF event-item-create event_id=%s item_id=%s user_id=%s role=%s auth=%.3fs build=%.3fs flush=%.3fs response=%.3fs commit=%.3fs total=%.3fs",
+        "PERF event-item-create event_id=%s item_id=%s action=%s user_id=%s role=%s auth=%.3fs build=%.3fs flush=%.3fs response=%.3fs commit=%.3fs total=%.3fs",
         event_id,
         item.id,
+        "reuse_coordinator" if coordinator_reused else "create",
         getattr(current_user, "id", None),
         getattr(current_user, "role", None),
         auth_sec,
@@ -251,6 +316,15 @@ def update_event_item(
     item_sql_sec = _sec(started_at)
     require_item_event_edit(db, current_user, item)
     auth_sec = _sec(started_at) - item_sql_sec
+
+    if payload.item_type == COORDINATOR_ITEM_TYPE:
+        lock_event_for_coordinator_write(db, item.event_id)
+        conflicting_coordinator = active_coordinator_item(db, item.event_id, exclude_item_id=item.id)
+        if conflicting_coordinator is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="В мероприятии уже есть позиция координатора",
+            )
 
     item.item_type = payload.item_type
     item.external_name = payload.external_name
