@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
 COORDINATOR_ITEM_TYPE = "coordinator"
+INVALID_INVOICE_TAX_STATUSES = {None, "", "not_found", "error"}
 
 
 def money(value) -> Decimal:
@@ -62,6 +63,111 @@ def active_item_payment_requests_count(db: Session, item_id: int) -> int:
         )
         .count()
     )
+
+
+def normalized_iin_bin(value: str | None) -> str:
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+def valid_invoice_tax_context(
+    iin_bin: str | None,
+    iin_bin_locked: bool,
+    tax_check_status: str | None,
+) -> bool:
+    return (
+        len(normalized_iin_bin(iin_bin)) == 12
+        and bool(iin_bin_locked)
+        and tax_check_status not in INVALID_INVOICE_TAX_STATUSES
+    )
+
+
+def latest_active_invoice_request(db: Session, item_id: int) -> PaymentRequest | None:
+    requests = db.execute(
+        select(PaymentRequest)
+        .where(
+            PaymentRequest.event_item_id == int(item_id),
+            PaymentRequest.payment_method == "invoice",
+            PaymentRequest.status.notin_(list(INACTIVE_PAYMENT_STATUSES)),
+        )
+        .order_by(PaymentRequest.created_at.desc(), PaymentRequest.id.desc())
+    ).scalars().all()
+    if not requests:
+        return None
+    return next(
+        (
+            request
+            for request in requests
+            if valid_invoice_tax_context(
+                request.iin_bin_snapshot,
+                True,
+                request.tax_status_snapshot,
+            )
+        ),
+        requests[0],
+    )
+
+
+def protected_invoice_tax_context(
+    item: EventItem,
+    payload: EventItemCreate,
+    invoice_request: PaymentRequest | None,
+    allow_complete_override: bool = False,
+) -> dict | None:
+    """
+    Keep an already confirmed invoice context when a stale estimate PATCH tries
+    to clear it. This can happen when autosave/localStorage/another tab sends an
+    older copy after KGD check or after the payment request was created.
+
+    A complete, freshly checked payload is accepted when there is no active
+    invoice request. With an active request only an admin override is accepted.
+    """
+    payload_is_complete = (
+        payload.payment_method == "invoice"
+        and valid_invoice_tax_context(
+            payload.iin_bin,
+            payload.iin_bin_locked,
+            payload.tax_check_status,
+        )
+    )
+    if payload_is_complete and (
+        invoice_request is None
+        or allow_complete_override
+    ):
+        return None
+
+    current_is_complete = (
+        item.payment_method == "invoice"
+        and valid_invoice_tax_context(
+            item.iin_bin,
+            item.iin_bin_locked,
+            item.tax_check_status,
+        )
+    )
+    if current_is_complete and (
+        invoice_request is not None
+        or payload.payment_method == "invoice"
+    ):
+        return {
+            "iin_bin": item.iin_bin,
+            "tax_check_status": item.tax_check_status,
+            "vat_amount": money(item.vat_amount),
+            "deduction_amount": money(item.deduction_amount),
+        }
+
+    request_is_complete = invoice_request is not None and valid_invoice_tax_context(
+        invoice_request.iin_bin_snapshot,
+        True,
+        invoice_request.tax_status_snapshot,
+    )
+    if request_is_complete:
+        return {
+            "iin_bin": invoice_request.iin_bin_snapshot,
+            "tax_check_status": invoice_request.tax_status_snapshot,
+            "vat_amount": money(invoice_request.vat_amount_snapshot),
+            "deduction_amount": money(invoice_request.deduction_amount_snapshot),
+        }
+
+    return None
 
 
 def lock_event_for_coordinator_write(db: Session, event_id: int) -> None:
@@ -316,6 +422,21 @@ def update_event_item(
     item_sql_sec = _sec(started_at)
     require_item_event_edit(db, current_user, item)
     auth_sec = _sec(started_at) - item_sql_sec
+    # Serialize ordinary estimate saves with KGD checks and payment creation.
+    # Under PostgreSQL READ COMMITTED this reloads the latest committed row after
+    # a concurrent writer finishes.
+    item = db.execute(
+        select(EventItem)
+        .where(EventItem.id == int(item_id))
+        .with_for_update()
+    ).scalar_one()
+    invoice_request = latest_active_invoice_request(db, item.id)
+    invoice_context = protected_invoice_tax_context(
+        item,
+        payload,
+        invoice_request,
+        allow_complete_override=current_user.role == "admin",
+    )
 
     if payload.item_type == COORDINATOR_ITEM_TYPE:
         lock_event_for_coordinator_write(db, item.event_id)
@@ -340,6 +461,13 @@ def update_event_item(
     item.tax_check_status = payload.tax_check_status
     item.vat_amount = payload.vat_amount
     item.deduction_amount = payload.deduction_amount
+    if invoice_context is not None:
+        item.payment_method = "invoice"
+        item.iin_bin = invoice_context["iin_bin"]
+        item.iin_bin_locked = True
+        item.tax_check_status = invoice_context["tax_check_status"]
+        item.vat_amount = invoice_context["vat_amount"]
+        item.deduction_amount = invoice_context["deduction_amount"]
     item.internal_note = payload.internal_note
     item.sort_order = payload.sort_order
     item.updated_at = datetime.utcnow()

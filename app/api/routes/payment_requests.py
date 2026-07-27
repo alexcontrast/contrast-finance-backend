@@ -614,7 +614,16 @@ def create_payment_request(
     started_at = time.perf_counter()
 
     item_started_at = time.perf_counter()
-    item = get_item_or_404(db, item_id)
+    # Serialize payment creation with KGD and estimate writes. Otherwise a stale
+    # autosave could clear the tax fields between successful KGD check and the
+    # snapshot below.
+    item = db.execute(
+        select(EventItem)
+        .where(EventItem.id == int(item_id))
+        .with_for_update()
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="Event item not found")
     item_elapsed = time.perf_counter() - item_started_at
 
     auth_started_at = time.perf_counter()

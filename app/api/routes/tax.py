@@ -5,6 +5,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -12,6 +13,7 @@ from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.contractor import Contractor
 from app.models.event_item import EventItem
+from app.models.payment_request import PaymentRequest
 from app.models.taxpayer_check import TaxpayerCheck
 from app.models.user import User
 from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
@@ -205,6 +207,22 @@ def check_event_item_tax(
     require_item_event_edit(db, current_user, item)
     mark_perf("auth")
 
+    if current_user.role != "admin":
+        active_invoice_request = db.execute(
+            select(PaymentRequest.id)
+            .where(
+                PaymentRequest.event_item_id == int(item_id),
+                PaymentRequest.payment_method == "invoice",
+                PaymentRequest.status.notin_(["cancelled", "rejected"]),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if active_invoice_request is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="БИН нельзя изменить или перепроверить, пока по позиции есть активная заявка",
+            )
+
     try:
         kgd_result = check_taxpayer(payload.iin_bin)
     except KgdServiceError as exc:
@@ -233,6 +251,15 @@ def check_event_item_tax(
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     mark_perf("kgd_check")
+
+    # KGD HTTP may take a few seconds. Reload and lock the row only after the
+    # response arrives so a concurrent autosave/payment write cannot interleave
+    # with the authoritative tax update below.
+    item = db.execute(
+        select(EventItem)
+        .where(EventItem.id == int(item_id))
+        .with_for_update()
+    ).scalar_one()
 
     before = {
         "iin_bin": item.iin_bin,
