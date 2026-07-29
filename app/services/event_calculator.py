@@ -237,7 +237,14 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
         "tax_rate_percent": q(tax_rate_percent(event)),
         "tax_base_amount": q0(turnover_with_vat if event.client_calc_type == "simplified" else client_base_amount),
         "taxes_total": q0(internal_tax_amount),
-        "taxes_net": q0(internal_tax_amount - deductions_total),
+        # На Упрощенке налог к уплате всегда равен 5% от полного оборота:
+        # вычеты подрядчиков эту сумму не уменьшают. Для ОУР сохраняем
+        # прежнюю логику уменьшения налога на доступные вычеты.
+        "taxes_net": q0(
+            internal_tax_amount
+            if event.client_calc_type == "simplified"
+            else internal_tax_amount - deductions_total
+        ),
         "vat_net": q0(vat_to_pay),
         "agency_commission_amount": q0(agency_commission_amount),
         "agency_only_commission_amount": q0(agency_commission_amount),

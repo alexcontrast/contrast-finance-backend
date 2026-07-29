@@ -1,4 +1,10 @@
-v0.5.57 changed files
+v0.5.58 changed files
+
+- app/services/event_calculator.py
+- app/web/app.js
+- app/web/index.html
+- CHANGELOG.md
+- README.md
 
 - app/api/routes/event_items.py
 - app/api/routes/payment_requests.py

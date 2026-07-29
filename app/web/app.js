@@ -8713,8 +8713,13 @@ function customerVatTopAmount(summary) {
 }
 
 function customerTaxesTopAmount(summary) {
-  // Для верхней карточки "Налоги ... к уплате" нужна сумма именно к уплате:
-  // внутренние налоги минус доступные вычеты.
+  // Backend уже учитывает налоговый режим: на Упрощенке вычеты не уменьшают
+  // 5% от оборота, а на ОУР уменьшают налог к уплате.
+  if (summary?.taxes_net !== undefined && summary?.taxes_net !== null) {
+    return Math.max(0, Math.round(asNumber(summary.taxes_net)));
+  }
+
+  // Совместимость со старыми ответами без taxes_net.
   const grossTaxes = asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
   const deductions = asNumber(summary?.deductions_total ?? summary?.tax_deductions_total ?? 0);
   return Math.max(0, Math.round(grossTaxes - deductions));
@@ -11342,7 +11347,7 @@ function calculateDraftSummaryPreview(items, event, backendSummary = null) {
     : (event?.client_calc_type === "simplified" ? 5 : 0);
   const taxBase = event?.client_calc_type === "simplified" ? turnover : clientBase;
   const taxes = Math.round(taxBase * taxRate / 100);
-  const taxesNet = taxes - deductions;
+  const taxesNet = event?.client_calc_type === "simplified" ? taxes : taxes - deductions;
 
   const vatNet = Math.max(0, clientVat - contractorVatCredit);
 
@@ -11392,7 +11397,10 @@ function internalSimplifiedMarkupAmount(items, event, summary) {
 }
 
 function internalTaxesNet(summary) {
-  return summaryNumber(summary, "taxes_net") || (summaryNumber(summary, "taxes_total") - summaryNumber(summary, "deductions_total"));
+  if (summary?.taxes_net !== undefined && summary?.taxes_net !== null) {
+    return summaryNumber(summary, "taxes_net");
+  }
+  return summaryNumber(summary, "taxes_total") - summaryNumber(summary, "deductions_total");
 }
 
 function internalVatNet(summary) {
