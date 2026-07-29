@@ -46,3 +46,4 @@ class EventSummaryRead(BaseModel):
     tax_rate_percent: Decimal
     tax_base_amount: Decimal
     taxes_total: Decimal
+    taxes_net: Decimal

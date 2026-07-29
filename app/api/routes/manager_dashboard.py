@@ -347,6 +347,7 @@ def build_event_summary_read_for_bundle(event: Event, items: list[EventItem]) ->
         tax_rate_percent=q(values["tax_rate_percent"]),
         tax_base_amount=q(values["tax_base_amount"]),
         taxes_total=q(values["taxes_total"]),
+        taxes_net=q(values["taxes_net"]),
     )
 
 

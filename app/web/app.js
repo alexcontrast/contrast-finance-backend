@@ -8721,6 +8721,11 @@ function customerTaxesTopAmount(summary) {
 
   // Совместимость со старыми ответами без taxes_net.
   const grossTaxes = asNumber(summary?.taxes_total ?? (asNumber(summary?.internal_tax_amount) + asNumber(summary?.simplified_bank_tax_amount)));
+  const calculationType = calculationTypeValue(null, summary);
+  if (calculationType === "simplified" || calculationType.includes("упрощ")) {
+    return Math.max(0, Math.round(grossTaxes));
+  }
+
   const deductions = asNumber(summary?.deductions_total ?? summary?.tax_deductions_total ?? 0);
   return Math.max(0, Math.round(grossTaxes - deductions));
 }
