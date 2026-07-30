@@ -1,8 +1,6 @@
-v0.5.59 changed files
+v0.5.60 changed files
 
-- app/schemas/event_summary.py
-- app/api/routes/event_summary.py
-- app/api/routes/manager_dashboard.py
+- app/api/routes/users_manage.py
 - app/web/app.js
 - app/web/index.html
 - CHANGELOG.md

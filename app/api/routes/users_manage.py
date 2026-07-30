@@ -199,11 +199,16 @@ def update_user_pin(
         raise HTTPException(status_code=404, detail="User not found")
 
     pin = str(payload.pin or "").strip()
-    if len(pin) < 4:
-        raise HTTPException(status_code=400, detail="PIN должен быть минимум 4 символа")
+    if len(pin) < 4 or len(pin) > 12:
+        raise HTTPException(status_code=400, detail="PIN должен содержать от 4 до 12 цифр")
+    if not pin.isdigit():
+        raise HTTPException(status_code=400, detail="PIN должен содержать только цифры")
 
     user.pin_hash = native_pin_hash(pin, user.id)
-    user.auth_source = "native" if not user.legacy_user_id else user.auth_source
+    # Admin reset must switch legacy users to the native PIN as well.
+    # Otherwise verify_pin() keeps checking legacy_pin_hash and the newly saved
+    # PIN cannot be used to log in.
+    user.auth_source = "native"
     user.updated_at = datetime.utcnow()
 
     db.add(user)
@@ -276,4 +281,3 @@ def restore_manager(
     db.refresh(user)
 
     return user_to_read(user)
-

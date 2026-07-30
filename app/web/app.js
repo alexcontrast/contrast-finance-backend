@@ -564,6 +564,46 @@ function injectManagerUxStyles() {
       margin-top: 14px;
     }
 
+    .manager-admin-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .manager-pin-reset-btn {
+      font-size: 15px !important;
+    }
+
+    @media (max-width: 920px) {
+      .manager-admin-actions {
+        grid-row: 1;
+        grid-column: 2;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body.admin-mode .manager-admin-actions {
+        display: none !important;
+      }
+    }
+
+    .admin-pin-reset-result {
+      margin-top: 12px;
+      padding: 11px 12px;
+      border: 1px solid rgba(18, 140, 64, .24);
+      border-radius: 12px;
+      background: rgba(18, 140, 64, .08);
+      color: #176b35;
+      font-weight: 850;
+    }
+
+    .admin-pin-reset-result strong {
+      display: inline-block;
+      margin-left: 4px;
+      font-size: 18px;
+      letter-spacing: .08em;
+    }
+
 
     #userBadge {
       display: inline-flex;
@@ -8161,6 +8201,8 @@ function resetEventModalModes() {
       "manager-requests-modal-mode",
       "admin-event-edit-mode"
     );
+    const eyebrow = eventBackdrop.querySelector(".modal-head .eyebrow");
+    if (eyebrow) eyebrow.textContent = "Мероприятие";
   }
 
   state.adminEventEditModeId = null;
@@ -9501,7 +9543,17 @@ function renderAdminOverview(data) {
                       <button class="manager-restore-btn" data-restore-manager-id="${row.manager.id}" data-restore-manager-name="${escapeHtml(row.manager.name)}" title="Восстановить менеджера" type="button">↺</button>
                     ` : `<span class="manager-action-placeholder" title="Срок восстановления прошёл">—</span>`}
                   ` : `
-                    <button class="manager-delete-btn" data-delete-manager-id="${row.manager.id}" data-delete-manager-name="${escapeHtml(row.manager.name)}" title="Удалить менеджера" type="button">×</button>
+                    <div class="manager-admin-actions">
+                      <button
+                        class="manager-restore-btn manager-pin-reset-btn"
+                        data-reset-manager-pin-id="${row.manager.id}"
+                        data-reset-manager-pin-name="${escapeHtml(row.manager.name)}"
+                        title="Задать новый PIN"
+                        type="button"
+                        aria-label="Задать новый PIN для ${escapeHtml(row.manager.name)}"
+                      >🔒</button>
+                      <button class="manager-delete-btn" data-delete-manager-id="${row.manager.id}" data-delete-manager-name="${escapeHtml(row.manager.name)}" title="Удалить менеджера" type="button">×</button>
+                    </div>
                   `}
                 </div>
               `).join("") : `<div class="empty-state">Менеджеров в отделе пока нет.</div>`}
@@ -15964,7 +16016,149 @@ async function restoreManagerInSystem(managerId, managerName) {
   }, "Восстанавливаем менеджера…");
 }
 
+function generateManagerTemporaryPin() {
+  if (window.crypto?.getRandomValues) {
+    const values = new Uint32Array(1);
+    window.crypto.getRandomValues(values);
+    return String(1000 + (values[0] % 9000));
+  }
+  return String(1000 + Math.floor(Math.random() * 9000));
+}
+
+function openManagerPinResetModal(managerId, managerName) {
+  const id = Number(managerId);
+  if (!Number.isFinite(id) || id <= 0) return;
+
+  const name = String(managerName || "менеджера");
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  resetEventModalModes();
+  backdrop.classList.add("pin-modal-mode");
+  backdrop.classList.remove("hidden");
+
+  const eyebrow = backdrop.querySelector(".modal-head .eyebrow");
+  if (eyebrow) eyebrow.textContent = "Доступ менеджера";
+  title.textContent = `Новый PIN — ${name}`;
+
+  content.innerHTML = `
+    <div class="pin-modal-content">
+      <p class="muted">Старый PIN защищён хешем и не отображается. Задайте новый и передайте его менеджеру.</p>
+
+      <div class="pin-form-vertical">
+        <label>Новый PIN
+          <input
+            id="adminManagerPinInput"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            maxlength="12"
+            value="${generateManagerTemporaryPin()}"
+          />
+        </label>
+      </div>
+
+      <div class="modal-actions pin-actions">
+        <button class="secondary" id="adminManagerPinSaveBtn" type="button">Сохранить PIN</button>
+        <button class="ghost" id="adminManagerPinGenerateBtn" type="button">Другой PIN</button>
+        <button class="ghost hidden" id="adminManagerPinCopyBtn" type="button">Копировать</button>
+      </div>
+      <div id="adminManagerPinMessage" class="muted"></div>
+    </div>
+  `;
+
+  const input = $("adminManagerPinInput");
+  const saveButton = $("adminManagerPinSaveBtn");
+  const generateButton = $("adminManagerPinGenerateBtn");
+  const copyButton = $("adminManagerPinCopyBtn");
+  const message = $("adminManagerPinMessage");
+
+  const save = async () => {
+    const pin = String(input?.value || "").trim();
+    if (!/^\d{4,12}$/.test(pin)) {
+      if (message) message.textContent = "PIN должен содержать от 4 до 12 цифр.";
+      input?.focus();
+      return;
+    }
+
+    try {
+      setButtonLoading(saveButton, true, "Сохраняем…");
+      if (message) message.textContent = "";
+      await api(`/users/${id}/pin`, {
+        method: "PATCH",
+        body: JSON.stringify({ pin }),
+      });
+      if (message) {
+        message.className = "admin-pin-reset-result";
+        message.innerHTML = `Новый PIN сохранён:<strong>${escapeHtml(pin)}</strong>`;
+      }
+      if (copyButton) copyButton.textContent = "Копировать";
+      copyButton?.classList.remove("hidden");
+      input?.select();
+    } catch (error) {
+      if (message) {
+        message.className = "error";
+        message.textContent = error.message;
+      }
+    } finally {
+      setButtonLoading(saveButton, false);
+    }
+  };
+
+  saveButton?.addEventListener("click", save);
+  generateButton?.addEventListener("click", () => {
+    if (!input) return;
+    input.value = generateManagerTemporaryPin();
+    input.focus();
+    input.select();
+    if (copyButton) copyButton.textContent = "Копировать";
+    copyButton?.classList.add("hidden");
+    if (message) {
+      message.className = "muted";
+      message.textContent = "";
+    }
+  });
+  copyButton?.addEventListener("click", async () => {
+    const pin = String(input?.value || "").trim();
+    try {
+      await navigator.clipboard.writeText(pin);
+      copyButton.textContent = "Скопировано";
+    } catch (_error) {
+      input?.focus();
+      input?.select();
+      document.execCommand("copy");
+      copyButton.textContent = "Скопировано";
+    }
+  });
+  input?.addEventListener("input", () => {
+    if (input.value) input.value = input.value.replace(/\D/g, "").slice(0, 12);
+    if (copyButton) copyButton.textContent = "Копировать";
+    copyButton?.classList.add("hidden");
+    if (message) {
+      message.className = "muted";
+      message.textContent = "";
+    }
+  });
+  input?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") save();
+  });
+  input?.focus();
+  input?.select();
+}
+
 function attachManagerDeleteButtons() {
+  document.querySelectorAll("[data-reset-manager-pin-id]").forEach((button) => {
+    if (button.dataset.attached === "1") return;
+    button.dataset.attached = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openManagerPinResetModal(button.dataset.resetManagerPinId, button.dataset.resetManagerPinName);
+    });
+  });
+
   document.querySelectorAll("[data-delete-manager-id]").forEach((button) => {
     if (button.dataset.attached === "1") return;
     button.dataset.attached = "1";
@@ -16799,6 +16993,8 @@ function openChangePinModal() {
   resetEventModalModes();
   backdrop.classList.add("pin-modal-mode");
   backdrop.classList.remove("hidden");
+  const eyebrow = backdrop.querySelector(".modal-head .eyebrow");
+  if (eyebrow) eyebrow.textContent = "Безопасность";
   title.textContent = "Смена PIN";
   content.innerHTML = `
     <div class="pin-modal-content">
