@@ -231,6 +231,20 @@ def create_event_item(
     require_event_edit(current_user, event)
     auth_sec = _sec(started_at)
 
+    if (
+        payload.item_type == "regular"
+        and not (payload.external_name or "").strip()
+        and not (payload.external_note or "").strip()
+        and not (payload.internal_note or "").strip()
+        and not payload.payment_method
+        and not payload.iin_bin
+        and money(payload.external_price) == 0
+        and money(payload.amount_fact) == 0
+        and money(payload.vat_amount) == 0
+        and money(payload.deduction_amount) == 0
+    ):
+        raise HTTPException(status_code=422, detail="Пустая позиция не сохраняется")
+
     item = None
     coordinator_reused = False
     if payload.item_type == COORDINATOR_ITEM_TYPE:

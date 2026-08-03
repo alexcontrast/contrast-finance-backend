@@ -6118,6 +6118,8 @@ function setDraftEventValue(eventId, field, value) {
   } else {
     event[field] = value;
   }
+  event.__edit_version = asNumber(event.__edit_version) + 1;
+  event.__dirty_after_save = true;
 
   if (String(state.selectedManagerEventId) === key) {
     state.currentManagerEvent = { ...(state.currentManagerEvent || {}), ...event };
@@ -11603,6 +11605,8 @@ function setDraftItemValue(eventId, itemId, field, value) {
   if (["amount_fact", "external_price", "external_quantity", "external_days", "external_amount_admin"].includes(field)) {
     recalculateCheckedItemTax(item);
   }
+  item.__edit_version = asNumber(item.__edit_version) + 1;
+  item.__dirty_after_save = true;
   updateCurrentManagerMiniCardLive();
 }
 
@@ -11649,6 +11653,8 @@ function comparablePayloadString(payload) {
 }
 
 function eventNeedsSave(eventId, payload) {
+  const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
+  if (draftEvent?.__dirty_after_save) return true;
   const cachedEvent = cachedManagerEventPayload(eventId)?.event || null;
   if (!cachedEvent) return true;
   return comparablePayloadString(eventPayloadForSave(cachedEvent)) !== comparablePayloadString(payload);
@@ -11659,6 +11665,7 @@ async function saveDraftEvent(eventId, options = {}) {
   if (!draftEvent) return null;
 
   const payload = eventPayloadForSave(draftEvent);
+  const editVersionAtRequest = asNumber(draftEvent.__edit_version);
   if (!options.force && !eventNeedsSave(eventId, payload)) {
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-event-save-skip event=${eventId}`);
     return draftEvent;
@@ -11669,13 +11676,16 @@ async function saveDraftEvent(eventId, options = {}) {
     body: JSON.stringify(payload),
   });
 
-  if (savedEvent) {
+  if (savedEvent && asNumber(draftEvent.__edit_version) === editVersionAtRequest) {
+    delete draftEvent.__dirty_after_save;
     state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
+    delete state.currentManagerEvent.__dirty_after_save;
     state.managerDraftEventsById[String(eventId)] = { ...state.currentManagerEvent };
     patchManagerEventLocal(eventId, savedEvent);
+    return savedEvent;
   }
 
-  return savedEvent;
+  return draftEvent;
 }
 
 
@@ -11971,7 +11981,6 @@ window.addEventListener("online", () => {
   flushSelectedManagerDraftAutosaveSoon();
 });
 
-
 function attachDraftInputs(eventId) {
   document.querySelectorAll("[data-item-field]").forEach((input) => {
     input.disabled = input.disabled || !canEditManagerEvent(state.currentManagerEvent);
@@ -12211,6 +12220,21 @@ function addDraftRegularPosition(eventId) {
   });
 }
 
+function isBlankTemporaryDraftItem(item) {
+  if (!item || item.item_type !== "regular") return false;
+  if (!item.is_temp && !String(item.id || "").startsWith("tmp-")) return false;
+
+  return !String(item.external_name || "").trim()
+    && asNumber(item.external_price) === 0
+    && !String(item.external_note || "").trim()
+    && (item.amount_fact === null || item.amount_fact === undefined || item.amount_fact === "" || asNumber(item.amount_fact) === 0)
+    && !item.payment_method
+    && !String(item.iin_bin || "").trim()
+    && asNumber(item.vat_amount) === 0
+    && asNumber(item.deduction_amount) === 0
+    && !String(item.internal_note || "").trim();
+}
+
 function moveDraftItem(eventId, fromId, toId) {
   if (!fromId || !toId || String(fromId) === String(toId)) return;
   const items = getDraftItems(eventId);
@@ -12264,19 +12288,6 @@ function focusTableCell(current, direction) {
       const target = rowCells[Math.min(cellIndex, rowCells.length - 1)] || rowCells[0];
       if (target) target.focus();
       return Boolean(target);
-    }
-
-    if (direction === "enter") {
-      syncAllVisibleDraftRows(state.selectedManagerEventId);
-      addDraftRegularPosition(state.selectedManagerEventId);
-      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
-      setTimeout(() => {
-        const freshRows = Array.from(document.querySelectorAll("tr[data-event-item-row]"));
-        const lastRow = freshRows[freshRows.length - 1];
-        const firstCell = lastRow?.querySelector("input:not(:disabled), select:not(:disabled), textarea:not(:disabled)");
-        if (firstCell) firstCell.focus();
-      }, 0);
-      return true;
     }
 
     return false;
@@ -12862,6 +12873,7 @@ function originalItemForSave(eventId, itemId) {
 
 function itemNeedsSave(eventId, item, payload = null) {
   if (!item) return false;
+  if (item.__dirty_after_save) return true;
   if (item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
   const nextPayload = payload || itemPayloadForSave(item);
   const nextKey = comparablePayloadString(nextPayload);
@@ -12881,6 +12893,7 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
 
   const payload = itemPayloadForSave(item);
   const wasTemp = item.is_temp || String(item.id || "").startsWith("tmp-");
+  const editVersionAtRequest = asNumber(item.__edit_version);
 
   if (!wasTemp && !options.force && !itemNeedsSave(eventId, item, payload)) {
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-item-save-skip item=${item.id}`);
@@ -12892,20 +12905,30 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    Object.assign(item, created, { is_temp: false });
+    if (asNumber(item.__edit_version) === editVersionAtRequest) {
+      Object.assign(item, created, { is_temp: false });
+    } else {
+      const freshLocalValues = { ...item };
+      Object.assign(item, created, freshLocalValues, { id: created.id, is_temp: false, __dirty_after_save: true });
+    }
   } else {
     const updated = await api(`/event-items/${item.id}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
-    Object.assign(item, updated, { is_temp: false });
+    if (asNumber(item.__edit_version) === editVersionAtRequest) {
+      Object.assign(item, updated, { is_temp: false });
+    }
   }
 
   if (String(item.id || "").startsWith("tmp-")) {
     throw new Error("Не удалось сохранить позицию");
   }
 
-  markDraftItemSaved(item);
+  if (asNumber(item.__edit_version) === editVersionAtRequest) {
+    delete item.__dirty_after_save;
+    markDraftItemSaved(item);
+  }
   patchManagerEventPayloadItems(eventId, items);
   return item;
 }
@@ -12930,6 +12953,7 @@ async function saveDraftItems(eventId) {
     : [];
 
   const saveTasks = items
+    .filter((item) => !isBlankTemporaryDraftItem(item))
     .filter((item) => itemNeedsSave(eventId, item))
     .map((item) => saveSingleDraftItem(eventId, item, { force: true }));
 
