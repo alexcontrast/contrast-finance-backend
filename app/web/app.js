@@ -11474,6 +11474,26 @@ function cloneItem(item) {
   return JSON.parse(JSON.stringify(item));
 }
 
+function generateDraftItemCreateToken() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  if (window.crypto?.getRandomValues) {
+    const values = new Uint32Array(4);
+    window.crypto.getRandomValues(values);
+    return Array.from(values, (value) => value.toString(36)).join("-");
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function ensureDraftItemCreateToken(item) {
+  if (!item) return null;
+  const isTemporary = item.is_temp || String(item.id || "").startsWith("tmp-");
+  if (!isTemporary) return null;
+  const existing = String(item.__client_create_token || "").trim();
+  if (existing) return existing;
+  item.__client_create_token = generateDraftItemCreateToken();
+  return item.__client_create_token;
+}
+
 function ensureCoordinator(items) {
   const existing = (items || []).find((item) => item.item_type === "coordinator");
   if (existing) return items;
@@ -11481,6 +11501,7 @@ function ensureCoordinator(items) {
   return [{
     id: `tmp-coordinator-${Date.now()}`,
     is_temp: true,
+    __client_create_token: generateDraftItemCreateToken(),
     item_type: "coordinator",
     external_name: "Координатор",
     external_price: 0,
@@ -12200,6 +12221,7 @@ function addDraftRegularPosition(eventId) {
   items.push({
     id: `tmp-${state.managerDraftTempSeq++}`,
     is_temp: true,
+    __client_create_token: generateDraftItemCreateToken(),
     item_type: "regular",
     external_name: "",
     external_price: 0,
@@ -12836,10 +12858,12 @@ function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount)
 function itemPayloadForSave(item) {
   ensureSelfEmployedItemTax(item);
   const isCoordinator = item.item_type === "coordinator";
+  const clientCreateToken = ensureDraftItemCreateToken(item);
   const coordinatorFact = Math.round(externalRowAmount(item) * 0.5);
 
   return {
     item_type: item.item_type || "regular",
+    client_create_token: clientCreateToken,
     external_name: item.external_name || "",
     external_price: Math.round(asNumber(item.external_price)),
     external_quantity: Math.round(asNumber(item.external_quantity || 1)),
@@ -12883,7 +12907,14 @@ function itemNeedsSave(eventId, item, payload = null) {
   return comparablePayloadString(itemPayloadForSave(original)) !== nextKey;
 }
 
-async function saveSingleDraftItem(eventId, item, options = {}) {
+function draftItemSaveOperationKey(eventId, item) {
+  const createToken = ensureDraftItemCreateToken(item);
+  return createToken
+    ? `${String(eventId)}:new:${createToken}`
+    : `${String(eventId)}:item:${String(item?.id || "")}`;
+}
+
+async function performSingleDraftItemSave(eventId, item, options = {}) {
   if (!item) throw new Error("Не выбрана позиция");
 
   const items = getDraftItems(eventId);
@@ -12931,6 +12962,32 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
   }
   patchManagerEventPayloadItems(eventId, items);
   return item;
+}
+
+async function saveSingleDraftItem(eventId, item, options = {}) {
+  if (!item) throw new Error("Не выбрана позиция");
+  if (!state.managerDraftItemSavePromises) state.managerDraftItemSavePromises = new Map();
+
+  const operationKey = draftItemSaveOperationKey(eventId, item);
+  const existingOperation = state.managerDraftItemSavePromises.get(operationKey);
+  if (existingOperation) {
+    // Manual save, autosave and payment preparation all join the same request
+    // for this row. After it finishes, send one PATCH only if the manager
+    // actually changed the row while the first request was in flight.
+    await existingOperation;
+    if (!itemNeedsSave(eventId, item)) return item;
+    return saveSingleDraftItem(eventId, item, options);
+  }
+
+  const operation = performSingleDraftItemSave(eventId, item, options);
+  state.managerDraftItemSavePromises.set(operationKey, operation);
+  try {
+    return await operation;
+  } finally {
+    if (state.managerDraftItemSavePromises.get(operationKey) === operation) {
+      state.managerDraftItemSavePromises.delete(operationKey);
+    }
+  }
 }
 
 async function saveDraftItems(eventId) {
@@ -16912,7 +16969,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.54 loaded");
+  console.info("Contrast Finance web app v0.5.62 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

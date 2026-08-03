@@ -6,6 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class EventItemCreate(BaseModel):
     item_type: str = Field(default="regular", description="regular / coordinator")
+    # Stable browser-generated token used only while a new draft row is being
+    # materialized. It makes concurrent autosave/manual-save POSTs idempotent.
+    client_create_token: str | None = Field(
+        default=None,
+        max_length=96,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
 
     # Внешняя смета
     external_name: str = Field(description="Название позиции для клиента")

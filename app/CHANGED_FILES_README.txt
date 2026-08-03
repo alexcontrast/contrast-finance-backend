@@ -1,6 +1,7 @@
-v0.5.61 changed files
+v0.5.62 changed files
 
 - app/api/routes/event_items.py
+- app/schemas/event_item.py
 - app/web/app.js
 - app/web/index.html
 - CHANGELOG.md

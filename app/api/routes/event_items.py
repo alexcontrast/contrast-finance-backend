@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
 COORDINATOR_ITEM_TYPE = "coordinator"
 INVALID_INVOICE_TAX_STATUSES = {None, "", "not_found", "error"}
+WEB_DRAFT_ITEM_KEY_PREFIX = "web-draft"
 
 
 def money(value) -> Decimal:
@@ -67,6 +68,13 @@ def active_item_payment_requests_count(db: Session, item_id: int) -> int:
 
 def normalized_iin_bin(value: str | None) -> str:
     return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+def web_draft_item_key(event_id: int, token: str | None) -> str | None:
+    normalized = (token or "").strip()
+    if not normalized:
+        return None
+    return f"{WEB_DRAFT_ITEM_KEY_PREFIX}:{int(event_id)}:{normalized}"
 
 
 def valid_invoice_tax_context(
@@ -247,15 +255,38 @@ def create_event_item(
 
     item = None
     coordinator_reused = False
-    if payload.item_type == COORDINATOR_ITEM_TYPE:
+    idempotent_reused = False
+    create_key = web_draft_item_key(event_id, payload.client_create_token)
+
+    if create_key is not None or payload.item_type == COORDINATOR_ITEM_TYPE:
         # Autosave and a manual save can reach POST at almost the same time.
-        # Lock the parent event even when no coordinator exists yet, then reuse
-        # the singleton row instead of creating a second one.
+        # The event lock serializes both requests even before the first row
+        # exists, so the second request can reuse it by its browser token.
         lock_event_for_coordinator_write(db, event_id)
+
+    if create_key is not None:
+        item = db.execute(
+            select(EventItem)
+            .where(EventItem.legacy_item_key == create_key)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if item is not None:
+            if item.event_id != int(event_id) or item.is_deleted:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Эта временная позиция уже была обработана",
+                )
+            idempotent_reused = True
+
+    if item is None and payload.item_type == COORDINATOR_ITEM_TYPE:
+        # Coordinator remains a singleton even for old cached clients that do
+        # not yet send a client_create_token.
         item = active_coordinator_item(db, event_id)
+        coordinator_reused = item is not None
 
     if item is None:
         item = EventItem(
+            legacy_item_key=create_key,
             event_id=event_id,
             item_type=payload.item_type,
             external_name=payload.external_name,
@@ -279,8 +310,14 @@ def create_event_item(
             updated_at=datetime.utcnow(),
         )
     else:
-        coordinator_reused = True
-        item.item_type = COORDINATOR_ITEM_TYPE
+        invoice_request = latest_active_invoice_request(db, item.id)
+        invoice_context = protected_invoice_tax_context(
+            item,
+            payload,
+            invoice_request,
+            allow_complete_override=current_user.role == "admin",
+        )
+        item.item_type = payload.item_type
         item.external_name = payload.external_name
         item.external_price = payload.external_price
         item.external_quantity = payload.external_quantity
@@ -297,13 +334,20 @@ def create_event_item(
         item.internal_note = payload.internal_note
         item.sort_order = payload.sort_order
         item.updated_at = datetime.utcnow()
+        if invoice_context is not None:
+            item.payment_method = "invoice"
+            item.iin_bin = invoice_context["iin_bin"]
+            item.iin_bin_locked = True
+            item.tax_check_status = invoice_context["tax_check_status"]
+            item.vat_amount = invoice_context["vat_amount"]
+            item.deduction_amount = invoice_context["deduction_amount"]
     build_sec = _sec(started_at) - auth_sec
 
     db.add(item)
     db.flush()
-    if coordinator_reused:
+    if coordinator_reused or idempotent_reused:
         # paid_amount is derived from paid requests and must not be overwritten
-        # by a stale autosave payload while reusing the singleton row.
+        # by a stale autosave payload while reusing an existing row.
         sync_item_paid_amount_from_requests(db, item.id)
     flush_sec = _sec(started_at) - auth_sec - build_sec
     result = EventItemRead.model_validate(item)
@@ -315,7 +359,7 @@ def create_event_item(
         "PERF event-item-create event_id=%s item_id=%s action=%s user_id=%s role=%s auth=%.3fs build=%.3fs flush=%.3fs response=%.3fs commit=%.3fs total=%.3fs",
         event_id,
         item.id,
-        "reuse_coordinator" if coordinator_reused else "create",
+        "reuse_idempotent" if idempotent_reused else ("reuse_coordinator" if coordinator_reused else "create"),
         getattr(current_user, "id", None),
         getattr(current_user, "role", None),
         auth_sec,
