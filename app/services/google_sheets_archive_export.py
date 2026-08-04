@@ -547,14 +547,225 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
 
 
 def build_year_statistics_sections(db: Session, year: int | str) -> list[dict]:
-    """Build the twelve monthly sections used by annual statistics.
+    """Build annual statistics without rebuilding twelve Google exports.
 
-    Keep this public helper as the stable boundary between the API route and
-    the archive service. Some deployed route revisions import this name
-    directly, so removing it makes the whole application fail during startup.
+    The annual screen needs only aggregate values.  The old implementation
+    called ``build_month_export_sections`` twelve times, which also loaded and
+    serialized every payment request and every detailed monthly sheet.  Apart
+    from doing work the screen never used, that multiplied the SQL round-trips
+    (including the users query) by twelve.
+
+    Load each yearly dataset once, group it in memory, and keep the monthly
+    formulas identical to the export path.  Full Google Sheet exports continue
+    to use ``build_month_export_sections`` and are intentionally unchanged.
     """
+    started = perf_counter()
     parsed_year = parse_year(year)
-    return [build_month_export_sections(db, date(parsed_year, month_num, 1)) for month_num in range(1, 13)]
+    year_start = date(parsed_year, 1, 1)
+    year_end = date(parsed_year + 1, 1, 1)
+
+    plans = db.execute(
+        select(MonthlyPlan).where(
+            MonthlyPlan.month >= year_start,
+            MonthlyPlan.month < year_end,
+        )
+    ).scalars().all()
+    closings = db.execute(
+        select(MonthlyClosing).where(
+            MonthlyClosing.month >= year_start,
+            MonthlyClosing.month < year_end,
+        )
+    ).scalars().all()
+    expenses = db.execute(
+        select(MonthlyExpense).where(
+            MonthlyExpense.month >= year_start,
+            MonthlyExpense.month < year_end,
+        )
+    ).scalars().all()
+    events = db.execute(
+        select(Event)
+        .where(
+            Event.event_date >= year_start,
+            Event.event_date < year_end,
+            Event.status != "cancelled",
+        )
+        .options(
+            selectinload(Event.items),
+            selectinload(Event.shares),
+        )
+        .order_by(Event.event_date.asc(), Event.id.asc())
+    ).scalars().all()
+    users = db.execute(select(User).options(selectinload(User.department))).scalars().all()
+    user_by_id = {user.id: user for user in users}
+
+    plan_by_month = {plan.month.month: plan for plan in plans}
+    closing_by_month = {closing.month.month: closing for closing in closings}
+    expenses_by_month: dict[int, list[MonthlyExpense]] = {month_num: [] for month_num in range(1, 13)}
+    events_by_month: dict[int, list[Event]] = {month_num: [] for month_num in range(1, 13)}
+    for expense in expenses:
+        expenses_by_month[expense.month.month].append(expense)
+    for event in events:
+        events_by_month[event.event_date.month].append(event)
+
+    sections = [
+        build_month_statistics_section(
+            date(parsed_year, month_num, 1),
+            plan_by_month.get(month_num),
+            closing_by_month.get(month_num),
+            expenses_by_month[month_num],
+            events_by_month[month_num],
+            user_by_id,
+        )
+        for month_num in range(1, 13)
+    ]
+    logger.info(
+        "PERF google-year-statistics year=%s events=%s expenses=%s total=%.3fs",
+        parsed_year,
+        len(events),
+        len(expenses),
+        perf_counter() - started,
+    )
+    return sections
+
+
+def build_month_statistics_section(
+    month_date: date,
+    plan: MonthlyPlan | None,
+    closing: MonthlyClosing | None,
+    expenses: list[MonthlyExpense],
+    events: list[Event],
+    user_by_id: dict[int, User],
+) -> dict:
+    """Build only the aggregate part of one monthly export section."""
+    manager_income_dec: dict[str, Decimal] = {}
+    manager_salary_dec: dict[str, Decimal] = {}
+    manager_coordinator_dec: dict[str, Decimal] = {}
+    department_income_dec: dict[str, Decimal] = {}
+    events_payload: list[dict] = []
+
+    for event in events:
+        active_items = [item for item in list(event.items or []) if not item.is_deleted]
+        summary_raw = calculate_event_summary_values(event, active_items)
+        summary = {
+            "turnover": decimal_to_int(summary_raw.get("turnover_with_vat")),
+            "client_vat": decimal_to_int(summary_raw.get("client_vat_amount")),
+            "contractor_vat_credit": decimal_to_int(summary_raw.get("contractor_vat_credit")),
+            "taxes_total": decimal_to_int(summary_raw.get("taxes_total")),
+            "deductions_total": decimal_to_int(summary_raw.get("deductions_total")),
+            "manager_salary": decimal_to_int(summary_raw.get("manager_salary")),
+            "coordinator_fact_amount": decimal_to_int(summary_raw.get("coordinator_fact_amount")),
+            "final_company_income": decimal_to_int(summary_raw.get("final_company_income")),
+        }
+
+        event_final_income = money(summary["final_company_income"])
+        event_manager_salary = money(summary["manager_salary"])
+        event_coordinator_amount = money(summary["coordinator_fact_amount"])
+        add_event_values_to_managers(
+            manager_income_dec,
+            manager_salary_dec,
+            event,
+            event_final_income,
+            event_manager_salary,
+            user_by_id,
+        )
+        add_event_values_to_managers(
+            manager_coordinator_dec,
+            {},
+            event,
+            event_coordinator_amount,
+            Decimal("0.00"),
+            user_by_id,
+        )
+        add_event_income_to_departments(
+            department_income_dec,
+            event,
+            event_final_income,
+            user_by_id,
+        )
+        events_payload.append({
+            "client_calc_type_code": event.client_calc_type,
+            "summary": summary,
+        })
+
+    # The expense is already included in monthly expenses; add a paid bonus
+    # only to the corresponding manager's salary statistics.
+    for expense in expenses:
+        if expense.source_type != "manager_bonus" or expense.manager_id is None:
+            continue
+        manager = user_by_id.get(expense.manager_id)
+        if manager is None:
+            continue
+        manager_salary_dec[manager.name] = manager_salary_dec.get(manager.name, Decimal("0.00")) + money(expense.amount)
+
+    monthly_totals = build_monthly_tax_totals(events_payload)
+    monthly_totals["plan"] = decimal_to_int(plan.company_plan_amount) if plan else 0
+    monthly_totals["manager_personal_plan"] = (
+        decimal_to_int(money(plan.company_plan_amount) * money(plan.manager_personal_plan_percent) / Decimal("100"))
+        if plan
+        else 0
+    )
+    monthly_totals["events_count"] = len(events)
+
+    base_expenses = sum((money(expense.amount) for expense in expenses), Decimal("0.00"))
+    department_expenses = split_monthly_expenses(expenses, plan)
+    manager_income = {name: decimal_to_int(amount) for name, amount in sorted(manager_income_dec.items())}
+    manager_salary = {name: decimal_to_int(amount) for name, amount in sorted(manager_salary_dec.items())}
+    manager_coordinator = {name: decimal_to_int(amount) for name, amount in sorted(manager_coordinator_dec.items())}
+    department_income = {name: decimal_to_int(amount) for name, amount in sorted(department_income_dec.items())}
+    department_plans = {
+        "Санжар": decimal_to_int(department_plan_amount(plan, "Санжар")),
+        "Рауфаль": decimal_to_int(department_plan_amount(plan, "Рауфаль")),
+    }
+
+    sanzhar_income = department_income_dec.get("Санжар", Decimal("0.00"))
+    raufal_income = department_income_dec.get("Рауфаль", Decimal("0.00"))
+    sanzhar_head_percent = (
+        money(closing.sanzhar_head_percent_override)
+        if closing is not None and closing.sanzhar_head_percent_override is not None
+        else department_head_percent(sanzhar_income, department_plan_amount(plan, "Санжар"))
+    )
+    raufal_head_percent = (
+        money(closing.raufal_head_percent_override)
+        if closing is not None and closing.raufal_head_percent_override is not None
+        else department_head_percent(raufal_income, department_plan_amount(plan, "Рауфаль"))
+    )
+    sanzhar_head_salary = department_head_salary(
+        sanzhar_income,
+        department_expenses.get("Санжар", Decimal("0.00")),
+        sanzhar_head_percent,
+    )
+    raufal_head_salary = department_head_salary(
+        raufal_income,
+        department_expenses.get("Рауфаль", Decimal("0.00")),
+        raufal_head_percent,
+    )
+    department_heads_salary = q0(sanzhar_head_salary + raufal_head_salary)
+    expenses_with_heads = q0(base_expenses + department_heads_salary)
+
+    monthly_totals["base_expenses"] = decimal_to_int(base_expenses)
+    monthly_totals["department_heads_salary"] = decimal_to_int(department_heads_salary)
+    monthly_totals["expenses"] = decimal_to_int(expenses_with_heads)
+    monthly_totals["clean_income"] = monthly_totals["company_income"] - monthly_totals["expenses"]
+    monthly_totals["income_after_expenses"] = monthly_totals["clean_income"]
+    monthly_totals["remaining"] = monthly_totals["plan"] - monthly_totals["company_income"]
+
+    return {
+        "month": month_date.strftime("%Y-%m"),
+        "annual_month": {
+            "month": month_date.strftime("%Y-%m"),
+            "title": month_short_title(month_date),
+            **monthly_totals,
+        },
+        "manager_income": manager_income,
+        "manager_salary": manager_salary,
+        "manager_coordinator": manager_coordinator,
+        "department_income": department_income,
+        "department_plans": department_plans,
+        "department_head_salary": {
+            "Санжар": decimal_to_int(sanzhar_head_salary),
+            "Рауфаль": decimal_to_int(raufal_head_salary),
+        },
+    }
 
 
 def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:

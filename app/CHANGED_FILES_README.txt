@@ -1,10 +1,9 @@
-v0.5.66 changed files
+v0.5.67 changed files
 
-app/web/app.js
-app/web/index.html
+app/services/google_sheets_archive_export.py
 
-The admin overview manager row now has dedicated manager, income, progress and
-action areas. Paid bonuses are green, PIN buttons are gray, and the app.js URL
-is cache-busted for this release.
+Annual admin statistics now load all required yearly datasets once and build
+the same monthly aggregates in memory. Opening the statistics tab no longer
+builds twelve full Google Sheets export payloads or loads payment requests.
 
-Deploy over v0.5.65. No migration is required.
+Deploy over v0.5.66. No migration is required.
