@@ -1,9 +1,10 @@
-v0.5.65 changed files
+v0.5.66 changed files
 
-app/api/routes/manager_bonuses.py
-app/api/routes/monthly_closings.py
+app/web/app.js
+app/web/index.html
 
-The two route modules are shipped together so manager bonus payment can recalculate
-an already closed month without an import failure.
+The admin overview manager row now has dedicated manager, income, progress and
+action areas. Paid bonuses are green, PIN buttons are gray, and the app.js URL
+is cache-busted for this release.
 
-Deploy over v0.5.64. No new migration is required; 0013_manager_bonus remains current.
+Deploy over v0.5.65. No migration is required.

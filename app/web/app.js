@@ -572,6 +572,14 @@ function injectManagerUxStyles() {
 
     .manager-pin-reset-btn {
       font-size: 15px !important;
+      border-color: rgba(102, 112, 133, .30) !important;
+      background: rgba(102, 112, 133, .09) !important;
+      color: #667085 !important;
+    }
+
+    .manager-pin-reset-btn:hover {
+      border-color: rgba(102, 112, 133, .50) !important;
+      background: rgba(102, 112, 133, .16) !important;
     }
 
     .manager-bonus-btn {
@@ -593,11 +601,96 @@ function injectManagerUxStyles() {
     }
 
     .manager-bonus-btn.is-paid {
-      border-color: rgba(18, 140, 64, .34);
-      background: rgba(18, 140, 64, .12);
-      color: #128c40;
-      opacity: .72;
+      border-color: rgba(22, 163, 74, .40) !important;
+      background: rgba(34, 197, 94, .16) !important;
+      color: #15803d !important;
+      box-shadow: 0 0 0 1px rgba(34, 197, 94, .05) inset;
+      opacity: 1 !important;
       filter: none;
+    }
+
+    .manager-progress-row {
+      grid-template-columns: minmax(150px, .95fr) minmax(150px, .82fr) minmax(170px, 1.35fr) auto;
+      gap: 12px;
+    }
+
+    .manager-progress-main {
+      min-width: 0;
+    }
+
+    .manager-progress-income {
+      display: grid;
+      min-width: 0;
+      gap: 3px;
+      line-height: 1.05;
+    }
+
+    .manager-progress-income strong {
+      color: #49513f;
+      font-size: 14px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .manager-progress-income span {
+      color: rgba(73, 81, 63, .66);
+      font-size: 10.5px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .manager-progress-bar {
+      display: grid;
+      min-width: 0;
+      gap: 4px;
+    }
+
+    .manager-progress-percent {
+      color: rgba(73, 81, 63, .72);
+      font-size: 10.5px;
+      font-weight: 850;
+      line-height: 1;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 1280px) and (min-width: 921px) {
+      .manager-progress-row {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-areas:
+          "manager income actions"
+          "progress progress progress";
+        gap: 7px 10px;
+      }
+
+      .manager-progress-main { grid-area: manager; }
+      .manager-progress-income { grid-area: income; }
+      .manager-progress-bar { grid-area: progress; }
+      .manager-admin-actions,
+      .manager-progress-row > .manager-restore-btn,
+      .manager-progress-row > .manager-action-placeholder { grid-area: actions; }
+    }
+
+    @media (max-width: 920px) {
+      .manager-progress-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px 10px;
+      }
+
+      .manager-progress-main {
+        grid-row: 1;
+        grid-column: 1;
+      }
+
+      .manager-admin-actions {
+        grid-row: 1;
+        grid-column: 2;
+      }
+
+      .manager-progress-income,
+      .manager-progress-bar {
+        grid-column: 1 / -1;
+      }
     }
 
     .manager-bonus-summary {
@@ -9629,10 +9722,14 @@ function renderAdminOverview(data) {
                       ${row.eventsCount ? `<em class="manager-events-count-badge">${row.eventsCount}</em>` : ""}
                       ${row.isInactive ? `<em class="manager-inactive-badge">до конца месяца</em>` : ""}
                     </strong>
-                    <span>${formatMoney(row.income)} ₸ · ${row.percent}%</span>
+                  </div>
+                  <div class="manager-progress-income">
+                    <strong>Факт: ${formatMoney(row.income)} ₸</strong>
+                    <span>Цель: ${formatMoney(row.plan)} ₸</span>
                   </div>
                   <div class="manager-progress-bar">
                     ${progressLine(row.percent)}
+                    <span class="manager-progress-percent">${row.percent}%</span>
                   </div>
                   ${row.isInactive ? `
                     ${row.canRestore ? `
