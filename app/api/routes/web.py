@@ -1,4 +1,5 @@
 from pathlib import Path
+from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, Response
@@ -9,6 +10,7 @@ router = APIRouter(tags=["web"])
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
 
 
+@lru_cache(maxsize=4)
 def read_web_file(name: str) -> str:
     path = WEB_DIR / name
     if not path.exists():
@@ -28,6 +30,16 @@ def no_store_response(content, media_type: str):
     )
 
 
+def versioned_asset_response(content, media_type: str, version: str | None):
+    if not version:
+        return no_store_response(content, media_type)
+    return Response(
+        content,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def web_index():
     return HTMLResponse(
@@ -41,13 +53,13 @@ def web_index():
 
 
 @router.get("/web/app.js")
-def web_app_js():
-    return no_store_response(read_web_file("app.js"), "application/javascript; charset=utf-8")
+def web_app_js(v: str | None = None):
+    return versioned_asset_response(read_web_file("app.js"), "application/javascript; charset=utf-8", v)
 
 
 @router.get("/web/styles.css")
-def web_styles_css():
-    return no_store_response(read_web_file("styles.css"), "text/css; charset=utf-8")
+def web_styles_css(v: str | None = None):
+    return versioned_asset_response(read_web_file("styles.css"), "text/css; charset=utf-8", v)
 
 
 

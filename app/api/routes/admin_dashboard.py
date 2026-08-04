@@ -5,7 +5,7 @@ from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, load_only, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.db.session import get_db
@@ -291,6 +291,28 @@ def refresh_loaded_paid_amounts(db: Session, active_items: list[EventItem]) -> N
         set_committed_value(item, "paid_amount", money(paid_totals.get(item.id, Decimal("0.00"))))
 
 
+def refresh_loaded_paid_amounts_from_requests(
+    active_items: list[EventItem],
+    payment_requests: list[PaymentRequest],
+) -> None:
+    """Refresh item paid totals from requests already loaded for the dashboard.
+
+    The compact admin path already has every request for every selected event.
+    Re-querying the same table only to group paid amounts added another database
+    round trip to the first screen. Keep the exact old rule (only ``paid``
+    requests count), but aggregate it in memory from the loaded rows.
+    """
+    paid_totals: dict[int, Decimal] = {}
+    for request in payment_requests:
+        if request.status != "paid" or request.event_item_id is None:
+            continue
+        item_id = int(request.event_item_id)
+        paid_totals[item_id] = paid_totals.get(item_id, Decimal("0.00")) + money(request.amount_requested)
+
+    for item in active_items:
+        set_committed_value(item, "paid_amount", money(paid_totals.get(int(item.id), Decimal("0.00"))))
+
+
 
 
 
@@ -411,7 +433,12 @@ def get_admin_dashboard(
     mark_perf("events_sql")
 
     active_items = active_items_for_events(events)
-    refresh_loaded_paid_amounts(db, active_items)
+    loaded_payment_requests = [
+        request
+        for event in events
+        for request in (event.payment_requests or [])
+    ]
+    refresh_loaded_paid_amounts_from_requests(active_items, loaded_payment_requests)
     mark_perf("paid_sync")
 
     event_rows = []
@@ -649,13 +676,69 @@ def get_admin_dashboard_bundle(
     mark_perf("base_sql")
 
     month_end = next_month_start(month_date)
+    event_load_options = (
+        selectinload(Event.items),
+        selectinload(Event.payment_requests),
+        selectinload(Event.shares),
+    )
+    if not include_event_payloads:
+        # The first screen needs the financial inputs and compact table fields,
+        # not notes, BINs, comments and the rest of every modal payload. Keep
+        # using the canonical calculator while selecting only fields it reads.
+        event_load_options = (
+            load_only(
+                Event.id,
+                Event.client_name,
+                Event.title,
+                Event.event_date,
+                Event.department_id,
+                Event.manager_id,
+                Event.status,
+                Event.money_status,
+                Event.client_calc_type,
+                Event.manager_percent,
+                Event.agency_commission_amount,
+                Event.simplified_bank_tax_percent,
+            ),
+            selectinload(Event.items).load_only(
+                EventItem.id,
+                EventItem.event_id,
+                EventItem.item_type,
+                EventItem.external_amount,
+                EventItem.amount_fact,
+                EventItem.paid_amount,
+                EventItem.payment_method,
+                EventItem.vat_amount,
+                EventItem.deduction_amount,
+                EventItem.sort_order,
+                EventItem.is_deleted,
+            ),
+            selectinload(Event.payment_requests).load_only(
+                PaymentRequest.id,
+                PaymentRequest.event_id,
+                PaymentRequest.event_item_id,
+                PaymentRequest.created_at,
+                PaymentRequest.amount_requested,
+                PaymentRequest.payment_method,
+                PaymentRequest.status,
+                PaymentRequest.money_status,
+                PaymentRequest.item_name_snapshot,
+                PaymentRequest.tax_status_snapshot,
+                PaymentRequest.card_number,
+                PaymentRequest.contractor_name_snapshot,
+                PaymentRequest.warning_over_remaining,
+            ),
+            selectinload(Event.shares).load_only(
+                EventShare.id,
+                EventShare.event_id,
+                EventShare.user_id,
+                EventShare.share_percent,
+            ),
+        )
+
     event_query = (
         select(Event)
-        .options(
-            selectinload(Event.items),
-            selectinload(Event.payment_requests),
-            selectinload(Event.shares),
-        )
+        .options(*event_load_options)
         .where(
             Event.event_date >= month_date,
             Event.event_date < month_end,
@@ -669,7 +752,12 @@ def get_admin_dashboard_bundle(
     mark_perf("events_sql")
 
     active_items = active_items_for_events(events)
-    refresh_loaded_paid_amounts(db, active_items)
+    loaded_payment_requests = [
+        request
+        for event in events
+        for request in (event.payment_requests or [])
+    ]
+    refresh_loaded_paid_amounts_from_requests(active_items, loaded_payment_requests)
     mark_perf("paid_sync")
 
     event_rows = []

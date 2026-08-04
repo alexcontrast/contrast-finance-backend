@@ -6492,7 +6492,11 @@ async function api(path, options = {}) {
       throw new Error(detail);
     }
 
-    return response.json();
+    const data = await response.json();
+    if (method !== "GET" && adminDashboardMutationAffectsCache(safePath)) {
+      invalidateAdminDashboardCaches();
+    }
+    return data;
   })();
 
   if (!isGet) return requestPromise;
@@ -16662,6 +16666,85 @@ async function attachPlansModal() {
 
 const USERS_CACHE_KEY = "cf_admin_users_cache_v1";
 const USERS_CACHE_TTL_MS = 10 * 60 * 1000;
+const ADMIN_DASHBOARD_CACHE_KEY = "cf_admin_dashboard_cache_v2";
+const ADMIN_DASHBOARD_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const ADMIN_DASHBOARD_CACHE_MAX_ENTRIES = 6;
+
+function adminDashboardCacheEntryKey(month) {
+  const userId = Number(state.bootstrap?.user?.id || 0);
+  return `${userId}:${String(month || "")}`;
+}
+
+function readAdminDashboardPersistentCache() {
+  try {
+    const raw = localStorage.getItem(ADMIN_DASHBOARD_CACHE_KEY);
+    if (!raw) return { entries: {} };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.entries !== "object" || Array.isArray(parsed.entries)) return { entries: {} };
+    return parsed;
+  } catch (error) {
+    console.warn("Не удалось прочитать быстрый кэш админки", error);
+    return { entries: {} };
+  }
+}
+
+function persistentAdminDashboardBundle(month) {
+  const key = adminDashboardCacheEntryKey(month);
+  const record = readAdminDashboardPersistentCache().entries?.[key];
+  if (!record?.saved_at || !record?.bundle?.dashboard) return null;
+  if (Date.now() - Number(record.saved_at) > ADMIN_DASHBOARD_CACHE_MAX_AGE_MS) return null;
+  return record.bundle;
+}
+
+function saveAdminDashboardPersistentCache(month, bundle) {
+  if (!bundle?.dashboard) return bundle;
+  try {
+    const cache = readAdminDashboardPersistentCache();
+    const key = adminDashboardCacheEntryKey(month);
+    cache.entries[key] = {
+      saved_at: Date.now(),
+      bundle: {
+        dashboard: bundle.dashboard,
+        event_payloads: {},
+        users: Array.isArray(bundle.users) ? bundle.users : [],
+        monthly_expenses: Array.isArray(bundle.monthly_expenses) ? bundle.monthly_expenses : [],
+      },
+    };
+
+    const keep = Object.entries(cache.entries)
+      .filter(([, record]) => record?.saved_at && Date.now() - Number(record.saved_at) <= ADMIN_DASHBOARD_CACHE_MAX_AGE_MS)
+      .sort((left, right) => Number(right[1].saved_at) - Number(left[1].saved_at))
+      .slice(0, ADMIN_DASHBOARD_CACHE_MAX_ENTRIES);
+    cache.entries = Object.fromEntries(keep);
+    localStorage.setItem(ADMIN_DASHBOARD_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.warn("Не удалось сохранить быстрый кэш админки", error);
+  }
+  return bundle;
+}
+
+function invalidateAdminDashboardCaches() {
+  state.adminDashboardBundleCacheByMonth = {};
+  try {
+    localStorage.removeItem(ADMIN_DASHBOARD_CACHE_KEY);
+  } catch (_) {}
+}
+
+function adminDashboardMutationAffectsCache(path) {
+  const pathname = String(path || "").split("?", 1)[0];
+  return [
+    "/events",
+    "/event-items",
+    "/payment-requests",
+    "/monthly-plans",
+    "/monthly-expenses",
+    "/monthly-closings",
+    "/manager-bonuses",
+    "/users",
+    "/coordinator",
+    "/tax",
+  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
 
 function restoreUsersFromCache() {
   try {
@@ -16914,8 +16997,41 @@ function scheduleAdminBackgroundPrefetch(month, dashboard) {
     state.adminBackgroundPrefetchTimer = null;
     if (String(state.month || "") !== key) return;
     loadMonthlyPlansForYear(year).catch((error) => console.warn("Не удалось заранее загрузить планы", error));
-    prefetchAdminEventPayloads(key, dashboard?.events || []);
-  }, 450);
+    prefetchAdjacentAdminMonths(key);
+  }, 1200);
+}
+
+
+function shiftedMonthKey(month, delta) {
+  const [year, monthNumber] = String(month || "").split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(monthNumber)) return "";
+  const shifted = new Date(Date.UTC(year, monthNumber - 1 + delta, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+
+async function prefetchAdminCompactMonth(month) {
+  const key = String(month || "");
+  if (!key || persistentAdminDashboardBundle(key)) return null;
+  const data = await timedApi(
+    "admin-dashboard-adjacent-prefetch",
+    `/admin-dashboard-bundle?month=${encodeURIComponent(key)}&include_drafts=true&include_event_payloads=false&_=${Date.now()}`,
+  );
+  setCachedValue(state.adminDashboardBundleCacheByMonth, key, data);
+  saveAdminDashboardPersistentCache(key, data);
+  return data;
+}
+
+
+async function prefetchAdjacentAdminMonths(month) {
+  for (const candidate of [shiftedMonthKey(month, -1), shiftedMonthKey(month, 1)]) {
+    if (!candidate || String(state.month || "") !== String(month || "")) return;
+    try {
+      await prefetchAdminCompactMonth(candidate);
+    } catch (error) {
+      console.warn(`Не удалось заранее подготовить ${candidate}`, error);
+    }
+  }
 }
 
 
@@ -16939,6 +17055,7 @@ async function loadAdminDashboardBundleData(month) {
     `/admin-dashboard-bundle?month=${month}&include_drafts=true&include_event_payloads=false&_=${Date.now()}`,
   ).then((data) => {
     hydrateAdminBundleAuxiliaryData(data, key);
+    saveAdminDashboardPersistentCache(key, data);
     return setCachedValue(state.adminDashboardBundleCacheByMonth, key, data);
   }).finally(() => {
     if (state.adminDashboardBundleLoadingByMonth) delete state.adminDashboardBundleLoadingByMonth[key];
@@ -17228,6 +17345,8 @@ async function refreshLiveChangedEvents(changedIds) {
     const dashboard = bundle?.dashboard || emptyAdminDashboard(month);
     state.adminData = normalizeAdminDashboardForMonth(dashboard, month);
     hydrateAdminBundleAuxiliaryData(bundle, month);
+    setCachedValue(state.adminDashboardBundleCacheByMonth, month, bundle);
+    saveAdminDashboardPersistentCache(month, bundle);
     cacheEventModalPayloads(payloadResult?.event_payloads || {}, month);
     patchAdminEventRowsFromDashboard(dashboard, ids);
     ids.forEach((eventId) => patchOpenAdminEventPayload(payloadResult?.event_payloads?.[String(eventId)]));
@@ -17325,6 +17444,16 @@ async function loadDashboard() {
     const isStale = () => selectedMonthValue() !== month || state.dashboardRequestSeq !== requestSeq;
 
     if (user.role === "admin") {
+      let renderedFromPersistentCache = false;
+      const persistentBundle = persistentAdminDashboardBundle(month);
+      if (persistentBundle?.dashboard && !isStale()) {
+        hydrateAdminBundleAuxiliaryData(persistentBundle, month);
+        renderAdminDashboard(persistentBundle.dashboard);
+        if (document.getElementById("dashboardHint")) {
+          document.getElementById("dashboardHint").textContent = "Обновляем свежие данные…";
+        }
+        renderedFromPersistentCache = true;
+      }
       try {
         const bundle = await loadAdminDashboardBundleData(month);
         if (!Array.isArray(bundle?.users)) await loadUsersForAdmin();
@@ -17341,7 +17470,13 @@ async function loadDashboard() {
       } catch (error) {
         if (!isStale()) {
           console.warn("Не удалось загрузить admin-dashboard за период", month, error);
-          renderAdminEmptyDashboard(month, error);
+          if (renderedFromPersistentCache) {
+            if (document.getElementById("dashboardHint")) {
+              document.getElementById("dashboardHint").textContent = "Показаны последние сохранённые данные";
+            }
+          } else {
+            renderAdminEmptyDashboard(month, error);
+          }
         }
       }
       if (!isStale()) state.lastLoadedDashboardMonth = month;
@@ -17402,7 +17537,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.68 loaded");
+  console.info("Contrast Finance web app v0.5.69 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.routes.departments import router as departments_router
 from app.api.routes.events import router as events_router
@@ -37,6 +38,7 @@ app = FastAPI(
     title="Contrast Finance API",
     version=settings.VERSION,
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
 
 
 @app.on_event("startup")

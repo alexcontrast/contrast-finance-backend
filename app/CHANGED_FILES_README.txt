@@ -1,17 +1,16 @@
-v0.5.68 changed files
+v0.5.69 changed files
 
 app/api/routes/admin_dashboard.py
-app/api/routes/manager_dashboard.py
-app/api/routes/monthly.py
-app/api/routes/monthly_closings.py
-app/schemas/admin_dashboard.py
+app/api/routes/web.py
+app/main.py
 app/web/app.js
 app/web/index.html
 CHANGELOG.md
 README.md
 
-The admin first screen now uses a compact monthly bundle. Users, expenses and
-the canonical closing preview are included without extra requests; full event
-cards and yearly plans prefetch after the first render.
+The compact admin bundle now selects only first-screen fields, reuses already
+loaded paid requests, restores the last successful month immediately and
+refreshes it in the background. Versioned web assets use browser caching and
+GZip; detailed event cards load on demand instead of prefetching the full month.
 
-Deploy over v0.5.67. No migration is required.
+Deploy over v0.5.68. No migration is required.
