@@ -4,6 +4,9 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from app.schemas.monthly_expense import ManagerBonusRead
+from app.schemas.monthly_closing import MonthlyClosingCalculateRead
+from app.schemas.monthly_expense import MonthlyExpenseRead
+from app.schemas.users_manage import UserRead
 
 
 class AdminDepartmentDashboardRead(BaseModel):
@@ -89,6 +92,7 @@ class AdminDashboardRead(BaseModel):
     events: list[AdminEventRowRead]
     payment_requests: list[AdminPaymentRequestRowRead]
     closing: AdminClosingRead
+    closing_calculation: MonthlyClosingCalculateRead | None = None
 
 
 from app.schemas.manager_dashboard import ManagerEventFullPayload
@@ -96,4 +100,11 @@ from app.schemas.manager_dashboard import ManagerEventFullPayload
 
 class AdminDashboardBundleRead(BaseModel):
     dashboard: AdminDashboardRead
+    event_payloads: dict[int, ManagerEventFullPayload]
+    users: list[UserRead] = Field(default_factory=list)
+    monthly_expenses: list[MonthlyExpenseRead] = Field(default_factory=list)
+
+
+class AdminEventPayloadsRead(BaseModel):
+    month: date
     event_payloads: dict[int, ManagerEventFullPayload]

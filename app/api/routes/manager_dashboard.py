@@ -301,8 +301,14 @@ def get_manager_dashboard(
     return dashboard
 
 
-def build_event_summary_read_for_bundle(event: Event, items: list[EventItem]) -> EventSummaryRead:
-    values = calculate_event_summary_values(event, items)
+def build_event_summary_read_for_bundle(
+    event: Event,
+    items: list[EventItem],
+    values: dict | None = None,
+) -> EventSummaryRead:
+    # Bundle callers already calculate the same summary for the compact event row.
+    # Reusing it avoids a second full pass over every estimate item.
+    values = values or calculate_event_summary_values(event, items)
     customer_paid = getattr(event, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00")
 
     return EventSummaryRead(
@@ -524,7 +530,7 @@ def get_manager_dashboard_bundle(
         event_payloads[int(event.id)] = ManagerEventFullPayload(
             event=EventRead.model_validate(event),
             items=[EventItemRead.model_validate(item) for item in items],
-            summary=build_event_summary_read_for_bundle(event, items),
+            summary=build_event_summary_read_for_bundle(event, items, summary_values),
             requests=request_reads,
         )
     mark_perf("payloads")

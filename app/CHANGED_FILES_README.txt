@@ -1,9 +1,17 @@
-v0.5.67 changed files
+v0.5.68 changed files
 
-app/services/google_sheets_archive_export.py
+app/api/routes/admin_dashboard.py
+app/api/routes/manager_dashboard.py
+app/api/routes/monthly.py
+app/api/routes/monthly_closings.py
+app/schemas/admin_dashboard.py
+app/web/app.js
+app/web/index.html
+CHANGELOG.md
+README.md
 
-Annual admin statistics now load all required yearly datasets once and build
-the same monthly aggregates in memory. Opening the statistics tab no longer
-builds twelve full Google Sheets export payloads or loads payment requests.
+The admin first screen now uses a compact monthly bundle. Users, expenses and
+the canonical closing preview are included without extra requests; full event
+cards and yearly plans prefetch after the first render.
 
-Deploy over v0.5.66. No migration is required.
+Deploy over v0.5.67. No migration is required.

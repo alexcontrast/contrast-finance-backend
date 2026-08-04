@@ -5893,6 +5893,8 @@ const state = {
   adminDashboardLoadingByMonth: {},
   adminDashboardBundleLoadingByMonth: {},
   adminDashboardBundleCacheByMonth: {},
+  adminEventPayloadPrefetchByMonth: {},
+  adminBackgroundPrefetchTimer: null,
   departmentDashboardBundleLoadingByMonth: {},
   departmentDashboardBundleCacheByMonth: {},
   eventModalPayloadById: {},
@@ -5916,6 +5918,8 @@ const state = {
   monthYearSelectorsAttached: false,
   monthlyPlans: [],
   monthlyPlansYear: null,
+  monthlyPlansCacheByYear: {},
+  monthlyPlansLoadingByYear: {},
   annualStatisticsCacheByYear: {},
   closingPanelData: null,
   closingEditingExpenseId: null,
@@ -7101,6 +7105,11 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.adminDashboardLoadingByMonth = {};
   state.adminDashboardBundleLoadingByMonth = {};
   state.adminDashboardBundleCacheByMonth = {};
+  state.adminEventPayloadPrefetchByMonth = {};
+  if (state.adminBackgroundPrefetchTimer) {
+    window.clearTimeout(state.adminBackgroundPrefetchTimer);
+    state.adminBackgroundPrefetchTimer = null;
+  }
   state.departmentDashboardBundleLoadingByMonth = {};
   state.departmentDashboardBundleCacheByMonth = {};
   state.managerDashboardLoadingByMonth = {};
@@ -7115,6 +7124,8 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.dashboardLoadingKey = null;
   state.dashboardLoadingPromise = null;
   state.lastLoadedDashboardMonth = null;
+  state.monthlyPlansCacheByYear = {};
+  state.monthlyPlansLoadingByYear = {};
 
   if (state.monthYearChangeTimer) {
     window.clearTimeout(state.monthYearChangeTimer);
@@ -7515,13 +7526,13 @@ function renderAdminTabs() {
       state.paymentCustomerFilter = "all";
       state.paymentManagerFilter = "all";
       setLoading(true, "Переключаем вкладку…");
-      setTimeout(() => {
+      window.requestAnimationFrame(() => {
         try {
           renderAdminDashboard(state.adminData);
         } finally {
           setLoading(false);
         }
-      }, 80);
+      });
     });
   });
 }
@@ -9290,6 +9301,17 @@ async function loadEventModalPayload(eventId, options = {}) {
   if (cachedPayload) {
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web event-modal-detail cache event=${eventId}`);
     return cachedPayload;
+  }
+
+  if (state.bootstrap?.user?.role === "admin") {
+    const result = await api(
+      `/admin-event-payloads?month=${encodeURIComponent(state.month)}&event_ids=${encodeURIComponent(eventId)}&include_drafts=true&_=${Date.now()}`,
+    );
+    const payload = result?.event_payloads?.[String(eventId)];
+    if (payload) {
+      cacheEventModalPayloads({ [String(eventId)]: payload }, state.month);
+      return payload;
+    }
   }
 
   const [event, summary, items, requests] = await Promise.all([
@@ -15808,7 +15830,7 @@ async function refreshClosingPanel(options = {}) {
     const data = await loadClosingPanelData({ includeCalculation });
     cacheClosingPanelData(data);
     renderClosingPanelFromCache();
-    if (!includeCalculation && !data.error) {
+    if (!includeCalculation && !data.error && !data.calc) {
       scheduleClosingCalculationRefresh(250);
     }
   } catch (error) {
@@ -16144,6 +16166,16 @@ function attachClosingPanelEvents() {
 async function attachClosingPanel() {
   const panel = document.getElementById("closingPanel");
   if (!panel || panel.dataset.loading === "1" || panel.dataset.loaded === "1") return;
+
+  const cached = state.closingPanelData && state.closingPanelData.month === state.month
+    ? state.closingPanelData
+    : null;
+  if (cached) {
+    renderClosingPanelFromCache();
+    panel.dataset.loaded = "1";
+    return;
+  }
+
   panel.dataset.loading = "1";
   await refreshClosingPanel();
   panel.dataset.loading = "0";
@@ -16160,9 +16192,7 @@ async function ensureMonthlyPlansLoadedForEditor() {
   }
 
   try {
-    const plans = await api(`/monthly-plans?_=${Date.now()}`);
-    state.monthlyPlans = Array.isArray(plans) ? plans : [];
-    state.monthlyPlansYear = year;
+    await loadMonthlyPlansForYear(year);
   } catch (error) {
     editor.innerHTML = `<div class="empty-state">Не удалось загрузить планы: ${escapeHtml(error.message)}</div>`;
     return false;
@@ -16175,6 +16205,40 @@ async function ensureMonthlyPlansLoadedForEditor() {
   }
 
   return false;
+}
+
+async function loadMonthlyPlansForYear(yearValue) {
+  const year = Number(yearValue);
+  if (!Number.isFinite(year)) return [];
+
+  state.monthlyPlansCacheByYear = state.monthlyPlansCacheByYear || {};
+  state.monthlyPlansLoadingByYear = state.monthlyPlansLoadingByYear || {};
+
+  if (Array.isArray(state.monthlyPlansCacheByYear[year])) {
+    state.monthlyPlans = state.monthlyPlansCacheByYear[year];
+    state.monthlyPlansYear = year;
+    return state.monthlyPlans;
+  }
+
+  if (state.monthlyPlansLoadingByYear[year]) {
+    return state.monthlyPlansLoadingByYear[year];
+  }
+
+  state.monthlyPlansLoadingByYear[year] = api(`/monthly-plans?year=${encodeURIComponent(year)}&_=${Date.now()}`)
+    .then((plans) => {
+      const rows = Array.isArray(plans) ? plans : [];
+      state.monthlyPlansCacheByYear[year] = rows;
+      if (Number(planEditorYear()) === year) {
+        state.monthlyPlans = rows;
+        state.monthlyPlansYear = year;
+      }
+      return rows;
+    })
+    .finally(() => {
+      delete state.monthlyPlansLoadingByYear[year];
+    });
+
+  return state.monthlyPlansLoadingByYear[year];
 }
 
 function planPercentInput(monthValue, kind) {
@@ -16270,6 +16334,7 @@ async function savePlansYear() {
     }
 
     state.monthlyPlansYear = null;
+    if (state.monthlyPlansCacheByYear) delete state.monthlyPlansCacheByYear[year];
     if (message) message.textContent = "Планы сохранены.";
     await loadDashboard();
   } catch (error) {
@@ -16784,12 +16849,82 @@ async function loadManagerDashboardBundleData(month) {
 
 
 
+function hydrateAdminBundleAuxiliaryData(bundle, month) {
+  const key = String(month || "");
+  cacheEventModalPayloads(bundle?.event_payloads || {}, key);
+
+  if (Array.isArray(bundle?.users)) {
+    state.users = bundle.users;
+    state.usersCacheLoadedAt = Date.now();
+    saveUsersToCache(state.users);
+  }
+
+  const dashboard = bundle?.dashboard;
+  if (dashboard && Array.isArray(bundle?.monthly_expenses)) {
+    cacheClosingPanelData({
+      month: key,
+      expenses: bundle.monthly_expenses,
+      calc: dashboard.closing_calculation || null,
+      closing: dashboard.closing || null,
+      error: null,
+      calcPending: false,
+    });
+  }
+}
+
+
+async function prefetchAdminEventPayloads(month, events = []) {
+  const key = String(month || "");
+  const eventIds = [...new Set((events || []).map((event) => Number(event.id)).filter(Boolean))];
+  if (!key || !eventIds.length) return null;
+
+  const alreadyCached = state.eventModalPayloadMonth === key
+    && eventIds.every((eventId) => state.eventModalPayloadById?.[String(eventId)]);
+  if (alreadyCached) return state.eventModalPayloadById;
+
+  state.adminEventPayloadPrefetchByMonth = state.adminEventPayloadPrefetchByMonth || {};
+  if (state.adminEventPayloadPrefetchByMonth[key]) {
+    return state.adminEventPayloadPrefetchByMonth[key];
+  }
+
+  state.adminEventPayloadPrefetchByMonth[key] = timedApi(
+    "admin-event-payloads-prefetch",
+    `/admin-event-payloads?month=${encodeURIComponent(key)}&include_drafts=true&_=${Date.now()}`,
+  ).then((result) => {
+    if (String(state.month || "") === key) {
+      cacheEventModalPayloads(result?.event_payloads || {}, key);
+    }
+    return result?.event_payloads || {};
+  }).catch((error) => {
+    console.warn("Фоновая загрузка карточек мероприятий временно недоступна", error);
+    return null;
+  }).finally(() => {
+    delete state.adminEventPayloadPrefetchByMonth[key];
+  });
+
+  return state.adminEventPayloadPrefetchByMonth[key];
+}
+
+
+function scheduleAdminBackgroundPrefetch(month, dashboard) {
+  if (state.adminBackgroundPrefetchTimer) window.clearTimeout(state.adminBackgroundPrefetchTimer);
+  const key = String(month || "");
+  const year = Number(key.slice(0, 4));
+  state.adminBackgroundPrefetchTimer = window.setTimeout(() => {
+    state.adminBackgroundPrefetchTimer = null;
+    if (String(state.month || "") !== key) return;
+    loadMonthlyPlansForYear(year).catch((error) => console.warn("Не удалось заранее загрузить планы", error));
+    prefetchAdminEventPayloads(key, dashboard?.events || []);
+  }, 450);
+}
+
+
 async function loadAdminDashboardBundleData(month) {
   const key = String(month || "");
   const cached = cachedValue(state.adminDashboardBundleCacheByMonth, key, 1500);
   if (cached) {
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web admin-dashboard-bundle cache month=${key}`);
-    cacheEventModalPayloads(cached.event_payloads || {}, key);
+    hydrateAdminBundleAuxiliaryData(cached, key);
     return cached;
   }
 
@@ -16801,9 +16936,9 @@ async function loadAdminDashboardBundleData(month) {
   if (!state.adminDashboardBundleLoadingByMonth) state.adminDashboardBundleLoadingByMonth = {};
   state.adminDashboardBundleLoadingByMonth[key] = timedApi(
     "admin-dashboard-bundle",
-    `/admin-dashboard-bundle?month=${month}&include_drafts=true&_=${Date.now()}`,
+    `/admin-dashboard-bundle?month=${month}&include_drafts=true&include_event_payloads=false&_=${Date.now()}`,
   ).then((data) => {
-    cacheEventModalPayloads(data?.event_payloads || {}, key);
+    hydrateAdminBundleAuxiliaryData(data, key);
     return setCachedValue(state.adminDashboardBundleCacheByMonth, key, data);
   }).finally(() => {
     if (state.adminDashboardBundleLoadingByMonth) delete state.adminDashboardBundleLoadingByMonth[key];
@@ -17081,12 +17216,21 @@ async function refreshLiveChangedEvents(changedIds) {
   }
 
   if (user?.role === 'admin') {
-    const bundle = await api(`/admin-dashboard-bundle?month=${encodeURIComponent(month)}&include_drafts=true&_=${Date.now()}`);
+    const eventIdsParam = [...ids].join(',');
+    const [bundle, payloadResult] = await Promise.all([
+      api(`/admin-dashboard-bundle?month=${encodeURIComponent(month)}&include_drafts=true&include_event_payloads=false&_=${Date.now()}`),
+      api(`/admin-event-payloads?month=${encodeURIComponent(month)}&event_ids=${encodeURIComponent(eventIdsParam)}&include_drafts=true&_=${Date.now()}`)
+        .catch((error) => {
+          console.warn('Не удалось обновить подробные карточки изменённых мероприятий', error);
+          return null;
+        }),
+    ]);
     const dashboard = bundle?.dashboard || emptyAdminDashboard(month);
     state.adminData = normalizeAdminDashboardForMonth(dashboard, month);
-    cacheEventModalPayloads(bundle?.event_payloads || {}, month);
+    hydrateAdminBundleAuxiliaryData(bundle, month);
+    cacheEventModalPayloads(payloadResult?.event_payloads || {}, month);
     patchAdminEventRowsFromDashboard(dashboard, ids);
-    ids.forEach((eventId) => patchOpenAdminEventPayload(bundle?.event_payloads?.[String(eventId)]));
+    ids.forEach((eventId) => patchOpenAdminEventPayload(payloadResult?.event_payloads?.[String(eventId)]));
     return;
   }
 
@@ -17182,10 +17326,8 @@ async function loadDashboard() {
 
     if (user.role === "admin") {
       try {
-        const [usersResult, bundle] = await Promise.all([
-          loadUsersForAdmin(),
-          loadAdminDashboardBundleData(month),
-        ]);
+        const bundle = await loadAdminDashboardBundleData(month);
+        if (!Array.isArray(bundle?.users)) await loadUsersForAdmin();
         const dashboard = bundle?.dashboard || emptyAdminDashboard(month);
         if (isStale()) {
           if (CF_PERF_LOGS_ENABLED) console.info(`PERF web skip stale admin-dashboard render key=${loadKey}`);
@@ -17194,6 +17336,7 @@ async function loadDashboard() {
         cacheEventModalPayloads(bundle?.event_payloads || {}, month);
         const renderStartedAt = perfNow();
         renderAdminDashboard(dashboard);
+        scheduleAdminBackgroundPrefetch(month, dashboard);
         if (CF_PERF_LOGS_ENABLED) console.info(`PERF web render-admin-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
       } catch (error) {
         if (!isStale()) {
@@ -17259,7 +17402,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.63 loaded");
+  console.info("Contrast Finance web app v0.5.68 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

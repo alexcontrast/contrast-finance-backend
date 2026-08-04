@@ -4,8 +4,9 @@ import logging
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import extract, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.db.session import get_db
 from app.models.department import Department
@@ -22,16 +23,20 @@ from app.schemas.admin_dashboard import (
     AdminDashboardRead,
     AdminDashboardBundleRead,
     AdminDepartmentDashboardRead,
+    AdminEventPayloadsRead,
     AdminEventRowRead,
     AdminPaymentRequestRowRead,
 )
 from app.schemas.monthly_expense import ManagerBonusRead
+from app.schemas.users_manage import UserRead as AdminUserRead
 from app.services.event_calculator import calculate_event_summary_values, q, q0
 
 from app.schemas.event import EventRead
 from app.schemas.event_item import EventItemRead
 from app.schemas.manager_dashboard import ManagerEventFullPayload
 from app.api.routes.manager_dashboard import build_event_summary_read_for_bundle
+from app.api.routes.monthly_closings import build_closing_calculation_from_totals
+from app.api.routes.monthly_expenses import expense_to_read_with_plan
 from app.api.routes.payment_requests import enrich_payment_request_read_fast
 from app.services.auth import require_roles
 
@@ -56,6 +61,12 @@ def parse_month(month: str) -> date:
         return date(parts[0], parts[1], 1)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="month must be YYYY-MM or YYYY-MM-DD") from exc
+
+
+def next_month_start(month_date: date) -> date:
+    if month_date.month == 12:
+        return date(month_date.year + 1, 1, 1)
+    return date(month_date.year, month_date.month + 1, 1)
 
 
 def completion_percent(fact: Decimal, plan: Decimal) -> Decimal:
@@ -110,17 +121,12 @@ def get_department_expenses(db: Session, department_name: str, year: int, month:
     # Backward-compatible helper for old call sites. The admin dashboard uses
     # preloaded monthly expenses via build_department_expenses_by_name() below
     # to avoid repeating the same SQL work for every department.
+    month_date = date(year, month, 1)
     expenses = db.execute(
-        select(MonthlyExpense).where(
-            extract("year", MonthlyExpense.month) == year,
-            extract("month", MonthlyExpense.month) == month,
-        )
+        select(MonthlyExpense).where(MonthlyExpense.month == month_date)
     ).scalars().all()
     plan = db.execute(
-        select(MonthlyPlan).where(
-            extract("year", MonthlyPlan.month) == year,
-            extract("month", MonthlyPlan.month) == month,
-        )
+        select(MonthlyPlan).where(MonthlyPlan.month == month_date)
     ).scalar_one_or_none()
     return build_department_expenses_by_name(expenses, plan).get(department_name, Decimal("0.00"))
 
@@ -225,6 +231,66 @@ def allocated_amount(value: Decimal, share_percent: Decimal) -> Decimal:
     return q(money(value) * money(share_percent) / Decimal("100"))
 
 
+def build_admin_user_reads(
+    users: list[User],
+    department_by_id: dict[int, Department],
+) -> list[AdminUserRead]:
+    return [
+        AdminUserRead(
+            id=user.id,
+            name=user.name,
+            phone=user.phone,
+            department_id=user.department_id,
+            department_name=(department_by_id.get(user.department_id).name if user.department_id in department_by_id else None),
+            role=user.role,
+            is_active=user.is_active,
+            legacy_user_id=user.legacy_user_id,
+            auth_source=user.auth_source or "legacy_apps_script",
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        )
+        for user in users
+    ]
+
+
+def active_items_for_events(events: list[Event]) -> list[EventItem]:
+    return [
+        item
+        for event in events
+        for item in (event.items or [])
+        if item.is_deleted is False
+    ]
+
+
+def refresh_loaded_paid_amounts(db: Session, active_items: list[EventItem]) -> None:
+    """Refresh paid_amount in memory with one aggregate query.
+
+    The GET response needs current paid totals, but flushing these transient cache
+    values caused UPDATE statements that were rolled back when the request session
+    closed. Updating loaded objects in memory is sufficient for calculation and
+    serialization and keeps the read path read-only.
+    """
+    item_ids = [int(item.id) for item in active_items if item.id is not None]
+    if not item_ids:
+        return
+
+    paid_totals = dict(
+        db.execute(
+            select(
+                PaymentRequest.event_item_id,
+                func.coalesce(func.sum(PaymentRequest.amount_requested), 0),
+            )
+            .where(
+                PaymentRequest.event_item_id.in_(item_ids),
+                PaymentRequest.status == "paid",
+            )
+            .group_by(PaymentRequest.event_item_id)
+        ).all()
+    )
+    for item in active_items:
+        set_committed_value(item, "paid_amount", money(paid_totals.get(item.id, Decimal("0.00"))))
+
+
 
 
 
@@ -293,6 +359,7 @@ def get_admin_dashboard(
     mark_perf("parse")
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    stored_plan = plan
     # Админка не должна падать, если на выбранный месяц ещё не задан план.
     # В этом случае показываем месяц с нулевым планом и пустыми/фактическими данными.
     if plan is None:
@@ -317,15 +384,13 @@ def get_admin_dashboard(
     user_by_id = {user.id: user for user in all_users}
     dept_by_id = {department.id: department for department in departments}
     monthly_expenses = db.execute(
-        select(MonthlyExpense).where(
-            extract("year", MonthlyExpense.month) == month_date.year,
-            extract("month", MonthlyExpense.month) == month_date.month,
-        )
+        select(MonthlyExpense).where(MonthlyExpense.month == month_date)
     ).scalars().all()
     department_expenses_by_name = build_department_expenses_by_name(monthly_expenses, plan)
     manager_bonuses = build_manager_bonus_reads(monthly_expenses, user_by_id, dept_by_id)
     mark_perf("base_sql")
 
+    month_end = next_month_start(month_date)
     event_query = (
         select(Event)
         .options(
@@ -334,16 +399,20 @@ def get_admin_dashboard(
             selectinload(Event.shares),
         )
         .where(
-            extract("year", Event.event_date) == month_date.year,
-            extract("month", Event.event_date) == month_date.month,
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
             Event.status != "cancelled",
         )
     )
     if not include_drafts:
         event_query = event_query.where(Event.status != "draft")
 
-    events = db.execute(event_query.order_by(Event.event_date, Event.id)).scalars().all()
+    events = db.execute(event_query.order_by(Event.event_date, Event.id)).scalars().unique().all()
     mark_perf("events_sql")
+
+    active_items = active_items_for_events(events)
+    refresh_loaded_paid_amounts(db, active_items)
+    mark_perf("paid_sync")
 
     event_rows = []
     department_fact_by_id = {department.id: Decimal("0.00") for department in departments}
@@ -442,15 +511,11 @@ def get_admin_dashboard(
 
     mark_perf("departments_calc")
 
-    if events:
-        payment_query = (
-            select(PaymentRequest)
-            .where(PaymentRequest.event_id.in_([event.id for event in events]))
-            .order_by(PaymentRequest.id.desc())
-        )
-        payment_requests = db.execute(payment_query).scalars().all()
-    else:
-        payment_requests = []
+    payment_requests = sorted(
+        [request for event in events for request in (event.payment_requests or [])],
+        key=lambda request: request.id or 0,
+        reverse=True,
+    )
 
     mark_perf("payments_sql")
 
@@ -486,6 +551,20 @@ def get_admin_dashboard(
     shares_count = sum(len(event.shares or []) for event in events)
 
     monthly_tax_totals = finalize_monthly_tax_totals(monthly_tax_raw_totals)
+    department_by_name = {department.name: department for department in departments}
+    sanzhar_department = department_by_name.get("Санжар")
+    raufal_department = department_by_name.get("Рауфаль")
+    closing_calculation = None
+    if stored_plan is not None and sanzhar_department is not None and raufal_department is not None:
+        closing_calculation = build_closing_calculation_from_totals(
+            month_date=month_date,
+            plan=stored_plan,
+            sanzhar_income=department_fact_by_id.get(sanzhar_department.id, Decimal("0.00")),
+            raufal_income=department_fact_by_id.get(raufal_department.id, Decimal("0.00")),
+            sanzhar_expenses=department_expenses_by_name.get("Санжар", Decimal("0.00")),
+            raufal_expenses=department_expenses_by_name.get("Рауфаль", Decimal("0.00")),
+            closing_overrides=closing,
+        )
 
     dashboard = AdminDashboardRead(
         month=month_date,
@@ -503,6 +582,7 @@ def get_admin_dashboard(
         events=event_rows,
         payment_requests=payment_rows,
         closing=build_closing(closing),
+        closing_calculation=closing_calculation,
     )
     mark_perf("response_model")
 
@@ -518,10 +598,16 @@ def get_admin_dashboard(
 def get_admin_dashboard_bundle(
     month: str,
     include_drafts: bool = True,
+    include_event_payloads: bool = True,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
-    """Optimized admin payload: dashboard + full event modal payloads in one response."""
+    """Admin month payload.
+
+    The initial admin screen requests the compact form and receives dashboard,
+    users and closing data in one response. Full event modal payloads remain
+    available for background prefetch and backward-compatible callers.
+    """
     perf_total_started = perf_counter()
     perf_marks: dict[str, float] = {}
 
@@ -535,6 +621,7 @@ def get_admin_dashboard_bundle(
     mark_perf("parse")
 
     plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    stored_plan = plan
     if plan is None:
         plan = MonthlyPlan(
             month=month_date,
@@ -554,16 +641,14 @@ def get_admin_dashboard_bundle(
     user_by_id = {user.id: user for user in all_users}
     dept_by_id = {department.id: department for department in departments}
     monthly_expenses = db.execute(
-        select(MonthlyExpense).where(
-            extract("year", MonthlyExpense.month) == month_date.year,
-            extract("month", MonthlyExpense.month) == month_date.month,
-        )
+        select(MonthlyExpense).where(MonthlyExpense.month == month_date)
     ).scalars().all()
     department_expenses_by_name = build_department_expenses_by_name(monthly_expenses, plan)
     manager_bonuses = build_manager_bonus_reads(monthly_expenses, user_by_id, dept_by_id)
     closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
     mark_perf("base_sql")
 
+    month_end = next_month_start(month_date)
     event_query = (
         select(Event)
         .options(
@@ -572,8 +657,8 @@ def get_admin_dashboard_bundle(
             selectinload(Event.shares),
         )
         .where(
-            extract("year", Event.event_date) == month_date.year,
-            extract("month", Event.event_date) == month_date.month,
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
             Event.status != "cancelled",
         )
     )
@@ -583,34 +668,8 @@ def get_admin_dashboard_bundle(
     events = db.execute(event_query.order_by(Event.event_date, Event.id)).scalars().unique().all()
     mark_perf("events_sql")
 
-    active_items: list[EventItem] = []
-    for event in events:
-        active_items.extend([item for item in (event.items or []) if item.is_deleted is False])
-
-    if active_items:
-        item_ids = [int(item.id) for item in active_items if item.id is not None]
-        paid_totals = dict(
-            db.execute(
-                select(
-                    PaymentRequest.event_item_id,
-                    func.coalesce(func.sum(PaymentRequest.amount_requested), 0),
-                )
-                .where(
-                    PaymentRequest.event_item_id.in_(item_ids),
-                    PaymentRequest.status == "paid",
-                )
-                .group_by(PaymentRequest.event_item_id)
-            ).all()
-        )
-        paid_changed = False
-        for item in active_items:
-            actual_paid = money(paid_totals.get(item.id, Decimal("0.00")))
-            if money(item.paid_amount) != actual_paid:
-                item.paid_amount = actual_paid
-                db.add(item)
-                paid_changed = True
-        if paid_changed:
-            db.flush()
+    active_items = active_items_for_events(events)
+    refresh_loaded_paid_amounts(db, active_items)
     mark_perf("paid_sync")
 
     event_rows = []
@@ -676,16 +735,17 @@ def get_admin_dashboard_bundle(
                 )
             )
 
-        manager_name = user_by_id.get(event.manager_id).name if event.manager_id in user_by_id else None
-        event_payloads[int(event.id)] = ManagerEventFullPayload(
-            event=EventRead.model_validate(event),
-            items=[EventItemRead.model_validate(item) for item in items],
-            summary=build_event_summary_read_for_bundle(event, items),
-            requests=[
-                enrich_payment_request_read_fast(request, event.client_name, event.title, event.event_date, manager_name)
-                for request in event_payment_requests
-            ],
-        )
+        if include_event_payloads:
+            manager_name = user_by_id.get(event.manager_id).name if event.manager_id in user_by_id else None
+            event_payloads[int(event.id)] = ManagerEventFullPayload(
+                event=EventRead.model_validate(event),
+                items=[EventItemRead.model_validate(item) for item in items],
+                summary=build_event_summary_read_for_bundle(event, items, summary),
+                requests=[
+                    enrich_payment_request_read_fast(request, event.client_name, event.title, event.event_date, manager_name)
+                    for request in event_payment_requests
+                ],
+            )
     mark_perf("payloads")
 
     department_rows = []
@@ -741,6 +801,21 @@ def get_admin_dashboard_bundle(
 
     monthly_tax_totals = finalize_monthly_tax_totals(monthly_tax_raw_totals)
 
+    department_by_name = {department.name: department for department in departments}
+    sanzhar_department = department_by_name.get("Санжар")
+    raufal_department = department_by_name.get("Рауфаль")
+    closing_calculation = None
+    if stored_plan is not None and sanzhar_department is not None and raufal_department is not None:
+        closing_calculation = build_closing_calculation_from_totals(
+            month_date=month_date,
+            plan=stored_plan,
+            sanzhar_income=department_fact_by_id.get(sanzhar_department.id, Decimal("0.00")),
+            raufal_income=department_fact_by_id.get(raufal_department.id, Decimal("0.00")),
+            sanzhar_expenses=department_expenses_by_name.get("Санжар", Decimal("0.00")),
+            raufal_expenses=department_expenses_by_name.get("Рауфаль", Decimal("0.00")),
+            closing_overrides=closing,
+        )
+
     dashboard = AdminDashboardRead(
         month=month_date,
         include_drafts=include_drafts,
@@ -757,8 +832,14 @@ def get_admin_dashboard_bundle(
         events=event_rows,
         payment_requests=payment_rows,
         closing=build_closing(closing),
+        closing_calculation=closing_calculation,
     )
-    response = AdminDashboardBundleRead(dashboard=dashboard, event_payloads=event_payloads)
+    response = AdminDashboardBundleRead(
+        dashboard=dashboard,
+        event_payloads=event_payloads,
+        users=build_admin_user_reads(all_users, dept_by_id),
+        monthly_expenses=[expense_to_read_with_plan(expense, stored_plan) for expense in monthly_expenses],
+    )
     mark_perf("response_model")
 
     items_count = len(active_items)
@@ -766,3 +847,95 @@ def get_admin_dashboard_bundle(
     shares_count = sum(len(event.shares or []) for event in events)
     # PERF admin-dashboard-bundle log removed in v0.5.6
     return response
+
+
+def parse_event_ids_filter(raw_event_ids: str | None) -> list[int]:
+    if not raw_event_ids:
+        return []
+
+    values: list[int] = []
+    seen: set[int] = set()
+    for raw_value in str(raw_event_ids).split(","):
+        try:
+            value = int(raw_value.strip())
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="event_ids must be comma-separated integers")
+        if value <= 0 or value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+    return values
+
+
+@router.get("/admin-event-payloads", response_model=AdminEventPayloadsRead)
+def get_admin_event_payloads(
+    month: str,
+    event_ids: str | None = None,
+    include_drafts: bool = True,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_roles("admin")),
+):
+    """Load full admin event cards separately from the first screen.
+
+    The route is used for idle prefetch and for small live-sync refreshes. It
+    deliberately avoids rebuilding plans, department totals, expenses and the
+    payment-request table that the compact dashboard already supplied.
+    """
+    month_date = parse_month(month)
+    selected_event_ids = parse_event_ids_filter(event_ids)
+
+    month_end = next_month_start(month_date)
+    query = (
+        select(Event)
+        .options(
+            selectinload(Event.items),
+            selectinload(Event.payment_requests),
+        )
+        .where(
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
+            Event.status != "cancelled",
+        )
+    )
+    if not include_drafts:
+        query = query.where(Event.status != "draft")
+    if selected_event_ids:
+        query = query.where(Event.id.in_(selected_event_ids))
+
+    events = db.execute(query.order_by(Event.event_date, Event.id)).scalars().unique().all()
+    manager_ids = {event.manager_id for event in events if event.manager_id is not None}
+    managers = db.execute(select(User).where(User.id.in_(manager_ids))).scalars().all() if manager_ids else []
+    manager_name_by_id = {manager.id: manager.name for manager in managers}
+
+    active_items = active_items_for_events(events)
+    refresh_loaded_paid_amounts(db, active_items)
+
+    payloads: dict[int, ManagerEventFullPayload] = {}
+    for event in events:
+        items = sorted(
+            [item for item in (event.items or []) if item.is_deleted is False],
+            key=lambda item: (item.sort_order or 0, item.id or 0),
+        )
+        summary_values = calculate_event_summary_values(event, items)
+        event_payment_requests = sorted(
+            list(event.payment_requests or []),
+            key=lambda request: request.id or 0,
+            reverse=True,
+        )
+        payloads[int(event.id)] = ManagerEventFullPayload(
+            event=EventRead.model_validate(event),
+            items=[EventItemRead.model_validate(item) for item in items],
+            summary=build_event_summary_read_for_bundle(event, items, summary_values),
+            requests=[
+                enrich_payment_request_read_fast(
+                    request,
+                    event.client_name,
+                    event.title,
+                    event.event_date,
+                    manager_name_by_id.get(event.manager_id),
+                )
+                for request in event_payment_requests
+            ],
+        )
+
+    return AdminEventPayloadsRead(month=month_date, event_payloads=payloads)

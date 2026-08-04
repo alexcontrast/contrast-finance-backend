@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -142,10 +142,17 @@ def create_or_update_monthly_plan(
 
 @router.get("/monthly-plans", response_model=list[MonthlyPlanRead])
 def list_monthly_plans(
+    year: int | None = None,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("admin")),
 ):
-    return db.execute(select(MonthlyPlan).order_by(MonthlyPlan.month.desc())).scalars().all()
+    query = select(MonthlyPlan)
+    if year is not None:
+        query = query.where(
+            MonthlyPlan.month >= date(year, 1, 1),
+            MonthlyPlan.month < date(year + 1, 1, 1),
+        )
+    return db.execute(query.order_by(MonthlyPlan.month.desc())).scalars().all()
 
 
 @router.get("/monthly-dashboard", response_model=CompanyDashboardRead)

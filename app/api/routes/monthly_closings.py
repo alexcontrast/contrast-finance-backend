@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import extract, select
+from sqlalchemy import select
 from collections import defaultdict
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,12 @@ def parse_month(month: str) -> date:
         raise HTTPException(status_code=400, detail="month must be YYYY-MM or YYYY-MM-DD") from exc
 
 
+def next_month_start(month_date: date) -> date:
+    if month_date.month == 12:
+        return date(month_date.year + 1, 1, 1)
+    return date(month_date.year, month_date.month + 1, 1)
+
+
 def completion_percent(fact: Decimal, plan: Decimal) -> Decimal:
     if plan <= 0:
         return Decimal("0.00")
@@ -78,10 +84,12 @@ def get_department_income_amounts(db: Session, year: int, month: int) -> dict[in
     events, items, shares and users once, calculate every event once, then split
     income by the same event_shares rules.
     """
+    month_date = date(year, month, 1)
+    month_end = next_month_start(month_date)
     events = db.execute(
         select(Event).where(
-            extract("year", Event.event_date) == year,
-            extract("month", Event.event_date) == month,
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
             Event.status != "cancelled",
         )
     ).scalars().all()
@@ -210,32 +218,33 @@ def apply_calculated_to_closing(closing: MonthlyClosing, calculated: MonthlyClos
     closing.founder_three_amount = calculated.founder_three_amount
 
 
-def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateRead:
-    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
-    if plan is None:
-        raise HTTPException(status_code=404, detail="Monthly plan not found")
+def build_closing_calculation_from_totals(
+    month_date: date,
+    plan: MonthlyPlan,
+    sanzhar_income: Decimal,
+    raufal_income: Decimal,
+    sanzhar_expenses: Decimal,
+    raufal_expenses: Decimal,
+    closing_overrides: MonthlyClosing | None = None,
+) -> MonthlyClosingCalculateRead:
+    """Build the closing preview from already calculated month aggregates.
 
-    sanzhar = get_department_by_name(db, "Санжар")
-    raufal = get_department_by_name(db, "Рауфаль")
-
-    if sanzhar is None or raufal is None:
-        raise HTTPException(status_code=400, detail="Departments Санжар and Рауфаль must exist")
-
+    The admin dashboard already has the exact plan, department income and expense
+    totals needed by the closing tab. Keeping the final formula here lets that
+    dashboard reuse the canonical calculation without another full events/items
+    scan when the tab is opened.
+    """
     sanzhar_plan = department_plan_amount(plan, "Санжар")
     raufal_plan = department_plan_amount(plan, "Рауфаль")
 
-    incomes_by_department_id = get_department_income_amounts(db, month_date.year, month_date.month)
-    sanzhar_income = incomes_by_department_id.get(sanzhar.id, Decimal("0.00"))
-    raufal_income = incomes_by_department_id.get(raufal.id, Decimal("0.00"))
-
-    expenses_by_department = get_department_expense_amounts(db, month_date, plan)
-    sanzhar_expenses = expenses_by_department.get("Санжар", Decimal("0.00"))
-    raufal_expenses = expenses_by_department.get("Рауфаль", Decimal("0.00"))
+    sanzhar_income = q(sanzhar_income)
+    raufal_income = q(raufal_income)
+    sanzhar_expenses = q(sanzhar_expenses)
+    raufal_expenses = q(raufal_expenses)
 
     sanzhar_completion = completion_percent(sanzhar_income, sanzhar_plan)
     raufal_completion = completion_percent(raufal_income, raufal_plan)
 
-    closing_overrides = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
     sanzhar_head_override = closing_overrides.sanzhar_head_percent_override if closing_overrides is not None else None
     raufal_head_override = closing_overrides.raufal_head_percent_override if closing_overrides is not None else None
 
@@ -256,8 +265,8 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
         company_plan_amount=q(plan.company_plan_amount),
 
         sanzhar_plan_amount=q(sanzhar_plan),
-        sanzhar_income_amount=q(sanzhar_income),
-        sanzhar_expense_amount=q(sanzhar_expenses),
+        sanzhar_income_amount=sanzhar_income,
+        sanzhar_expense_amount=sanzhar_expenses,
         sanzhar_completion_percent=q(sanzhar_completion),
         sanzhar_head_percent=q(sanzhar_head_pct),
         sanzhar_head_percent_override=q(sanzhar_head_override) if sanzhar_head_override is not None else None,
@@ -265,8 +274,8 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
         sanzhar_remaining_after_head=q(sanzhar_remaining),
 
         raufal_plan_amount=q(raufal_plan),
-        raufal_income_amount=q(raufal_income),
-        raufal_expense_amount=q(raufal_expenses),
+        raufal_income_amount=raufal_income,
+        raufal_expense_amount=raufal_expenses,
         raufal_completion_percent=q(raufal_completion),
         raufal_head_percent=q(raufal_head_pct),
         raufal_head_percent_override=q(raufal_head_override) if raufal_head_override is not None else None,
@@ -279,6 +288,37 @@ def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateR
         founder_three_amount=q(founder_amount),
 
         status="draft",
+    )
+
+
+def calculate_closing(db: Session, month_date: date) -> MonthlyClosingCalculateRead:
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Monthly plan not found")
+
+    sanzhar = get_department_by_name(db, "Санжар")
+    raufal = get_department_by_name(db, "Рауфаль")
+
+    if sanzhar is None or raufal is None:
+        raise HTTPException(status_code=400, detail="Departments Санжар and Рауфаль must exist")
+
+    incomes_by_department_id = get_department_income_amounts(db, month_date.year, month_date.month)
+    sanzhar_income = incomes_by_department_id.get(sanzhar.id, Decimal("0.00"))
+    raufal_income = incomes_by_department_id.get(raufal.id, Decimal("0.00"))
+
+    expenses_by_department = get_department_expense_amounts(db, month_date, plan)
+    sanzhar_expenses = expenses_by_department.get("Санжар", Decimal("0.00"))
+    raufal_expenses = expenses_by_department.get("Рауфаль", Decimal("0.00"))
+
+    closing_overrides = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
+    return build_closing_calculation_from_totals(
+        month_date=month_date,
+        plan=plan,
+        sanzhar_income=sanzhar_income,
+        raufal_income=raufal_income,
+        sanzhar_expenses=sanzhar_expenses,
+        raufal_expenses=raufal_expenses,
+        closing_overrides=closing_overrides,
     )
 
 
