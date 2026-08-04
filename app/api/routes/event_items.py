@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 import time
@@ -21,7 +21,6 @@ from app.services.authorization import (
     get_item_or_404,
     require_event_edit,
     require_event_view,
-    require_item_event_edit,
     require_item_event_view,
 )
 
@@ -45,6 +44,36 @@ def money(value) -> Decimal:
 
 def calculate_external_amount(payload: EventItemCreate) -> Decimal:
     return money(payload.external_price) * money(payload.external_quantity or Decimal("1.00")) * money(payload.external_days or Decimal("1.00"))
+
+
+def utc_naive(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.replace(tzinfo=None)
+
+
+def require_item_revision(item: EventItem, expected_updated_at: datetime | None) -> None:
+    if expected_updated_at is None:
+        return
+    if utc_naive(item.updated_at) != utc_naive(expected_updated_at):
+        raise HTTPException(
+            status_code=409,
+            detail="Позиция уже изменена в другом браузере. Свежая версия не была перезаписана.",
+        )
+
+
+def touch_event(event: Event) -> None:
+    event.updated_at = datetime.utcnow()
+
+
+def require_estimate_editable(current_user: User, event: Event) -> None:
+    if current_user.role == "manager" and event.status not in {"draft", "revision"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Смета уже не является черновиком. Обнови мероприятие перед редактированием.",
+        )
 
 
 class EventItemBulkDeletePayload(BaseModel):
@@ -178,12 +207,13 @@ def protected_invoice_tax_context(
     return None
 
 
-def lock_event_for_coordinator_write(db: Session, event_id: int) -> None:
-    """Serialize creation/update of the singleton coordinator row for one event."""
-    db.execute(
-        select(Event.id)
+def lock_event_for_estimate_write(db: Session, event_id: int) -> Event:
+    """Serialize an estimate mutation with event status/ownership changes."""
+    return db.execute(
+        select(Event)
         .where(Event.id == int(event_id))
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one()
 
 
@@ -236,7 +266,9 @@ def create_event_item(
 ):
     started_at = time.perf_counter()
     event = get_event_or_404(db, event_id)
+    event = lock_event_for_estimate_write(db, event_id)
     require_event_edit(current_user, event)
+    require_estimate_editable(current_user, event)
     auth_sec = _sec(started_at)
 
     if (
@@ -258,11 +290,9 @@ def create_event_item(
     idempotent_reused = False
     create_key = web_draft_item_key(event_id, payload.client_create_token)
 
-    if create_key is not None or payload.item_type == COORDINATOR_ITEM_TYPE:
-        # Autosave and a manual save can reach POST at almost the same time.
-        # The event lock serializes both requests even before the first row
-        # exists, so the second request can reuse it by its browser token.
-        lock_event_for_coordinator_write(db, event_id)
+    # Autosave and a manual save can reach POST at almost the same time. The
+    # event row was locked above even before the first item exists, so the
+    # second request can reuse the browser token and cannot race with Accept.
 
     if create_key is not None:
         item = db.execute(
@@ -344,6 +374,8 @@ def create_event_item(
     build_sec = _sec(started_at) - auth_sec
 
     db.add(item)
+    touch_event(event)
+    db.add(event)
     db.flush()
     if coordinator_reused or idempotent_reused:
         # paid_amount is derived from paid requests and must not be overwritten
@@ -352,7 +384,11 @@ def create_event_item(
     flush_sec = _sec(started_at) - auth_sec - build_sec
     result = EventItemRead.model_validate(item)
     response_sec = _sec(started_at) - auth_sec - build_sec - flush_sec
-    db.commit()
+    # The combined "create + KGD check" endpoint defers this commit so the
+    # row and its tax result are atomic: a failed external check must not leave
+    # an orphan estimate position behind. Normal API calls still commit here.
+    if not db.info.get("defer_event_item_create_commit"):
+        db.commit()
     commit_sec = _sec(started_at) - auth_sec - build_sec - flush_sec - response_sec
 
     logger.warning(
@@ -381,7 +417,9 @@ def bulk_delete_event_items(
 ):
     started_at = time.perf_counter()
     event = get_event_or_404(db, event_id)
+    event = lock_event_for_estimate_write(db, event_id)
     require_event_edit(current_user, event)
+    require_estimate_editable(current_user, event)
     auth_sec = _sec(started_at)
 
     item_ids = []
@@ -432,6 +470,9 @@ def bulk_delete_event_items(
     missing_count = max(0, len(item_ids) - deleted_count)
 
     commit_started_at = time.perf_counter()
+    if deleted_count:
+        touch_event(event)
+        db.add(event)
     db.commit()
     commit_sec = time.perf_counter() - commit_started_at
 
@@ -478,7 +519,9 @@ def update_event_item(
     started_at = time.perf_counter()
     item = get_item_or_404(db, item_id)
     item_sql_sec = _sec(started_at)
-    require_item_event_edit(db, current_user, item)
+    event = lock_event_for_estimate_write(db, item.event_id)
+    require_event_edit(current_user, event)
+    require_estimate_editable(current_user, event)
     auth_sec = _sec(started_at) - item_sql_sec
     # Serialize ordinary estimate saves with KGD checks and payment creation.
     # Under PostgreSQL READ COMMITTED this reloads the latest committed row after
@@ -487,7 +530,9 @@ def update_event_item(
         select(EventItem)
         .where(EventItem.id == int(item_id))
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one()
+    require_item_revision(item, payload.expected_updated_at)
     invoice_request = latest_active_invoice_request(db, item.id)
     invoice_context = protected_invoice_tax_context(
         item,
@@ -497,7 +542,6 @@ def update_event_item(
     )
 
     if payload.item_type == COORDINATOR_ITEM_TYPE:
-        lock_event_for_coordinator_write(db, item.event_id)
         conflicting_coordinator = active_coordinator_item(db, item.event_id, exclude_item_id=item.id)
         if conflicting_coordinator is not None:
             raise HTTPException(
@@ -532,6 +576,8 @@ def update_event_item(
     build_sec = _sec(started_at) - item_sql_sec - auth_sec
 
     db.add(item)
+    touch_event(event)
+    db.add(event)
     db.flush()
     # paid_amount is derived exclusively from payment requests.
     # Never trust a stale value coming from the estimate form.
@@ -568,7 +614,9 @@ def delete_event_item(
     started_at = time.perf_counter()
     item = get_item_or_404(db, item_id)
     item_sql_sec = _sec(started_at)
-    require_item_event_edit(db, current_user, item)
+    event = lock_event_for_estimate_write(db, item.event_id)
+    require_event_edit(current_user, event)
+    require_estimate_editable(current_user, event)
     auth_sec = _sec(started_at) - item_sql_sec
 
     active_requests_count = active_item_payment_requests_count(db, item.id)
@@ -583,6 +631,8 @@ def delete_event_item(
     item.updated_at = datetime.utcnow()
 
     db.add(item)
+    touch_event(event)
+    db.add(event)
     db.flush()
     flush_sec = _sec(started_at) - item_sql_sec - auth_sec - active_sql_sec
     result = EventItemRead.model_validate(item)

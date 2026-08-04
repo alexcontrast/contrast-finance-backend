@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.contractor import Contractor
+from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
 from app.models.taxpayer_check import TaxpayerCheck
@@ -21,6 +22,12 @@ from app.schemas.event_item import EventItemCreate, EventItemRead
 from app.services.kgd.client import KgdServiceError, check_taxpayer
 from app.services.auth import get_current_user
 from app.services.authorization import get_event_or_404, require_event_edit, require_item_event_edit
+from app.api.routes.event_items import (
+    create_event_item,
+    lock_event_for_estimate_write,
+    require_estimate_editable,
+    require_item_revision,
+)
 
 
 router = APIRouter(tags=["tax"])
@@ -35,13 +42,6 @@ class EventItemTaxCheckCreatePayload(BaseModel):
 class EventItemTaxCheckCreateResult(BaseModel):
     item: EventItemRead
     tax: TaxResult
-
-
-def calculate_external_amount_from_item_payload(payload: EventItemCreate) -> Decimal:
-    price = payload.external_price or Decimal("0.00")
-    quantity = payload.external_quantity or Decimal("1.00")
-    days = payload.external_days or Decimal("1.00")
-    return price * quantity * days
 
 
 def _perf_delta(marks: dict[str, float], start_name: str, end_name: str) -> float:
@@ -204,7 +204,8 @@ def check_event_item_tax(
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
 
-    require_item_event_edit(db, current_user, item)
+    event = require_item_event_edit(db, current_user, item)
+    require_estimate_editable(current_user, event)
     mark_perf("auth")
 
     if current_user.role != "admin":
@@ -252,14 +253,36 @@ def check_event_item_tax(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     mark_perf("kgd_check")
 
-    # KGD HTTP may take a few seconds. Reload and lock the row only after the
-    # response arrives so a concurrent autosave/payment write cannot interleave
-    # with the authoritative tax update below.
+    # KGD HTTP may take a few seconds. Reload and lock the event first, then the
+    # item, after the response arrives. This keeps lock ordering identical to
+    # ordinary estimate saves and rechecks ownership/status against the latest
+    # committed state before applying the authoritative tax result.
+    event = lock_event_for_estimate_write(db, item.event_id)
+    require_event_edit(current_user, event)
+    require_estimate_editable(current_user, event)
     item = db.execute(
         select(EventItem)
         .where(EventItem.id == int(item_id))
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one()
+    require_item_revision(item, payload.expected_updated_at)
+
+    if current_user.role != "admin":
+        active_invoice_request = db.execute(
+            select(PaymentRequest.id)
+            .where(
+                PaymentRequest.event_item_id == int(item_id),
+                PaymentRequest.payment_method == "invoice",
+                PaymentRequest.status.notin_(["cancelled", "rejected"]),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if active_invoice_request is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="БИН нельзя изменить или перепроверить, пока по позиции есть активная заявка",
+            )
 
     before = {
         "iin_bin": item.iin_bin,
@@ -353,6 +376,8 @@ def check_event_item_tax(
     )
 
     db.add(item)
+    event.updated_at = datetime.utcnow()
+    db.add(event)
     db.commit()
     mark_perf("commit")
     # Не делаем db.refresh(item): все поля для ответа уже известны.
@@ -416,32 +441,30 @@ def create_event_item_and_check_tax(
     if len(normalized_iin_bin) != 12:
         raise HTTPException(status_code=400, detail="BIN / ИИН должен содержать 12 цифр")
 
-    item = EventItem(
-        event_id=event_id,
-        item_type=item_payload.item_type,
-        external_name=item_payload.external_name,
-        external_price=item_payload.external_price,
-        external_quantity=item_payload.external_quantity,
-        external_days=item_payload.external_days,
-        external_amount=calculate_external_amount_from_item_payload(item_payload),
-        external_note=item_payload.external_note,
-        amount_fact=item_payload.amount_fact,
-        paid_amount=item_payload.paid_amount,
-        payment_method="invoice",
-        iin_bin=normalized_iin_bin,
-        iin_bin_locked=False,
-        tax_check_status=None,
-        vat_amount=Decimal("0.00"),
-        deduction_amount=Decimal("0.00"),
-        internal_note=item_payload.internal_note,
-        sort_order=item_payload.sort_order,
-        is_deleted=False,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-    )
-
-    db.add(item)
-    db.flush()
+    # Reuse the ordinary idempotent create path. The old combined endpoint
+    # ignored client_create_token, so a double click or concurrent autosave
+    # could create two otherwise identical regular rows before KGD finished.
+    normalized_payload = item_payload.model_copy(update={
+        "payment_method": "invoice",
+        "iin_bin": normalized_iin_bin,
+        "iin_bin_locked": False,
+        "tax_check_status": None,
+        "vat_amount": Decimal("0.00"),
+        "deduction_amount": Decimal("0.00"),
+    })
+    db.info["defer_event_item_create_commit"] = True
+    try:
+        created = create_event_item(
+            event_id=event_id,
+            payload=normalized_payload,
+            db=db,
+            current_user=current_user,
+        )
+    finally:
+        db.info.pop("defer_event_item_create_commit", None)
+    item = db.get(EventItem, created.id)
+    if item is None:
+        raise HTTPException(status_code=500, detail="Не удалось создать позицию перед проверкой КГД")
     create_flush_sec = time.perf_counter() - started_at - auth_sec
 
     tax_started_at = time.perf_counter()
@@ -556,6 +579,10 @@ def set_event_item_tax_manual(
     )
 
     db.add(item)
+    event = db.get(Event, item.event_id)
+    if event is not None:
+        event.updated_at = datetime.utcnow()
+        db.add(event)
     db.commit()
     db.refresh(item)
 

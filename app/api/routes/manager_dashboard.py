@@ -4,8 +4,9 @@ import logging
 from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import extract, func, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import case, func, or_, select
+from sqlalchemy.orm import Session, load_only, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.db.session import get_db
 from app.models.department import Department
@@ -15,13 +16,18 @@ from app.models.event_share import EventShare
 from app.models.monthly_plan import MonthlyPlan
 from app.models.payment_request import PaymentRequest
 from app.models.user import User
-from app.schemas.manager_dashboard import ManagerDashboardBundleRead, ManagerDashboardEventRead, ManagerDashboardRead, ManagerEventFullPayload
+from app.schemas.manager_dashboard import (
+    ManagerDashboardBundleRead,
+    ManagerDashboardEventRead,
+    ManagerDashboardRead,
+    ManagerEventFullPayload,
+    ManagerEventPayloadsRead,
+)
 
 from app.schemas.event import EventRead
 from app.schemas.event_item import EventItemRead
 from app.schemas.event_summary import EventSummaryRead
 from app.schemas.payment_request import PaymentRequestRead
-from app.services.payment_totals import sync_event_paid_amounts_from_requests
 from app.api.routes.payment_requests import enrich_payment_request_read_fast
 from app.services.auth import get_current_user
 from app.services.event_calculator import calculate_event_summary_values, q
@@ -47,6 +53,49 @@ def parse_month(month: str) -> date:
         return date(parts[0], parts[1], 1)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="month must be YYYY-MM or YYYY-MM-DD") from exc
+
+
+def next_month_start(month_date: date) -> date:
+    if month_date.month == 12:
+        return date(month_date.year + 1, 1, 1)
+    return date(month_date.year, month_date.month + 1, 1)
+
+
+def refresh_loaded_paid_amounts(db: Session, items: list[EventItem]) -> None:
+    item_ids = [int(item.id) for item in items if item.id is not None]
+    if not item_ids:
+        return
+    paid_totals = dict(
+        db.execute(
+            select(
+                PaymentRequest.event_item_id,
+                func.coalesce(func.sum(PaymentRequest.amount_requested), 0),
+            )
+            .where(
+                PaymentRequest.event_item_id.in_(item_ids),
+                PaymentRequest.status == "paid",
+            )
+            .group_by(PaymentRequest.event_item_id)
+        ).all()
+    )
+    for item in items:
+        set_committed_value(item, "paid_amount", money(paid_totals.get(item.id, Decimal("0.00"))))
+
+
+def parse_event_ids_filter(raw_event_ids: str | None) -> list[int]:
+    if not raw_event_ids:
+        return []
+    values: list[int] = []
+    seen: set[int] = set()
+    for raw_value in str(raw_event_ids).split(","):
+        try:
+            value = int(raw_value.strip())
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="event_ids must be comma-separated integers")
+        if value > 0 and value not in seen:
+            seen.add(value)
+            values.append(value)
+    return values
 
 
 def completion_percent(fact: Decimal, plan: Decimal) -> Decimal:
@@ -132,6 +181,7 @@ def get_manager_dashboard(
         perf_marks[name] = perf_counter()
 
     month_date = parse_month(month)
+    month_end = next_month_start(month_date)
     manager = resolve_manager(db, current_user, manager_id)
     mark_perf("parse")
 
@@ -142,8 +192,9 @@ def get_manager_dashboard(
         plan = MonthlyPlan(
             month=month_date,
             company_plan_amount=Decimal("0.00"),
-            sanjar_department_plan_amount=Decimal("0.00"),
-            raufal_department_plan_amount=Decimal("0.00"),
+            sanzhar_share_percent=Decimal("66.67"),
+            raufal_share_percent=Decimal("33.33"),
+            manager_personal_plan_percent=Decimal("12.50"),
             created_at=None,
             updated_at=None,
         )
@@ -161,8 +212,8 @@ def get_manager_dashboard(
         )
         .where(
             or_(Event.manager_id == manager.id, Event.id.in_(shared_event_ids)),
-            extract("year", Event.event_date) == month_date.year,
-            extract("month", Event.event_date) == month_date.month,
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
             Event.status != "cancelled",
         )
     )
@@ -231,6 +282,8 @@ def get_manager_dashboard(
                 event_date=event.event_date,
                 status=event.status,
                 money_status=getattr(event, "money_status", "waiting_money"),
+                client_calc_type=event.client_calc_type,
+                updated_at=event.updated_at,
                 external_total=q(money(summary["external_total"])),
                 fact_total=q(money(summary["fact_total"])),
                 paid_total=q(money(summary["paid_total"])),
@@ -381,6 +434,7 @@ def get_manager_dashboard_bundle(
         return perf_marks[end_name] - perf_marks[start_name]
 
     month_date = parse_month(month)
+    month_end = next_month_start(month_date)
     manager = resolve_manager(db, current_user, manager_id)
     mark_perf("parse")
 
@@ -389,8 +443,9 @@ def get_manager_dashboard_bundle(
         plan = MonthlyPlan(
             month=month_date,
             company_plan_amount=Decimal("0.00"),
-            sanjar_department_plan_amount=Decimal("0.00"),
-            raufal_department_plan_amount=Decimal("0.00"),
+            sanzhar_share_percent=Decimal("66.67"),
+            raufal_share_percent=Decimal("33.33"),
+            manager_personal_plan_percent=Decimal("12.50"),
             created_at=None,
             updated_at=None,
         )
@@ -407,8 +462,8 @@ def get_manager_dashboard_bundle(
         )
         .where(
             or_(Event.manager_id == manager.id, Event.id.in_(shared_event_ids)),
-            extract("year", Event.event_date) == month_date.year,
-            extract("month", Event.event_date) == month_date.month,
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
             Event.status != "cancelled",
         )
     )
@@ -425,30 +480,7 @@ def get_manager_dashboard_bundle(
     for event in events:
         active_items.extend([item for item in (event.items or []) if item.is_deleted is False])
 
-    if active_items:
-        item_ids = [int(item.id) for item in active_items if item.id is not None]
-        paid_totals = dict(
-            db.execute(
-                select(
-                    PaymentRequest.event_item_id,
-                    func.coalesce(func.sum(PaymentRequest.amount_requested), 0),
-                )
-                .where(
-                    PaymentRequest.event_item_id.in_(item_ids),
-                    PaymentRequest.status == "paid",
-                )
-                .group_by(PaymentRequest.event_item_id)
-            ).all()
-        )
-        paid_changed = False
-        for item in active_items:
-            actual_paid = money(paid_totals.get(item.id, Decimal("0.00")))
-            if money(item.paid_amount) != actual_paid:
-                item.paid_amount = actual_paid
-                db.add(item)
-                paid_changed = True
-        if paid_changed:
-            db.flush()
+    refresh_loaded_paid_amounts(db, active_items)
     mark_perf("paid_sync")
 
     needed_user_ids = {manager.id}
@@ -503,6 +535,8 @@ def get_manager_dashboard_bundle(
                 event_date=event.event_date,
                 status=event.status,
                 money_status=getattr(event, "money_status", "waiting_money"),
+                client_calc_type=event.client_calc_type,
+                updated_at=event.updated_at,
                 external_total=q(money(summary_values["external_total"])),
                 fact_total=q(money(summary_values["fact_total"])),
                 paid_total=q(money(summary_values["paid_total"])),
@@ -585,3 +619,267 @@ def get_manager_dashboard_bundle(
     )
 
     return response
+
+
+@router.get("/manager-dashboard-compact", response_model=ManagerDashboardBundleRead)
+def get_manager_dashboard_compact(
+    month: str,
+    include_drafts: bool = True,
+    manager_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Fast first-screen payload for the manager cabinet.
+
+    Full estimate rows and payment-request snapshots are intentionally excluded.
+    They are loaded for one opened event through ``/manager-event-payloads``.
+    """
+    month_date = parse_month(month)
+    month_end = next_month_start(month_date)
+    manager = resolve_manager(db, current_user, manager_id)
+
+    plan = db.execute(select(MonthlyPlan).where(MonthlyPlan.month == month_date)).scalar_one_or_none()
+    if plan is None:
+        plan = MonthlyPlan(
+            month=month_date,
+            company_plan_amount=Decimal("0.00"),
+            sanzhar_share_percent=Decimal("66.67"),
+            raufal_share_percent=Decimal("33.33"),
+            manager_personal_plan_percent=Decimal("12.50"),
+            created_at=None,
+            updated_at=None,
+        )
+    department = db.get(Department, manager.department_id) if manager.department_id else None
+
+    shared_event_ids = select(EventShare.event_id).where(EventShare.user_id == manager.id)
+    event_query = (
+        select(Event)
+        .options(
+            load_only(
+                Event.id,
+                Event.client_name,
+                Event.title,
+                Event.event_date,
+                Event.department_id,
+                Event.manager_id,
+                Event.status,
+                Event.money_status,
+                Event.client_calc_type,
+                Event.manager_percent,
+                Event.agency_commission_amount,
+                Event.simplified_bank_tax_percent,
+                Event.updated_at,
+            ),
+            selectinload(Event.items).load_only(
+                EventItem.id,
+                EventItem.event_id,
+                EventItem.item_type,
+                EventItem.external_amount,
+                EventItem.amount_fact,
+                EventItem.paid_amount,
+                EventItem.payment_method,
+                EventItem.vat_amount,
+                EventItem.deduction_amount,
+                EventItem.sort_order,
+                EventItem.is_deleted,
+            ),
+            selectinload(Event.shares).load_only(
+                EventShare.id,
+                EventShare.event_id,
+                EventShare.user_id,
+                EventShare.share_percent,
+            ),
+        )
+        .where(
+            or_(Event.manager_id == manager.id, Event.id.in_(shared_event_ids)),
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
+            Event.status != "cancelled",
+        )
+    )
+    if not include_drafts:
+        event_query = event_query.where(Event.status != "draft")
+    events = db.execute(event_query.order_by(Event.event_date, Event.id)).scalars().unique().all()
+
+    active_items = [
+        item
+        for event in events
+        for item in (event.items or [])
+        if item.is_deleted is False
+    ]
+    refresh_loaded_paid_amounts(db, active_items)
+
+    event_ids = [int(event.id) for event in events]
+    request_counts: dict[int, tuple[int, int]] = {}
+    if event_ids:
+        count_rows = db.execute(
+            select(
+                PaymentRequest.event_id,
+                func.count(PaymentRequest.id),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (PaymentRequest.status.notin_(list(INACTIVE_PAYMENT_STATUSES)), 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            )
+            .where(PaymentRequest.event_id.in_(event_ids))
+            .group_by(PaymentRequest.event_id)
+        ).all()
+        request_counts = {
+            int(event_id): (int(total or 0), int(active or 0))
+            for event_id, total, active in count_rows
+        }
+
+    needed_user_ids = {manager.id}
+    for event in events:
+        if event.manager_id:
+            needed_user_ids.add(event.manager_id)
+        needed_user_ids.update(share.user_id for share in (event.shares or []) if share.user_id)
+    users = db.execute(select(User).where(User.id.in_(needed_user_ids))).scalars().all() if needed_user_ids else []
+    user_by_id = {user.id: user for user in users}
+
+    event_rows: list[ManagerDashboardEventRead] = []
+    fact_income = Decimal("0.00")
+    drafts_count = 0
+    payment_requests_total = 0
+    active_payment_requests_total = 0
+    for event in events:
+        if event.status == "draft":
+            drafts_count += 1
+        items = sorted(
+            [item for item in (event.items or []) if item.is_deleted is False],
+            key=lambda item: (item.sort_order or 0, item.id or 0),
+        )
+        summary_values = calculate_event_summary_values(event, items)
+        share_percent = event_share_percent_for_manager(event, manager)
+        manager_final_income = q(money(summary_values["final_company_income"]) * share_percent / Decimal("100"))
+        fact_income += manager_final_income
+
+        requests_count, active_requests_count = request_counts.get(int(event.id), (0, 0))
+        payment_requests_total += requests_count
+        active_payment_requests_total += active_requests_count
+        is_coauthored, coauthor_name, coauthor_user_id, owner_manager_id, owner_manager_name = coauthor_info(event, manager, user_by_id)
+
+        event_rows.append(
+            ManagerDashboardEventRead(
+                id=event.id,
+                client_name=event.client_name,
+                title=event.title,
+                event_date=event.event_date,
+                status=event.status,
+                money_status=getattr(event, "money_status", "waiting_money"),
+                client_calc_type=event.client_calc_type,
+                updated_at=event.updated_at,
+                external_total=q(money(summary_values["external_total"])),
+                fact_total=q(money(summary_values["fact_total"])),
+                paid_total=q(money(summary_values["paid_total"])),
+                final_company_income=q(manager_final_income),
+                manager_salary=q(money(summary_values["manager_salary"]) * share_percent / Decimal("100")),
+                payment_requests_count=requests_count,
+                active_payment_requests_count=active_requests_count,
+                share_percent=q(share_percent),
+                is_coauthored=is_coauthored,
+                coauthor_name=coauthor_name,
+                coauthor_user_id=coauthor_user_id,
+                owner_manager_id=owner_manager_id,
+                owner_manager_name=owner_manager_name,
+            )
+        )
+
+    personal_plan = manager_personal_plan_amount(plan)
+    dashboard = ManagerDashboardRead(
+        month=month_date,
+        manager_id=manager.id,
+        manager_name=manager.name,
+        department_id=manager.department_id,
+        department_name=department.name if department else None,
+        include_drafts=include_drafts,
+        personal_plan_amount=q(personal_plan),
+        fact_income_amount=q(fact_income),
+        completion_percent=completion_percent(fact_income, personal_plan),
+        remaining_to_plan=q(personal_plan - fact_income),
+        events_count=len(events),
+        drafts_count=drafts_count,
+        payment_requests_count=payment_requests_total,
+        active_payment_requests_count=active_payment_requests_total,
+        events=event_rows,
+    )
+    return ManagerDashboardBundleRead(dashboard=dashboard)
+
+
+@router.get("/manager-event-payloads", response_model=ManagerEventPayloadsRead)
+def get_manager_event_payloads(
+    month: str,
+    event_ids: str | None = None,
+    include_drafts: bool = True,
+    manager_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Load full cards only for manager-visible events requested by the client."""
+    month_date = parse_month(month)
+    month_end = next_month_start(month_date)
+    manager = resolve_manager(db, current_user, manager_id)
+    selected_event_ids = parse_event_ids_filter(event_ids)
+    shared_event_ids = select(EventShare.event_id).where(EventShare.user_id == manager.id)
+
+    query = (
+        select(Event)
+        .options(
+            selectinload(Event.items),
+            selectinload(Event.payment_requests),
+        )
+        .where(
+            or_(Event.manager_id == manager.id, Event.id.in_(shared_event_ids)),
+            Event.event_date >= month_date,
+            Event.event_date < month_end,
+            Event.status != "cancelled",
+        )
+    )
+    if not include_drafts:
+        query = query.where(Event.status != "draft")
+    if selected_event_ids:
+        query = query.where(Event.id.in_(selected_event_ids))
+
+    events = db.execute(query.order_by(Event.event_date, Event.id)).scalars().unique().all()
+    active_items = [
+        item
+        for event in events
+        for item in (event.items or [])
+        if item.is_deleted is False
+    ]
+    refresh_loaded_paid_amounts(db, active_items)
+
+    manager_ids = {event.manager_id for event in events if event.manager_id is not None}
+    managers = db.execute(select(User).where(User.id.in_(manager_ids))).scalars().all() if manager_ids else []
+    manager_name_by_id = {row.id: row.name for row in managers}
+
+    payloads: dict[int, ManagerEventFullPayload] = {}
+    for event in events:
+        items = sorted(
+            [item for item in (event.items or []) if item.is_deleted is False],
+            key=lambda item: (item.sort_order or 0, item.id or 0),
+        )
+        summary_values = calculate_event_summary_values(event, items)
+        requests = sorted(list(event.payment_requests or []), key=lambda request: request.id or 0, reverse=True)
+        payloads[int(event.id)] = ManagerEventFullPayload(
+            event=EventRead.model_validate(event),
+            items=[EventItemRead.model_validate(item) for item in items],
+            summary=build_event_summary_read_for_bundle(event, items, summary_values),
+            requests=[
+                enrich_payment_request_read_fast(
+                    request,
+                    event.client_name,
+                    event.title,
+                    event.event_date,
+                    manager_name_by_id.get(event.manager_id),
+                )
+                for request in requests
+            ],
+        )
+
+    return ManagerEventPayloadsRead(month=month_date, event_payloads=payloads)

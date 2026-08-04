@@ -13,6 +13,7 @@ from app.schemas.coordinator import CoordinatorCreate
 from app.schemas.event_item import EventItemRead
 from app.services.auth import get_current_user
 from app.services.authorization import require_event_edit
+from app.api.routes.event_items import lock_event_for_estimate_write, require_estimate_editable
 
 
 router = APIRouter(tags=["coordinator"])
@@ -37,17 +38,13 @@ def create_coordinator_item(
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    event = lock_event_for_estimate_write(db, event_id)
     require_event_edit(current_user, event)
+    require_estimate_editable(current_user, event)
 
     # Coordinator is a singleton inside an event. Locking the event row also
     # protects the empty state: two concurrent requests cannot both decide
     # that the coordinator is missing.
-    db.execute(
-        select(Event.id)
-        .where(Event.id == int(event_id))
-        .with_for_update()
-    ).scalar_one()
-
     item = db.execute(
         select(EventItem)
         .where(
@@ -104,6 +101,8 @@ def create_coordinator_item(
         item.updated_at = datetime.utcnow()
 
     db.add(item)
+    event.updated_at = datetime.utcnow()
+    db.add(event)
     db.commit()
     db.refresh(item)
     return item

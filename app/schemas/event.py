@@ -20,6 +20,9 @@ class EventCreate(BaseModel):
     customer_paid_amount: Decimal = Decimal("0.00")
     agency_commission_spread_enabled: bool = False
     simplified_bank_tax_percent: Decimal | None = None
+    # Optional optimistic-concurrency guard used by the web draft editor.
+    # Older clients may omit it and keep the legacy last-write-wins behavior.
+    expected_updated_at: datetime | None = None
 
 
 class EventRead(BaseModel):

@@ -617,10 +617,20 @@ def create_payment_request(
     # Serialize payment creation with KGD and estimate writes. Otherwise a stale
     # autosave could clear the tax fields between successful KGD check and the
     # snapshot below.
+    item_hint = db.get(EventItem, int(item_id))
+    if item_hint is None:
+        raise HTTPException(status_code=404, detail="Event item not found")
+    db.execute(
+        select(Event)
+        .where(Event.id == int(item_hint.event_id))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one()
     item = db.execute(
         select(EventItem)
         .where(EventItem.id == int(item_id))
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Event item not found")
@@ -699,6 +709,8 @@ def create_payment_request(
 
     commit_started_at = time.perf_counter()
     db.add(request)
+    event.updated_at = datetime.utcnow()
+    db.add(event)
     db.flush()
     response = enrich_payment_request_for_event_fast(request, event, db, current_user)
     response_elapsed = 0.0
@@ -792,6 +804,8 @@ def create_manager_salary_payment_request(
     )
 
     db.add(request)
+    event.updated_at = datetime.utcnow()
+    db.add(event)
     db.commit()
     db.refresh(request)
 
@@ -968,7 +982,9 @@ def update_payment_request_money_status(
     # мероприятие -> все его заявки.
     # Заявка -> мероприятие запрещено, иначе одна оплаченная заявка помечает весь ивент.
     request.updated_at = datetime.utcnow()
+    event.updated_at = datetime.utcnow()
     db.add(request)
+    db.add(event)
     mark_payment_request_for_telegram_sync(db, request.id)
     db.commit()
     db.refresh(request)

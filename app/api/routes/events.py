@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +22,7 @@ from app.services.event_calculator import calculate_event_summary_values, q
 router = APIRouter(tags=["events"])
 
 INACTIVE_PAYMENT_STATUSES = {"cancelled", "rejected"}
+LIVE_SYNC_LOOKBACK = timedelta(seconds=30)
 
 
 class EventManagerActionPayload(BaseModel):
@@ -53,6 +54,24 @@ def normalize_manager_percent(value: Decimal) -> Decimal:
     if percent < Decimal("0.00") or percent > Decimal("100.00"):
         raise HTTPException(status_code=400, detail="Процент менеджера должен быть от 0 до 100")
     return percent
+
+
+def utc_naive(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.replace(tzinfo=None)
+
+
+def require_event_revision(event: Event, expected_updated_at: datetime | None) -> None:
+    if expected_updated_at is None:
+        return
+    if utc_naive(event.updated_at) != utc_naive(expected_updated_at):
+        raise HTTPException(
+            status_code=409,
+            detail="Мероприятие уже изменено в другом браузере. Свежая версия не была перезаписана.",
+        )
 
 
 
@@ -187,7 +206,11 @@ def list_event_changes(
     This is intentionally lightweight: clients use it only as an invalidation
     signal and fetch the normal dashboard payload when at least one event changed.
     """
-    query = select(Event.id, Event.updated_at).where(Event.updated_at > since)
+    # Keep a short overlap between polls. Event timestamps are assigned before
+    # commit, so advancing the cursor without overlap could miss a transaction
+    # that committed just after the previous SELECT.
+    cursor = datetime.utcnow()
+    query = select(Event.id, Event.updated_at).where(Event.updated_at > (utc_naive(since) - LIVE_SYNC_LOOKBACK))
 
     if month:
         try:
@@ -225,7 +248,7 @@ def list_event_changes(
 
     rows = db.execute(query.order_by(Event.updated_at, Event.id)).all()
     return {
-        "cursor": datetime.utcnow().isoformat(timespec="microseconds"),
+        "cursor": cursor.isoformat(timespec="microseconds"),
         "events": [
             {"id": event_id, "updated_at": updated_at.isoformat(timespec="microseconds")}
             for event_id, updated_at in rows
@@ -292,11 +315,24 @@ def update_event(
     event = get_event_or_404(db, event_id)
     require_event_edit(current_user, event)
 
+    # The revision check must happen while the row is locked. Without this,
+    # two browsers could read the same timestamp, both pass the check and let
+    # the later commit silently overwrite the earlier one.
+    event = db.execute(
+        select(Event)
+        .where(Event.id == int(event_id))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one()
+    require_event_edit(current_user, event)
+
     if current_user.role == "manager" and event.status not in {"draft", "revision"}:
         raise HTTPException(
             status_code=400,
             detail="Менеджер может редактировать только черновик или мероприятие на доработке",
         )
+
+    require_event_revision(event, payload.expected_updated_at)
 
     event.client_name = payload.client_name
     event.title = payload.title

@@ -5862,7 +5862,7 @@ injectManagerPaymentsModalFixV125();
 const state = {
   token: localStorage.getItem("cf_token") || "",
   bootstrap: null,
-  month: new Date().toISOString().slice(0, 7),
+  month: currentCalendarMonthKey(),
   paymentStatusFilter: "active",
   paymentSearch: "",
   paymentCustomerFilter: "all",
@@ -5880,6 +5880,9 @@ const state = {
   managerDraftItemsByEventId: {},
   managerDraftDeletedByEventId: {},
   managerDraftEventsById: {},
+  managerDraftDirtyByEventId: {},
+  managerDraftGenerationByEventId: {},
+  managerDraftBaseUpdatedAtByEventId: {},
   managerDraftAutosaveByEventId: {},
   managerDraftAutosaveTimersByEventId: {},
   managerDraftTempSeq: 1,
@@ -5929,6 +5932,7 @@ const state = {
   liveEventSyncTimer: null,
   liveEventSyncCursor: null,
   liveEventSyncRunning: false,
+  liveEventSeenUpdatedAtById: {},
 };
 
 const $ = (id) => document.getElementById(id);
@@ -6212,13 +6216,6 @@ function customerPaymentLabel(type) {
 }
 
 
-function formatPercentValue(value, fallback = 21) {
-  const raw = value === null || value === undefined || value === "" ? fallback : value;
-  const n = Number(String(raw).replace(",", "."));
-  const safe = Number.isFinite(n) ? n : fallback;
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(safe);
-}
-
 function managerPercentValue(event = null, summary = null) {
   const raw = event?.manager_percent ?? summary?.manager_percent ?? 21;
   const n = Number(String(raw).replace(",", "."));
@@ -6489,12 +6486,15 @@ async function api(path, options = {}) {
         const data = await response.json();
         detail = data.detail || JSON.stringify(data);
       } catch (_) {}
-      throw new Error(detail);
+      const error = new Error(detail);
+      error.status = response.status;
+      throw error;
     }
 
     const data = await response.json();
     if (method !== "GET" && adminDashboardMutationAffectsCache(safePath)) {
       invalidateAdminDashboardCaches();
+      invalidateManagerDashboardCaches();
     }
     return data;
   })();
@@ -6561,6 +6561,19 @@ function cfGlobalMap(name) {
   const key = `__contrastFinance_${name}`;
   if (!root[key]) root[key] = {};
   return root[key];
+}
+
+function bindDomEventOnce(element, bindingKey, eventName, listener) {
+  if (!element) return;
+  const registryKey = "__contrastFinance_domEventBindings";
+  if (!(window[registryKey] instanceof WeakMap)) window[registryKey] = new WeakMap();
+  const registry = window[registryKey];
+  const bindings = registry.get(element) || new Set();
+  const key = `${eventName}:${bindingKey}`;
+  if (bindings.has(key)) return;
+  bindings.add(key);
+  registry.set(element, bindings);
+  element.addEventListener(eventName, listener);
 }
 
 function currentDashboardLoadKey() {
@@ -6945,7 +6958,7 @@ function attachAuthTabs() {
 
 
 function managerEditableDepartments() {
-  const departments = managerEditableDepartments();
+  const departments = state.bootstrap?.departments || [];
   const filtered = departments.filter((department) => {
     const name = String(department.name || "").toLowerCase();
     return name.includes("санжар") || name.includes("рауф");
@@ -7101,6 +7114,13 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.managerDraftItemsByEventId = {};
   state.managerDraftDeletedByEventId = {};
   state.managerDraftEventsById = {};
+  state.managerDraftDirtyByEventId = {};
+  state.managerDraftGenerationByEventId = {};
+  state.managerDraftBaseUpdatedAtByEventId = {};
+  Object.values(state.managerDraftAutosaveTimersByEventId || {}).forEach((timer) => window.clearTimeout(timer));
+  state.managerDraftAutosaveTimersByEventId = {};
+  state.managerDraftAutosaveByEventId = {};
+  window.__contrastFinance_managerDraftSaveQueueByEventId = {};
   state.adminManualTaxOverrideByEventId = {};
   state.eventModalPayloadById = {};
   state.eventModalPayloadMonth = null;
@@ -9915,8 +9935,10 @@ function planPercentValue(plan, key, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function formatPercentValue(value) {
-  const number = Math.round(normalizeNumberInput(value) * 100) / 100;
+function formatPercentValue(value, fallback = 0) {
+  const raw = value === null || value === undefined || value === "" ? fallback : value;
+  const normalized = normalizeNumberInput(raw);
+  const number = Math.round((Number.isFinite(normalized) ? normalized : fallback) * 100) / 100;
   return String(number).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
@@ -11045,22 +11067,30 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
       }
       if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-event-detail cache event=${eventId}`);
     } else {
-      [event, items, summary] = await Promise.all([
-        api(`/events/${eventId}`),
-        api(`/events/${eventId}/items`),
-        api(`/events/${eventId}/summary`),
-      ]);
-      await refreshManagerPaymentRequestsForEvent(eventId);
+      const payload = await loadManagerEventPayload(eventId);
+      event = payload.event;
+      items = payload.items || [];
+      summary = payload.summary;
+      if (Array.isArray(payload.requests)) {
+        const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
+        state.managerPaymentRequests = [...payload.requests, ...otherRequests];
+      }
     }
 
     const dashboardEvent = getManagerDashboardEvent(eventId);
-    let draftEvent = getDraftEvent({ ...(event || {}), ...(dashboardEvent || {}) });
-    state.currentManagerEvent = draftEvent;
-    let draftItems = getDraftItems(eventId, items || []);
-    if (restoreManagerAutosaveSnapshot(eventId)) {
-      draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent || draftEvent;
-      draftItems = getDraftItems(eventId, items || []);
+    const serverEvent = {
+      ...(event || {}),
+      ...(dashboardEvent || {}),
+      updated_at: event?.updated_at || dashboardEvent?.updated_at || null,
+    };
+    const hasMemoryDraft = Boolean(state.managerDraftDirtyByEventId?.[String(eventId)]);
+    if (!hasMemoryDraft) {
+      resetManagerDraftFromServer(eventId, serverEvent, items || []);
+      restoreManagerAutosaveSnapshot(eventId, serverEvent, items || []);
     }
+    let draftEvent = state.managerDraftEventsById?.[String(eventId)] || getDraftEvent(serverEvent);
+    state.currentManagerEvent = draftEvent;
+    const draftItems = getDraftItems(eventId, items || []);
     const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
     state.currentManagerSummary = previewSummary;
     state.currentManagerItems = draftItems;
@@ -11706,6 +11736,25 @@ function cloneItem(item) {
   return JSON.parse(JSON.stringify(item));
 }
 
+function resetManagerDraftFromServer(eventId, event, items = []) {
+  const key = draftKeyForEvent(eventId);
+  const eventCopy = JSON.parse(JSON.stringify(event || {}));
+  const itemCopies = ensureCoordinator((items || []).map(cloneItem)).map(cloneItem);
+  itemCopies.forEach((item) => {
+    if (!item.is_temp && !String(item.id || "").startsWith("tmp-")) markDraftItemSaved(item);
+  });
+
+  state.managerDraftEventsById[String(eventId)] = eventCopy;
+  state.managerDraftItemsByEventId[key] = itemCopies;
+  state.managerDraftDeletedByEventId[key] = [];
+  state.managerDraftDirtyByEventId[String(eventId)] = false;
+  state.managerDraftGenerationByEventId[String(eventId)] = 0;
+  state.managerDraftBaseUpdatedAtByEventId[String(eventId)] = eventCopy.updated_at || null;
+  state.currentManagerEvent = eventCopy;
+  state.currentManagerItems = itemCopies;
+  return { event: eventCopy, items: itemCopies };
+}
+
 function generateDraftItemCreateToken() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   if (window.crypto?.getRandomValues) {
@@ -11898,6 +11947,7 @@ function eventPayloadForSave(draftEvent) {
     agency_commission_amount: draftEvent.agency_commission_amount,
     agency_commission_spread_enabled: draftEvent.agency_commission_spread_enabled,
     simplified_bank_tax_percent: draftEvent.client_calc_type === "simplified" ? draftEvent.simplified_bank_tax_percent : 0,
+    expected_updated_at: state.managerDraftBaseUpdatedAtByEventId?.[String(draftEvent.id)] || draftEvent.updated_at || null,
   };
 }
 
@@ -11929,13 +11979,17 @@ async function saveDraftEvent(eventId, options = {}) {
     body: JSON.stringify(payload),
   });
 
-  if (savedEvent && asNumber(draftEvent.__edit_version) === editVersionAtRequest) {
-    delete draftEvent.__dirty_after_save;
-    state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
-    delete state.currentManagerEvent.__dirty_after_save;
-    state.managerDraftEventsById[String(eventId)] = { ...state.currentManagerEvent };
-    patchManagerEventLocal(eventId, savedEvent);
-    return savedEvent;
+  if (savedEvent) {
+    state.managerDraftBaseUpdatedAtByEventId[String(eventId)] = savedEvent.updated_at || null;
+    draftEvent.updated_at = savedEvent.updated_at || draftEvent.updated_at;
+    if (asNumber(draftEvent.__edit_version) === editVersionAtRequest) {
+      delete draftEvent.__dirty_after_save;
+      state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
+      delete state.currentManagerEvent.__dirty_after_save;
+      state.managerDraftEventsById[String(eventId)] = { ...state.currentManagerEvent };
+      patchManagerEventLocal(eventId, savedEvent);
+      return savedEvent;
+    }
   }
 
   return draftEvent;
@@ -12095,16 +12149,18 @@ function managerAutosaveAllowed(eventId) {
 }
 
 function managerAutosaveStorageKey(eventId) {
-  return `cf_manager_draft_autosave_${eventId}`;
+  const userId = Number(state.bootstrap?.user?.id || 0);
+  return `cf_manager_draft_autosave_v2_${userId}_${eventId}`;
 }
 
 function snapshotManagerDraftForAutosave(eventId) {
   const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
   if (!draftEvent) return null;
   return {
-    version: 1,
+    version: 2,
     eventId: String(eventId),
     savedAt: Date.now(),
+    baseUpdatedAt: state.managerDraftBaseUpdatedAtByEventId?.[String(eventId)] || draftEvent.updated_at || null,
     event: JSON.parse(JSON.stringify(draftEvent)),
     items: JSON.parse(JSON.stringify(getDraftItems(eventId))),
     deletedIds: JSON.parse(JSON.stringify(getDraftDeletedIds(eventId))),
@@ -12113,6 +12169,7 @@ function snapshotManagerDraftForAutosave(eventId) {
 
 function storeManagerAutosaveSnapshot(eventId) {
   if (!managerAutosaveAllowed(eventId)) return;
+  if (!state.managerDraftDirtyByEventId?.[String(eventId)]) return;
   const snapshot = snapshotManagerDraftForAutosave(eventId);
   if (!snapshot) return;
   try {
@@ -12125,12 +12182,13 @@ function storeManagerAutosaveSnapshot(eventId) {
 function clearManagerAutosaveSnapshot(eventId) {
   try {
     localStorage.removeItem(managerAutosaveStorageKey(eventId));
+    localStorage.removeItem(`cf_manager_draft_autosave_${eventId}`);
   } catch (error) {
     console.warn("Не удалось очистить локальную копию черновика", error);
   }
 }
 
-function restoreManagerAutosaveSnapshot(eventId) {
+function restoreManagerAutosaveSnapshot(eventId, serverEvent = null, serverItems = []) {
   if (!eventId || isAdminEditingCurrentEvent()) return false;
   const key = managerAutosaveStorageKey(eventId);
   let snapshot = null;
@@ -12144,15 +12202,47 @@ function restoreManagerAutosaveSnapshot(eventId) {
   }
 
   if (!snapshot || String(snapshot.eventId) !== String(eventId) || !snapshot.event || !Array.isArray(snapshot.items)) return false;
+  if (Number(snapshot.version || 0) < 2) {
+    // v0.5.69 wrote a snapshot even for a completely clean tab, so those
+    // records cannot be distinguished from real offline edits safely.
+    clearManagerAutosaveSnapshot(eventId);
+    return false;
+  }
+
+  const currentRevision = serverEvent?.updated_at || null;
+  const sameBase = String(snapshot.baseUpdatedAt || "") === String(currentRevision || "");
+  if (!sameBase) {
+    const useLocal = window.confirm(
+      "Эта смета уже менялась в другом браузере.\n\nОК — использовать сохранённую на этом устройстве копию.\nОтмена — открыть свежую версию с сервера."
+    );
+    if (!useLocal) {
+      clearManagerAutosaveSnapshot(eventId);
+      return false;
+    }
+
+    const currentItemsById = new Map((serverItems || []).map((item) => [String(item.id), item]));
+    snapshot.event.updated_at = currentRevision;
+    snapshot.items.forEach((item) => {
+      const current = currentItemsById.get(String(item.id));
+      if (current?.updated_at) item.updated_at = current.updated_at;
+    });
+  }
+
   state.managerDraftEventsById[String(eventId)] = snapshot.event;
   state.currentManagerEvent = { ...(state.currentManagerEvent || {}), ...snapshot.event };
   state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = snapshot.items;
   state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = Array.isArray(snapshot.deletedIds) ? snapshot.deletedIds : [];
+  state.managerDraftDirtyByEventId[String(eventId)] = true;
+  state.managerDraftGenerationByEventId[String(eventId)] = Math.max(1, asNumber(state.managerDraftGenerationByEventId[String(eventId)]));
+  state.managerDraftBaseUpdatedAtByEventId[String(eventId)] = currentRevision;
   return true;
 }
 
 function markManagerDraftChanged(eventId) {
   if (!managerAutosaveAllowed(eventId)) return;
+  const key = String(eventId);
+  state.managerDraftDirtyByEventId[key] = true;
+  state.managerDraftGenerationByEventId[key] = asNumber(state.managerDraftGenerationByEventId[key]) + 1;
   storeManagerAutosaveSnapshot(eventId);
   scheduleManagerDraftAutosave(eventId);
 }
@@ -12167,9 +12257,45 @@ function scheduleManagerDraftAutosave(eventId, delay = 1800) {
   }, delay);
 }
 
+function runManagerDraftSaveSerial(eventId, task) {
+  const key = String(eventId);
+  const queue = cfGlobalMap("managerDraftSaveQueueByEventId");
+  const previous = queue[key] || Promise.resolve();
+  const operation = Promise.resolve(previous).catch(() => {}).then(task);
+  queue[key] = operation;
+  return operation.finally(() => {
+    if (queue[key] === operation) delete queue[key];
+  });
+}
+
+async function refreshManagerEventRevision(eventId) {
+  const freshEvent = await api(`/events/${eventId}?_=${Date.now()}`);
+  const key = String(eventId);
+  state.managerDraftBaseUpdatedAtByEventId[key] = freshEvent.updated_at || null;
+  const draftEvent = state.managerDraftEventsById?.[key];
+  if (draftEvent) draftEvent.updated_at = freshEvent.updated_at || draftEvent.updated_at;
+  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+    state.currentManagerEvent.updated_at = freshEvent.updated_at || state.currentManagerEvent.updated_at;
+  }
+  const payload = state.managerEventPayloadById?.[key];
+  if (payload?.event) Object.assign(payload.event, freshEvent);
+  return freshEvent;
+}
+
+function notifyManagerEventSaved(eventId) {
+  try {
+    localStorage.setItem("cf_manager_event_saved_v1", JSON.stringify({ eventId: Number(eventId), savedAt: Date.now() }));
+  } catch (_) {}
+}
+
+function managerSaveConflict(error) {
+  return Number(error?.status || 0) === 409 || String(error?.message || "").includes("другом браузере");
+}
+
 async function flushManagerDraftAutosave(eventId, options = {}) {
   if (!managerAutosaveAllowed(eventId)) return false;
   const key = String(eventId);
+  if (!state.managerDraftDirtyByEventId?.[key]) return true;
   if (!state.managerDraftAutosaveByEventId) state.managerDraftAutosaveByEventId = {};
   const record = state.managerDraftAutosaveByEventId[key] || { saving: false, pending: false };
   state.managerDraftAutosaveByEventId[key] = record;
@@ -12185,30 +12311,43 @@ async function flushManagerDraftAutosave(eventId, options = {}) {
   record.pending = false;
 
   try {
-    const draftEvent = state.managerDraftEventsById?.[key] || state.currentManagerEvent;
-    if (draftEvent) {
-      draftEvent.status = "draft";
-      if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
-        state.currentManagerEvent.status = "draft";
+    return await runManagerDraftSaveSerial(eventId, async () => {
+      const generationAtStart = asNumber(state.managerDraftGenerationByEventId?.[key]);
+      const draftEvent = state.managerDraftEventsById?.[key] || state.currentManagerEvent;
+      if (draftEvent) {
+        draftEvent.status = "draft";
+        if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+          state.currentManagerEvent.status = "draft";
+        }
       }
-    }
 
-    await saveDraftItems(eventId);
-    const savedEvent = await saveDraftEvent(eventId);
-    patchManagerEventLocal(eventId, savedEvent || draftEvent);
-    const items = getDraftItems(eventId);
-    patchManagerEventPayloadItems(eventId, items);
-    state.currentManagerItems = items;
-    state.currentManagerSummary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
-    clearManagerAutosaveSnapshot(eventId);
-    updateCurrentManagerMiniCardLive();
-    if (!options.silent) showDraftSavedHint("Сохранено");
-    else showDraftSavedHint("Автосохранено");
-    return true;
+      // Claim the server revision first. A stale browser stops here before it
+      // can overwrite any estimate row.
+      const savedEvent = await saveDraftEvent(eventId, { force: true });
+      patchManagerEventLocal(eventId, savedEvent || draftEvent);
+      await saveDraftItems(eventId);
+      await refreshManagerEventRevision(eventId);
+
+      const items = getDraftItems(eventId);
+      patchManagerEventPayloadItems(eventId, items);
+      state.currentManagerItems = items;
+      state.currentManagerSummary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+
+      const unchangedDuringSave = asNumber(state.managerDraftGenerationByEventId?.[key]) === generationAtStart;
+      state.managerDraftDirtyByEventId[key] = !unchangedDuringSave;
+      if (unchangedDuringSave) clearManagerAutosaveSnapshot(eventId);
+      else storeManagerAutosaveSnapshot(eventId);
+      notifyManagerEventSaved(eventId);
+      updateCurrentManagerMiniCardLive();
+      if (!options.silent) showDraftSavedHint("Сохранено");
+      else showDraftSavedHint("Автосохранено");
+      return true;
+    });
   } catch (error) {
     console.warn("Автосохранение черновика не удалось", error);
     storeManagerAutosaveSnapshot(eventId);
-    showDraftSavedHint("Ждёт интернет", "#b26a00");
+    showDraftSavedHint(managerSaveConflict(error) ? "Есть свежая версия" : "Ждёт интернет", managerSaveConflict(error) ? "#b42318" : "#b26a00");
+    if (managerSaveConflict(error)) record.pending = false;
     return false;
   } finally {
     record.saving = false;
@@ -13113,6 +13252,7 @@ function itemPayloadForSave(item) {
     deduction_amount: isCoordinator ? 0 : (item.deduction_amount || 0),
     internal_note: item.internal_note || null,
     sort_order: isCoordinator ? -100 : (item.sort_order || 0),
+    expected_updated_at: (!item.is_temp && !String(item.id || "").startsWith("tmp-")) ? (item.updated_at || null) : null,
   };
 }
 
@@ -13172,7 +13312,7 @@ async function performSingleDraftItemSave(eventId, item, options = {}) {
       Object.assign(item, created, { is_temp: false });
     } else {
       const freshLocalValues = { ...item };
-      Object.assign(item, created, freshLocalValues, { id: created.id, is_temp: false, __dirty_after_save: true });
+      Object.assign(item, created, freshLocalValues, { id: created.id, updated_at: created.updated_at, is_temp: false, __dirty_after_save: true });
     }
   } else {
     const updated = await api(`/event-items/${item.id}`, {
@@ -13181,6 +13321,9 @@ async function performSingleDraftItemSave(eventId, item, options = {}) {
     });
     if (asNumber(item.__edit_version) === editVersionAtRequest) {
       Object.assign(item, updated, { is_temp: false });
+    } else {
+      const freshLocalValues = { ...item };
+      Object.assign(item, updated, freshLocalValues, { id: updated.id, updated_at: updated.updated_at, is_temp: false, __dirty_after_save: true });
     }
   }
 
@@ -13470,7 +13613,7 @@ async function checkTaxForItem(itemId) {
 
       result = await timedApi("kgd-estimate-check-api", `/event-items/${item.id}/tax/check`, {
         method: "POST",
-        body: JSON.stringify({ iin_bin: normalized }),
+        body: JSON.stringify({ iin_bin: normalized, expected_updated_at: item.updated_at || null }),
       });
       applyTaxResultToDraftItem(item, result, normalized);
       patchManagerEventPayloadItems(state.selectedManagerEventId, getDraftItems(state.selectedManagerEventId));
@@ -14584,7 +14727,7 @@ async function checkPaymentInvoiceBin(eventId) {
 
     taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
       method: "POST",
-      body: JSON.stringify({ iin_bin: bin }),
+      body: JSON.stringify({ iin_bin: bin, expected_updated_at: item.updated_at || null }),
     });
     applyTaxResultToDraftItem(item, taxResult, bin);
   }
@@ -14745,30 +14888,58 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
   let stage = "подготовка данных";
   setManagerSaveError(eventId, "");
   setButtonLoading(button, true, targetStatus === "review" ? "Отправляем…" : "Сохраняем…");
+  window.clearTimeout(state.managerDraftAutosaveTimersByEventId?.[String(eventId)]);
   try {
-    draftEvent.status = targetStatus;
-    if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
-      state.currentManagerEvent.status = targetStatus;
-    }
+    await runManagerDraftSaveSerial(eventId, async () => {
+      const key = String(eventId);
+      const generationAtStart = asNumber(state.managerDraftGenerationByEventId?.[key]);
 
-    stage = "сохранение позиций сметы";
-    await timedAction(`manager-${targetStatus}-items-save`, () => saveDraftItems(eventId));
+      // First keep the event editable and claim its current revision. Only
+      // after every estimate row is safely stored may it move to review.
+      draftEvent.status = "draft";
+      if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+        state.currentManagerEvent.status = "draft";
+      }
 
-    stage = targetStatus === "review" ? "отправка мероприятия на проверку" : "сохранение мероприятия";
-    const savedEvent = await timedAction(`manager-${targetStatus}-event-save`, () => saveDraftEvent(eventId, { force: true }));
-    patchManagerEventLocal(eventId, savedEvent || draftEvent);
+      stage = "проверка свежести мероприятия";
+      const draftSavedEvent = await timedAction(`manager-${targetStatus}-event-preflight`, () => saveDraftEvent(eventId, { force: true }));
+      patchManagerEventLocal(eventId, draftSavedEvent || draftEvent);
 
-    const items = getDraftItems(eventId);
-    const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
-    state.currentManagerSummary = summary;
-    state.currentManagerItems = items;
-    patchManagerEventPayloadItems(eventId, items);
+      stage = "сохранение позиций сметы";
+      await timedAction(`manager-${targetStatus}-items-save`, () => saveDraftItems(eventId));
+      await refreshManagerEventRevision(eventId);
 
-    clearManagerAutosaveSnapshot(eventId);
-    updateCurrentManagerMiniCardLive();
-    rerenderCurrentManagerCard();
-    showDraftSavedHint();
-    if (successMessage) showToast(successMessage);
+      const changedDuringSave = asNumber(state.managerDraftGenerationByEventId?.[key]) !== generationAtStart;
+      if (targetStatus === "review" && changedDuringSave) {
+        throw new Error("Смета изменилась во время сохранения. Проверь последние значения и нажми «Отправить Саше» ещё раз.");
+      }
+
+      let finalEvent = state.managerDraftEventsById?.[key] || draftEvent;
+      if (targetStatus === "review") {
+        stage = "отправка мероприятия на проверку";
+        finalEvent.status = "review";
+        if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+          state.currentManagerEvent.status = "review";
+        }
+        finalEvent = await timedAction(`manager-${targetStatus}-event-save`, () => saveDraftEvent(eventId, { force: true }));
+        patchManagerEventLocal(eventId, finalEvent || draftEvent);
+      }
+
+      const items = getDraftItems(eventId);
+      const summary = calculateDraftSummaryPreview(items, state.currentManagerEvent, state.currentManagerSummary);
+      state.currentManagerSummary = summary;
+      state.currentManagerItems = items;
+      patchManagerEventPayloadItems(eventId, items);
+
+      state.managerDraftDirtyByEventId[key] = changedDuringSave;
+      if (!changedDuringSave) clearManagerAutosaveSnapshot(eventId);
+      else storeManagerAutosaveSnapshot(eventId);
+      notifyManagerEventSaved(eventId);
+      updateCurrentManagerMiniCardLive();
+      rerenderCurrentManagerCard();
+      showDraftSavedHint();
+      if (successMessage) showToast(successMessage);
+    });
   } catch (error) {
     const reason = String(error?.message || "Неизвестная ошибка");
     const action = targetStatus === "review" ? "Не удалось отправить мероприятие Саше" : "Не удалось сохранить черновик";
@@ -15457,41 +15628,24 @@ function attachManagerDashboardActions() {
   ].filter(Boolean);
 
   createButtons.forEach((button) => {
-    button.addEventListener("click", openManagerCreateModal);
+    bindDomEventOnce(button, "manager-create-event", "click", openManagerCreateModal);
   });
 
   document.querySelectorAll("[data-manager-event-id]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    bindDomEventOnce(button, "manager-open-event", "click", async () => {
       const eventId = button.getAttribute("data-manager-event-id");
       state.selectedManagerEventId = Number(eventId);
 
       document.querySelectorAll("[data-manager-event-id]").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
 
-      await withLoading(async () => renderManagerEventDetail(eventId), "Открываем мероприятие…");
+      await renderManagerEventDetail(eventId);
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) {
         const detail = document.getElementById("managerEventDetail");
         if (detail) detail.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     });
   });
-
-
-  document.querySelectorAll("[data-manager-event-save-draft]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const eventId = button.getAttribute("data-manager-event-save-draft");
-      await saveManagerEventQuick(eventId, "draft", button, "Черновик сохранён");
-    });
-  });
-
-  document.querySelectorAll("[data-manager-event-send-review]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const eventId = button.getAttribute("data-manager-event-send-review");
-      if (!confirm("Отправить мероприятие Саше на проверку?")) return;
-      await saveManagerEventQuick(eventId, "review", button, "Отправлено Саше");
-    });
-  });
-
 }
 
 function eventMonthKey(event) {
@@ -16669,6 +16823,9 @@ const USERS_CACHE_TTL_MS = 10 * 60 * 1000;
 const ADMIN_DASHBOARD_CACHE_KEY = "cf_admin_dashboard_cache_v2";
 const ADMIN_DASHBOARD_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const ADMIN_DASHBOARD_CACHE_MAX_ENTRIES = 6;
+const MANAGER_DASHBOARD_CACHE_KEY = "cf_manager_dashboard_cache_v1";
+const MANAGER_DASHBOARD_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MANAGER_DASHBOARD_CACHE_MAX_ENTRIES = 6;
 
 function adminDashboardCacheEntryKey(month) {
   const userId = Number(state.bootstrap?.user?.id || 0);
@@ -16727,6 +16884,58 @@ function invalidateAdminDashboardCaches() {
   state.adminDashboardBundleCacheByMonth = {};
   try {
     localStorage.removeItem(ADMIN_DASHBOARD_CACHE_KEY);
+  } catch (_) {}
+}
+
+function managerDashboardCacheEntryKey(month) {
+  const userId = Number(state.bootstrap?.user?.id || 0);
+  return `${userId}:${String(month || "")}`;
+}
+
+function readManagerDashboardPersistentCache() {
+  try {
+    const raw = localStorage.getItem(MANAGER_DASHBOARD_CACHE_KEY);
+    if (!raw) return { entries: {} };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.entries !== "object" || Array.isArray(parsed.entries)) return { entries: {} };
+    return parsed;
+  } catch (error) {
+    console.warn("Не удалось прочитать быстрый кэш менеджера", error);
+    return { entries: {} };
+  }
+}
+
+function persistentManagerDashboardBundle(month) {
+  const key = managerDashboardCacheEntryKey(month);
+  const record = readManagerDashboardPersistentCache().entries?.[key];
+  if (!record?.saved_at || !record?.dashboard) return null;
+  if (Date.now() - Number(record.saved_at) > MANAGER_DASHBOARD_CACHE_MAX_AGE_MS) return null;
+  return { dashboard: record.dashboard, payment_requests: [], event_payloads: {} };
+}
+
+function saveManagerDashboardPersistentCache(month, bundle) {
+  if (!bundle?.dashboard) return bundle;
+  try {
+    const cache = readManagerDashboardPersistentCache();
+    const key = managerDashboardCacheEntryKey(month);
+    cache.entries[key] = { saved_at: Date.now(), dashboard: bundle.dashboard };
+    const keep = Object.entries(cache.entries)
+      .filter(([, record]) => record?.saved_at && Date.now() - Number(record.saved_at) <= MANAGER_DASHBOARD_CACHE_MAX_AGE_MS)
+      .sort((left, right) => Number(right[1].saved_at) - Number(left[1].saved_at))
+      .slice(0, MANAGER_DASHBOARD_CACHE_MAX_ENTRIES);
+    cache.entries = Object.fromEntries(keep);
+    localStorage.setItem(MANAGER_DASHBOARD_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.warn("Не удалось сохранить быстрый кэш менеджера", error);
+  }
+  return bundle;
+}
+
+function invalidateManagerDashboardCaches() {
+  state.managerDashboardCacheByMonth = {};
+  state.managerDashboardBundleCacheByMonth = {};
+  try {
+    localStorage.removeItem(MANAGER_DASHBOARD_CACHE_KEY);
   } catch (_) {}
 }
 
@@ -16918,16 +17127,46 @@ async function loadManagerDashboardBundleData(month) {
 
   if (!state.managerDashboardBundleLoadingByMonth) state.managerDashboardBundleLoadingByMonth = {};
   state.managerDashboardBundleLoadingByMonth[key] = timedApi(
-    "manager-dashboard-bundle",
-    `/manager-dashboard-bundle?month=${month}&include_drafts=true&_=${Date.now()}`,
+    "manager-dashboard-compact",
+    `/manager-dashboard-compact?month=${month}&include_drafts=true&_=${Date.now()}`,
   ).then((data) => {
     cacheManagerEventPayloads(data?.event_payloads || {}, key);
+    saveManagerDashboardPersistentCache(key, data);
     return setCachedValue(state.managerDashboardBundleCacheByMonth, key, data);
   }).finally(() => {
     if (state.managerDashboardBundleLoadingByMonth) delete state.managerDashboardBundleLoadingByMonth[key];
   });
 
   return state.managerDashboardBundleLoadingByMonth[key];
+}
+
+async function loadManagerEventPayload(eventId, options = {}) {
+  const id = String(eventId || "");
+  if (!id) return null;
+  const cached = options.force ? null : cachedManagerEventPayload(id);
+  if (cached) return cached;
+
+  const loadingKey = `payload:${id}`;
+  if (state.managerEventDetailLoadingById?.[loadingKey]) {
+    return state.managerEventDetailLoadingById[loadingKey];
+  }
+  if (!state.managerEventDetailLoadingById) state.managerEventDetailLoadingById = {};
+
+  const task = timedApi(
+    "manager-event-payload",
+    `/manager-event-payloads?month=${encodeURIComponent(state.month)}&event_ids=${encodeURIComponent(id)}&include_drafts=true&_=${Date.now()}`,
+  ).then((result) => {
+    const payload = result?.event_payloads?.[id];
+    if (!payload) throw new Error("Мероприятие не найдено в выбранном месяце");
+    cacheManagerEventPayloads({ [id]: payload }, state.month);
+    return payload;
+  }).finally(() => {
+    if (state.managerEventDetailLoadingById?.[loadingKey] === task) {
+      delete state.managerEventDetailLoadingById[loadingKey];
+    }
+  });
+  state.managerEventDetailLoadingById[loadingKey] = task;
+  return task;
 }
 
 
@@ -17032,6 +17271,19 @@ async function prefetchAdjacentAdminMonths(month) {
       console.warn(`Не удалось заранее подготовить ${candidate}`, error);
     }
   }
+}
+
+function scheduleManagerAdjacentMonthPrefetch(month) {
+  window.setTimeout(async () => {
+    for (const target of [shiftedMonthKey(month, -1), shiftedMonthKey(month, 1)]) {
+      if (!target || target === state.month) continue;
+      try {
+        await loadManagerDashboardBundleData(target);
+      } catch (error) {
+        console.warn("Не удалось подготовить соседний месяц менеджера", target, error);
+      }
+    }
+  }, 350);
 }
 
 
@@ -17194,12 +17446,17 @@ function managerEventHasLocalUnsavedChanges(eventId) {
 function patchManagerMiniCardsFromDashboard(dashboard, changedIds) {
   const temp = document.createElement('div');
   temp.innerHTML = renderManagerEventList(normalizeManagerDashboardForMonth(dashboard || {}, state.month));
-  changedIds.forEach((eventId) => {
-    const current = document.querySelector(`[data-manager-event-id="${eventId}"]`);
-    const next = temp.querySelector(`[data-manager-event-id="${eventId}"]`);
-    if (current && next) morphLiveNode(current, next);
-    else if (!next && current) current.remove();
-  });
+  const currentSidebar = document.querySelector('.manager-sidebar-card');
+  const nextSidebar = temp.querySelector('.manager-sidebar-card');
+  const previousScroll = currentSidebar?.querySelector('.manager-mini-list')?.scrollTop || 0;
+  if (currentSidebar && nextSidebar) {
+    currentSidebar.replaceWith(nextSidebar);
+    const nextList = nextSidebar.querySelector('.manager-mini-list');
+    if (nextList) nextList.scrollTop = previousScroll;
+  }
+  // A new or removed event must appear in the right order immediately. The
+  // sidebar replacement also prevents old card handlers from accumulating.
+  attachManagerDashboardActions();
   scheduleMiniBadgeFit();
 }
 
@@ -17242,8 +17499,15 @@ function patchOpenManagerEventPayload(payload) {
   const currentCard = holder?.querySelector('.manager-event-card');
   if (!holder || !currentCard) return false;
 
-  const event = getDraftEvent(payload.event);
-  const items = payload.items || [];
+  const dashboardEvent = getManagerDashboardEvent(eventId);
+  const serverEvent = {
+    ...(payload.event || {}),
+    ...(dashboardEvent || {}),
+    updated_at: payload.event?.updated_at || dashboardEvent?.updated_at || null,
+  };
+  const freshDraft = resetManagerDraftFromServer(eventId, serverEvent, payload.items || []);
+  const event = freshDraft.event;
+  const items = freshDraft.items;
   const summary = calculateDraftSummaryPreview(items, event, payload.summary);
   const temp = document.createElement('div');
   temp.innerHTML = renderManagerEventCard(event, items, summary);
@@ -17254,7 +17518,12 @@ function patchOpenManagerEventPayload(payload) {
   state.currentManagerItems = items;
   state.currentManagerSummary = summary;
   state.managerEventPayloadById[String(eventId)] = payload;
-  morphLiveNode(currentCard, nextCard);
+  clearManagerAutosaveSnapshot(eventId);
+  // Partial morphing retained old listeners, then the attach calls below added
+  // another set after every live refresh. A clean server refresh is allowed
+  // only when there are no local edits, so replacing the card is both safe and
+  // guarantees that one click performs one action.
+  currentCard.replaceWith(nextCard);
   attachManagerCreateWorkspaceActions();
   attachCustomerPaymentActions(holder);
   attachDraftEventInputs(eventId);
@@ -17322,13 +17591,18 @@ async function refreshLiveChangedEvents(changedIds) {
   const user = state.bootstrap?.user;
   const month = String(state.month || selectedMonthValue() || '');
   if (user?.role === 'manager') {
-    const bundle = await api(`/manager-dashboard-bundle?month=${encodeURIComponent(month)}&include_drafts=true&_=${Date.now()}`);
+    const eventIdsParam = [...ids].join(',');
+    const [bundle, payloadResult] = await Promise.all([
+      api(`/manager-dashboard-compact?month=${encodeURIComponent(month)}&include_drafts=true&_=${Date.now()}`),
+      api(`/manager-event-payloads?month=${encodeURIComponent(month)}&event_ids=${encodeURIComponent(eventIdsParam)}&include_drafts=true&_=${Date.now()}`),
+    ]);
     const dashboard = bundle?.dashboard || emptyManagerDashboard(month);
     state.managerData = normalizeManagerDashboardForMonth(dashboard, month);
-    state.managerPaymentRequests = bundle?.payment_requests || state.managerPaymentRequests || [];
-    cacheManagerEventPayloads(bundle?.event_payloads || {}, month);
+    setCachedValue(state.managerDashboardBundleCacheByMonth, month, bundle);
+    saveManagerDashboardPersistentCache(month, bundle);
+    cacheManagerEventPayloads(payloadResult?.event_payloads || {}, month);
     patchManagerMiniCardsFromDashboard(dashboard, ids);
-    ids.forEach((eventId) => patchOpenManagerEventPayload(bundle?.event_payloads?.[String(eventId)]));
+    ids.forEach((eventId) => patchOpenManagerEventPayload(payloadResult?.event_payloads?.[String(eventId)]));
     return;
   }
 
@@ -17371,7 +17645,15 @@ async function pollLiveEventChanges() {
     const month = selectedMonthValue();
     const payload = await api(`/events/changes?since=${encodeURIComponent(since)}&month=${encodeURIComponent(month)}&_=${Date.now()}`);
     state.liveEventSyncCursor = payload?.cursor || new Date().toISOString();
-    const changedIds = (payload?.events || []).map((item) => Number(item.id)).filter(Boolean);
+    const changedIds = [];
+    (payload?.events || []).forEach((item) => {
+      const eventId = Number(item.id);
+      if (!eventId) return;
+      const revision = String(item.updated_at || "");
+      if (state.liveEventSeenUpdatedAtById?.[String(eventId)] === revision) return;
+      state.liveEventSeenUpdatedAtById[String(eventId)] = revision;
+      changedIds.push(eventId);
+    });
     if (changedIds.length) await refreshLiveChangedEvents(changedIds);
   } catch (error) {
     console.warn('Live sync мероприятий временно недоступен', error);
@@ -17383,6 +17665,7 @@ async function pollLiveEventChanges() {
 function startLiveEventSync() {
   if (state.liveEventSyncTimer) window.clearInterval(state.liveEventSyncTimer);
   state.liveEventSyncCursor = new Date().toISOString();
+  state.liveEventSeenUpdatedAtById = {};
   state.liveEventSyncTimer = window.setInterval(pollLiveEventChanges, 5000);
 }
 
@@ -17391,10 +17674,21 @@ function stopLiveEventSync() {
   state.liveEventSyncTimer = null;
   state.liveEventSyncCursor = null;
   state.liveEventSyncRunning = false;
+  state.liveEventSeenUpdatedAtById = {};
 }
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) pollLiveEventChanges();
+});
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== "cf_manager_event_saved_v1" || !event.newValue || document.hidden) return;
+  try {
+    const payload = JSON.parse(event.newValue);
+    if (payload?.eventId && state.bootstrap?.user?.role === "manager") {
+      refreshLiveChangedEvents([Number(payload.eventId)]).catch((error) => console.warn("Не удалось обновить данные из соседней вкладки", error));
+    }
+  } catch (_) {}
 });
 
 function renderDashboardLoading(role) {
@@ -17505,6 +17799,16 @@ async function loadDashboard() {
       return;
     }
 
+    let renderedFromManagerCache = false;
+    const persistentManagerBundle = persistentManagerDashboardBundle(month);
+    if (persistentManagerBundle?.dashboard && !isStale()) {
+      renderManagerDashboard(persistentManagerBundle.dashboard, []);
+      if (document.getElementById("dashboardHint")) {
+        document.getElementById("dashboardHint").textContent = "Обновляем свежие данные…";
+      }
+      renderedFromManagerCache = true;
+    }
+
     try {
       const bundle = await loadManagerDashboardBundleData(month);
       const dashboard = bundle?.dashboard || emptyManagerDashboard(month);
@@ -17516,11 +17820,16 @@ async function loadDashboard() {
       cacheManagerEventPayloads(bundle?.event_payloads || {}, month);
       const renderStartedAt = perfNow();
       renderManagerDashboard(dashboard, requests);
+      scheduleManagerAdjacentMonthPrefetch(month);
       if (CF_PERF_LOGS_ENABLED) console.info(`PERF web render-manager-dashboard=${perfSeconds(renderStartedAt)}s total-loadDashboard=${perfSeconds(dashboardStartedAt)}s`);
     } catch (error) {
       if (!isStale()) {
         console.warn("Не удалось загрузить manager-dashboard за период", month, error);
-        renderManagerDashboard(emptyManagerDashboard(month), []);
+        if (renderedFromManagerCache) {
+          if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "Показаны последние сохранённые данные";
+        } else {
+          renderManagerDashboard(emptyManagerDashboard(month), []);
+        }
       }
     }
     if (!isStale()) state.lastLoadedDashboardMonth = month;
@@ -17537,7 +17846,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.69 loaded");
+  console.info("Contrast Finance web app v0.5.70 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

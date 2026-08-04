@@ -36,6 +36,9 @@ class EventItemCreate(BaseModel):
 
     internal_note: str | None = None
     sort_order: int = 0
+    # Sent only when an existing row is updated. It prevents a stale browser
+    # tab from silently overwriting a newer version of the same estimate row.
+    expected_updated_at: datetime | None = None
 
 
 class EventItemUpdate(BaseModel):

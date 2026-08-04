@@ -1,8 +1,10 @@
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
 
@@ -76,4 +78,8 @@ def sync_event_paid_amounts_from_requests(db: Session, event_id: int) -> None:
             changed = True
 
     if changed:
+        event = db.get(Event, int(event_id))
+        if event is not None:
+            event.updated_at = datetime.utcnow()
+            db.add(event)
         db.flush()

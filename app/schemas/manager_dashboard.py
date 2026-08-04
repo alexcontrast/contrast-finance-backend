@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ManagerDashboardEventRead(BaseModel):
@@ -11,6 +11,8 @@ class ManagerDashboardEventRead(BaseModel):
     event_date: date
     status: str
     money_status: str = "waiting_money"
+    client_calc_type: str | None = None
+    updated_at: datetime | None = None
 
     external_total: Decimal
     fact_total: Decimal
@@ -65,5 +67,10 @@ class ManagerEventFullPayload(BaseModel):
 
 class ManagerDashboardBundleRead(BaseModel):
     dashboard: ManagerDashboardRead
-    payment_requests: list[PaymentRequestRead]
+    payment_requests: list[PaymentRequestRead] = Field(default_factory=list)
+    event_payloads: dict[int, ManagerEventFullPayload] = Field(default_factory=dict)
+
+
+class ManagerEventPayloadsRead(BaseModel):
+    month: date
     event_payloads: dict[int, ManagerEventFullPayload]

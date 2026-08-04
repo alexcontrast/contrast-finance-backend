@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -5,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TaxCheckRequest(BaseModel):
     iin_bin: str = Field(description="BIN / ИИН подрядчика")
+    expected_updated_at: datetime | None = None
 
 
 class ManualTaxRequest(BaseModel):
