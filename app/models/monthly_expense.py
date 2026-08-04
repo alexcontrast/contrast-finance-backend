@@ -25,6 +25,13 @@ class MonthlyExpense(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
 
+    # manual / manager_bonus. Bonus rows are created only by the dedicated
+    # admin endpoint and keep the exact income/rate snapshot used for payout.
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False, default="manual")
+    manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    bonus_income_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    bonus_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

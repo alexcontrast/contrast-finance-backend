@@ -120,6 +120,10 @@ def expense_to_read_with_plan(expense: MonthlyExpense, plan: MonthlyPlan | None)
         raufal_amount=raufal_amount,
         comment=expense.comment,
         created_by_user_id=expense.created_by_user_id,
+        source_type=expense.source_type or "manual",
+        manager_id=expense.manager_id,
+        bonus_income_amount=expense.bonus_income_amount,
+        bonus_percent=expense.bonus_percent,
         created_at=expense.created_at,
         updated_at=expense.updated_at,
     )
@@ -176,6 +180,10 @@ def expense_to_read(db: Session, expense: MonthlyExpense) -> MonthlyExpenseRead:
         raufal_amount=raufal_amount,
         comment=expense.comment,
         created_by_user_id=expense.created_by_user_id,
+        source_type=expense.source_type or "manual",
+        manager_id=expense.manager_id,
+        bonus_income_amount=expense.bonus_income_amount,
+        bonus_percent=expense.bonus_percent,
         created_at=expense.created_at,
         updated_at=expense.updated_at,
     )
@@ -195,6 +203,7 @@ def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(
         raufal_amount=raufal_amount,
         comment=payload.comment,
         created_by_user_id=payload.created_by_user_id,
+        source_type="manual",
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -267,6 +276,8 @@ def update_monthly_expense(expense_id: int, payload: MonthlyExpenseUpdate, db: S
     expense = db.get(MonthlyExpense, expense_id)
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
+    if expense.source_type == "manager_bonus":
+        raise HTTPException(status_code=400, detail="Выплаченный бонус нельзя изменить вручную")
 
     new_amount = q(money(payload.amount))
     sanzhar_amount, raufal_amount = calculate_allocation_for_existing_amount(expense, db, new_amount)
@@ -286,6 +297,8 @@ def delete_monthly_expense(expense_id: int, db: Session = Depends(get_db)):
     expense = db.get(MonthlyExpense, expense_id)
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
+    if expense.source_type == "manager_bonus":
+        raise HTTPException(status_code=400, detail="Выплаченный бонус нельзя удалить как обычный расход")
 
     deleted = {
         "id": expense.id,

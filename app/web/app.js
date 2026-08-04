@@ -574,6 +574,79 @@ function injectManagerUxStyles() {
       font-size: 15px !important;
     }
 
+    .manager-bonus-btn {
+      font-size: 15px !important;
+      border-color: rgba(180, 120, 0, .36);
+      background: rgba(255, 184, 0, .12);
+      color: #8a5b00;
+    }
+
+    .manager-bonus-btn:not(:disabled):hover {
+      border-color: rgba(180, 120, 0, .62);
+      background: rgba(255, 184, 0, .22);
+    }
+
+    .manager-bonus-btn:disabled {
+      cursor: not-allowed;
+      opacity: .36;
+      filter: grayscale(.75);
+    }
+
+    .manager-bonus-btn.is-paid {
+      border-color: rgba(18, 140, 64, .34);
+      background: rgba(18, 140, 64, .12);
+      color: #128c40;
+      opacity: .72;
+      filter: none;
+    }
+
+    .manager-bonus-summary {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 13px 14px;
+      border: 1px solid rgba(180, 120, 0, .20);
+      border-radius: 14px;
+      background: rgba(255, 184, 0, .07);
+    }
+
+    .manager-bonus-summary > div {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .manager-bonus-summary span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .manager-bonus-summary strong {
+      text-align: right;
+      font-size: 15px;
+    }
+
+    .manager-bonus-summary .manager-bonus-total strong {
+      color: #8a5b00;
+      font-size: 22px;
+    }
+
+    .closing-bonus-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: rgba(255, 184, 0, .12);
+      color: #8a5b00;
+      font-size: 9px;
+      font-style: normal;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
     @media (max-width: 920px) {
       .manager-admin-actions {
         grid-row: 1;
@@ -6976,7 +7049,7 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   const backdrop = $("eventModalBackdrop");
   if (backdrop) {
     backdrop.classList.add("hidden");
-    backdrop.classList.remove("pin-modal-mode", "profile-modal-mode", "payment-modal-mode", "admin-event-edit-mode", "manager-requests-modal-mode");
+    backdrop.classList.remove("pin-modal-mode", "manager-bonus-modal-mode", "profile-modal-mode", "payment-modal-mode", "admin-event-edit-mode", "manager-requests-modal-mode");
   }
 }
 
@@ -8199,6 +8272,7 @@ function resetEventModalModes() {
       "manager-create-modal",
       "payment-modal-mode",
       "pin-modal-mode",
+      "manager-bonus-modal-mode",
       "profile-modal-mode",
       "manager-requests-modal-mode",
       "admin-event-edit-mode"
@@ -9434,8 +9508,22 @@ async function openEventModal(eventId, options = {}) {
   }
 }
 
+
+function managerBonusPreviewAmount(incomeAmount) {
+  const incomeCents = Math.round(asNumber(incomeAmount) * 100);
+  const scaled = incomeCents * 5;
+  let bonusCents = Math.floor(scaled / 100);
+  const remainder = scaled % 100;
+  if (remainder > 50 || (remainder === 50 && bonusCents % 2 === 1)) bonusCents += 1;
+  return bonusCents / 100;
+}
+
+
 function renderAdminOverview(data) {
   const managers = getOverviewManagers();
+  const bonusesByManagerId = new Map(
+    (data.manager_bonuses || []).map((bonus) => [Number(bonus.manager_id), bonus])
+  );
 
   const managerStats = managers.map((manager) => {
     const events = (data.events || []).filter((event) => Number(event.manager_id) === Number(manager.id));
@@ -9446,6 +9534,9 @@ function renderAdminOverview(data) {
     const percent = plan > 0 ? Math.round((income / plan) * 10000) / 100 : 0;
     const isInactive = !manager.is_active;
     const canRestore = canRestoreManagerInSelectedMonth(manager);
+    const paidBonus = bonusesByManagerId.get(Number(manager.id)) || null;
+    const bonusEligible = plan > 0 && income >= plan;
+    const bonusAmount = paidBonus ? asNumber(paidBonus.bonus_amount) : managerBonusPreviewAmount(income);
 
     return {
       manager,
@@ -9455,6 +9546,9 @@ function renderAdminOverview(data) {
       eventsCount,
       isInactive,
       canRestore,
+      paidBonus,
+      bonusEligible,
+      bonusAmount,
       departmentId: manager.department_id,
       departmentName: departmentNameById(manager.department_id),
     };
@@ -9554,6 +9648,17 @@ function renderAdminOverview(data) {
                         type="button"
                         aria-label="Задать новый PIN для ${escapeHtml(row.manager.name)}"
                       >🔒</button>
+                      <button
+                        class="manager-restore-btn manager-bonus-btn ${row.paidBonus ? "is-paid" : ""}"
+                        data-pay-manager-bonus-id="${row.manager.id}"
+                        data-pay-manager-bonus-name="${escapeHtml(row.manager.name)}"
+                        data-pay-manager-bonus-income="${row.income}"
+                        data-pay-manager-bonus-amount="${row.bonusAmount}"
+                        title="${row.paidBonus ? `Бонус уже выплачен: ${formatMoney(row.bonusAmount)} ₸` : (row.bonusEligible ? "Выплатить бонус" : "Бонус станет доступен после выполнения плана")}"
+                        type="button"
+                        aria-label="Выплатить бонус менеджеру ${escapeHtml(row.manager.name)}"
+                        ${row.bonusEligible && !row.paidBonus ? "" : "disabled"}
+                      >💰</button>
                       <button class="manager-delete-btn" data-delete-manager-id="${row.manager.id}" data-delete-manager-name="${escapeHtml(row.manager.name)}" title="Удалить менеджера" type="button">×</button>
                     </div>
                   `}
@@ -9852,11 +9957,12 @@ function renderClosingExpenseRows(expenses) {
         </thead>
         <tbody>
           ${expenses.map((expense) => {
-            const isEditing = Number(state.closingEditingExpenseId) === Number(expense.id);
+            const isBonus = expense.source_type === "manager_bonus";
+            const isEditing = !isBonus && Number(state.closingEditingExpenseId) === Number(expense.id);
             return `
-              <tr class="${isEditing ? "is-editing" : ""}">
+              <tr class="${isEditing ? "is-editing" : ""} ${isBonus ? "is-manager-bonus" : ""}">
                 <td>
-                  <strong>${escapeHtml(expense.title || "Расход")}</strong>
+                  <strong>${escapeHtml(expense.title || "Расход")}${isBonus ? `<em class="closing-bonus-badge">бонус</em>` : ""}</strong>
                   ${expense.comment ? `<small>${escapeHtml(expense.comment)}</small>` : ""}
                 </td>
                 <td>
@@ -9878,7 +9984,9 @@ function renderClosingExpenseRows(expenses) {
                 <td>${formatMoney(expense.raufal_amount)}</td>
                 <td>
                   <div class="closing-row-actions">
-                    ${isEditing ? `
+                    ${isBonus ? `
+                      <span class="manager-action-placeholder" title="Выплаченный бонус защищён от ручного изменения">🔒</span>
+                    ` : isEditing ? `
                       <button class="closing-icon-btn success" data-save-expense-id="${expense.id}" type="button" title="Сохранить сумму">✓</button>
                       <button class="closing-icon-btn neutral" data-cancel-edit-expense-id="${expense.id}" type="button" title="Отменить редактирование">↺</button>
                     ` : `
@@ -10030,6 +10138,7 @@ function emptyAdminDashboard(month) {
     company_turnover_amount: 0,
     company_vat_to_pay_amount: 0,
     company_tax_to_pay_amount: 0,
+    manager_bonuses: [],
     departments: [],
     events: [],
     payment_requests: [],
@@ -16229,6 +16338,75 @@ function openManagerPinResetModal(managerId, managerName) {
   input?.select();
 }
 
+
+function openManagerBonusModal(managerId, managerName, incomeAmount, bonusAmount) {
+  const id = Number(managerId);
+  if (!Number.isFinite(id) || id <= 0) return;
+
+  const name = String(managerName || "менеджера");
+  const income = asNumber(incomeAmount);
+  const bonus = asNumber(bonusAmount);
+  const bonusMonth = String(state.month || selectedMonthValue());
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  resetEventModalModes();
+  backdrop.classList.add("pin-modal-mode", "manager-bonus-modal-mode");
+  backdrop.classList.remove("hidden");
+
+  const eyebrow = backdrop.querySelector(".modal-head .eyebrow");
+  if (eyebrow) eyebrow.textContent = "Бонус менеджера";
+  title.textContent = `Выплатить бонус — ${name}`;
+
+  content.innerHTML = `
+    <div class="pin-modal-content">
+      <p class="muted">Бонус будет записан расходом в отдел менеджера за ${escapeHtml(monthLabelRu(bonusMonth))}, независимо от даты оплаты.</p>
+      <div class="manager-bonus-summary">
+        <div><span>Доход менеджера</span><strong>${formatMoney(income)} ₸</strong></div>
+        <div><span>Бонус</span><strong>5%</strong></div>
+        <div class="manager-bonus-total"><span>К выплате</span><strong>${formatMoney(bonus)} ₸</strong></div>
+      </div>
+      <div class="modal-actions pin-actions">
+        <button id="adminManagerBonusPayBtn" type="button">Оплатить</button>
+      </div>
+      <div id="adminManagerBonusMessage" class="muted"></div>
+    </div>
+  `;
+
+  const payButton = $("adminManagerBonusPayBtn");
+  const message = $("adminManagerBonusMessage");
+  payButton?.addEventListener("click", async () => {
+    try {
+      setButtonLoading(payButton, true, "Оплачиваем…");
+      if (message) message.textContent = "";
+      const paid = await api(`/manager-bonuses/${id}/pay?month=${encodeURIComponent(bonusMonth)}`, {
+        method: "POST",
+      });
+      state.annualStatisticsCacheByYear = {};
+      state.closingPanelData = null;
+      payButton.disabled = true;
+      payButton.textContent = "Оплачено";
+      if (message) {
+        message.className = "admin-pin-reset-result";
+        message.textContent = `Бонус ${formatMoney(paid.bonus_amount || bonus)} ₸ учтён расходом за ${monthLabelRu(bonusMonth)}.`;
+      }
+      try {
+        await loadDashboard();
+      } catch (refreshError) {
+        console.warn("Бонус выплачен, но обзор не обновился автоматически", refreshError);
+      }
+    } catch (error) {
+      if (message) {
+        message.className = "error";
+        message.textContent = error.message;
+      }
+      setButtonLoading(payButton, false);
+    }
+  });
+}
+
 function attachManagerDeleteButtons() {
   document.querySelectorAll("[data-reset-manager-pin-id]").forEach((button) => {
     if (button.dataset.attached === "1") return;
@@ -16237,6 +16415,21 @@ function attachManagerDeleteButtons() {
       event.preventDefault();
       event.stopPropagation();
       openManagerPinResetModal(button.dataset.resetManagerPinId, button.dataset.resetManagerPinName);
+    });
+  });
+
+  document.querySelectorAll("[data-pay-manager-bonus-id]").forEach((button) => {
+    if (button.dataset.attached === "1" || button.disabled) return;
+    button.dataset.attached = "1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openManagerBonusModal(
+        button.dataset.payManagerBonusId,
+        button.dataset.payManagerBonusName,
+        button.dataset.payManagerBonusIncome,
+        button.dataset.payManagerBonusAmount,
+      );
     });
   });
 
@@ -16969,7 +17162,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.62 loaded");
+  console.info("Contrast Finance web app v0.5.63 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
@@ -17192,6 +17385,7 @@ $("eventModalCloseBtn").addEventListener("click", () => {
   state.adminEventEditModeId = null;
   $("eventModalBackdrop").classList.add("hidden");
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
+  $("eventModalBackdrop").classList.remove("manager-bonus-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
   $("eventModalBackdrop").classList.remove("payment-modal-mode");
   $("eventModalBackdrop").classList.remove("admin-event-edit-mode");

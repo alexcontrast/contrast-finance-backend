@@ -25,6 +25,7 @@ from app.schemas.admin_dashboard import (
     AdminEventRowRead,
     AdminPaymentRequestRowRead,
 )
+from app.schemas.monthly_expense import ManagerBonusRead
 from app.services.event_calculator import calculate_event_summary_values, q, q0
 
 from app.schemas.event import EventRead
@@ -143,6 +144,38 @@ def build_department_expenses_by_name(
         totals["Рауфаль"] += raufal_amount
 
     return {name: q(amount) for name, amount in totals.items()}
+
+
+def build_manager_bonus_reads(
+    expenses: list[MonthlyExpense],
+    user_by_id: dict[int, User],
+    dept_by_id: dict[int, Department],
+) -> list[ManagerBonusRead]:
+    rows: list[ManagerBonusRead] = []
+    for expense in expenses:
+        if expense.source_type != "manager_bonus" or expense.manager_id is None:
+            continue
+        manager = user_by_id.get(expense.manager_id)
+        if manager is None or manager.department_id is None:
+            continue
+        department = dept_by_id.get(manager.department_id)
+        if department is None:
+            continue
+        rows.append(
+            ManagerBonusRead(
+                id=expense.id,
+                month=expense.month,
+                manager_id=manager.id,
+                manager_name=manager.name,
+                department_id=department.id,
+                department_name=department.name,
+                income_amount=q(expense.bonus_income_amount),
+                bonus_percent=q(expense.bonus_percent or Decimal("5.00")),
+                bonus_amount=q(expense.amount),
+                paid_at=expense.created_at,
+            )
+        )
+    return rows
 
 
 def build_closing(closing: MonthlyClosing | None) -> AdminClosingRead:
@@ -290,6 +323,7 @@ def get_admin_dashboard(
         )
     ).scalars().all()
     department_expenses_by_name = build_department_expenses_by_name(monthly_expenses, plan)
+    manager_bonuses = build_manager_bonus_reads(monthly_expenses, user_by_id, dept_by_id)
     mark_perf("base_sql")
 
     event_query = (
@@ -464,6 +498,7 @@ def get_admin_dashboard(
         company_vat_to_pay_amount=monthly_tax_totals["vat_to_pay"],
         company_tax_to_pay_amount=monthly_tax_totals["tax_to_pay"],
         manager_personal_plan_amount=manager_personal_plan_amount(plan),
+        manager_bonuses=manager_bonuses,
         departments=department_rows,
         events=event_rows,
         payment_requests=payment_rows,
@@ -525,6 +560,7 @@ def get_admin_dashboard_bundle(
         )
     ).scalars().all()
     department_expenses_by_name = build_department_expenses_by_name(monthly_expenses, plan)
+    manager_bonuses = build_manager_bonus_reads(monthly_expenses, user_by_id, dept_by_id)
     closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
     mark_perf("base_sql")
 
@@ -716,6 +752,7 @@ def get_admin_dashboard_bundle(
         company_vat_to_pay_amount=monthly_tax_totals["vat_to_pay"],
         company_tax_to_pay_amount=monthly_tax_totals["tax_to_pay"],
         manager_personal_plan_amount=manager_personal_plan_amount(plan),
+        manager_bonuses=manager_bonuses,
         departments=department_rows,
         events=event_rows,
         payment_requests=payment_rows,

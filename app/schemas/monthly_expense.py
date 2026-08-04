@@ -36,6 +36,10 @@ class MonthlyExpenseRead(BaseModel):
     raufal_amount: Decimal
     comment: str | None
     created_by_user_id: int | None
+    source_type: str = "manual"
+    manager_id: int | None = None
+    bonus_income_amount: Decimal | None = None
+    bonus_percent: Decimal | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -46,3 +50,16 @@ class MonthlyExpenseSummaryRead(BaseModel):
     sanzhar_amount: Decimal
     raufal_amount: Decimal
     expenses_count: int
+
+
+class ManagerBonusRead(BaseModel):
+    id: int
+    month: date
+    manager_id: int
+    manager_name: str
+    department_id: int
+    department_name: str
+    income_amount: Decimal
+    bonus_percent: Decimal
+    bonus_amount: Decimal
+    paid_at: datetime
