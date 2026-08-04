@@ -1,20 +1,9 @@
-v0.5.63 changed files
+v0.5.64 changed files
 
-- alembic/versions/0013_manager_bonus.py
-- scripts/start.sh
-- app/main.py
-- app/models/monthly_expense.py
-- app/schemas/monthly_expense.py
-- app/schemas/admin_dashboard.py
-- app/services/manager_bonus.py
 - app/services/google_sheets_archive_export.py
-- app/api/routes/manager_bonuses.py
-- app/api/routes/monthly_expenses.py
-- app/api/routes/admin_dashboard.py
-- app/web/app.js
-- app/web/index.html
+- app/api/routes/google_sheets_export.py
 - CHANGELOG.md
 - README.md
 - app/CHANGED_FILES_README.txt
 
-Deploy normally. Migration 0013_manager_bonus is applied automatically by scripts/start.sh.
+Deploy over v0.5.63. No new migration is required; 0013_manager_bonus remains current.

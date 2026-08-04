@@ -546,6 +546,17 @@ def build_month_export_sections(db: Session, month_date: date) -> dict:
     }
 
 
+def build_year_statistics_sections(db: Session, year: int | str) -> list[dict]:
+    """Build the twelve monthly sections used by annual statistics.
+
+    Keep this public helper as the stable boundary between the API route and
+    the archive service. Some deployed route revisions import this name
+    directly, so removing it makes the whole application fail during startup.
+    """
+    parsed_year = parse_year(year)
+    return [build_month_export_sections(db, date(parsed_year, month_num, 1)) for month_num in range(1, 13)]
+
+
 def build_annual_stats_sheet(year: int, month_sections: list[dict]) -> dict:
     months = [section["annual_month"] for section in month_sections]
     month_keys = [row["month"] for row in months]
