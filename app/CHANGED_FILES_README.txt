@@ -1,9 +1,9 @@
-v0.5.64 changed files
+v0.5.65 changed files
 
-- app/services/google_sheets_archive_export.py
-- app/api/routes/google_sheets_export.py
-- CHANGELOG.md
-- README.md
-- app/CHANGED_FILES_README.txt
+app/api/routes/manager_bonuses.py
+app/api/routes/monthly_closings.py
 
-Deploy over v0.5.63. No new migration is required; 0013_manager_bonus remains current.
+The two route modules are shipped together so manager bonus payment can recalculate
+an already closed month without an import failure.
+
+Deploy over v0.5.64. No new migration is required; 0013_manager_bonus remains current.
