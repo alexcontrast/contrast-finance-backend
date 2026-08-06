@@ -1,14 +1,8 @@
-v0.5.70 changed files
+v0.5.71 changed files
 
-app/api/routes/coordinator.py
 app/api/routes/event_items.py
-app/api/routes/events.py
-app/api/routes/manager_dashboard.py
-app/api/routes/payment_requests.py
+app/api/routes/event_summary.py
 app/api/routes/tax.py
-app/schemas/event.py
-app/schemas/event_item.py
-app/schemas/manager_dashboard.py
 app/schemas/tax.py
 app/services/payment_totals.py
 app/web/app.js
@@ -16,9 +10,8 @@ app/web/index.html
 CHANGELOG.md
 README.md
 
-The manager cabinet now starts from a compact month payload, loads one full
-estimate on demand, protects event/item revisions across browsers, serializes
-autosave and manual saves, and makes temporary row creation idempotent and
-atomic. Live sync covers item, KGD, coordinator and payment-request changes.
+Fixes false same-browser estimate conflicts, keeps read endpoints revision-neutral,
+refreshes event/item revisions after side effects, deduplicates temporary rows,
+prevents blank-row leakage, and makes row reordering stable in manager and admin editors.
 
-Deploy over v0.5.69. No migration is required.
+Deploy over v0.5-2.70. No migration is required.

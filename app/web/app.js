@@ -5885,7 +5885,6 @@ const state = {
   managerDraftBaseUpdatedAtByEventId: {},
   managerDraftAutosaveByEventId: {},
   managerDraftAutosaveTimersByEventId: {},
-  managerDraftTempSeq: 1,
   adminEventEditModeId: null,
   adminManualTaxOverrideByEventId: {},
   adminData: null,
@@ -6718,7 +6717,9 @@ function sortItemsCoordinatorFirst(items) {
     if (aCoord && !bCoord) return -1;
     if (!aCoord && bCoord) return 1;
 
-    return Number(a.sort_order || a.id || 0) - Number(b.sort_order || b.id || 0);
+    const orderDelta = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+    if (orderDelta !== 0) return orderDelta;
+    return String(a.id ?? "").localeCompare(String(b.id ?? ""), "ru", { numeric: true });
   });
 }
 
@@ -9265,13 +9266,10 @@ async function openAdminEventEditMode(eventId) {
     // но backend потом отклонял DELETE из-за активных заявок, и весь save падал.
     state.managerPaymentRequests = requests || [];
 
-    let draftEvent = getDraftEvent(event);
+    const freshDraft = resetManagerDraftFromServer(eventId, event, items || []);
+    let draftEvent = freshDraft.event;
     state.currentManagerEvent = draftEvent;
-    let draftItems = getDraftItems(eventId, items || []);
-    if (restoreManagerAutosaveSnapshot(eventId)) {
-      draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent || draftEvent;
-      draftItems = getDraftItems(eventId, items || []);
-    }
+    let draftItems = freshDraft.items;
     const previewSummary = calculateDraftSummaryPreview(draftItems, draftEvent, summary);
     state.currentManagerSummary = previewSummary;
     state.currentManagerItems = draftItems;
@@ -9293,6 +9291,10 @@ async function closeAdminEventEditMode(eventId, reloadModal = true) {
     delete state.managerDraftEventsById[key];
     delete state.managerDraftItemsByEventId[key];
     delete state.managerDraftDeletedByEventId[key];
+    delete state.managerDraftBaseUpdatedAtByEventId[key];
+    delete state.managerDraftDirtyByEventId[key];
+    delete state.managerDraftGenerationByEventId[key];
+    window.clearTimeout(state.managerDraftAutosaveTimersByEventId?.[key]);
   }
   if (key && state.adminManualTaxOverrideByEventId) delete state.adminManualTaxOverrideByEventId[key];
   state.adminEventEditModeId = null;
@@ -9487,6 +9489,7 @@ function patchEventInDashboardBundleCache(updatedEvent) {
 function patchEventState(updatedEvent, options = {}) {
   if (!updatedEvent?.id) return null;
   const eventId = String(updatedEvent.id);
+  if (updatedEvent.updated_at) applyDraftEventRevision(updatedEvent.id, updatedEvent.updated_at);
 
   patchEventInList(state.adminData?.events, updatedEvent);
   patchEventInList(state.departmentHeadData?.events, updatedEvent);
@@ -11739,7 +11742,7 @@ function cloneItem(item) {
 function resetManagerDraftFromServer(eventId, event, items = []) {
   const key = draftKeyForEvent(eventId);
   const eventCopy = JSON.parse(JSON.stringify(event || {}));
-  const itemCopies = ensureCoordinator((items || []).map(cloneItem)).map(cloneItem);
+  const itemCopies = sanitizeDraftItems(ensureCoordinator((items || []).map(cloneItem)).map(cloneItem), { dropBlankTemps: true });
   itemCopies.forEach((item) => {
     if (!item.is_temp && !String(item.id || "").startsWith("tmp-")) markDraftItemSaved(item);
   });
@@ -11765,6 +11768,83 @@ function generateDraftItemCreateToken() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function generateDraftTempId(prefix = "tmp") {
+  return `${prefix}-${generateDraftItemCreateToken()}`;
+}
+
+function sanitizeDraftItems(items, options = {}) {
+  const dropBlankTemps = Boolean(options.dropBlankTemps);
+  const result = [];
+  const persistedIndexes = new Map();
+  const tempTokenIndexes = new Map();
+  const usedDomIds = new Set();
+  let coordinatorIndex = -1;
+
+  (items || []).forEach((candidate) => {
+    if (!candidate) return;
+    const item = candidate;
+    const isTemporary = Boolean(item.is_temp) || String(item.id || "").startsWith("tmp-");
+    if (dropBlankTemps && isBlankTemporaryDraftItem(item)) return;
+
+    if (item.item_type === "coordinator") {
+      if (coordinatorIndex >= 0) {
+        const current = result[coordinatorIndex];
+        const currentIsTemporary = Boolean(current?.is_temp) || String(current?.id || "").startsWith("tmp-");
+        if (currentIsTemporary && !isTemporary) result[coordinatorIndex] = item;
+        return;
+      }
+      coordinatorIndex = result.length;
+    }
+
+    if (!isTemporary) {
+      const persistedKey = String(item.id || "");
+      if (persistedKey && persistedIndexes.has(persistedKey)) {
+        const index = persistedIndexes.get(persistedKey);
+        const existing = result[index];
+        const existingVersion = asNumber(existing?.__edit_version);
+        const nextVersion = asNumber(item.__edit_version);
+        if (nextVersion >= existingVersion) result[index] = item;
+        return;
+      }
+      if (persistedKey) persistedIndexes.set(persistedKey, result.length);
+    } else {
+      const token = ensureDraftItemCreateToken(item);
+      if (token && tempTokenIndexes.has(token)) {
+        const index = tempTokenIndexes.get(token);
+        const existing = result[index];
+        if (asNumber(item.__edit_version) >= asNumber(existing?.__edit_version)) result[index] = item;
+        return;
+      }
+      if (token) tempTokenIndexes.set(token, result.length);
+
+      let domId = String(item.id || "");
+      if (!domId || usedDomIds.has(domId)) {
+        domId = generateDraftTempId(item.item_type === "coordinator" ? "tmp-coordinator" : "tmp");
+        item.id = domId;
+      }
+    }
+
+    let domId = String(item.id || "");
+    if (usedDomIds.has(domId)) {
+      domId = generateDraftTempId(item.item_type === "coordinator" ? "tmp-coordinator" : "tmp");
+      item.id = domId;
+    }
+    usedDomIds.add(domId);
+    result.push(item);
+  });
+
+  return result;
+}
+
+function compactDraftItems(eventId, options = {}) {
+  const key = draftKeyForEvent(eventId);
+  const current = state.managerDraftItemsByEventId?.[key] || [];
+  const compacted = sanitizeDraftItems(current, options);
+  state.managerDraftItemsByEventId[key] = compacted;
+  if (Number(state.selectedManagerEventId) === Number(eventId)) state.currentManagerItems = compacted;
+  return compacted;
+}
+
 function ensureDraftItemCreateToken(item) {
   if (!item) return null;
   const isTemporary = item.is_temp || String(item.id || "").startsWith("tmp-");
@@ -11780,7 +11860,7 @@ function ensureCoordinator(items) {
   if (existing) return items;
 
   return [{
-    id: `tmp-coordinator-${Date.now()}`,
+    id: generateDraftTempId("tmp-coordinator"),
     is_temp: true,
     __client_create_token: generateDraftItemCreateToken(),
     item_type: "coordinator",
@@ -11808,7 +11888,9 @@ function getDraftItems(eventId, sourceItems = null) {
   if (!state.managerDraftItemsByEventId) state.managerDraftItemsByEventId = {};
   if (!state.managerDraftDeletedByEventId) state.managerDraftDeletedByEventId = {};
   if (!state.managerDraftItemsByEventId[key]) {
-    state.managerDraftItemsByEventId[key] = ensureCoordinator(sourceItems || []).map(cloneItem);
+    state.managerDraftItemsByEventId[key] = sanitizeDraftItems(ensureCoordinator(sourceItems || []).map(cloneItem));
+  } else {
+    state.managerDraftItemsByEventId[key] = sanitizeDraftItems(state.managerDraftItemsByEventId[key]);
   }
   return state.managerDraftItemsByEventId[key];
 }
@@ -11934,6 +12016,17 @@ function attachDraftEventInputs(eventId) {
   });
 }
 
+function applyDraftEventRevision(eventId, updatedAt) {
+  if (!eventId || !updatedAt) return;
+  const key = String(eventId);
+  state.managerDraftBaseUpdatedAtByEventId[key] = updatedAt;
+  const draftEvent = state.managerDraftEventsById?.[key];
+  if (draftEvent) draftEvent.updated_at = updatedAt;
+  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
+    state.currentManagerEvent.updated_at = updatedAt;
+  }
+}
+
 function eventPayloadForSave(draftEvent) {
   return {
     client_name: draftEvent.client_name,
@@ -11980,8 +12073,7 @@ async function saveDraftEvent(eventId, options = {}) {
   });
 
   if (savedEvent) {
-    state.managerDraftBaseUpdatedAtByEventId[String(eventId)] = savedEvent.updated_at || null;
-    draftEvent.updated_at = savedEvent.updated_at || draftEvent.updated_at;
+    applyDraftEventRevision(eventId, savedEvent.updated_at || draftEvent.updated_at);
     if (asNumber(draftEvent.__edit_version) === editVersionAtRequest) {
       delete draftEvent.__dirty_after_save;
       state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
@@ -12162,7 +12254,7 @@ function snapshotManagerDraftForAutosave(eventId) {
     savedAt: Date.now(),
     baseUpdatedAt: state.managerDraftBaseUpdatedAtByEventId?.[String(eventId)] || draftEvent.updated_at || null,
     event: JSON.parse(JSON.stringify(draftEvent)),
-    items: JSON.parse(JSON.stringify(getDraftItems(eventId))),
+    items: JSON.parse(JSON.stringify(sanitizeDraftItems(getDraftItems(eventId), { dropBlankTemps: true }))),
     deletedIds: JSON.parse(JSON.stringify(getDraftDeletedIds(eventId))),
   };
 }
@@ -12230,7 +12322,7 @@ function restoreManagerAutosaveSnapshot(eventId, serverEvent = null, serverItems
 
   state.managerDraftEventsById[String(eventId)] = snapshot.event;
   state.currentManagerEvent = { ...(state.currentManagerEvent || {}), ...snapshot.event };
-  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = snapshot.items;
+  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = sanitizeDraftItems(snapshot.items, { dropBlankTemps: true });
   state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = Array.isArray(snapshot.deletedIds) ? snapshot.deletedIds : [];
   state.managerDraftDirtyByEventId[String(eventId)] = true;
   state.managerDraftGenerationByEventId[String(eventId)] = Math.max(1, asNumber(state.managerDraftGenerationByEventId[String(eventId)]));
@@ -12239,12 +12331,16 @@ function restoreManagerAutosaveSnapshot(eventId, serverEvent = null, serverItems
 }
 
 function markManagerDraftChanged(eventId) {
-  if (!managerAutosaveAllowed(eventId)) return;
+  if (!eventId) return;
+  const draftEvent = state.managerDraftEventsById?.[String(eventId)] || state.currentManagerEvent;
+  if (!canEditManagerEvent(draftEvent)) return;
   const key = String(eventId);
   state.managerDraftDirtyByEventId[key] = true;
   state.managerDraftGenerationByEventId[key] = asNumber(state.managerDraftGenerationByEventId[key]) + 1;
-  storeManagerAutosaveSnapshot(eventId);
-  scheduleManagerDraftAutosave(eventId);
+  if (managerAutosaveAllowed(eventId)) {
+    storeManagerAutosaveSnapshot(eventId);
+    scheduleManagerDraftAutosave(eventId);
+  }
 }
 
 function scheduleManagerDraftAutosave(eventId, delay = 1800) {
@@ -12271,12 +12367,7 @@ function runManagerDraftSaveSerial(eventId, task) {
 async function refreshManagerEventRevision(eventId) {
   const freshEvent = await api(`/events/${eventId}?_=${Date.now()}`);
   const key = String(eventId);
-  state.managerDraftBaseUpdatedAtByEventId[key] = freshEvent.updated_at || null;
-  const draftEvent = state.managerDraftEventsById?.[key];
-  if (draftEvent) draftEvent.updated_at = freshEvent.updated_at || draftEvent.updated_at;
-  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
-    state.currentManagerEvent.updated_at = freshEvent.updated_at || state.currentManagerEvent.updated_at;
-  }
+  applyDraftEventRevision(eventId, freshEvent.updated_at || null);
   const payload = state.managerEventPayloadById?.[key];
   if (payload?.event) Object.assign(payload.event, freshEvent);
   return freshEvent;
@@ -12562,6 +12653,7 @@ function internalFactDisplayValue(item) {
 
 function draggableHandle(item) {
   if (item.item_type === "coordinator") return `<span class="drag-handle muted" title="Координатор всегда первый">↕</span>`;
+  if (isBlankTemporaryDraftItem(item)) return `<span class="drag-handle muted" title="Сначала заполни позицию">↕</span>`;
   return `<span class="drag-handle" draggable="true" data-drag-item="${item.id}" title="Перетащить строку">↕</span>`;
 }
 
@@ -12588,9 +12680,12 @@ function syncAllVisibleDraftRows(eventId) {
 }
 
 function addDraftRegularPosition(eventId) {
-  const items = getDraftItems(eventId);
-  items.push({
-    id: `tmp-${state.managerDraftTempSeq++}`,
+  const items = compactDraftItems(eventId);
+  const existingBlank = items.find((item) => isBlankTemporaryDraftItem(item));
+  if (existingBlank) return existingBlank;
+
+  const item = {
+    id: generateDraftTempId("tmp"),
     is_temp: true,
     __client_create_token: generateDraftItemCreateToken(),
     item_type: "regular",
@@ -12610,7 +12705,16 @@ function addDraftRegularPosition(eventId) {
     deduction_amount: 0,
     internal_note: null,
     sort_order: items.length,
-  });
+  };
+  items.push(item);
+  return item;
+}
+
+function focusDraftItemNameSoon(itemId) {
+  if (!itemId) return;
+  window.setTimeout(() => {
+    document.querySelector(`[data-item-field="external_name"][data-item-id="${String(itemId)}"]`)?.focus();
+  }, 0);
 }
 
 function isBlankTemporaryDraftItem(item) {
@@ -12628,24 +12732,57 @@ function isBlankTemporaryDraftItem(item) {
     && !String(item.internal_note || "").trim();
 }
 
-function moveDraftItem(eventId, fromId, toId) {
-  if (!fromId || !toId || String(fromId) === String(toId)) return;
-  const items = getDraftItems(eventId);
+function moveDraftItem(eventId, fromId, toId, placement = "before") {
+  if (!fromId || !toId || String(fromId) === String(toId)) return false;
+  const items = compactDraftItems(eventId);
   const fromIndex = items.findIndex((item) => String(item.id) === String(fromId));
   const toIndex = items.findIndex((item) => String(item.id) === String(toId));
-  if (fromIndex < 0 || toIndex < 0) return;
+  if (fromIndex < 0 || toIndex < 0) return false;
 
   const moving = items[fromIndex];
   const target = items[toIndex];
-  if (moving.item_type === "coordinator" || target.item_type === "coordinator") return;
+  if (moving.item_type === "coordinator" || isBlankTemporaryDraftItem(moving)) return false;
+
+  const beforeSequence = items
+    .filter((item) => item.item_type !== "coordinator" && !isBlankTemporaryDraftItem(item))
+    .map((item) => String(item.id));
 
   items.splice(fromIndex, 1);
-  const newToIndex = items.findIndex((item) => String(item.id) === String(toId));
-  items.splice(newToIndex, 0, moving);
+  let insertIndex = items.findIndex((item) => String(item.id) === String(toId));
+  if (insertIndex < 0) return false;
 
-  items.forEach((item, index) => {
-    item.sort_order = item.item_type === "coordinator" ? -100 : index;
+  // Dropping onto the coordinator means “make this the first ordinary row”.
+  // A blank temporary row always stays at the bottom and can be used as an
+  // end-of-list drop target without itself being persisted or moved.
+  if (target.item_type === "coordinator") {
+    insertIndex += 1;
+  } else if (isBlankTemporaryDraftItem(target)) {
+    // insert before the blank editor row
+  } else if (placement === "after") {
+    insertIndex += 1;
+  }
+  items.splice(insertIndex, 0, moving);
+
+  const coordinatorItems = items.filter((item) => item.item_type === "coordinator");
+  const regularItems = items.filter((item) => item.item_type !== "coordinator" && !isBlankTemporaryDraftItem(item));
+  const blankItems = items.filter((item) => isBlankTemporaryDraftItem(item));
+  const normalizedItems = [...coordinatorItems, ...regularItems, ...blankItems];
+  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = normalizedItems;
+  if (Number(state.selectedManagerEventId) === Number(eventId)) state.currentManagerItems = normalizedItems;
+
+  const afterSequence = regularItems.map((item) => String(item.id));
+  const changed = beforeSequence.join("|") !== afterSequence.join("|");
+  normalizedItems.forEach((item, index) => {
+    const nextOrder = item.item_type === "coordinator"
+      ? -100
+      : (isBlankTemporaryDraftItem(item) ? regularItems.length + 1000 : regularItems.indexOf(item));
+    if (Number(item.sort_order ?? 0) !== nextOrder && !isBlankTemporaryDraftItem(item)) {
+      item.__edit_version = asNumber(item.__edit_version) + 1;
+      item.__dirty_after_save = true;
+    }
+    item.sort_order = nextOrder;
   });
+  return changed;
 }
 
 function tableFocusableCells() {
@@ -12766,11 +12903,14 @@ function attachEstimateDragAndDrop() {
   document.querySelectorAll("tr[data-event-item-row]").forEach((row) => {
     row.addEventListener("dragover", (event) => {
       event.preventDefault();
+      const rect = row.getBoundingClientRect();
+      row.dataset.dropPlacement = event.clientY > rect.top + rect.height / 2 ? "after" : "before";
       row.classList.add("drag-over-row");
     });
 
     row.addEventListener("dragleave", () => {
       row.classList.remove("drag-over-row");
+      delete row.dataset.dropPlacement;
     });
 
     row.addEventListener("drop", (event) => {
@@ -12778,10 +12918,17 @@ function attachEstimateDragAndDrop() {
       row.classList.remove("drag-over-row");
       const fromId = event.dataTransfer.getData("text/plain");
       const toId = row.getAttribute("data-event-item-row");
+      const placement = row.dataset.dropPlacement || "before";
+      delete row.dataset.dropPlacement;
       syncAllVisibleDraftRows(state.selectedManagerEventId);
-      moveDraftItem(state.selectedManagerEventId, fromId, toId);
-      markManagerDraftChanged(state.selectedManagerEventId);
-      renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+      if (moveDraftItem(state.selectedManagerEventId, fromId, toId, placement)) {
+        markManagerDraftChanged(state.selectedManagerEventId);
+        if (isAdminEditingCurrentEvent()) {
+          rerenderCurrentManagerCard();
+        } else {
+          renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
+        }
+      }
     });
   });
 }
@@ -13289,9 +13436,11 @@ function draftItemSaveOperationKey(eventId, item) {
 async function performSingleDraftItemSave(eventId, item, options = {}) {
   if (!item) throw new Error("Не выбрана позиция");
 
-  const items = getDraftItems(eventId);
-  items.forEach((candidate, index) => {
-    candidate.sort_order = candidate.item_type === "coordinator" ? -100 : index;
+  const items = compactDraftItems(eventId);
+  const saveableItems = items.filter((candidate) => !isBlankTemporaryDraftItem(candidate));
+  let regularOrder = 0;
+  saveableItems.forEach((candidate) => {
+    candidate.sort_order = candidate.item_type === "coordinator" ? -100 : regularOrder++;
   });
 
   const payload = itemPayloadForSave(item);
@@ -13365,10 +13514,13 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
   }
 }
 
-async function saveDraftItems(eventId) {
-  const items = getDraftItems(eventId);
-  items.forEach((item, index) => {
-    item.sort_order = item.item_type === "coordinator" ? -100 : index;
+async function saveDraftItems(eventId, options = {}) {
+  const pruneBlankTemps = Boolean(options.pruneBlankTemps);
+  const items = compactDraftItems(eventId);
+  const saveableItems = items.filter((item) => !isBlankTemporaryDraftItem(item));
+  let regularOrder = 0;
+  saveableItems.forEach((item) => {
+    item.sort_order = item.item_type === "coordinator" ? -100 : regularOrder++;
   });
   const deletedIds = getDraftDeletedIds(eventId);
 
@@ -13384,18 +13536,29 @@ async function saveDraftItems(eventId) {
       })]
     : [];
 
-  const saveTasks = items
-    .filter((item) => !isBlankTemporaryDraftItem(item))
+  const saveTasks = saveableItems
     .filter((item) => itemNeedsSave(eventId, item))
     .map((item) => saveSingleDraftItem(eventId, item, { force: true }));
 
-  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${persistedDeletedIds.length} delete_requests=${deleteTasks.length} total=${items.length}`);
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-draft-items-delta event=${eventId} changed=${saveTasks.length} deleted=${persistedDeletedIds.length} delete_requests=${deleteTasks.length} total=${saveableItems.length}`);
 
   await Promise.all([...deleteTasks, ...saveTasks]);
 
   state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = [];
-  patchManagerEventPayloadItems(eventId, items);
-  return items;
+  let currentItems = compactDraftItems(eventId);
+  if (pruneBlankTemps) {
+    currentItems = compactDraftItems(eventId, { dropBlankTemps: true });
+  } else {
+    const ordinaryItems = currentItems.filter((item) => item.item_type !== "coordinator" && !isBlankTemporaryDraftItem(item));
+    currentItems.filter((item) => isBlankTemporaryDraftItem(item)).forEach((item, index) => {
+      item.sort_order = ordinaryItems.length + 1000 + index;
+    });
+  }
+
+  // Browser-only blank editor rows must never leak into the server payload
+  // cache; otherwise reopening the estimate can resurrect a ghost row.
+  patchManagerEventPayloadItems(eventId, currentItems.filter((item) => !isBlankTemporaryDraftItem(item)));
+  return currentItems;
 }
 
 async function addExternalPosition(eventId) {
@@ -13606,6 +13769,7 @@ async function checkTaxForItem(itemId) {
       result = combined.taxResult;
     } else {
       await timedAction("kgd-estimate-item-save", () => saveSingleDraftItem(state.selectedManagerEventId, item, { force: false }));
+      await refreshManagerEventRevision(state.selectedManagerEventId);
 
       if (String(item.id).startsWith("tmp-")) {
         throw new Error("Не удалось сохранить позицию перед проверкой КГД");
@@ -14371,7 +14535,7 @@ function createDraftItemFromPaymentModal(eventId, method) {
   if (!amount || amount <= 0) throw new Error("Укажи сумму новой позиции");
 
   const items = getDraftItems(eventId);
-  const tempId = `tmp-pay-${Date.now()}`;
+  const tempId = generateDraftTempId("tmp-pay");
 
   const item = {
     id: tempId,
@@ -14632,8 +14796,14 @@ function applyTaxResultToDraftItem(item, taxResult, fallbackBin = null) {
   item.vat_amount = taxResult.vat_amount || 0;
   item.deduction_amount = taxResult.deduction_amount || 0;
   item.payment_method = "invoice";
+  if (taxResult.updated_at) item.updated_at = taxResult.updated_at;
+  if (taxResult.event_updated_at) {
+    const eventId = Number(item.event_id || state.selectedManagerEventId || 0);
+    applyDraftEventRevision(eventId, taxResult.event_updated_at);
+  }
   if (taxResult.contractor_name || taxResult.name) item.contractor_name = taxResult.contractor_name || taxResult.name;
   item.__tax_checked_backend_synced = true;
+  delete item.__dirty_after_save;
   markDraftItemSaved(item);
   return item;
 }
@@ -14724,6 +14894,7 @@ async function checkPaymentInvoiceBin(eventId) {
     item.tax_check_status = null;
 
     await timedAction("kgd-payment-persist-item", () => saveSingleDraftItem(eventId, item, { force: false }));
+    await refreshManagerEventRevision(eventId);
 
     taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
       method: "POST",
@@ -14797,6 +14968,7 @@ function managerMonthCacheRecord(month = state.month) {
 function patchManagerEventLocal(eventId, patch = {}) {
   const id = Number(eventId);
   if (!id || !patch) return;
+  if (patch.updated_at) applyDraftEventRevision(id, patch.updated_at);
 
   if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === id) {
     state.currentManagerEvent = { ...state.currentManagerEvent, ...patch };
@@ -14817,7 +14989,9 @@ function patchManagerEventLocal(eventId, patch = {}) {
 
 function patchManagerEventPayloadItems(eventId, items) {
   const id = String(eventId);
-  const clonedItems = (items || []).map(cloneItem);
+  const clonedItems = (items || [])
+    .filter((item) => !isBlankTemporaryDraftItem(item))
+    .map(cloneItem);
 
   const payload = state.managerEventPayloadById?.[id];
   if (payload) payload.items = clonedItems.map(cloneItem);
@@ -14890,6 +15064,7 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
   setButtonLoading(button, true, targetStatus === "review" ? "Отправляем…" : "Сохраняем…");
   window.clearTimeout(state.managerDraftAutosaveTimersByEventId?.[String(eventId)]);
   try {
+    syncAllVisibleDraftRows(eventId);
     await runManagerDraftSaveSerial(eventId, async () => {
       const key = String(eventId);
       const generationAtStart = asNumber(state.managerDraftGenerationByEventId?.[key]);
@@ -14906,7 +15081,7 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
       patchManagerEventLocal(eventId, draftSavedEvent || draftEvent);
 
       stage = "сохранение позиций сметы";
-      await timedAction(`manager-${targetStatus}-items-save`, () => saveDraftItems(eventId));
+      await timedAction(`manager-${targetStatus}-items-save`, () => saveDraftItems(eventId, { pruneBlankTemps: true }));
       await refreshManagerEventRevision(eventId);
 
       const changedDuringSave = asNumber(state.managerDraftGenerationByEventId?.[key]) !== generationAtStart;
@@ -14956,7 +15131,11 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
 async function persistItemBeforePayment(eventId, item) {
   // Для создания заявки сохраняем только выбранную позицию.
   // Старый вариант сохранял всю смету и из-за этого создание оплаты могло тянуться долго.
-  return saveSingleDraftItem(eventId, item, { force: true });
+  const savedItem = await saveSingleDraftItem(eventId, item, { force: true });
+  // Сохранение одной позиции меняет revision всего мероприятия. Обновляем базу
+  // сразу, чтобы даже ошибка следующего шага (КГД/заявка) не оставила вкладку stale.
+  await refreshManagerEventRevision(eventId);
+  return savedItem;
 }
 
 function invoicePaymentItemNeedsPersist(eventId, item) {
@@ -15057,6 +15236,21 @@ async function prepareSimplePaymentItem(eventId, item, method) {
   return item;
 }
 
+async function refreshDraftRevisionsAfterExternalMutation(eventId, itemId = null) {
+  const tasks = [refreshManagerEventRevision(eventId)];
+  if (itemId && !String(itemId).startsWith("tmp-")) {
+    tasks.push(api(`/event-items/${itemId}?_=${Date.now()}`).then((freshItem) => {
+      const item = getDraftItems(eventId).find((candidate) => Number(candidate.id) === Number(itemId));
+      if (!item || !freshItem) return;
+      item.updated_at = freshItem.updated_at || item.updated_at;
+      item.paid_amount = freshItem.paid_amount ?? item.paid_amount;
+      markDraftItemSaved(item);
+      patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+    }));
+  }
+  await Promise.all(tasks);
+}
+
 async function submitManagerPayment(eventId) {
   const message = $("paymentMessage");
   const button = $("paymentCreateBtn");
@@ -15135,6 +15329,7 @@ async function submitManagerPayment(eventId) {
     }
 
     patchManagerPaymentRequestCreated(eventId, createdRequest);
+    await refreshDraftRevisionsAfterExternalMutation(eventId, item?.id || null);
     updateCurrentManagerMiniCardLive();
 
     $("eventModalBackdrop")?.classList.add("hidden");
@@ -15205,8 +15400,13 @@ function attachManagerCreateWorkspaceActions() {
 
       try {
         await withLoading(async () => {
-          await saveDraftEvent(eventId);
-          await saveDraftItems(eventId);
+          syncAllVisibleDraftRows(eventId);
+          await runManagerDraftSaveSerial(eventId, async () => {
+            await saveDraftEvent(eventId, { force: true });
+            await saveDraftItems(eventId, { pruneBlankTemps: true });
+            await refreshManagerEventRevision(eventId);
+            state.managerDraftDirtyByEventId[String(eventId)] = false;
+          });
           showToast("Изменения сохранены");
           await closeAdminEventEditMode(eventId, false);
           if (state.eventModalPayloadById) delete state.eventModalPayloadById[String(eventId)];
@@ -15282,13 +15482,14 @@ function attachManagerCreateWorkspaceActions() {
     button.addEventListener("click", () => {
       if (!canEditManagerEvent(state.currentManagerEvent)) return;
       syncAllVisibleDraftRows(state.selectedManagerEventId);
-      addDraftRegularPosition(state.selectedManagerEventId);
+      const addedItem = addDraftRegularPosition(state.selectedManagerEventId);
       markManagerDraftChanged(state.selectedManagerEventId);
       if (isAdminEditMode) {
         rerenderCurrentManagerCard();
       } else {
         renderManagerEventDetail(state.selectedManagerEventId, { useDraft: true, noLoading: true });
       }
+      focusDraftItemNameSoon(addedItem?.id);
     });
   });
 
@@ -17435,7 +17636,7 @@ function morphLiveNode(current, next) {
 function managerEventHasLocalUnsavedChanges(eventId) {
   const key = String(eventId || '');
   const record = state.managerDraftAutosaveByEventId?.[key];
-  if (record?.saving || record?.pending) return true;
+  if (state.managerDraftDirtyByEventId?.[key] || record?.saving || record?.pending) return true;
   try {
     return Boolean(localStorage.getItem(managerAutosaveStorageKey(eventId)));
   } catch (_error) {
@@ -17846,7 +18047,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.70 loaded");
+  console.info("Contrast Finance web app v0.5.71 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

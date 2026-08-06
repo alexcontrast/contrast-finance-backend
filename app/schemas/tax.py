@@ -23,5 +23,7 @@ class TaxResult(BaseModel):
     tax_check_status: str | None
     vat_amount: Decimal
     deduction_amount: Decimal
+    updated_at: datetime
+    event_updated_at: datetime
     source: str
     message: str

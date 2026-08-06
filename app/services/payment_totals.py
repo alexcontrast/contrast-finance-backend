@@ -1,10 +1,9 @@
-from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
-from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
 
@@ -40,9 +39,11 @@ def sync_item_paid_amount_from_requests(db: Session, item_id: int) -> EventItem 
 
 
 def sync_event_paid_amounts_from_requests(db: Session, event_id: int) -> None:
-    """
-    Repairs/refreshes all paid_amount values for one event before rendering
-    estimates and summaries.
+    """Refresh paid totals in memory for a GET response without writing revisions.
+
+    ``paid_amount`` is derived from paid payment requests. A read endpoint must not
+    update Event/EventItem rows: doing so changed ``event.updated_at`` while the
+    editor was opening and made the same browser look like a concurrent browser.
     """
     items = db.execute(
         select(EventItem).where(
@@ -69,17 +70,5 @@ def sync_event_paid_amounts_from_requests(db: Session, event_id: int) -> None:
         ).all()
     )
 
-    changed = False
     for item in items:
-        actual = money(totals.get(item.id, Decimal("0.00")))
-        if money(item.paid_amount) != actual:
-            item.paid_amount = actual
-            db.add(item)
-            changed = True
-
-    if changed:
-        event = db.get(Event, int(event_id))
-        if event is not None:
-            event.updated_at = datetime.utcnow()
-            db.add(event)
-        db.flush()
+        set_committed_value(item, "paid_amount", money(totals.get(item.id, Decimal("0.00"))))

@@ -31,7 +31,6 @@ def get_event_summary(
     require_event_view(current_user, event, db)
 
     sync_event_paid_amounts_from_requests(db, event_id)
-    db.commit()
 
     result = db.execute(
         select(EventItem)

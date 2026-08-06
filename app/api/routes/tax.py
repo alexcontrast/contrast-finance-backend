@@ -364,6 +364,7 @@ def check_event_item_tax(
     )
     mark_perf("audit")
 
+    event.updated_at = datetime.utcnow()
     result_payload = TaxResult(
         item_id=item.id,
         iin_bin=item.iin_bin,
@@ -371,12 +372,13 @@ def check_event_item_tax(
         tax_check_status=item.tax_check_status,
         vat_amount=item.vat_amount,
         deduction_amount=item.deduction_amount,
+        updated_at=item.updated_at,
+        event_updated_at=event.updated_at,
         source=kgd_result.source,
         message=kgd_result.message,
     )
 
     db.add(item)
-    event.updated_at = datetime.utcnow()
     db.add(event)
     db.commit()
     mark_perf("commit")
@@ -593,6 +595,8 @@ def set_event_item_tax_manual(
         tax_check_status=item.tax_check_status,
         vat_amount=item.vat_amount,
         deduction_amount=item.deduction_amount,
+        updated_at=item.updated_at,
+        event_updated_at=event.updated_at if event is not None else item.updated_at,
         source="manual",
         message="Налоговый режим проставлен вручную админом",
     )
