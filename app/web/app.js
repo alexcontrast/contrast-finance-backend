@@ -14573,22 +14573,38 @@ async function materializePaymentItemIfNeeded(eventId, item, method, initialPatc
   if (initialPatch && typeof initialPatch === "object") {
     Object.assign(created, initialPatch);
   }
-  await persistItemBeforePayment(eventId, created);
 
-  const items = getDraftItems(eventId);
-  const materialized = items.find((candidate) => String(candidate.external_name) === String(created.external_name) && !String(candidate.id).startsWith("tmp-")) || created;
+  // A payment-created factual expense is not an ordinary estimate edit. Use
+  // the narrow backend route so it remains possible on review/accepted events
+  // without reopening the whole estimate for editing.
+  const materialized = await timedApi("manager-payment-create-item-api", `/events/${eventId}/payment-items`, {
+    method: "POST",
+    body: JSON.stringify({
+      external_name: created.external_name,
+      amount_fact: asNumber(created.amount_fact),
+      payment_method: method || created.payment_method || "cash",
+    }),
+  });
+
+  Object.assign(created, materialized || {}, {
+    is_temp: false,
+    is_new_payment_position: false,
+  });
+  markDraftItemSaved(created);
+  patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+  await refreshManagerEventRevision(eventId);
 
   const select = $("paymentItemSelect");
-  if (select && materialized?.id) {
+  if (select && created?.id) {
     const option = document.createElement("option");
-    option.value = String(materialized.id);
-    option.textContent = paymentPositionLabel(materialized);
+    option.value = String(created.id);
+    option.textContent = paymentPositionLabel(created);
     const newOption = [...select.options].find((candidate) => candidate.value === "__new_position");
     select.insertBefore(option, newOption || null);
-    select.value = String(materialized.id);
+    select.value = String(created.id);
   }
 
-  return materialized;
+  return created;
 }
 
 
@@ -14824,7 +14840,7 @@ function ensurePaymentSelectOptionForItem(item) {
   select.value = itemId;
 }
 
-async function createDraftItemAndCheckTax(eventId, item, normalizedBin, perfLabel) {
+async function createDraftItemAndCheckTax(eventId, item, normalizedBin, perfLabel, paymentContext = false) {
   if (!item) throw new Error("Не выбрана позиция");
   item.payment_method = "invoice";
   item.iin_bin = normalizedBin;
@@ -14838,6 +14854,7 @@ async function createDraftItemAndCheckTax(eventId, item, normalizedBin, perfLabe
     body: JSON.stringify({
       item: itemPayloadForSave(item),
       iin_bin: normalizedBin,
+      payment_context: paymentContext,
     }),
   });
 
@@ -14868,10 +14885,9 @@ async function checkPaymentInvoiceBin(eventId) {
     throw new Error("Для оплаты по счету укажи БИН/ИИН из 12 цифр");
   }
 
-  const wasNewPaymentPosition = Boolean(item.is_new_payment_position);
   let taxResult = null;
 
-  if (wasNewPaymentPosition) {
+  if (item.is_new_payment_position) {
     const created = createDraftItemFromPaymentModal(eventId, "invoice");
     const combined = await timedAction("kgd-payment-create-check", () => createDraftItemAndCheckTax(
       eventId,
@@ -14882,7 +14898,8 @@ async function checkPaymentInvoiceBin(eventId) {
         tax_check_status: null,
       }),
       bin,
-      "kgd-payment-create-check-api"
+      "kgd-payment-create-check-api",
+      true
     ));
     item = combined.item;
     taxResult = combined.taxResult;
@@ -14893,12 +14910,24 @@ async function checkPaymentInvoiceBin(eventId) {
     item.iin_bin_locked = false;
     item.tax_check_status = null;
 
-    await timedAction("kgd-payment-persist-item", () => saveSingleDraftItem(eventId, item, { force: false }));
-    await refreshManagerEventRevision(eventId);
+    // While the estimate is editable we first persist its latest amount, so
+    // KGD deductions are calculated from the current draft. On review or
+    // accepted events the estimate stays locked and the tax endpoint changes
+    // only payment-specific fields.
+    if (paymentEstimateEditable(eventId)) {
+      await timedAction("kgd-payment-persist-item", () => saveSingleDraftItem(eventId, item, { force: false }));
+      await refreshManagerEventRevision(eventId);
+    }
+  }
 
+  if (!taxResult) {
     taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
       method: "POST",
-      body: JSON.stringify({ iin_bin: bin, expected_updated_at: item.updated_at || null }),
+      body: JSON.stringify({
+        iin_bin: bin,
+        expected_updated_at: item.updated_at || null,
+        payment_context: true,
+      }),
     });
     applyTaxResultToDraftItem(item, taxResult, bin);
   }
@@ -14911,12 +14940,8 @@ async function checkPaymentInvoiceBin(eventId) {
 
   applyTaxResultToDraftItem(item, taxResult, bin);
 
-  // ВАЖНО:
-  // второй full-save здесь больше не нужен.
-  // /tax/check уже записал iin_bin, iin_bin_locked, tax_check_status, НДС и вычеты в позицию на backend.
-  // Повторное saveDraftItems() делало модалку заметно медленнее.
-  // После успешной live-проверки считаем текущую позицию синхронизированной,
-  // чтобы создание invoice-заявки не делало лишний PATCH той же позиции.
+  // /tax/check already persisted BIN, method and tax values. No ordinary
+  // estimate PATCH is needed here, including for events already on review.
   patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
@@ -14928,6 +14953,7 @@ async function checkPaymentInvoiceBin(eventId) {
     amountInputAfterCheck.value = amountValueBeforeCheck;
   }
 
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web kgd-payment-check total=${perfSeconds(kgdStartedAt)}s item=${item.id}`);
   return item.contractor_name || `БИН ${bin}`;
 }
 
@@ -15128,6 +15154,12 @@ async function saveManagerEventQuick(eventId, targetStatus, button, successMessa
   }
 }
 
+function paymentEstimateEditable(eventId) {
+  const event = managerActionEventById(eventId);
+  return ["draft", "revision"].includes(String(event?.status || ""));
+}
+
+
 async function persistItemBeforePayment(eventId, item) {
   // Для создания заявки сохраняем только выбранную позицию.
   // Старый вариант сохранял всю смету и из-за этого создание оплаты могло тянуться долго.
@@ -15153,7 +15185,7 @@ async function prepareInvoicePaymentItem(eventId, item) {
     throw new Error("Сначала проверь БИН. После успешной проверки можно создать заявку.");
   }
 
-  if (invoicePaymentItemNeedsPersist(eventId, item)) {
+  if (invoicePaymentItemNeedsPersist(eventId, item) && paymentEstimateEditable(eventId)) {
     await persistItemBeforePayment(eventId, item);
   } else {
     patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
@@ -15165,14 +15197,14 @@ async function prepareInvoicePaymentItem(eventId, item) {
 
 
 async function prepareSelfEmployedPaymentItem(eventId, item) {
-  item = await materializePaymentItemIfNeeded(eventId, item, "self_employed");
-
   const existingSurname = selfEmployedSurnameFromItem(item);
   const surname = existingSurname || (($("paymentSelfEmployedInput")?.value || "").trim());
 
   if (!surname) {
     throw new Error("Для самозанятого обязательно укажи фамилию");
   }
+
+  item = await materializePaymentItemIfNeeded(eventId, item, "self_employed");
 
   item.payment_method = "self_employed";
   item.iin_bin = null;
@@ -15182,7 +15214,11 @@ async function prepareSelfEmployedPaymentItem(eventId, item) {
   item.deduction_amount = Math.round(selfEmployedDeductionBase(item) * 0.10);
   item.internal_note = `Самозанятый: ${surname}`;
 
-  await persistItemBeforePayment(eventId, item);
+  if (paymentEstimateEditable(eventId)) {
+    await persistItemBeforePayment(eventId, item);
+  } else {
+    patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+  }
 
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
@@ -15226,7 +15262,7 @@ async function prepareSimplePaymentItem(eventId, item, method) {
     item.deduction_amount = 0;
   }
 
-  if (needsPersist) {
+  if (needsPersist && paymentEstimateEditable(eventId)) {
     await persistItemBeforePayment(eventId, item);
   } else {
     patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
@@ -15242,8 +15278,19 @@ async function refreshDraftRevisionsAfterExternalMutation(eventId, itemId = null
     tasks.push(api(`/event-items/${itemId}?_=${Date.now()}`).then((freshItem) => {
       const item = getDraftItems(eventId).find((candidate) => Number(candidate.id) === Number(itemId));
       if (!item || !freshItem) return;
-      item.updated_at = freshItem.updated_at || item.updated_at;
-      item.paid_amount = freshItem.paid_amount ?? item.paid_amount;
+      [
+        "updated_at",
+        "paid_amount",
+        "payment_method",
+        "iin_bin",
+        "iin_bin_locked",
+        "tax_check_status",
+        "vat_amount",
+        "deduction_amount",
+        "internal_note",
+      ].forEach((field) => {
+        if (freshItem[field] !== undefined) item[field] = freshItem[field];
+      });
       markDraftItemSaved(item);
       patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
     }));

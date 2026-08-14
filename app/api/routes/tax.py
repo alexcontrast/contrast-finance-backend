@@ -19,9 +19,16 @@ from app.models.taxpayer_check import TaxpayerCheck
 from app.models.user import User
 from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
 from app.schemas.event_item import EventItemCreate, EventItemRead
+from app.schemas.payment_request import PaymentItemCreate
 from app.services.kgd.client import KgdServiceError, check_taxpayer
 from app.services.auth import get_current_user
-from app.services.authorization import get_event_or_404, require_event_edit, require_item_event_edit
+from app.services.authorization import (
+    get_event_or_404,
+    require_event_edit,
+    require_item_event_edit,
+    require_payment_request_create,
+)
+from app.api.routes.payment_requests import create_payment_item_record
 from app.api.routes.event_items import (
     create_event_item,
     lock_event_for_estimate_write,
@@ -37,6 +44,7 @@ logger = logging.getLogger(__name__)
 class EventItemTaxCheckCreatePayload(BaseModel):
     item: EventItemCreate
     iin_bin: str
+    payment_context: bool = False
 
 
 class EventItemTaxCheckCreateResult(BaseModel):
@@ -205,7 +213,10 @@ def check_event_item_tax(
         raise HTTPException(status_code=404, detail="Event item not found")
 
     event = require_item_event_edit(db, current_user, item)
-    require_estimate_editable(current_user, event)
+    if payload.payment_context:
+        require_payment_request_create(current_user, event)
+    else:
+        require_estimate_editable(current_user, event)
     mark_perf("auth")
 
     if current_user.role != "admin":
@@ -258,8 +269,11 @@ def check_event_item_tax(
     # ordinary estimate saves and rechecks ownership/status against the latest
     # committed state before applying the authoritative tax result.
     event = lock_event_for_estimate_write(db, item.event_id)
-    require_event_edit(current_user, event)
-    require_estimate_editable(current_user, event)
+    if payload.payment_context:
+        require_payment_request_create(current_user, event)
+    else:
+        require_event_edit(current_user, event)
+        require_estimate_editable(current_user, event)
     item = db.execute(
         select(EventItem)
         .where(EventItem.id == int(item_id))
@@ -435,7 +449,10 @@ def create_event_item_and_check_tax(
     started_at = time.perf_counter()
 
     event = get_event_or_404(db, event_id)
-    require_event_edit(current_user, event)
+    if payload.payment_context:
+        require_payment_request_create(current_user, event)
+    else:
+        require_event_edit(current_user, event)
     auth_sec = time.perf_counter() - started_at
 
     item_payload = payload.item
@@ -443,36 +460,51 @@ def create_event_item_and_check_tax(
     if len(normalized_iin_bin) != 12:
         raise HTTPException(status_code=400, detail="BIN / ИИН должен содержать 12 цифр")
 
-    # Reuse the ordinary idempotent create path. The old combined endpoint
-    # ignored client_create_token, so a double click or concurrent autosave
-    # could create two otherwise identical regular rows before KGD finished.
-    normalized_payload = item_payload.model_copy(update={
-        "payment_method": "invoice",
-        "iin_bin": normalized_iin_bin,
-        "iin_bin_locked": False,
-        "tax_check_status": None,
-        "vat_amount": Decimal("0.00"),
-        "deduction_amount": Decimal("0.00"),
-    })
-    db.info["defer_event_item_create_commit"] = True
-    try:
-        created = create_event_item(
-            event_id=event_id,
-            payload=normalized_payload,
-            db=db,
-            current_user=current_user,
+    if payload.payment_context:
+        # Payment-created rows expose only name/fact/method. Keep this narrow so
+        # review/accepted estimates cannot be modified through the combined KGD
+        # endpoint. The transaction is intentionally left uncommitted until the
+        # live KGD call succeeds, preserving the anti-orphan behavior.
+        item = create_payment_item_record(
+            db,
+            event,
+            PaymentItemCreate(
+                external_name=item_payload.external_name,
+                amount_fact=item_payload.amount_fact or Decimal("0.00"),
+                payment_method="invoice",
+            ),
         )
-    finally:
-        db.info.pop("defer_event_item_create_commit", None)
-    item = db.get(EventItem, created.id)
-    if item is None:
-        raise HTTPException(status_code=500, detail="Не удалось создать позицию перед проверкой КГД")
+    else:
+        # Reuse the ordinary idempotent create path. The old combined endpoint
+        # ignored client_create_token, so a double click or concurrent autosave
+        # could create two otherwise identical regular rows before KGD finished.
+        normalized_payload = item_payload.model_copy(update={
+            "payment_method": "invoice",
+            "iin_bin": normalized_iin_bin,
+            "iin_bin_locked": False,
+            "tax_check_status": None,
+            "vat_amount": Decimal("0.00"),
+            "deduction_amount": Decimal("0.00"),
+        })
+        db.info["defer_event_item_create_commit"] = True
+        try:
+            created = create_event_item(
+                event_id=event_id,
+                payload=normalized_payload,
+                db=db,
+                current_user=current_user,
+            )
+        finally:
+            db.info.pop("defer_event_item_create_commit", None)
+        item = db.get(EventItem, created.id)
+        if item is None:
+            raise HTTPException(status_code=500, detail="Не удалось создать позицию перед проверкой КГД")
     create_flush_sec = time.perf_counter() - started_at - auth_sec
 
     tax_started_at = time.perf_counter()
     tax_result = check_event_item_tax(
         item.id,
-        TaxCheckRequest(iin_bin=normalized_iin_bin),
+        TaxCheckRequest(iin_bin=normalized_iin_bin, payment_context=payload.payment_context),
         db,
         current_user,
     )

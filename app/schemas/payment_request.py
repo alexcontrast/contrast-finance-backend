@@ -18,6 +18,12 @@ class PaymentRequestCreate(BaseModel):
     card_number: str | None = None
 
 
+class PaymentItemCreate(BaseModel):
+    external_name: str
+    amount_fact: Decimal = Field(description="Фактическая сумма новой позиции из окна оплаты")
+    payment_method: str | None = None
+
+
 class PaymentRequestStatusUpdate(BaseModel):
     # new / to_pay / paid / rejected / tax_check_needed
     status: str

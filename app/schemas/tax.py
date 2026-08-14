@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class TaxCheckRequest(BaseModel):
     iin_bin: str = Field(description="BIN / ИИН подрядчика")
     expected_updated_at: datetime | None = None
+    # Payment flow may check/fix contractor data even after the estimate was
+    # sent to review. This does not reopen ordinary estimate editing.
+    payment_context: bool = False
 
 
 class ManualTaxRequest(BaseModel):

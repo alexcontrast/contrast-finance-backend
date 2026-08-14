@@ -120,6 +120,25 @@ def require_event_edit(user: User, event: Event) -> None:
         raise HTTPException(status_code=403, detail="No permission to edit this event")
 
 
+def require_payment_request_create(user: User, event: Event) -> None:
+    """Authorize creating payment data without reopening the estimate itself.
+
+    Payment requests are allowed for every working event status. The only
+    terminal combination is an accepted event whose client money is already
+    marked as received.
+    """
+    require_event_edit(user, event)
+
+    if (
+        event.status == "accepted"
+        and getattr(event, "money_status", "waiting_money") == "cash_received"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Мероприятие уже принято и деньги в кассе: новые заявки на оплату создавать нельзя",
+        )
+
+
 def get_event_or_404(db: Session, event_id: int) -> Event:
     event = db.get(Event, event_id)
     if event is None:

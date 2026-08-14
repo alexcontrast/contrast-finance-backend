@@ -15,7 +15,9 @@ from app.models.contractor import Contractor
 from app.models.taxpayer_check import TaxpayerCheck
 from app.models.telegram_message import TelegramMessage
 from app.models.user import User
+from app.schemas.event_item import EventItemRead
 from app.schemas.payment_request import (
+    PaymentItemCreate,
     PaymentRequestCardRead,
     PaymentRequestCreate,
     PaymentRequestMoneyStatusUpdate,
@@ -23,6 +25,7 @@ from app.schemas.payment_request import (
     PaymentRequestStatusUpdate,
 )
 from app.services.auth import get_current_user
+from app.core.config import get_settings
 from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 from app.services.authorization import (
@@ -30,26 +33,13 @@ from app.services.authorization import (
     get_item_or_404,
     get_request_or_404,
     require_event_view,
-    require_item_event_edit,
+    require_payment_request_create,
     require_payment_request_edit,
     require_payment_request_view,
 )
 
 
 router = APIRouter(tags=["payment_requests"])
-
-
-def ensure_manager_can_create_request_for_event(current_user: User, event: Event) -> None:
-    """Managers cannot create new payment requests for archived events."""
-    if (
-        current_user.role == "manager"
-        and event.status == "accepted"
-        and getattr(event, "money_status", "waiting_money") == "cash_received"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="Мероприятие уже в архиве: новые заявки на оплату создавать нельзя",
-        )
 
 
 def tax_status_label(tax_status: str | None) -> str | None:
@@ -333,6 +323,98 @@ def ensure_invoice_item_context_from_legacy(db: Session, item: EventItem) -> Eve
     return item
 
 
+def active_payment_methods_for_item(db: Session, item_id: int) -> list[str]:
+    return [
+        str(method)
+        for method in db.execute(
+            select(PaymentRequest.payment_method)
+            .where(
+                PaymentRequest.event_item_id == int(item_id),
+                PaymentRequest.status.notin_(["cancelled", "rejected"]),
+                PaymentRequest.money_status != "cancelled",
+            )
+            .order_by(PaymentRequest.id.desc())
+        ).scalars().all()
+        if method
+    ]
+
+
+def validate_payment_method_lock(db: Session, item: EventItem, payment_method: str) -> None:
+    if item.item_type == "coordinator" and payment_method != "cash":
+        raise HTTPException(status_code=409, detail="Координатор оплачивается только Налом")
+
+    active_methods = active_payment_methods_for_item(db, item.id)
+    if active_methods:
+        non_simple = next((method for method in active_methods if method not in {"cash", "card"}), None)
+        if non_simple and payment_method != non_simple:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Способ оплаты уже закреплён за этой позицией: {payment_method_label(non_simple)}",
+            )
+        if non_simple is None and payment_method not in {"cash", "card"}:
+            raise HTTPException(
+                status_code=409,
+                detail="По позиции уже есть заявки Нал/На карту. Можно выбирать только между этими двумя способами",
+            )
+
+    if item.iin_bin and item.iin_bin_locked and payment_method != "invoice":
+        raise HTTPException(
+            status_code=409,
+            detail="Способ оплаты уже закреплён за этой позицией: По счету",
+        )
+
+
+def apply_payment_context_to_item(
+    db: Session,
+    item: EventItem,
+    payment_method: str,
+    payload: PaymentRequestCreate,
+) -> None:
+    """Persist only payment-related fields; never reopen ordinary estimate editing."""
+    validate_payment_method_lock(db, item, payment_method)
+
+    if payment_method in {"cash", "card"}:
+        item.payment_method = payment_method
+        item.iin_bin = None
+        item.iin_bin_locked = False
+        item.tax_check_status = None
+        item.vat_amount = Decimal("0.00")
+        item.deduction_amount = Decimal("0.00")
+        if str(item.internal_note or "").strip().lower().startswith("самозанятый:"):
+            item.internal_note = None
+
+    elif payment_method == "self_employed":
+        surname = (getattr(payload, "self_employed_surname", None) or payload.comment or "").strip()
+        item.payment_method = "self_employed"
+        item.iin_bin = None
+        item.iin_bin_locked = False
+        item.tax_check_status = "self_employed"
+        item.vat_amount = Decimal("0.00")
+        amount_base = item.amount_fact if item.amount_fact is not None else item.external_amount
+        item.deduction_amount = (
+            (amount_base or Decimal("0.00")) * get_settings().CONTRACTOR_DEDUCTION_RATE
+        ).quantize(Decimal("0.01"))
+        item.internal_note = f"Самозанятый: {surname}"
+
+    elif payment_method == "invoice":
+        # The live KGD endpoint is responsible for fixing BIN/tax fields. Here
+        # we only keep the method aligned with the request after validation.
+        item.payment_method = "invoice"
+
+    item.updated_at = datetime.utcnow()
+    db.add(item)
+
+
+def next_payment_item_sort_order(db: Session, event_id: int) -> int:
+    max_order = db.execute(
+        select(EventItem.sort_order)
+        .where(EventItem.event_id == int(event_id), EventItem.is_deleted == False)  # noqa: E712
+        .order_by(EventItem.sort_order.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return int(max_order or 0) + 10
+
+
 def validate_payment_request_rules(item: EventItem, payment_method: str, payload: PaymentRequestCreate):
     """
     invoice / По счету:
@@ -604,6 +686,73 @@ def list_event_payment_requests(
     return [enrich_payment_request_read(request, db) for request in result.scalars().all()]
 
 
+def create_payment_item_record(
+    db: Session,
+    event: Event,
+    payload: PaymentItemCreate,
+) -> EventItem:
+    """Build the narrow factual expense row used only by payment flows."""
+    name = (payload.external_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Укажи название новой позиции")
+    if payload.amount_fact <= 0:
+        raise HTTPException(status_code=422, detail="Сумма новой позиции должна быть больше 0")
+
+    payment_method = normalize_payment_method(payload.payment_method) or "cash"
+    if payment_method not in {"invoice", "card", "cash", "self_employed"}:
+        raise HTTPException(status_code=400, detail="Некорректный способ оплаты")
+
+    item = EventItem(
+        event_id=event.id,
+        item_type="regular",
+        external_name=name,
+        external_price=Decimal("0.00"),
+        external_quantity=Decimal("1.00"),
+        external_days=Decimal("1.00"),
+        external_amount=Decimal("0.00"),
+        external_note=None,
+        amount_fact=payload.amount_fact,
+        paid_amount=Decimal("0.00"),
+        payment_method=payment_method,
+        iin_bin=None,
+        iin_bin_locked=False,
+        tax_check_status=None,
+        vat_amount=Decimal("0.00"),
+        deduction_amount=Decimal("0.00"),
+        internal_note="Добавлено из окна оплаты",
+        sort_order=next_payment_item_sort_order(db, event.id),
+        is_deleted=False,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(item)
+    event.updated_at = datetime.utcnow()
+    db.add(event)
+    db.flush()
+    return item
+
+
+@router.post("/events/{event_id}/payment-items", response_model=EventItemRead)
+def create_payment_item(
+    event_id: int,
+    payload: PaymentItemCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a factual expense row from the payment dialog.
+
+    This route intentionally exposes only the fields required by a payment. It
+    stays available after review/acceptance while ordinary estimate editing
+    remains locked.
+    """
+    event = get_event_or_404(db, event_id)
+    require_payment_request_create(current_user, event)
+    item = create_payment_item_record(db, event, payload)
+    result = EventItemRead.model_validate(item)
+    db.commit()
+    return result
+
+
 @router.post("/event-items/{item_id}/payment-requests", response_model=PaymentRequestRead)
 def create_payment_request(
     item_id: int,
@@ -637,9 +786,10 @@ def create_payment_request(
     item_elapsed = time.perf_counter() - item_started_at
 
     auth_started_at = time.perf_counter()
-    # Admin can create; manager only for own event; department_head is read-only.
-    event = require_item_event_edit(db, current_user, item)
-    ensure_manager_can_create_request_for_event(current_user, event)
+    # Payment creation has its own business rule and is independent from
+    # whether the estimate is still editable.
+    event = get_event_or_404(db, item.event_id)
+    require_payment_request_create(current_user, event)
     auth_elapsed = time.perf_counter() - auth_started_at
 
     build_started_at = time.perf_counter()
@@ -655,6 +805,7 @@ def create_payment_request(
         item = ensure_invoice_item_context_from_legacy(db, item)
 
     validate_payment_request_rules(item, payment_method, payload)
+    apply_payment_context_to_item(db, item, payment_method, payload)
 
     remaining = calculate_item_remaining(item)
     warning_over_remaining = payload.amount_requested > remaining
@@ -748,7 +899,7 @@ def create_manager_salary_payment_request(
     if current_user.role not in {"admin", "manager"}:
         raise HTTPException(status_code=403, detail="Only admin or manager can create manager salary request")
 
-    ensure_manager_can_create_request_for_event(current_user, event)
+    require_payment_request_create(current_user, event)
 
     payment_method = normalize_payment_method(payload.payment_method)
     if not payment_method:

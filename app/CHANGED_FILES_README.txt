@@ -1,11 +1,18 @@
-v0.5.72 changed files
+v0.5.73 changed files
 
-app/telegram_bot/main.py
+app/api/routes/payment_requests.py
+app/api/routes/tax.py
+app/schemas/payment_request.py
+app/schemas/tax.py
+app/services/authorization.py
+app/web/app.js
+app/web/index.html
 CHANGELOG.md
 README.md
 app/CHANGED_FILES_README.txt
 
-Fixes the Telegram reply-keyboard Cancel button on every payment-request step,
-clears abandoned flow state, and highlights the request amount in all Telegram cards.
+Fixes payment-request creation for review/accepted events without reopening
+ordinary estimate editing. The only forbidden combination is accepted +
+cash_received. No migration is required.
 
-Deploy over v0.5-2.71. No migration is required.
+Deploy over v0.5-2.72.
