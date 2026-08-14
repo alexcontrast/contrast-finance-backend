@@ -1,17 +1,11 @@
-v0.5.71 changed files
+v0.5.72 changed files
 
-app/api/routes/event_items.py
-app/api/routes/event_summary.py
-app/api/routes/tax.py
-app/schemas/tax.py
-app/services/payment_totals.py
-app/web/app.js
-app/web/index.html
+app/telegram_bot/main.py
 CHANGELOG.md
 README.md
+app/CHANGED_FILES_README.txt
 
-Fixes false same-browser estimate conflicts, keeps read endpoints revision-neutral,
-refreshes event/item revisions after side effects, deduplicates temporary rows,
-prevents blank-row leakage, and makes row reordering stable in manager and admin editors.
+Fixes the Telegram reply-keyboard Cancel button on every payment-request step,
+clears abandoned flow state, and highlights the request amount in all Telegram cards.
 
-Deploy over v0.5-2.70. No migration is required.
+Deploy over v0.5-2.71. No migration is required.

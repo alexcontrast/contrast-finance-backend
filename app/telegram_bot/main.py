@@ -58,7 +58,7 @@ from app.services.kgd.client import KgdServiceError, check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.89_TELEGRAM_PUBLISH_LOCKS"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.90_CANCEL_ANY_STAGE_AMOUNT_HIGHLIGHT"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -1325,7 +1325,7 @@ def payment_text_from_request(request: PaymentRequest, title: str = "🧾 Зая
     money_line = f"\nСтатус денег: <b>{esc(data.get('moneyStatusLabel'))}</b>" if data.get("moneyStatusLabel") else ""
     warning_line = "\n⚠️ Сумма больше остатка по позиции" if data.get("warningOverRemaining") else ""
     details_lines = (
-        f"Сумма заявки: <b>{fmt_money(data.get('requestAmount'))}</b>\n"
+        f"🟢 <b><u>СУММА ЗАЯВКИ: {fmt_money(data.get('requestAmount'))}</u></b>\n\n"
         f"Цена по смете: {fmt_money(data.get('itemAmountPlan'))}\n"
         f"Факт: {fmt_money(data.get('itemAmountFact'))}\n"
         f"Оплачено: {fmt_money(data.get('itemPaidAmount'))}\n"
@@ -1769,6 +1769,10 @@ async def cleanup_flow_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: Any
 async def new_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None:
         return ConversationHandler.END
+    # A new payment flow must never inherit fields from an abandoned/cancelled one.
+    # In particular, stale selected_item/fixedPaymentMethod can otherwise affect an
+    # extra position created in the next flow.
+    context.user_data.clear()
     reset_payment_flow_cleanup(context)
     track_message_id(context, update.message.message_id)
     user = ensure_manager_from_telegram(update.effective_user.id)
@@ -2400,6 +2404,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         track_message_id(context, update.message.message_id)
         await cleanup_flow_messages(context, update.effective_chat.id)
+        # /cancel and the reply-keyboard button intentionally share this exact
+        # handler. Clear the whole conversational payload so a later request cannot
+        # reuse stale event/item/payment fields from the cancelled flow.
+        context.user_data.clear()
         cached = get_cached_bound_user(update.effective_user.id)
         await update.message.reply_text("Действие отменено.", reply_markup=role_keyboard((cached or {}).get("role")))
     return ConversationHandler.END
@@ -2465,18 +2473,28 @@ def main():
         fallbacks=[CommandHandler("start", start), CommandHandler("cancel", cancel), MessageHandler(filters.Regex("^Отменить$"), cancel)],
     )
 
+    # The reply-keyboard button sends plain text, not the /cancel command. Put the
+    # same cancel handler first in *every* request state so generic TEXT handlers
+    # cannot swallow "Отменить" as a position name, BIN, amount, card or comment.
+    def request_state(*handlers):
+        return [
+            CommandHandler("cancel", cancel),
+            MessageHandler(filters.Regex("^Отменить$"), cancel),
+            *handlers,
+        ]
+
     request_conversation = ConversationHandler(
         entry_points=[CommandHandler("new", new_request), MessageHandler(filters.Regex("^Новая заявка$"), new_request)],
         states={
-            CHOOSE_MONTH: [CallbackQueryHandler(choose_month, pattern="^(month:|back:months)")],
-            CHOOSE_EVENT: [CallbackQueryHandler(choose_event, pattern="^(event:|back:months)")],
-            CHOOSE_ITEM: [CallbackQueryHandler(choose_item, pattern="^(item:|back:events)")],
-            EXTRA_POSITION_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, extra_position_name)],
-            PAYMENT_METHOD: [CallbackQueryHandler(choose_payment_method, pattern="^paymethod:")],
-            BIN_IIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_bin_iin)],
-            AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)],
-            CARD_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_card_number)],
-            COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment_and_submit)],
+            CHOOSE_MONTH: request_state(CallbackQueryHandler(choose_month, pattern="^(month:|back:months)")),
+            CHOOSE_EVENT: request_state(CallbackQueryHandler(choose_event, pattern="^(event:|back:months)")),
+            CHOOSE_ITEM: request_state(CallbackQueryHandler(choose_item, pattern="^(item:|back:events)")),
+            EXTRA_POSITION_NAME: request_state(MessageHandler(filters.TEXT & ~filters.COMMAND, extra_position_name)),
+            PAYMENT_METHOD: request_state(CallbackQueryHandler(choose_payment_method, pattern="^paymethod:")),
+            BIN_IIN: request_state(MessageHandler(filters.TEXT & ~filters.COMMAND, get_bin_iin)),
+            AMOUNT: request_state(MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)),
+            CARD_NUMBER: request_state(MessageHandler(filters.TEXT & ~filters.COMMAND, get_card_number)),
+            COMMENT: request_state(MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment_and_submit)),
         },
         fallbacks=[
             CommandHandler("start", start),
