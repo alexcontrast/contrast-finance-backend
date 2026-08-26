@@ -1,18 +1,15 @@
-v0.5.73 changed files
+v0.5.74 changed files
 
-app/api/routes/payment_requests.py
-app/api/routes/tax.py
-app/schemas/payment_request.py
-app/schemas/tax.py
-app/services/authorization.py
+app/services/payment_totals.py
 app/web/app.js
 app/web/index.html
 CHANGELOG.md
 README.md
 app/CHANGED_FILES_README.txt
 
-Fixes payment-request creation for review/accepted events without reopening
-ordinary estimate editing. The only forbidden combination is accepted +
-cash_received. No migration is required.
+Fixes frequent false optimistic-lock conflicts after payment/request status
+changes. Derived paid_amount updates no longer advance EventItem.updated_at.
+The web editor safely auto-rebases non-overlapping event/item changes once,
+while true same-field conflicts remain blocked. No migration is required.
 
-Deploy over v0.5-2.72.
+Deploy over v0.5-2.73.

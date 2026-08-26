@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -32,9 +32,21 @@ def sync_item_paid_amount_from_requests(db: Session, item_id: int) -> EventItem 
         )
     ).scalar_one()
 
-    item.paid_amount = money(total)
-    db.add(item)
-    db.flush()
+    paid_total = money(total)
+    if money(item.paid_amount) == paid_total:
+        return item
+
+    # paid_amount is derived/cache data, not an estimate edit. Persist it without
+    # advancing EventItem.updated_at; otherwise an admin/Telegram payment status
+    # change makes an open estimate look as if the row was edited in another tab.
+    current_revision = item.updated_at
+    db.execute(
+        update(EventItem)
+        .where(EventItem.id == item.id)
+        .values(paid_amount=paid_total, updated_at=current_revision)
+    )
+    set_committed_value(item, "paid_amount", paid_total)
+    set_committed_value(item, "updated_at", current_revision)
     return item
 
 

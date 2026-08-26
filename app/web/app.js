@@ -11744,9 +11744,13 @@ function resetManagerDraftFromServer(eventId, event, items = []) {
   const eventCopy = JSON.parse(JSON.stringify(event || {}));
   const itemCopies = sanitizeDraftItems(ensureCoordinator((items || []).map(cloneItem)).map(cloneItem), { dropBlankTemps: true });
   itemCopies.forEach((item) => {
-    if (!item.is_temp && !String(item.id || "").startsWith("tmp-")) markDraftItemSaved(item);
+    if (!item.is_temp && !String(item.id || "").startsWith("tmp-")) {
+      setDraftItemServerSnapshot(item, item);
+      markDraftItemSaved(item);
+    }
   });
 
+  setDraftEventServerSnapshot(eventId, eventCopy);
   state.managerDraftEventsById[String(eventId)] = eventCopy;
   state.managerDraftItemsByEventId[key] = itemCopies;
   state.managerDraftDeletedByEventId[key] = [];
@@ -12027,6 +12031,85 @@ function applyDraftEventRevision(eventId, updatedAt) {
   }
 }
 
+const DRAFT_EVENT_CONFLICT_FIELDS = [
+  "client_name",
+  "title",
+  "event_date",
+  "department_id",
+  "manager_id",
+  "status",
+  "client_calc_type",
+  "manager_percent",
+  "agency_commission_amount",
+  "agency_commission_spread_enabled",
+  "simplified_bank_tax_percent",
+];
+
+function draftEventConflictSnapshot(event) {
+  const source = event || {};
+  return {
+    client_name: source.client_name || "",
+    title: source.title || "",
+    event_date: eventDateForInput(source.event_date),
+    department_id: asNumber(source.department_id),
+    manager_id: asNumber(source.manager_id),
+    status: source.status || "draft",
+    client_calc_type: source.client_calc_type || "",
+    manager_percent: asNumber(source.manager_percent),
+    agency_commission_amount: asNumber(source.agency_commission_amount),
+    agency_commission_spread_enabled: String(source.agency_commission_spread_enabled || "false"),
+    simplified_bank_tax_percent: source.client_calc_type === "simplified" ? asNumber(source.simplified_bank_tax_percent) : 0,
+  };
+}
+
+function setDraftEventServerSnapshot(eventId, serverEvent) {
+  if (!eventId || !serverEvent) return;
+  if (!state.managerDraftEventServerSnapshotByEventId) state.managerDraftEventServerSnapshotByEventId = {};
+  state.managerDraftEventServerSnapshotByEventId[String(eventId)] = draftEventConflictSnapshot(serverEvent);
+}
+
+function isEventRevisionConflictError(error) {
+  return Number(error?.status || 0) === 409 && String(error?.message || "").includes("Мероприятие уже изменено");
+}
+
+async function safelyRebaseDraftEventAfterRevisionConflict(eventId, draftEvent) {
+  const freshEvent = await api(`/events/${eventId}?_=${Date.now()}`);
+  if (!freshEvent?.updated_at) return false;
+
+  const cachedEvent = cachedManagerEventPayload(eventId)?.event || null;
+  const baseline = state.managerDraftEventServerSnapshotByEventId?.[String(eventId)]
+    || (cachedEvent ? draftEventConflictSnapshot(cachedEvent) : null);
+  if (!baseline) return false;
+
+  const local = draftEventConflictSnapshot(draftEvent);
+  const server = draftEventConflictSnapshot(freshEvent);
+  const overlappingConflicts = DRAFT_EVENT_CONFLICT_FIELDS.filter((field) => {
+    const serverChanged = !sameDraftSnapshotValue(server[field], baseline[field]);
+    const localChanged = !sameDraftSnapshotValue(local[field], baseline[field]);
+    return serverChanged && localChanged && !sameDraftSnapshotValue(server[field], local[field]);
+  });
+
+  if (overlappingConflicts.length) {
+    if (CF_PERF_LOGS_ENABLED) console.warn(`PERF web manager-event-real-conflict event=${eventId} fields=${overlappingConflicts.join(",")}`);
+    return false;
+  }
+
+  DRAFT_EVENT_CONFLICT_FIELDS.forEach((field) => {
+    const serverChanged = !sameDraftSnapshotValue(server[field], baseline[field]);
+    const localChanged = !sameDraftSnapshotValue(local[field], baseline[field]);
+    if (serverChanged && !localChanged && freshEvent[field] !== undefined) {
+      draftEvent[field] = freshEvent[field];
+    }
+  });
+  applyDraftEventRevision(eventId, freshEvent.updated_at);
+  setDraftEventServerSnapshot(eventId, freshEvent);
+
+  const payload = cachedManagerEventPayload(eventId);
+  if (payload?.event) Object.assign(payload.event, freshEvent);
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-event-conflict-auto-rebase event=${eventId}`);
+  return true;
+}
+
 function eventPayloadForSave(draftEvent) {
   return {
     client_name: draftEvent.client_name,
@@ -12067,13 +12150,25 @@ async function saveDraftEvent(eventId, options = {}) {
     return draftEvent;
   }
 
-  const savedEvent = await api(`/events/${eventId}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
+  let savedEvent = null;
+  try {
+    savedEvent = await api(`/events/${eventId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    if (!options.rebaseAttempted && isEventRevisionConflictError(error)) {
+      const rebased = await safelyRebaseDraftEventAfterRevisionConflict(eventId, draftEvent);
+      if (rebased) {
+        return saveDraftEvent(eventId, { ...options, force: true, rebaseAttempted: true });
+      }
+    }
+    throw error;
+  }
 
   if (savedEvent) {
     applyDraftEventRevision(eventId, savedEvent.updated_at || draftEvent.updated_at);
+    setDraftEventServerSnapshot(eventId, savedEvent);
     if (asNumber(draftEvent.__edit_version) === editVersionAtRequest) {
       delete draftEvent.__dirty_after_save;
       state.currentManagerEvent = { ...state.currentManagerEvent, ...savedEvent };
@@ -12368,6 +12463,7 @@ async function refreshManagerEventRevision(eventId) {
   const freshEvent = await api(`/events/${eventId}?_=${Date.now()}`);
   const key = String(eventId);
   applyDraftEventRevision(eventId, freshEvent.updated_at || null);
+  setDraftEventServerSnapshot(eventId, freshEvent);
   const payload = state.managerEventPayloadById?.[key];
   if (payload?.event) Object.assign(payload.event, freshEvent);
   return freshEvent;
@@ -13403,6 +13499,113 @@ function itemPayloadForSave(item) {
   };
 }
 
+const DRAFT_ITEM_CONFLICT_FIELDS = [
+  "item_type",
+  "external_name",
+  "external_price",
+  "external_quantity",
+  "external_days",
+  "external_note",
+  "amount_fact",
+  "payment_method",
+  "iin_bin",
+  "iin_bin_locked",
+  "tax_check_status",
+  "vat_amount",
+  "deduction_amount",
+  "internal_note",
+  "sort_order",
+];
+
+function draftItemConflictSnapshot(item) {
+  const source = item || {};
+  return {
+    item_type: source.item_type || "regular",
+    external_name: source.external_name || "",
+    external_price: Math.round(asNumber(source.external_price)),
+    external_quantity: Math.round(asNumber(source.external_quantity || 1)),
+    external_days: Math.round(asNumber(source.external_days || 1)),
+    external_note: source.external_note || null,
+    amount_fact: source.amount_fact === "" || source.amount_fact === undefined || source.amount_fact === null
+      ? null
+      : Math.round(asNumber(source.amount_fact)),
+    payment_method: source.payment_method || null,
+    iin_bin: source.payment_method === "invoice" ? (source.iin_bin || null) : null,
+    iin_bin_locked: source.payment_method === "invoice" ? Boolean(source.iin_bin_locked) : false,
+    tax_check_status: source.payment_method === "self_employed"
+      ? "self_employed"
+      : (source.payment_method === "invoice" ? (source.tax_check_status || null) : null),
+    vat_amount: Math.round(asNumber(source.vat_amount)),
+    deduction_amount: Math.round(asNumber(source.deduction_amount)),
+    internal_note: source.internal_note || null,
+    sort_order: source.item_type === "coordinator" ? -100 : Math.round(asNumber(source.sort_order)),
+  };
+}
+
+function setDraftItemServerSnapshot(item, serverItem = item) {
+  if (!item || !serverItem) return;
+  Object.defineProperty(item, "__server_snapshot", {
+    value: draftItemConflictSnapshot(serverItem),
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+}
+
+function sameDraftSnapshotValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isItemRevisionConflictError(error) {
+  return Number(error?.status || 0) === 409 && String(error?.message || "").includes("Позиция уже изменена");
+}
+
+async function safelyRebaseDraftItemAfterRevisionConflict(eventId, item) {
+  if (!item || item.is_temp || String(item.id || "").startsWith("tmp-")) return false;
+
+  const freshItem = await api(`/event-items/${item.id}?_=${Date.now()}`);
+  if (!freshItem?.updated_at) return false;
+
+  const original = originalItemForSave(eventId, item.id);
+  const baseline = item.__server_snapshot || (original ? draftItemConflictSnapshot(original) : null);
+  const local = draftItemConflictSnapshot(item);
+  const server = draftItemConflictSnapshot(freshItem);
+  if (!baseline) return false;
+
+  const overlappingConflicts = DRAFT_ITEM_CONFLICT_FIELDS.filter((field) => {
+    const serverChanged = !sameDraftSnapshotValue(server[field], baseline[field]);
+    const localChanged = !sameDraftSnapshotValue(local[field], baseline[field]);
+    return serverChanged && localChanged && !sameDraftSnapshotValue(server[field], local[field]);
+  });
+
+  if (overlappingConflicts.length) {
+    if (CF_PERF_LOGS_ENABLED) console.warn(`PERF web manager-item-real-conflict item=${item.id} fields=${overlappingConflicts.join(",")}`);
+    return false;
+  }
+
+  // Merge only server fields the manager did not touch locally. This absorbs
+  // payment/KGD/other-tab changes in unrelated fields without overwriting the
+  // manager's current input. A true same-field conflict still stays blocked.
+  DRAFT_ITEM_CONFLICT_FIELDS.forEach((field) => {
+    const serverChanged = !sameDraftSnapshotValue(server[field], baseline[field]);
+    const localChanged = !sameDraftSnapshotValue(local[field], baseline[field]);
+    if (serverChanged && !localChanged && freshItem[field] !== undefined) {
+      item[field] = freshItem[field];
+    }
+  });
+  if (freshItem.external_amount !== undefined) item.external_amount = freshItem.external_amount;
+  if (freshItem.paid_amount !== undefined) item.paid_amount = freshItem.paid_amount;
+  item.updated_at = freshItem.updated_at;
+  setDraftItemServerSnapshot(item, freshItem);
+
+  const cached = cachedManagerEventPayload(eventId);
+  const cachedItem = (cached?.items || []).find((candidate) => Number(candidate.id) === Number(item.id));
+  if (cachedItem) Object.assign(cachedItem, freshItem);
+
+  if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-item-conflict-auto-rebase item=${item.id}`);
+  return true;
+}
+
 function markDraftItemSaved(item, payload = null) {
   if (!item) return item;
   item.__saved_payload_key = comparablePayloadString(payload || itemPayloadForSave(item));
@@ -13459,20 +13662,35 @@ async function performSingleDraftItemSave(eventId, item, options = {}) {
     });
     if (asNumber(item.__edit_version) === editVersionAtRequest) {
       Object.assign(item, created, { is_temp: false });
+      setDraftItemServerSnapshot(item, created);
     } else {
       const freshLocalValues = { ...item };
       Object.assign(item, created, freshLocalValues, { id: created.id, updated_at: created.updated_at, is_temp: false, __dirty_after_save: true });
+      setDraftItemServerSnapshot(item, created);
     }
   } else {
-    const updated = await api(`/event-items/${item.id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
+    let updated = null;
+    try {
+      updated = await api(`/event-items/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (!options.rebaseAttempted && isItemRevisionConflictError(error)) {
+        const rebased = await safelyRebaseDraftItemAfterRevisionConflict(eventId, item);
+        if (rebased) {
+          return performSingleDraftItemSave(eventId, item, { ...options, force: true, rebaseAttempted: true });
+        }
+      }
+      throw error;
+    }
     if (asNumber(item.__edit_version) === editVersionAtRequest) {
       Object.assign(item, updated, { is_temp: false });
+      setDraftItemServerSnapshot(item, updated);
     } else {
       const freshLocalValues = { ...item };
       Object.assign(item, updated, freshLocalValues, { id: updated.id, updated_at: updated.updated_at, is_temp: false, __dirty_after_save: true });
+      setDraftItemServerSnapshot(item, updated);
     }
   }
 
@@ -15291,6 +15509,7 @@ async function refreshDraftRevisionsAfterExternalMutation(eventId, itemId = null
       ].forEach((field) => {
         if (freshItem[field] !== undefined) item[field] = freshItem[field];
       });
+      setDraftItemServerSnapshot(item, freshItem);
       markDraftItemSaved(item);
       patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
     }));
@@ -17345,7 +17564,11 @@ function cacheManagerEventPayloads(eventPayloads, month = state.month) {
 
   Object.entries(eventPayloads).forEach(([eventId, payload]) => {
     if (!payload || !payload.event) return;
-    state.managerEventPayloadById[String(eventId)] = payload;
+    const isOpenDirtyEvent = Number(state.selectedManagerEventId || 0) === Number(eventId)
+      && managerEventHasLocalUnsavedChanges(eventId);
+    if (!isOpenDirtyEvent || !state.managerEventPayloadById[String(eventId)]) {
+      state.managerEventPayloadById[String(eventId)] = payload;
+    }
 
     if (Array.isArray(payload.requests)) {
       const otherRequests = (state.managerPaymentRequests || []).filter((request) => Number(request.event_id) !== Number(eventId));
