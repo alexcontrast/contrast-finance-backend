@@ -5928,6 +5928,7 @@ const state = {
   accountingLoadedMonth: null,
   accountingShowOnlyMissingReceipt: false,
   accountingExpandedRequestId: null,
+  accountingSelectedRequestIds: [],
   closingPanelData: null,
   closingEditingExpenseId: null,
   closingCalcRefreshTimer: null,
@@ -7164,6 +7165,7 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.accountingLoadedMonth = null;
   state.accountingShowOnlyMissingReceipt = false;
   state.accountingExpandedRequestId = null;
+  state.accountingSelectedRequestIds = [];
 
   if (state.monthYearChangeTimer) {
     window.clearTimeout(state.monthYearChangeTimer);
@@ -7544,6 +7546,33 @@ function accountingRequestStatusText(row) {
   return [requestStatus, moneyStatus].filter(Boolean).join(" · ");
 }
 
+function accountingRowRequestIds(row) {
+  const ids = Array.isArray(row?.payment_request_ids) && row.payment_request_ids.length
+    ? row.payment_request_ids
+    : [row?.payment_request_id];
+  return [...new Set(ids.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0))];
+}
+
+function accountingSelectedSet() {
+  return new Set((state.accountingSelectedRequestIds || []).map((value) => Number(value)));
+}
+
+function accountingIsRowSelected(row) {
+  const selected = accountingSelectedSet();
+  const ids = accountingRowRequestIds(row);
+  return ids.length > 0 && ids.every((id) => selected.has(id));
+}
+
+function accountingSelectedRows() {
+  return (state.accountingRows || []).filter((row) => accountingIsRowSelected(row));
+}
+
+function accountingToggleRowSelection(row, checked) {
+  const selected = accountingSelectedSet();
+  accountingRowRequestIds(row).forEach((id) => checked ? selected.add(id) : selected.delete(id));
+  state.accountingSelectedRequestIds = [...selected];
+}
+
 function accountingParseBadge(row) {
   if (row?.parse_status === "reviewed") return `<span class="accounting-badge ok">Данные подтверждены</span>`;
   if (row?.parse_status === "parsed") return `<span class="accounting-badge warn">Проверьте данные</span>`;
@@ -7561,8 +7590,6 @@ function accountingMoneyMatch(row) {
 function accountingReceiptDateInputValue(value) {
   if (!value) return "";
   const raw = String(value || "").trim().replace(" ", "T");
-  // Receipt time printed by e-Salyq is local Kazakhstan wall-clock time. Backend
-  // stores it as a naive datetime intentionally, so do not shift it by +5 hours.
   if (!/(Z|[+-]\d{2}:?\d{2})$/.test(raw)) return raw.slice(0, 16);
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw.slice(0, 16);
@@ -7584,9 +7611,9 @@ function accountingReceiptDateInputValue(value) {
 function renderAccountingEditor(row) {
   const match = accountingMoneyMatch(row);
   const amountNote = match === "match"
-    ? `<span class="accounting-match ok">✓ Совпадает с заявкой</span>`
+    ? `<span class="accounting-match ok">✓ Совпадает с ${row.request_count > 1 ? "суммой группы" : "заявкой"}</span>`
     : match === "mismatch"
-      ? `<span class="accounting-match bad">⚠ В заявке ${formatMoney(row.request_amount)} ₸</span>`
+      ? `<span class="accounting-match bad">⚠ ${row.request_count > 1 ? "В группе" : "В заявке"} ${formatMoney(row.request_amount)} ₸</span>`
       : `<span class="accounting-match neutral">Сверим после распознавания</span>`;
 
   return `
@@ -7594,7 +7621,7 @@ function renderAccountingEditor(row) {
       <div class="accounting-editor-head">
         <div>
           <strong>Данные чека</strong>
-          <div class="muted">Перед будущим формированием АВР эти поля нужно проверить.</div>
+          <div class="muted">${row.request_count > 1 ? `Один чек объединяет ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : "Перед будущим формированием АВР эти поля нужно проверить."}</div>
         </div>
         ${row.parse_confidence !== null && row.parse_confidence !== undefined
           ? `<span class="accounting-confidence">OCR ${Math.round(asNumber(row.parse_confidence))}%</span>`
@@ -7633,12 +7660,30 @@ function renderAccountingEditor(row) {
   `;
 }
 
+function renderAccountingMembers(row) {
+  if (!row?.is_grouped || !Array.isArray(row.members)) return "";
+  return `
+    <div class="accounting-members">
+      <strong>В этот чек входят ${row.request_count} заявки:</strong>
+      <div class="accounting-members-list">
+        ${row.members.map((member) => `
+          <div class="accounting-member">
+            <span>№${member.payment_request_id}</span>
+            <span>${escapeHtml(member.event_title || "Мероприятие")}${member.item_name ? ` · ${escapeHtml(member.item_name)}` : ""}</span>
+            <strong>${formatMoney(member.request_amount)} ₸</strong>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderAccountingRows(rows) {
   let list = [...(rows || [])];
   if (state.accountingShowOnlyMissingReceipt) list = list.filter((row) => !row.has_receipt);
 
   if (!list.length) {
-    return `<div class="empty-state">${state.accountingShowOnlyMissingReceipt ? "Все заявки этого месяца уже с чеками." : "В этом месяце заявок «Самозанятый» нет."}</div>`;
+    return `<div class="empty-state">${state.accountingShowOnlyMissingReceipt ? "Все активные заявки этого месяца уже с чеками." : "В этом месяце активных заявок «Самозанятый» нет."}</div>`;
   }
 
   return `
@@ -7647,12 +7692,16 @@ function renderAccountingRows(rows) {
         const expanded = Number(state.accountingExpandedRequestId) === Number(row.payment_request_id);
         const match = accountingMoneyMatch(row);
         const amountClass = match === "mismatch" ? "is-mismatch" : match === "match" ? "is-match" : "";
+        const selected = accountingIsRowSelected(row);
         return `
-          <article class="accounting-row ${row.has_receipt ? "has-receipt" : "needs-receipt"}" data-accounting-row="${row.payment_request_id}">
+          <article class="accounting-row ${row.has_receipt ? "has-receipt" : "needs-receipt"} ${selected ? "is-selected" : ""}" data-accounting-row="${row.payment_request_id}">
             <div class="accounting-row-main">
+              <label class="accounting-select" title="Выбрать для объединения">
+                <input type="checkbox" data-accounting-select-row="${row.payment_request_id}" ${selected ? "checked" : ""} />
+              </label>
               <div class="accounting-date">
                 <strong>${escapeHtml(formatDateRu(row.event_date) || "—")}</strong>
-                <span>заявка №${row.payment_request_id}</span>
+                <span>${row.is_grouped ? `${row.request_count} заявки` : `заявка №${row.payment_request_id}`}</span>
               </div>
               <div class="accounting-event">
                 <strong>${escapeHtml(row.event_title || row.item_name || "Без названия")}</strong>
@@ -7660,13 +7709,13 @@ function renderAccountingRows(rows) {
               </div>
               <div class="accounting-person">
                 <strong>${escapeHtml(row.contractor_full_name || row.request_contractor_name || "Самозанятый")}</strong>
-                <span>${row.iin ? `ИИН ${escapeHtml(row.iin)}` : escapeHtml(row.item_name || "")}</span>
+                <span>${(row.iin || row.request_iin) ? `ИИН ${escapeHtml(row.iin || row.request_iin)}` : (row.is_grouped ? `${row.request_count} позиций в одном чеке` : escapeHtml(row.item_name || ""))}</span>
               </div>
               <div class="accounting-amount ${amountClass}">
                 <strong>${formatMoney(row.request_amount)} ₸</strong>
                 ${row.receipt_amount !== null && row.receipt_amount !== undefined
                   ? `<span>чек: ${formatMoney(row.receipt_amount)} ₸</span>`
-                  : `<span>${escapeHtml(accountingRequestStatusText(row))}</span>`}
+                  : `<span>${row.is_grouped ? "общая сумма заявок" : escapeHtml(accountingRequestStatusText(row))}</span>`}
               </div>
               <div class="accounting-state">
                 ${accountingParseBadge(row)}
@@ -7679,8 +7728,10 @@ function renderAccountingRows(rows) {
                 </label>
                 ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-open-receipt="${row.payment_request_id}">Открыть</button>` : ""}
                 ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-expand="${row.payment_request_id}">${expanded ? "Свернуть данные" : "Проверить данные"}</button>` : ""}
+                ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
+            ${renderAccountingMembers(row)}
             <div class="accounting-progress hidden" data-accounting-progress="${row.payment_request_id}"></div>
             ${expanded && row.has_receipt ? renderAccountingEditor(row) : ""}
           </article>
@@ -7692,9 +7743,11 @@ function renderAccountingRows(rows) {
 
 function renderAccountingPanel() {
   const rows = state.accountingRows || [];
-  const total = rows.length;
+  const totalRequests = rows.reduce((sum, row) => sum + Math.max(1, Number(row.request_count || 1)), 0);
   const withReceipt = rows.filter((row) => row.has_receipt).length;
   const reviewed = rows.filter((row) => row.parse_status === "reviewed").length;
+  const selectedRows = accountingSelectedRows();
+  const selectedRequests = [...new Set(selectedRows.flatMap(accountingRowRequestIds))].length;
 
   return `
     <section class="accounting-panel">
@@ -7702,18 +7755,21 @@ function renderAccountingPanel() {
         <div>
           <div class="eyebrow">Самозанятые</div>
           <h3>Бухгалтерия</h3>
-          <p class="muted">Здесь автоматически появляются все заявки «Самозанятый» выбранного месяца. Прикрепите чек e-Salyq Business — сайт попробует считать реквизиты прямо из изображения.</p>
+          <p class="muted">Здесь только активные заявки «Самозанятый». Если подрядчик выдал один чек на несколько позиций, отметьте нужные строки и объедините их до загрузки чека.</p>
         </div>
         <div class="accounting-summary">
-          <span><strong>${total}</strong> заявок</span>
-          <span><strong>${withReceipt}</strong> с чеком</span>
+          <span><strong>${totalRequests}</strong> заявок</span>
+          <span><strong>${rows.length}</strong> бухгалтерских строк</span>
+          <span><strong>${withReceipt}</strong> чеков</span>
           <span><strong>${reviewed}</strong> проверено</span>
         </div>
       </div>
       <div class="accounting-toolbar">
         <label class="accounting-toggle"><input id="accountingMissingOnly" type="checkbox" ${state.accountingShowOnlyMissingReceipt ? "checked" : ""} /> Только без чека</label>
+        <button id="accountingGroupBtn" type="button" ${selectedRows.length < 2 ? "disabled" : ""}>Объединить выбранные${selectedRequests ? ` (${selectedRequests})` : ""}</button>
+        ${selectedRows.length ? `<button id="accountingClearSelectionBtn" class="ghost" type="button">Снять выбор</button>` : ""}
         <button id="accountingRefreshBtn" class="secondary" type="button">Обновить</button>
-        <span class="muted">Распознавание тестовое: результат всегда можно исправить вручную.</span>
+        <span class="muted">Один объединённый чек сверяется с общей суммой всех входящих заявок.</span>
       </div>
       <div id="accountingRows">${state.accountingLoading ? `<div class="empty-state">Загружаем бухгалтерию…</div>` : renderAccountingRows(rows)}</div>
     </section>
@@ -7745,9 +7801,24 @@ function setAccountingProgress(requestId, text = "", visible = true) {
 }
 
 function accountingReplaceRow(updated) {
-  const idx = (state.accountingRows || []).findIndex((row) => Number(row.payment_request_id) === Number(updated.payment_request_id));
-  if (idx >= 0) state.accountingRows[idx] = updated;
-  else state.accountingRows.unshift(updated);
+  const updatedIds = new Set(accountingRowRequestIds(updated));
+  const rows = state.accountingRows || [];
+  let replaced = false;
+  const next = [];
+  for (const row of rows) {
+    const sameAccounting = updated.accounting_id && row.accounting_id && Number(updated.accounting_id) === Number(row.accounting_id);
+    const overlaps = accountingRowRequestIds(row).some((id) => updatedIds.has(id));
+    if (sameAccounting || overlaps) {
+      if (!replaced) {
+        next.push(updated);
+        replaced = true;
+      }
+    } else {
+      next.push(row);
+    }
+  }
+  if (!replaced) next.unshift(updated);
+  state.accountingRows = next;
   if (state.activeAdminTab === "accounting") {
     const rowsEl = $("accountingRows");
     if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
@@ -7768,6 +7839,7 @@ async function loadSelfEmployedAccounting(force = false) {
   try {
     state.accountingRows = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}`);
     state.accountingLoadedMonth = month;
+    state.accountingSelectedRequestIds = [];
   } finally {
     state.accountingLoading = false;
   }
@@ -7776,6 +7848,29 @@ async function loadSelfEmployedAccounting(force = false) {
     $("dashboardContent").innerHTML = renderAccountingPanel();
     attachAccountingPanel();
   }
+}
+
+async function combineSelectedAccountingRows() {
+  const selectedRows = accountingSelectedRows();
+  if (selectedRows.length < 2) return;
+  const requestIds = [...new Set(selectedRows.flatMap(accountingRowRequestIds))];
+  const total = selectedRows.reduce((sum, row) => sum + asNumber(row.request_amount), 0);
+  if (!confirm(`Объединить ${requestIds.length} заявок в один чек на общую сумму ${formatMoney(total)} ₸?`)) return;
+  await api(`/accounting/self-employed/groups`, {
+    method: "POST",
+    body: JSON.stringify({ request_ids: requestIds }),
+  });
+  state.accountingSelectedRequestIds = [];
+  state.accountingExpandedRequestId = null;
+  await loadSelfEmployedAccounting(true);
+}
+
+async function splitAccountingGroup(requestId) {
+  if (!confirm("Разъединить эти заявки обратно на отдельные строки?")) return;
+  await api(`/accounting/self-employed/groups/${requestId}/split`, { method: "POST" });
+  state.accountingSelectedRequestIds = [];
+  state.accountingExpandedRequestId = null;
+  await loadSelfEmployedAccounting(true);
 }
 
 let accountingOcrLibrariesPromise = null;
@@ -8116,14 +8211,42 @@ function attachAccountingPanel() {
   if (missingOnly) {
     missingOnly.onchange = () => {
       state.accountingShowOnlyMissingReceipt = Boolean(missingOnly.checked);
+      state.accountingSelectedRequestIds = [];
       const rowsEl = $("accountingRows");
       if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
       attachAccountingPanel();
     };
   }
 
+  const groupBtn = $("accountingGroupBtn");
+  if (groupBtn) groupBtn.onclick = () => combineSelectedAccountingRows().catch((error) => alert(error.message));
+
+  const clearSelectionBtn = $("accountingClearSelectionBtn");
+  if (clearSelectionBtn) {
+    clearSelectionBtn.onclick = () => {
+      state.accountingSelectedRequestIds = [];
+      $("dashboardContent").innerHTML = renderAccountingPanel();
+      attachAccountingPanel();
+    };
+  }
+
   const refresh = $("accountingRefreshBtn");
   if (refresh) refresh.onclick = () => loadSelfEmployedAccounting(true).catch((error) => alert(error.message));
+
+  document.querySelectorAll("[data-accounting-select-row]").forEach((input) => {
+    input.onchange = () => {
+      const requestId = Number(input.getAttribute("data-accounting-select-row"));
+      const row = (state.accountingRows || []).find((item) => Number(item.payment_request_id) === requestId);
+      if (!row) return;
+      accountingToggleRowSelection(row, Boolean(input.checked));
+      $("dashboardContent").innerHTML = renderAccountingPanel();
+      attachAccountingPanel();
+    };
+  });
+
+  document.querySelectorAll("[data-accounting-split]").forEach((button) => {
+    button.onclick = () => splitAccountingGroup(Number(button.getAttribute("data-accounting-split"))).catch((error) => alert(error.message));
+  });
 
   document.querySelectorAll("[data-accounting-file]").forEach((input) => {
     input.onchange = async () => {

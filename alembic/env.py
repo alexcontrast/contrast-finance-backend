@@ -23,6 +23,8 @@ from app.models import (  # noqa: F401
     MonthlyClosing,
     Export,
     TelegramMessage,
+    SelfEmployedAccounting,
+    SelfEmployedAccountingRequest,
 )
 
 

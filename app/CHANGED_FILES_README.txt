@@ -1,15 +1,21 @@
-v0.5.76 changed files
+v0.5.77 changed files
 
 CHANGELOG.md
 README.md
-scripts/start.sh
+alembic/env.py
+alembic/versions/0015_self_employed_accounting_groups.py
+app/api/routes/self_employed_accounting.py
 app/core/config.py
+app/models/__init__.py
+app/models/self_employed_accounting.py
+app/models/self_employed_accounting_request.py
+app/schemas/self_employed_accounting.py
+app/web/app.js
+app/web/index.html
+app/web/styles.css
 app/CHANGED_FILES_README.txt
 
-Fixes the HTTP 500 in the new self-employed accounting workspace. v0.5-2.75
-shipped migration 0014_self_employed_accounting but startup was still pinned to
-0013_manager_bonus, so production never created the new table. Startup now runs
-`alembic upgrade head` before uvicorn.
-
-Deploy over v0.5-2.75. No new migration file is added; the existing 0014 migration
-will be applied automatically on restart.
+Adds one-receipt-to-many-requests accounting groups for self-employed payments and
+removes cancelled/rejected requests from the accounting workspace at the API
+level. Deploy over v0.5-2.76; migration 0015 is applied automatically by
+`alembic upgrade head`.

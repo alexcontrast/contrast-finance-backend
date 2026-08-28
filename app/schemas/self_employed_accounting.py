@@ -17,11 +17,38 @@ class SelfEmployedAccountingUpdate(BaseModel):
     mark_confirmed: bool = False
 
 
+class SelfEmployedAccountingGroupCreate(BaseModel):
+    request_ids: list[int] = Field(min_length=2, max_length=100)
+
+
+class SelfEmployedAccountingMemberRead(BaseModel):
+    payment_request_id: int
+    event_id: int
+    event_title: str | None = None
+    event_date: date | None = None
+    client_name: str | None = None
+    manager_name: str | None = None
+    request_created_at: datetime
+    request_status: str
+    money_status: str
+    request_amount: Decimal
+    item_name: str | None = None
+    request_contractor_name: str | None = None
+    request_iin: str | None = None
+    request_comment: str | None = None
+
+
 class SelfEmployedAccountingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    # Backward-compatible anchor request. Receipt/update endpoints may use any
+    # request from payment_request_ids; the backend resolves the shared group.
     payment_request_id: int
+    payment_request_ids: list[int] = Field(default_factory=list)
+    request_count: int = 1
     accounting_id: int | None = None
+    is_grouped: bool = False
+    members: list[SelfEmployedAccountingMemberRead] = Field(default_factory=list)
 
     event_id: int
     event_title: str | None = None
@@ -35,6 +62,7 @@ class SelfEmployedAccountingRead(BaseModel):
     request_amount: Decimal
     item_name: str | None = None
     request_contractor_name: str | None = None
+    request_iin: str | None = None
     request_comment: str | None = None
 
     receipt_filename: str | None = None

@@ -56,3 +56,8 @@ class SelfEmployedAccounting(Base):
     )
 
     payment_request = relationship("PaymentRequest")
+    request_links = relationship(
+        "SelfEmployedAccountingRequest",
+        back_populates="accounting",
+        cascade="all, delete-orphan",
+    )
