@@ -7575,14 +7575,6 @@ function accountingFindRowByHandle(handle) {
   return (state.accountingRows || []).find((row) => accountingRowHandle(row) === String(handle)) || null;
 }
 
-function accountingParseBadge(row) {
-  if (row?.is_receipt_only) return `<span class="accounting-badge warn">Не привязан</span>`;
-  if (row?.parse_status === "reviewed") return `<span class="accounting-badge ok">Данные подтверждены</span>`;
-  if (row?.parse_status === "parsed") return `<span class="accounting-badge warn">Проверьте данные</span>`;
-  if (row?.has_receipt) return `<span class="accounting-badge neutral">Чек загружен</span>`;
-  return `<span class="accounting-badge missing">Ждёт чек</span>`;
-}
-
 function accountingMoneyMatch(row) {
   if (!row?.has_receipt || row?.receipt_amount === null || row?.receipt_amount === undefined || row?.receipt_amount === "") return "unknown";
   if (!Number(row?.request_count || 0)) return "unlinked";
@@ -7613,16 +7605,32 @@ function accountingReceiptDateInputValue(value) {
 }
 
 function accountingDisplayDate(row) {
-  if (row?.event_date) return formatDateRu(row.event_date);
   if (row?.receipt_datetime) return formatDateRu(String(row.receipt_datetime).slice(0, 10));
   if (row?.receipt_uploaded_at) return formatDateRu(String(row.receipt_uploaded_at).slice(0, 10));
+  if (row?.event_date) return formatDateRu(row.event_date);
   return "—";
 }
 
 function accountingRowPrimaryAmount(row) {
+  if (row?.has_receipt && asNumber(row?.receipt_amount) > 0) return asNumber(row.receipt_amount);
   if (Number(row?.request_count || 0) > 0) return asNumber(row.request_amount);
-  if (row?.receipt_amount !== null && row?.receipt_amount !== undefined) return asNumber(row.receipt_amount);
   return 0;
+}
+
+function accountingDisplayName(row) {
+  return accountingCleanPersonName(row?.contractor_full_name || row?.request_contractor_name || "") || "—";
+}
+
+function accountingDisplayIin(row) {
+  const digits = String(row?.iin || row?.request_iin || "").replace(/\D/g, "");
+  return digits.length === 12 ? digits : "—";
+}
+
+function accountingDisplayWork(row) {
+  const source = row?.has_receipt
+    ? (row?.service_name || row?.item_name || "")
+    : (row?.item_name || row?.event_title || "");
+  return accountingCleanServiceName(source) || "—";
 }
 
 function renderAccountingEditor(row) {
@@ -7641,7 +7649,7 @@ function renderAccountingEditor(row) {
       <div class="accounting-editor-head">
         <div>
           <strong>Данные чека</strong>
-          <div class="muted">${row.request_count > 1 ? `Этот чек покрывает ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : row.is_receipt_only ? "Чек загружен без найденной заявки. Его можно связать перетаскиванием." : "Проверьте данные чека."}</div>
+          <div class="muted">${row.request_count > 1 ? `Этот чек покрывает ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : row.is_receipt_only ? "К этому чеку пока не добавлена заявка. Её можно перетащить сюда вручную." : "Проверьте данные чека."}</div>
         </div>
         ${row.parse_confidence !== null && row.parse_confidence !== undefined
           ? `<span class="accounting-confidence">${row.qr_payload ? "QR/КГД" : "OCR fallback"} ${Math.round(asNumber(row.parse_confidence))}%</span>`
@@ -7664,12 +7672,10 @@ function renderAccountingEditor(row) {
           <input data-accounting-field="receipt_amount" inputmode="decimal" value="${row.receipt_amount !== null && row.receipt_amount !== undefined ? escapeHtml(String(row.receipt_amount)) : ""}" />
           ${amountNote}
         </label>
-        <label class="accounting-field wide">Услуга
-          <textarea data-accounting-field="service_name" rows="3" placeholder="Наименование оказанной услуги">${escapeHtml(row.service_name || row.item_name || "")}</textarea>
+        <label class="accounting-field wide">Наименование работы
+          <textarea data-accounting-field="service_name" rows="3" placeholder="Наименование оказанной работы">${escapeHtml(accountingCleanServiceName(row.service_name || row.item_name || ""))}</textarea>
         </label>
       </div>
-      ${row.qr_payload ? `<details class="accounting-technical"><summary>QR чека найден</summary><div>${escapeHtml(row.qr_payload)}</div></details>` : ""}
-      ${row.ocr_text ? `<details class="accounting-technical"><summary>${row.qr_payload ? "Технический текст отчёта КГД" : "Резервное OCR"}</summary><pre>${escapeHtml(row.ocr_text)}</pre></details>` : ""}
       <div class="accounting-editor-actions">
         ${row.qr_payload ? `<button class="secondary" type="button" data-accounting-refresh-qr="${handle}">↻ Получить из QR КГД</button>` : ""}
         <button class="secondary" type="button" data-accounting-save="${handle}">Сохранить</button>
@@ -7711,6 +7717,14 @@ function renderAccountingRows(rows) {
 
   return `
     <div class="accounting-list">
+      <div class="accounting-table-head" aria-hidden="true">
+        <span>Дата чека</span>
+        <span>ФИО</span>
+        <span>ИИН</span>
+        <span>Сумма</span>
+        <span>Наименование работы</span>
+        <span></span>
+      </div>
       ${list.map((row) => {
         const handle = accountingRowHandle(row);
         const expanded = String(state.accountingExpandedRequestId || "") === handle;
@@ -7718,7 +7732,6 @@ function renderAccountingRows(rows) {
         const amountClass = match === "mismatch" ? "is-mismatch" : match === "match" ? "is-match" : "";
         const draggable = Number(row.request_count || 0) > 0 && !row.has_receipt;
         const dropTarget = Boolean(row.has_receipt && row.accounting_id);
-        const person = row.contractor_full_name || row.request_contractor_name || "Самозанятый";
         const mainAmount = accountingRowPrimaryAmount(row);
         return `
           <article class="accounting-row ${row.has_receipt ? "has-receipt" : "needs-receipt"} ${row.is_receipt_only ? "receipt-only" : ""} ${draggable ? "is-draggable" : ""} ${dropTarget ? "is-drop-target" : ""}"
@@ -7726,34 +7739,29 @@ function renderAccountingRows(rows) {
             ${draggable ? `draggable="true" data-accounting-draggable="${handle}"` : ""}
             ${dropTarget ? `data-accounting-drop-target="${row.accounting_id}"` : ""}>
             <div class="accounting-row-main">
-              <div class="accounting-drag-cell" title="${draggable ? "Перетащите эту заявку на строку нужного чека" : dropTarget ? "Сюда можно перетащить заявку" : ""}">
-                ${draggable ? `<span class="accounting-drag-handle">⋮⋮</span>` : dropTarget ? `<span class="accounting-drop-icon">⇩</span>` : ""}
-              </div>
               <div class="accounting-date">
+                <span class="accounting-mobile-label">Дата чека</span>
                 <strong>${escapeHtml(accountingDisplayDate(row))}</strong>
-                <span>${row.has_receipt && row.receipt_number ? `чек №${escapeHtml(row.receipt_number)}${row.request_count ? ` · ${row.request_count > 1 ? `${row.request_count} заявки` : `заявка №${row.payment_request_id}`}` : ""}` : row.is_receipt_only ? "чек без заявки" : row.request_count > 1 ? `${row.request_count} заявки` : `заявка №${row.payment_request_id}`}</span>
+                ${row.has_receipt && row.receipt_number ? `<span>№ ${escapeHtml(String(row.receipt_number).replace(/\D/g, ""))}</span>` : ""}
               </div>
-              <div class="accounting-event">
-                <strong>${escapeHtml(row.is_receipt_only ? "Чек e-Salyq без заявки" : (row.event_title || row.item_name || "Без названия"))}</strong>
-                <span>${row.is_receipt_only ? escapeHtml(row.service_name || row.receipt_filename || "Загруженный чек") : `${escapeHtml(row.client_name || "")}${row.manager_name ? ` · ${escapeHtml(row.manager_name)}` : ""}`}</span>
+              <div class="accounting-person accounting-fio">
+                <span class="accounting-mobile-label">ФИО</span>
+                <strong>${escapeHtml(accountingDisplayName(row))}</strong>
               </div>
-              <div class="accounting-person">
-                <strong>${escapeHtml(person)}</strong>
-                <span>${(row.iin || row.request_iin) ? `ИИН ${escapeHtml(row.iin || row.request_iin)}` : row.is_receipt_only ? "ФИО взято из чека" : escapeHtml(row.item_name || "")}</span>
+              <div class="accounting-iin">
+                <span class="accounting-mobile-label">ИИН</span>
+                <strong>${escapeHtml(accountingDisplayIin(row))}</strong>
               </div>
               <div class="accounting-amount ${amountClass}">
-                <strong>${formatMoney(mainAmount)} ₸</strong>
-                ${row.has_receipt && Number(row.request_count || 0) > 0
-                  ? `<span>чек: ${formatMoney(row.receipt_amount ?? 0)} ₸</span>`
-                  : row.is_receipt_only
-                    ? `<span>сумма чека</span>`
-                    : `<span>${escapeHtml(accountingRequestStatusText(row))}</span>`}
+                <span class="accounting-mobile-label">Сумма</span>
+                <strong>${mainAmount > 0 ? `${formatMoney(mainAmount)} ₸` : "—"}</strong>
               </div>
-              <div class="accounting-state">
-                ${accountingParseBadge(row)}
-                ${row.has_receipt ? `<span class="accounting-file-name" title="${escapeHtml(row.receipt_filename || "")}">${escapeHtml(row.receipt_filename || "Чек")}</span>` : ""}
+              <div class="accounting-work">
+                <span class="accounting-mobile-label">Наименование работы</span>
+                <strong>${escapeHtml(accountingDisplayWork(row))}</strong>
               </div>
               <div class="accounting-actions">
+                ${draggable ? `<span class="accounting-drag-handle" title="Перетащите заявку на нужный чек">⋮⋮</span>` : dropTarget ? `<span class="accounting-drop-icon" title="Сюда можно перетащить заявку">⇩</span>` : ""}
                 ${!row.is_receipt_only && row.payment_request_id ? `<label class="secondary accounting-upload-btn">${row.has_receipt ? "Заменить чек" : "Прикрепить чек"}<input type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" data-accounting-file="${handle}" /></label>` : ""}
                 ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-open-receipt="${handle}">Открыть</button>` : ""}
                 ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-expand="${handle}">${expanded ? "Свернуть данные" : "Проверить данные"}</button>` : ""}
@@ -7761,8 +7769,7 @@ function renderAccountingRows(rows) {
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
-            ${row.is_receipt_only ? `<div class="accounting-drop-hint">Перетащите сюда заявку, если знаете, что она относится к этому чеку.</div>` : draggable ? `<div class="accounting-drag-hint">Перетащите строку на нужный чек, чтобы привязать оплату вручную.</div>` : ""}
-            ${renderAccountingMembers(row)}
+            ${expanded ? renderAccountingMembers(row) : ""}
             <div class="accounting-progress hidden" data-accounting-progress="${handle}"></div>
             ${expanded && row.has_receipt ? renderAccountingEditor(row) : ""}
           </article>
@@ -7783,7 +7790,7 @@ function renderAccountingBatchModal() {
           <div>
             <div class="eyebrow">e-Salyq Business</div>
             <h3>Загрузить пачку чеков</h3>
-            <p class="muted">Сайт читает QR e-Salyq, получает официальный чек из КГД и сам привязывает его только при точном совпадении фамилии + суммы. OCR используется только как резерв, если QR повреждён или обрезан.</p>
+            <p class="muted">Сайт читает QR e-Salyq, получает официальный чек из КГД и добирает из изображения только те поля, которых нет в ответе. Точное совпадение фамилии + суммы привязывается автоматически.</p>
           </div>
           <button class="ghost" id="accountingBatchClose" type="button" ${state.accountingBatchRunning ? "disabled" : ""}>✕</button>
         </div>
@@ -7825,7 +7832,7 @@ function renderAccountingPanel() {
         <div class="accounting-summary">
           <span><strong>${totalRequests}</strong> новых заявок</span>
           <span><strong>${withReceipt}</strong> чеков</span>
-          <span><strong>${unmatchedReceipts}</strong> не привязано</span>
+          <span><strong>${unmatchedReceipts}</strong> чеков без заявок</span>
           <span><strong>${reviewed}</strong> проверено</span>
         </div>
       </div>
@@ -8079,10 +8086,46 @@ const ACCOUNTING_RU_MONTHS = {
 function accountingNormalizeOcrText(text) {
   return String(text || "")
     .replace(/\u00a0/g, " ")
-    .replace(/[|]/g, "I")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060\ufeff�]/g, "")
     .replace(/[ \t]+/g, " ")
     .replace(/\r/g, "")
     .trim();
+}
+
+function accountingCleanPersonName(value) {
+  const cleaned = accountingNormalizeOcrText(value)
+    .replace(/^\s*(?:ФИО|FIO|ИП|исполнитель|самозанятый)\s*[:№#-]*\s*/i, "")
+    .replace(/[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі .'-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[ .'-]+|[ .'-]+$/g, "");
+  const words = cleaned.split(/\s+/).filter((word) => /[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/.test(word));
+  return words.length >= 2 ? words.join(" ") : "";
+}
+
+function accountingCleanServiceName(value) {
+  return accountingNormalizeOcrText(value)
+    .replace(/^\s*(?:услуга|service|наименование(?:\s+работы)?|description)\s*[:#-]*\s*/i, "")
+    .replace(/[|¦¬`~^{}\[\]<>\\]+/g, " ")
+    .replace(/\s+\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$/i, "")
+    .split(/\b(?:ИИН|IIN|ЖСН|БИН|BIN|Итого|Total|Чек\s*[№N#])\b/i, 1)[0]
+    .replace(/\s+/g, " ")
+    .replace(/^[ .,:;_\-—]+|[ .,:;_\-—]+$/g, "");
+}
+
+function accountingServiceTextScore(value) {
+  const text = String(value || "");
+  const letters = (text.match(/[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/g) || []).length;
+  const cyrillic = (text.match(/[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/g) || []).length;
+  const singletons = text.split(/\s+/).filter((word) => word.replace(/\W/g, "").length === 1).length;
+  const symbols = (text.match(/[^\w\s.,:;()/'&+\-—]/gu) || []).length;
+  return letters + cyrillic - singletons * 7 - symbols * 5;
+}
+
+function accountingMoneyCandidates(text) {
+  const matches = String(text || "").matchAll(/(?<!\d)(\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?|\d{3,}(?:[.,]\d{1,2})?)(?!\d)/g);
+  return [...matches]
+    .map((match) => accountingCleanMoney(match[1]))
+    .filter((value) => value !== null && value > 0);
 }
 
 function accountingCleanMoney(text) {
@@ -8124,8 +8167,13 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   const dateValue = accountingParseReceiptDate(joined);
   if (dateValue) result.receipt_datetime = dateValue;
 
-  const totalMatch = joined.match(/(?:Итого|ИТОГО|Total)[^0-9]{0,30}([0-9][0-9\s.,]{0,18})\s*(?:₸|тг|тенге|T\b)/i);
-  let amount = totalMatch ? accountingCleanMoney(totalMatch[1]) : null;
+  const totalIndexForAmount = lines.findIndex((line) => /\b(?:Итого|Total)\b/i.test(line));
+  let amount = null;
+  if (totalIndexForAmount >= 0) {
+    const totalWindow = lines.slice(totalIndexForAmount, totalIndexForAmount + 3).join(" ");
+    const totalCandidates = accountingMoneyCandidates(totalWindow);
+    if (totalCandidates.length) amount = Math.max(...totalCandidates);
+  }
   if (amount === null) {
     const candidates = [...joined.matchAll(/([0-9][0-9\s]{1,15}(?:[.,]\d{1,2})?)\s*(?:₸|тг|тенге|T\b)/gi)]
       .map((match) => accountingCleanMoney(match[1]))
@@ -8144,10 +8192,12 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   const looksLikePersonName = (line) => {
     const clean = String(line || "").replace(/[•·]/g, " ").replace(/\s+/g, " ").trim();
     if (!clean) return false;
+    if (/[:,]/.test(clean)) return false;
     if (/(?:режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|receipt|итого|плат[её]ж|наличн|безналичн|текущ|банк|Кбе|ИИК|HSBK|₸|тг|тенге)/i.test(clean)) return false;
     const words = clean.split(/\s+/).filter(Boolean);
     const letters = (clean.match(/[A-Za-zА-Яа-яЁё]/g) || []).length;
-    return words.length >= 2 && words.length <= 5 && letters >= 8;
+    const nameCase = clean.toUpperCase() === clean || words.every((word) => word.slice(0, 1) === word.slice(0, 1).toUpperCase());
+    return words.length >= 2 && words.length <= 5 && letters >= 8 && nameCase;
   };
 
   // Real e-Salyq layout: "ИИН ..." is followed by the person's full name.
@@ -8158,7 +8208,7 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
     for (let i = iinLineIndex + 1; i <= Math.min(lines.length - 1, iinLineIndex + 4); i += 1) nearbyIndexes.push(i);
     for (let i = iinLineIndex - 1; i >= Math.max(0, iinLineIndex - 4); i -= 1) nearbyIndexes.push(i);
     for (const index of nearbyIndexes) {
-      const line = lines[index].replace(/^[^A-Za-zА-Яа-яЁё]+|[^A-Za-zА-Яа-яЁё .'-]+$/g, "").trim();
+      const line = accountingCleanPersonName(lines[index]);
       if (looksLikePersonName(line)) {
         result.contractor_full_name = line;
         break;
@@ -8169,23 +8219,21 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   // The service line normally carries the amount on the same line, e.g.
   // "Видеосъемка событий: свадеб, встреч 100 000 ₸". Strip only the trailing
   // monetary part and preserve the exact service wording for the future R-1.
-  let serviceLines = [];
+  let rawServiceLines = [];
   const totalIndex = lines.findIndex((line) => /^(?:итого|total)\b/i.test(line));
   const paymentIndex = lines.findIndex((line) => /безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты/i.test(line));
   if (paymentIndex >= 0) {
     const endIndex = totalIndex > paymentIndex ? totalIndex : Math.min(lines.length, paymentIndex + 8);
-    serviceLines = lines.slice(paymentIndex + 1, endIndex);
+    rawServiceLines = lines.slice(paymentIndex + 1, endIndex);
   } else if (totalIndex > 1) {
-    serviceLines = lines.slice(Math.max(0, totalIndex - 6), totalIndex);
+    rawServiceLines = lines.slice(Math.max(0, totalIndex - 6), totalIndex);
   }
-  serviceLines = serviceLines
-    .map((line) => line
-      .replace(/\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|T\b)\s*$/i, "")
-      .replace(/\s+/g, " ")
-      .trim())
+  const serviceLines = rawServiceLines
+    .map((line) => accountingCleanServiceName(line))
     .filter((line) => !/(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)/i.test(line))
-    .filter((line) => (line.match(/[A-Za-zА-Яа-яЁё]/g) || []).length >= 3);
-  if (serviceLines.length) result.service_name = serviceLines.join(" ").replace(/\s+/g, " ").trim();
+    .filter((line) => (line.match(/[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/g) || []).length >= 3)
+    .sort((a, b) => accountingServiceTextScore(b) - accountingServiceTextScore(a));
+  if (serviceLines.length) result.service_name = serviceLines[0];
 
   const recognizedFields = [
     result.contractor_full_name,
@@ -8198,6 +8246,59 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   result.parse_confidence = Math.min(96, 18 + recognizedFields * 13);
   result.ocr_text = text;
   return result;
+}
+
+function accountingReceiptMissingFields(data) {
+  const missing = [];
+  if (!accountingCleanPersonName(data?.contractor_full_name || "")) missing.push("ФИО");
+  if (!/^\d{12}$/.test(String(data?.iin || "").replace(/\D/g, ""))) missing.push("ИИН");
+  if (!String(data?.receipt_number || "").replace(/\D/g, "")) missing.push("номер");
+  if (!data?.receipt_datetime) missing.push("дату");
+  if (!(asNumber(data?.receipt_amount) > 0)) missing.push("сумму");
+  if (!accountingCleanServiceName(data?.service_name || "")) missing.push("наименование работы");
+  return missing;
+}
+
+function accountingNormalizeReceiptFields(data) {
+  const result = { ...(data || {}) };
+  if (result.contractor_full_name) result.contractor_full_name = accountingCleanPersonName(result.contractor_full_name) || null;
+  if (result.iin) result.iin = String(result.iin).replace(/\D/g, "").slice(0, 12) || null;
+  if (result.receipt_number) result.receipt_number = String(result.receipt_number).replace(/[ОO]/g, "0").replace(/\D/g, "") || null;
+  if (result.service_name) result.service_name = accountingCleanServiceName(result.service_name) || null;
+  if (!(asNumber(result.receipt_amount) > 0)) result.receipt_amount = null;
+  return result;
+}
+
+function accountingMergeReceiptFields(primary, fallback) {
+  const result = accountingNormalizeReceiptFields(primary);
+  const secondary = accountingNormalizeReceiptFields(fallback);
+  for (const key of ["contractor_full_name", "iin", "receipt_number", "receipt_datetime", "service_name", "receipt_amount"]) {
+    if (result[key] === null || result[key] === undefined || result[key] === "") result[key] = secondary[key] ?? null;
+  }
+  if (!result.ocr_text && secondary.ocr_text) result.ocr_text = secondary.ocr_text;
+  if (secondary.parse_confidence !== undefined && secondary.parse_confidence !== null) {
+    result.parse_confidence = Math.min(asNumber(result.parse_confidence || 100), asNumber(secondary.parse_confidence));
+  }
+  return accountingNormalizeReceiptFields(result);
+}
+
+async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress) {
+  await ensureAccountingOcrLibraries();
+  const ocrCanvas = accountingPreprocessCanvas(sourceCanvas);
+  progress("Резервное OCR… 0%");
+  const recognized = await window.Tesseract.recognize(ocrCanvas, "rus+eng", {
+    logger: (message) => {
+      if (message?.status === "recognizing text" && Number.isFinite(message.progress)) {
+        progress(`Резервное OCR… ${Math.round(message.progress * 100)}%`);
+      }
+    },
+  });
+  const parsed = accountingParseESalyqText(recognized?.data?.text || "", requestAmount);
+  if (recognized?.data?.confidence !== undefined && recognized?.data?.confidence !== null) {
+    parsed.parse_confidence = Math.round((asNumber(parsed.parse_confidence) + asNumber(recognized.data.confidence)) / 2);
+  }
+  parsed._ocr_fallback = true;
+  return accountingNormalizeReceiptFields(parsed);
 }
 
 async function resolveAccountingQrPayload(qrPayload) {
@@ -8223,8 +8324,7 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
     progress("QR найден. Получаю официальный чек из КГД…");
     try {
       const official = await resolveAccountingQrPayload(qrPayload);
-      progress("Данные получены из КГД по QR.");
-      return {
+      let result = accountingNormalizeReceiptFields({
         contractor_full_name: official.contractor_full_name || null,
         iin: official.iin || null,
         receipt_number: official.receipt_number || null,
@@ -8233,32 +8333,35 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
         receipt_amount: official.receipt_amount ?? null,
         qr_payload: official.qr_payload || qrPayload,
         parse_confidence: official.parse_confidence ?? 100,
-      };
+      });
+      const missing = accountingReceiptMissingFields(result);
+      if (missing.length) {
+        progress(`КГД не вернул ${missing.join(", ")}. Добираю из изображения…`);
+        try {
+          const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
+          result = accountingMergeReceiptFields(result, fallback);
+        } catch (ocrError) {
+          console.warn("Accounting OCR supplement failed", ocrError);
+        }
+      }
+      progress("Данные чека собраны.");
+      return result;
     } catch (error) {
-      progress(`QR найден, но КГД сейчас не отдал данные: ${error.message}`);
-      return { qr_payload: qrPayload, _qr_error: error.message };
+      progress(`QR найден, но КГД не отдал все данные. Читаю сам чек…`);
+      try {
+        const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
+        return { ...fallback, qr_payload: qrPayload, _qr_error: error.message };
+      } catch (ocrError) {
+        console.warn("Accounting QR and OCR fallback failed", ocrError);
+        return { qr_payload: qrPayload, _qr_error: error.message };
+      }
     }
   }
 
   // Fallback only when the QR itself cannot be decoded from the file. QR/KGD is
   // the primary and trusted source; OCR is kept for damaged/cropped screenshots.
   progress("QR не найден. Запускаю резервное распознавание текста…");
-  await ensureAccountingOcrLibraries();
-  const ocrCanvas = accountingPreprocessCanvas(sourceCanvas);
-  progress("Резервное OCR… 0%");
-  const recognized = await window.Tesseract.recognize(ocrCanvas, "rus+eng", {
-    logger: (message) => {
-      if (message?.status === "recognizing text" && Number.isFinite(message.progress)) {
-        progress(`Резервное OCR… ${Math.round(message.progress * 100)}%`);
-      }
-    },
-  });
-  const parsed = accountingParseESalyqText(recognized?.data?.text || "", requestAmount);
-  if (recognized?.data?.confidence !== undefined && recognized?.data?.confidence !== null) {
-    parsed.parse_confidence = Math.round((asNumber(parsed.parse_confidence) + asNumber(recognized.data.confidence)) / 2);
-  }
-  parsed._ocr_fallback = true;
-  return parsed;
+  return accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
 }
 
 function accountingPatchPath(row) {
@@ -8278,7 +8381,7 @@ async function uploadAccountingReceipt(handle, file) {
       file,
       row?.request_amount,
       (text) => setAccountingProgress(handle, text, true),
-      { resolveQr: false },
+      { resolveQr: true },
     );
   } catch (error) {
     console.error("Accounting receipt pre-read failed", error);
@@ -8416,20 +8519,32 @@ async function accountingDecodeStoredReceiptQr(row) {
   return accountingDecodeQr(canvas);
 }
 
+function accountingQrRefreshPayload(parsed, fallbackQr = null) {
+  const clean = accountingNormalizeReceiptFields(parsed || {});
+  const payload = { qr_payload: clean.qr_payload || fallbackQr || null };
+  for (const key of ["contractor_full_name", "iin", "receipt_number", "receipt_datetime", "service_name", "receipt_amount", "ocr_text", "parse_confidence"]) {
+    if (clean[key] !== undefined && clean[key] !== null && clean[key] !== "") payload[key] = clean[key];
+  }
+  return payload;
+}
+
+async function accountingReadStoredReceipt(row, onProgress = null) {
+  const file = await accountingStoredReceiptAsFile(row);
+  return recognizeAccountingReceiptFile(file, row?.request_amount, onProgress, { resolveQr: true });
+}
+
 async function refreshAccountingFromQr(handle, options = {}) {
   const row = accountingFindRowByHandle(handle);
   if (!row?.accounting_id || !row?.has_receipt) throw new Error("Чек не найден");
-  let qrPayload = row.qr_payload || null;
-  if (!qrPayload) {
-    setAccountingProgress(handle, "Повторно читаю QR из сохранённого чека…", true);
-    qrPayload = await accountingDecodeStoredReceiptQr(row);
-  }
-  if (!qrPayload) throw new Error("QR не удалось прочитать из сохранённого чека");
+  setAccountingProgress(handle, "Повторно читаю сохранённый чек…", true);
+  const parsed = await accountingReadStoredReceipt(row, (text) => setAccountingProgress(handle, text, true));
+  const payload = accountingQrRefreshPayload(parsed, row.qr_payload || null);
+  if (!payload.qr_payload) throw new Error("QR не удалось прочитать из сохранённого чека");
 
   setAccountingProgress(handle, "Получаю официальный чек из КГД по QR…", true);
   const updated = await api(`/accounting/self-employed/receipts/${row.accounting_id}/refresh-qr`, {
     method: "POST",
-    body: JSON.stringify({ qr_payload: qrPayload }),
+    body: JSON.stringify(payload),
   });
   accountingReplaceRow(updated);
   if (!options.silent) {
@@ -8469,15 +8584,17 @@ async function refreshAccountingMonthFromQr() {
       const current = (state.accountingRows || []).find((row) => Number(row.accounting_id) === Number(snapshot.accounting_id)) || snapshot;
       const handle = accountingRowHandle(current);
       try {
-        let qrPayload = current.qr_payload || null;
-        if (!qrPayload) qrPayload = await accountingDecodeStoredReceiptQr(current);
-        if (!qrPayload) {
+        const parsed = await accountingReadStoredReceipt(current, (text) => {
+          if (button) button.textContent = `${index + 1}/${rows.length} · ${text}`;
+        });
+        const payload = accountingQrRefreshPayload(parsed, current.qr_payload || null);
+        if (!payload.qr_payload) {
           noQrCount += 1;
           continue;
         }
         const refreshed = await api(`/accounting/self-employed/receipts/${current.accounting_id}/refresh-qr`, {
           method: "POST",
-          body: JSON.stringify({ qr_payload: qrPayload }),
+          body: JSON.stringify(payload),
         });
         accountingReplaceRow(refreshed);
         updatedCount += 1;
@@ -8542,7 +8659,7 @@ async function importAccountingBatchFiles() {
         file,
         null,
         (text) => updateAccountingBatchItem(file.name, `${index + 1}/${files.length} · ${text}`),
-        { resolveQr: false },
+        { resolveQr: true },
       );
     } catch (error) {
       console.error("Batch accounting receipt pre-read failed", file.name, error);
@@ -19588,7 +19705,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.83 loaded");
+  console.info("Contrast Finance web app v0.5.84 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

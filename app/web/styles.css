@@ -15255,3 +15255,94 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   .accounting-batch-actions { justify-content: stretch; }
   .accounting-batch-actions button { flex: 1; }
 }
+
+/* v0.5.84 — clean receipt ledger: five business columns, no file/status noise */
+.accounting-table-head,
+.accounting-row-main {
+  display: grid;
+  grid-template-columns: 120px minmax(220px, 1.25fr) 150px 140px minmax(250px, 1.45fr) minmax(250px, auto);
+  align-items: center;
+  gap: 12px;
+}
+
+.accounting-table-head {
+  padding: 0 14px 2px;
+  color: rgba(30, 35, 25, .56);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.accounting-row-main {
+  padding: 13px 14px;
+}
+
+.accounting-date,
+.accounting-fio,
+.accounting-iin,
+.accounting-amount,
+.accounting-work {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.accounting-fio strong,
+.accounting-work strong {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.25;
+}
+
+.accounting-iin strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .025em;
+}
+
+.accounting-mobile-label {
+  display: none;
+}
+
+.accounting-actions {
+  flex-wrap: wrap;
+}
+
+.accounting-members {
+  margin-left: 14px;
+}
+
+@media (max-width: 1380px) {
+  .accounting-table-head { display: none; }
+  .accounting-row-main {
+    grid-template-columns: 110px minmax(210px, 1fr) 145px 130px minmax(220px, 1.2fr);
+  }
+  .accounting-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .accounting-row-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 13px 16px;
+    padding: 13px;
+  }
+  .accounting-mobile-label {
+    display: block;
+    color: rgba(30, 35, 25, .5) !important;
+    font-size: 10px !important;
+    font-weight: 900;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+  }
+  .accounting-date { grid-column: 1; grid-row: auto; }
+  .accounting-amount { grid-column: 2; grid-row: auto; }
+  .accounting-fio,
+  .accounting-work { grid-column: 1 / -1; grid-row: auto; }
+  .accounting-iin { grid-column: 1 / -1; grid-row: auto; }
+  .accounting-actions { grid-column: 1 / -1; grid-row: auto; }
+  .accounting-members { margin-left: 11px; }
+}

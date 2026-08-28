@@ -5,6 +5,7 @@ from html import unescape
 from io import BytesIO
 import json
 import re
+import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
@@ -159,16 +160,50 @@ def _parse_report_datetime(text: str) -> datetime | None:
 def _money_from_text(value: str | None) -> Decimal | None:
     if not value:
         return None
-    raw = re.sub(r"[^0-9,.-]", "", str(value)).replace(",", ".")
+    raw = re.sub(r"[^0-9,.-]", "", str(value))
+    if not raw:
+        return None
+
+    # KGD reports have used both Russian and machine-oriented money formats:
+    # ``100 000,00``, ``100 000.00`` and plain ``100000``.  Treat a final
+    # one/two-digit group as decimals and a three-digit group as thousands.
+    comma = raw.rfind(",")
+    dot = raw.rfind(".")
+    separator = max(comma, dot)
+    if separator >= 0:
+        tail = re.sub(r"\D", "", raw[separator + 1:])
+        if 1 <= len(tail) <= 2:
+            whole = re.sub(r"\D", "", raw[:separator]) or "0"
+            raw = f"{whole}.{tail}"
+        else:
+            raw = re.sub(r"\D", "", raw)
+    else:
+        raw = re.sub(r"\D", "", raw)
     try:
-        return Decimal(raw).quantize(Decimal("0.01")) if raw else None
+        amount = Decimal(raw).quantize(Decimal("0.01")) if raw else None
+        return amount if amount is not None and amount > 0 else None
     except InvalidOperation:
         return None
 
 
+_MONEY_TOKEN_RE = re.compile(
+    r"(?<!\d)(\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?|\d{3,}(?:[.,]\d{1,2})?)(?!\d)"
+)
+
+
+def _money_candidates(value: str | None) -> list[Decimal]:
+    result: list[Decimal] = []
+    for match in _MONEY_TOKEN_RE.finditer(str(value or "")):
+        parsed = _money_from_text(match.group(1))
+        if parsed is not None:
+            result.append(parsed)
+    return result
+
+
 def _parse_esalyq_report_text(raw_text: str) -> dict:
     """Parse the official KGD report text, not pixels from the uploaded image."""
-    text = str(raw_text or "").replace("\xa0", " ").replace("\r", "")
+    text = _strip_receipt_system_chars(raw_text)
+    text = text.replace("\xa0", " ").replace("\r", "")
     text = re.sub(r"[ \t]+", " ", text)
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     joined = "\n".join(lines)
@@ -189,26 +224,41 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
             result["iin"] = digits
             break
 
-    total = re.search(r"(?:Итого|Total)[^0-9]{0,30}([0-9][0-9\s.,]{0,18})\s*(?:₸|тг|тенге|T\b)", joined, re.I)
-    if total:
-        amount = _money_from_text(total.group(1).replace(" ", ""))
-        if amount is not None:
-            result["receipt_amount"] = amount
+    # PDF text extraction often separates ``Итого`` and the number into two
+    # lines and may omit the tenge sign.  Read a small window around the total
+    # label instead of requiring one exact visual layout.
+    for index, line in enumerate(lines):
+        if not re.search(r"\b(?:Итого|Total)\b", line, re.I):
+            continue
+        window = " ".join(lines[index:min(len(lines), index + 3)])
+        candidates = _money_candidates(window)
+        if candidates:
+            result["receipt_amount"] = max(candidates)
+            break
+
+    if "receipt_amount" not in result:
+        currency_candidates: list[Decimal] = []
+        for line in lines:
+            if re.search(r"(?:₸|тг|тенге|тенге|KZT)", line, re.I):
+                currency_candidates.extend(_money_candidates(line))
+        if currency_candidates:
+            result["receipt_amount"] = max(currency_candidates)
 
     def looks_like_name(line: str) -> bool:
         clean = re.sub(r"\s+", " ", line or "").strip(" •·")
-        if not clean or re.search(r"режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|итого|плат[её]ж|наличн|безналичн|банк|Кбе|ИИК|HSBK|₸|тг", clean, re.I):
+        if not clean or ":" in clean or "," in clean or re.search(r"режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|итого|плат[её]ж|наличн|безналичн|банк|Кбе|ИИК|HSBK|₸|тг", clean, re.I):
             return False
         words = clean.split()
         letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", clean))
-        return 2 <= len(words) <= 5 and letters >= 8
+        name_case = clean.upper() == clean or all(word[:1].isupper() for word in words)
+        return 2 <= len(words) <= 5 and letters >= 8 and name_case
 
     iin_line_index = next((i for i, line in enumerate(lines) if re.search(r"(?:ИИН|IIN|ЖСН)", line, re.I)), -1)
     if iin_line_index >= 0:
         indices = list(range(iin_line_index + 1, min(len(lines), iin_line_index + 5)))
         indices += list(range(iin_line_index - 1, max(-1, iin_line_index - 5), -1))
         for idx in indices:
-            candidate = re.sub(r"^[^A-Za-zА-Яа-яЁё]+|[^A-Za-zА-Яа-яЁё .'-]+$", "", lines[idx]).strip()
+            candidate = clean_person_name(lines[idx])
             if looks_like_name(candidate):
                 result["contractor_full_name"] = candidate
                 break
@@ -219,20 +269,26 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
     # The most stable e-Salyq layout puts each service on a line ending with its
     # amount immediately before ``Итого``. Prefer that signal over positional
     # guessing so dates/FIO from shortened KGD reports cannot leak into R-1.
-    service_amount_re = re.compile(r"\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|T\b)\s*$", re.I)
-    service_lines = []
+    service_amount_re = re.compile(
+        r"\s+(?:\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+|\d{3,})(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$",
+        re.I,
+    )
+    service_candidates: list[tuple[int, str]] = []
     scan_end = total_index if total_index > 0 else len(lines)
     for raw_line in lines[:scan_end]:
-        if not service_amount_re.search(raw_line):
+        has_amount = bool(service_amount_re.search(raw_line))
+        if not has_amount:
             continue
         line = service_amount_re.sub("", raw_line)
-        line = re.sub(r"\s+", " ", line).strip()
+        line = clean_service_name(line)
+        if not line:
+            continue
         if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b|плат[её]ж|наличн|безналичн)", line, re.I):
             continue
         if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
-            service_lines.append(line)
+            service_candidates.append((_service_text_score(line) + 40, line))
 
-    if not service_lines:
+    if not service_candidates:
         if payment_index >= 0:
             end = total_index if total_index > payment_index else min(len(lines), payment_index + 8)
             candidates = lines[payment_index + 1:end]
@@ -242,16 +298,18 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
             candidates = []
         for raw_line in candidates:
             line = service_amount_re.sub("", raw_line)
-            line = re.sub(r"\s+", " ", line).strip()
+            line = clean_service_name(line)
+            if not line:
+                continue
             if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)", line, re.I):
                 continue
             # In fallback mode reject obvious date and person-name lines.
             if _parse_report_datetime(line) is not None or looks_like_name(line):
                 continue
             if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
-                service_lines.append(line)
-    if service_lines:
-        result["service_name"] = " ".join(service_lines).strip()
+                service_candidates.append((_service_text_score(line), line))
+    if service_candidates:
+        result["service_name"] = max(service_candidates, key=lambda item: item[0])[1]
 
     return result
 
@@ -311,20 +369,32 @@ def _parse_esalyq_json(payload: object) -> dict:
         or first_value(("fio",), ("customer", "buyer"))
     )
     if name:
-        cleaned = clean_text(str(name), 255)
+        cleaned = clean_person_name(str(name))
         if cleaned and "Contrast Event" not in cleaned:
             result["contractor_full_name"] = cleaned
 
-    amount = (
-        first_value(("total", "amount"))
-        or first_value(("total", "sum"))
-        or first_value(("check", "amount"))
-        or first_value(("receipt", "amount"))
-    )
-    if amount is not None:
-        parsed_amount = _money_from_text(str(amount))
-        if parsed_amount is not None:
-            result["receipt_amount"] = parsed_amount
+    amount_candidates: list[tuple[int, Decimal]] = []
+    for path, value in rows:
+        if value in {None, ""}:
+            continue
+        normalized_path = re.sub(r"[^a-z0-9]", "", path)
+        if not any(token in normalized_path for token in ("amount", "sum", "total", "price")):
+            continue
+        if any(token in normalized_path for token in ("tax", "vat", "discount", "change", "unitprice")):
+            continue
+        parsed_amount = _money_from_text(str(value))
+        if parsed_amount is None:
+            continue
+        score = 0
+        if "total" in normalized_path:
+            score += 50
+        if "check" in normalized_path or "receipt" in normalized_path:
+            score += 25
+        if "payment" in normalized_path:
+            score += 15
+        amount_candidates.append((score, parsed_amount))
+    if amount_candidates:
+        result["receipt_amount"] = max(amount_candidates, key=lambda item: (item[0], item[1]))[1]
 
     dt_value = (
         first_value(("check", "date"))
@@ -340,32 +410,61 @@ def _parse_esalyq_json(payload: object) -> dict:
             if parsed_dt:
                 result["receipt_datetime"] = parsed_dt
 
-    service = (
-        first_value(("service", "name"))
-        or first_value(("item", "name"))
-        or first_value(("product", "name"))
-        or first_value(("goods", "name"))
-        or first_value(("description",))
-    )
-    if service:
-        result["service_name"] = clean_text(str(service))
+    service_candidates: list[tuple[int, str]] = []
+    for path, value in rows:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        normalized_path = re.sub(r"[^a-z0-9]", "", path)
+        if not any(token in normalized_path for token in ("service", "item", "product", "goods", "work", "description")):
+            continue
+        cleaned = clean_service_name(value)
+        if not cleaned or len(re.findall(r"[A-Za-zА-Яа-яЁё]", cleaned)) < 3:
+            continue
+        score = _service_text_score(cleaned)
+        if any(token in normalized_path for token in ("name", "title", "description")):
+            score += 25
+        service_candidates.append((score, cleaned))
+    if service_candidates:
+        result["service_name"] = max(service_candidates, key=lambda item: item[0])[1]
 
     # JSON reports often contain human-readable labels too. Feeding a flattened
     # representation through the text parser covers variants without hardcoding
     # every historical backend key name.
-    flattened_text = "\n".join(f"{path}: {value}" for path, value in rows if value not in {None, ""})
+    human_values: list[str] = []
+    for _path, value in rows:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        text_value = _strip_html_to_text(value) if "<" in value and ">" in value else value
+        human_values.append(text_value)
+    flattened_text = "\n".join(human_values)
     text_result = _parse_esalyq_report_text(flattened_text)
     for key, value in text_result.items():
         result.setdefault(key, value)
+    if result.get("contractor_full_name"):
+        result["contractor_full_name"] = clean_person_name(result["contractor_full_name"])
+    if result.get("receipt_number"):
+        result["receipt_number"] = clean_receipt_number(result["receipt_number"])
+    if result.get("service_name"):
+        result["service_name"] = clean_service_name(result["service_name"])
     return result
 
 
 def _kgd_response_payload(response: requests.Response) -> tuple[dict, str]:
     content_type = (response.headers.get("content-type") or "").lower()
     raw = response.content or b""
-    if "json" in content_type:
-        payload = response.json()
-        return _parse_esalyq_json(payload), json.dumps(payload, ensure_ascii=False)
+    # Some historical KGD gateways returned JSON with ``text/plain`` or
+    # ``application/octet-stream``.  Detect JSON by the body too; otherwise the
+    # machine keys leak into the visible service text and amount fields remain
+    # empty even though the payload contains them.
+    stripped = raw.lstrip()
+    if "json" in content_type or stripped.startswith((b"{", b"[")):
+        try:
+            encoding = response.encoding or "utf-8"
+            payload = json.loads(raw.decode(encoding, errors="replace"))
+        except (ValueError, UnicodeDecodeError):
+            payload = None
+        if payload is not None:
+            return _parse_esalyq_json(payload), json.dumps(payload, ensure_ascii=False)
     if "pdf" in content_type or raw.startswith(b"%PDF"):
         try:
             reader = PdfReader(BytesIO(raw))
@@ -389,7 +488,7 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
             timeout=KGD_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.83 (+e-Salyq receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.84 (+e-Salyq receipt verification)",
                 "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
             },
         )
@@ -484,6 +583,71 @@ def clean_text(value: str | None, max_length: int | None = None) -> str | None:
     if max_length:
         cleaned = cleaned[:max_length]
     return cleaned
+
+
+def _strip_receipt_system_chars(value: object) -> str:
+    """Remove scanner/control artefacts while preserving normal receipt text."""
+    source = unescape(str(value or ""))
+    cleaned: list[str] = []
+    for char in source:
+        category = unicodedata.category(char)
+        if char in {"\n", "\t"}:
+            cleaned.append(char)
+        elif category not in {"Cc", "Cf", "Cs", "Co", "Cn"} and char != "�":
+            cleaned.append(char)
+    return "".join(cleaned)
+
+
+def clean_person_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _strip_receipt_system_chars(value)
+    cleaned = re.sub(r"^\s*(?:ФИО|FIO|ИП|исполнитель|самозанятый)\s*[:№#-]*\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі .'-]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .'-")
+    if not cleaned:
+        return None
+    words = [word for word in cleaned.split() if re.search(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", word)]
+    if len(words) < 2:
+        return None
+    return " ".join(words)[:255]
+
+
+def clean_receipt_number(value: str | None) -> str | None:
+    if not value:
+        return None
+    source = str(value).replace("О", "0").replace("O", "0")
+    match = re.search(r"\d{4,24}", re.sub(r"[\s-]+", "", source))
+    return match.group(0) if match else None
+
+
+def clean_service_name(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _strip_receipt_system_chars(value)
+    cleaned = re.sub(r"^\s*(?:услуга|service|наименование(?:\s+работы)?|description)\s*[:#-]*\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"[|¦¬`~^{}\[\]<>\\]+", " ", cleaned)
+    # OCR commonly appends an amount and then fragments from the next visual
+    # column.  The formatted-thousands signal is safe for names such as
+    # ``Фото 360`` while trimming ``... 100 000 ₸ I|L|...`` completely.
+    cleaned = re.sub(
+        r"\s+\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$",
+        "",
+        cleaned,
+        flags=re.I,
+    )
+    cleaned = re.split(r"\b(?:ИИН|IIN|ЖСН|БИН|BIN|Итого|Total|Чек\s*[№N#])\b", cleaned, maxsplit=1, flags=re.I)[0]
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,:;_-—")
+    return cleaned or None
+
+
+def _service_text_score(value: str | None) -> int:
+    text = str(value or "")
+    letters = len(re.findall(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", text))
+    cyrillic = len(re.findall(r"[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", text))
+    singletons = len([word for word in text.split() if len(re.sub(r"\W", "", word)) == 1])
+    symbols = len(re.findall(r"[^\w\s.,:;()/'&+\-—]", text, re.UNICODE))
+    return letters + cyrillic - singletons * 7 - symbols * 5
 
 
 def clean_iin(value: str | None) -> str | None:
@@ -1132,11 +1296,11 @@ def _apply_import_metadata(
     ocr_text: str | None,
     parse_confidence: str | None,
 ) -> None:
-    record.contractor_full_name = clean_text(contractor_full_name, 255)
+    record.contractor_full_name = clean_person_name(contractor_full_name)
     record.iin = clean_iin(iin)
-    record.receipt_number = clean_text(receipt_number, 80)
+    record.receipt_number = clean_receipt_number(receipt_number)
     record.receipt_datetime = clean_datetime(receipt_datetime)
-    record.service_name = clean_text(service_name)
+    record.service_name = clean_service_name(service_name)
     record.receipt_amount = clean_decimal(receipt_amount)
     record.qr_payload = canonical_esalyq_qr(qr_payload) if qr_payload else None
     record.ocr_text = str(ocr_text)[:50000] if ocr_text else None
@@ -1265,22 +1429,28 @@ def refresh_accounting_receipt_from_qr(
         db,
         exclude_id=record.id,
         qr_payload=official.get("qr_payload"),
-        receipt_number=official.get("receipt_number"),
-        iin=official.get("iin"),
+        receipt_number=official.get("receipt_number") or payload.receipt_number,
+        iin=official.get("iin") or payload.iin,
     )
 
-    # KGD is authoritative here: deliberately replace old OCR values rather
-    # than merging them, so historic garbage does not survive a successful QR
-    # refresh. Missing fields stay NULL and the row remains for human review.
-    record.contractor_full_name = clean_text(official.get("contractor_full_name"), 255)
-    record.iin = clean_iin(official.get("iin"))
-    record.receipt_number = clean_text(official.get("receipt_number"), 80)
+    # KGD remains authoritative.  The browser is allowed to supply OCR values
+    # only for fields the official report omitted; old stored OCR is never
+    # merged, so its scanner garbage cannot survive a refresh.
+    official_name = official.get("contractor_full_name")
+    official_iin = official.get("iin")
+    official_number = official.get("receipt_number")
     official_dt = official.get("receipt_datetime")
-    record.receipt_datetime = official_dt.replace(tzinfo=None) if isinstance(official_dt, datetime) else clean_datetime(official_dt)
-    record.service_name = clean_text(official.get("service_name"))
-    record.receipt_amount = clean_decimal(official.get("receipt_amount"))
+    official_service = official.get("service_name")
+    official_amount = official.get("receipt_amount")
+    record.contractor_full_name = clean_person_name(official_name or payload.contractor_full_name)
+    record.iin = clean_iin(official_iin or payload.iin)
+    record.receipt_number = clean_receipt_number(official_number or payload.receipt_number)
+    selected_dt = official_dt or payload.receipt_datetime
+    record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
+    record.service_name = clean_service_name(official_service or payload.service_name)
+    record.receipt_amount = clean_decimal(official_amount if official_amount is not None else payload.receipt_amount)
     record.qr_payload = official.get("qr_payload")
-    record.ocr_text = str(official.get("source_text") or "")[:50000] or None
+    record.ocr_text = str(official.get("source_text") or payload.ocr_text or "")[:50000] or None
     record.parse_confidence = Decimal(official.get("parse_confidence") or Decimal("100.00"))
     record.parse_status = "parsed"
     record.confirmed_at = None
@@ -1630,15 +1800,15 @@ async def upload_self_employed_receipt(
 
 def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccountingUpdate, current_user: User) -> None:
     if payload.contractor_full_name is not None:
-        record.contractor_full_name = clean_text(payload.contractor_full_name, 255)
+        record.contractor_full_name = clean_person_name(payload.contractor_full_name)
     if payload.iin is not None:
         record.iin = clean_iin(payload.iin)
     if payload.receipt_number is not None:
-        record.receipt_number = clean_text(payload.receipt_number, 80)
+        record.receipt_number = clean_receipt_number(payload.receipt_number)
     if payload.receipt_datetime is not None:
         record.receipt_datetime = payload.receipt_datetime.replace(tzinfo=None)
     if payload.service_name is not None:
-        record.service_name = clean_text(payload.service_name)
+        record.service_name = clean_service_name(payload.service_name)
     if payload.receipt_amount is not None:
         record.receipt_amount = clean_decimal(payload.receipt_amount)
     if payload.qr_payload is not None:

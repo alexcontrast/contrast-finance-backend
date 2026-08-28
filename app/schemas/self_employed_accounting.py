@@ -108,6 +108,17 @@ class SelfEmployedReceiptQrResolveCreate(BaseModel):
 
 class SelfEmployedReceiptQrRefreshCreate(BaseModel):
     qr_payload: str | None = Field(default=None, max_length=10000)
+    # Browser OCR is used only to fill fields missing from the official KGD
+    # response.  This lets an existing saved image repair itself without asking
+    # the accountant to upload the same receipt again.
+    contractor_full_name: str | None = Field(default=None, max_length=255)
+    iin: str | None = Field(default=None, max_length=20)
+    receipt_number: str | None = Field(default=None, max_length=80)
+    receipt_datetime: datetime | None = None
+    service_name: str | None = None
+    receipt_amount: Decimal | None = None
+    ocr_text: str | None = None
+    parse_confidence: Decimal | None = None
 
 
 class SelfEmployedReceiptQrResolveRead(BaseModel):
