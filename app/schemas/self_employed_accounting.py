@@ -102,6 +102,23 @@ class SelfEmployedReceiptImportRead(BaseModel):
     message: str
 
 
+class SelfEmployedReceiptQrResolveCreate(BaseModel):
+    qr_payload: str = Field(min_length=1, max_length=10000)
+
+
+class SelfEmployedReceiptQrResolveRead(BaseModel):
+    contractor_full_name: str | None = None
+    iin: str | None = None
+    receipt_number: str | None = None
+    receipt_datetime: datetime | None = None
+    service_name: str | None = None
+    receipt_amount: Decimal | None = None
+    qr_payload: str
+    parse_confidence: Decimal = Decimal("100.00")
+    source: str = "kgd_qr"
+    message: str = "Данные получены из КГД по QR чека"
+
+
 class R1CustomerProfileRead(BaseModel):
     name: str
     bin_iin: str

@@ -7639,10 +7639,10 @@ function renderAccountingEditor(row) {
       <div class="accounting-editor-head">
         <div>
           <strong>Данные чека</strong>
-          <div class="muted">${row.request_count > 1 ? `Этот чек покрывает ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : row.is_receipt_only ? "Чек загружен без найденной заявки. Его можно связать перетаскиванием." : "Проверьте распознанные реквизиты."}</div>
+          <div class="muted">${row.request_count > 1 ? `Этот чек покрывает ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : row.is_receipt_only ? "Чек загружен без найденной заявки. Его можно связать перетаскиванием." : "Проверьте данные чека."}</div>
         </div>
         ${row.parse_confidence !== null && row.parse_confidence !== undefined
-          ? `<span class="accounting-confidence">OCR ${Math.round(asNumber(row.parse_confidence))}%</span>`
+          ? `<span class="accounting-confidence">${row.qr_payload ? "QR/КГД" : "OCR fallback"} ${Math.round(asNumber(row.parse_confidence))}%</span>`
           : ""}
       </div>
       <div class="accounting-form-grid">
@@ -7667,8 +7667,9 @@ function renderAccountingEditor(row) {
         </label>
       </div>
       ${row.qr_payload ? `<details class="accounting-technical"><summary>QR чека найден</summary><div>${escapeHtml(row.qr_payload)}</div></details>` : ""}
-      ${row.ocr_text ? `<details class="accounting-technical"><summary>Распознанный текст</summary><pre>${escapeHtml(row.ocr_text)}</pre></details>` : ""}
+      ${row.ocr_text ? `<details class="accounting-technical"><summary>${row.qr_payload ? "Технический текст отчёта КГД" : "Резервное OCR"}</summary><pre>${escapeHtml(row.ocr_text)}</pre></details>` : ""}
       <div class="accounting-editor-actions">
+        ${row.qr_payload ? `<button class="secondary" type="button" data-accounting-refresh-qr="${handle}">↻ Получить из QR КГД</button>` : ""}
         <button class="secondary" type="button" data-accounting-save="${handle}">Сохранить</button>
         <button type="button" data-accounting-confirm="${handle}">Сохранить и подтвердить</button>
         <button class="ghost" type="button" data-accounting-collapse="${handle}">Свернуть</button>
@@ -7754,6 +7755,7 @@ function renderAccountingRows(rows) {
                 ${!row.is_receipt_only && row.payment_request_id ? `<label class="secondary accounting-upload-btn">${row.has_receipt ? "Заменить чек" : "Прикрепить чек"}<input type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" data-accounting-file="${handle}" /></label>` : ""}
                 ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-open-receipt="${handle}">Открыть</button>` : ""}
                 ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-expand="${handle}">${expanded ? "Свернуть данные" : "Проверить данные"}</button>` : ""}
+                ${row.has_receipt && row.accounting_id ? `<button class="danger" type="button" data-accounting-delete-receipt="${handle}">Удалить</button>` : ""}
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
@@ -7779,7 +7781,7 @@ function renderAccountingBatchModal() {
           <div>
             <div class="eyebrow">e-Salyq Business</div>
             <h3>Загрузить пачку чеков</h3>
-            <p class="muted">Сайт распознает каждый чек и сам привяжет его только при точном и единственном совпадении фамилии + суммы. Остальные чеки останутся отдельными строками.</p>
+            <p class="muted">Сайт читает QR e-Salyq, получает официальный чек из КГД и сам привязывает его только при точном совпадении фамилии + суммы. OCR используется только как резерв, если QR повреждён или обрезан.</p>
           </div>
           <button class="ghost" id="accountingBatchClose" type="button" ${state.accountingBatchRunning ? "disabled" : ""}>✕</button>
         </div>
@@ -7920,6 +7922,7 @@ async function splitAccountingGroup(requestId) {
   await loadSelfEmployedAccounting(true);
 }
 
+let accountingQrLibraryPromise = null;
 let accountingOcrLibrariesPromise = null;
 let accountingPdfLibraryPromise = null;
 
@@ -7942,15 +7945,24 @@ function loadAccountingScript(src, globalName) {
   });
 }
 
+function ensureAccountingQrLibrary() {
+  if (!accountingQrLibraryPromise) {
+    accountingQrLibraryPromise = loadAccountingScript("https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js", "jsQR")
+      .catch((error) => {
+        accountingQrLibraryPromise = null;
+        throw error;
+      });
+  }
+  return accountingQrLibraryPromise;
+}
+
 function ensureAccountingOcrLibraries() {
   if (!accountingOcrLibrariesPromise) {
-    accountingOcrLibrariesPromise = Promise.all([
-      loadAccountingScript("https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js", "jsQR"),
-      loadAccountingScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js", "Tesseract"),
-    ]).catch((error) => {
-      accountingOcrLibrariesPromise = null;
-      throw error;
-    });
+    accountingOcrLibrariesPromise = loadAccountingScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js", "Tesseract")
+      .catch((error) => {
+        accountingOcrLibrariesPromise = null;
+        throw error;
+      });
   }
   return accountingOcrLibrariesPromise;
 }
@@ -8186,27 +8198,64 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   return result;
 }
 
-async function recognizeAccountingReceiptFile(file, requestAmount = null, onProgress = null) {
+async function resolveAccountingQrPayload(qrPayload) {
+  return api("/accounting/self-employed/receipts/resolve-qr", {
+    method: "POST",
+    body: JSON.stringify({ qr_payload: qrPayload }),
+  });
+}
+
+async function recognizeAccountingReceiptFile(file, requestAmount = null, onProgress = null, options = {}) {
   const progress = (text) => { if (typeof onProgress === "function") onProgress(text); };
-  progress("Загружаю модуль распознавания…");
-  await ensureAccountingOcrLibraries();
-  progress(String(file.type || "") === "application/pdf" ? "Открываю PDF…" : "Готовлю изображение и ищу QR…");
+  progress("Ищу QR e-Salyq…");
+  await ensureAccountingQrLibrary();
+  progress(String(file.type || "") === "application/pdf" ? "Открываю PDF и ищу QR…" : "Открываю изображение и ищу QR…");
   const sourceCanvas = await canvasFromReceiptFile(file);
   const qrPayload = accountingDecodeQr(sourceCanvas);
+
+  if (qrPayload) {
+    if (options.resolveQr === false) {
+      progress("QR найден. Данные будут получены из КГД при загрузке…");
+      return { qr_payload: qrPayload };
+    }
+    progress("QR найден. Получаю официальный чек из КГД…");
+    try {
+      const official = await resolveAccountingQrPayload(qrPayload);
+      progress("Данные получены из КГД по QR.");
+      return {
+        contractor_full_name: official.contractor_full_name || null,
+        iin: official.iin || null,
+        receipt_number: official.receipt_number || null,
+        receipt_datetime: official.receipt_datetime || null,
+        service_name: official.service_name || null,
+        receipt_amount: official.receipt_amount ?? null,
+        qr_payload: official.qr_payload || qrPayload,
+        parse_confidence: official.parse_confidence ?? 100,
+      };
+    } catch (error) {
+      progress(`QR найден, но КГД сейчас не отдал данные: ${error.message}`);
+      return { qr_payload: qrPayload, _qr_error: error.message };
+    }
+  }
+
+  // Fallback only when the QR itself cannot be decoded from the file. QR/KGD is
+  // the primary and trusted source; OCR is kept for damaged/cropped screenshots.
+  progress("QR не найден. Запускаю резервное распознавание текста…");
+  await ensureAccountingOcrLibraries();
   const ocrCanvas = accountingPreprocessCanvas(sourceCanvas);
-  progress("Распознаю текст… 0%");
+  progress("Резервное OCR… 0%");
   const recognized = await window.Tesseract.recognize(ocrCanvas, "rus+eng", {
     logger: (message) => {
       if (message?.status === "recognizing text" && Number.isFinite(message.progress)) {
-        progress(`Распознаю текст… ${Math.round(message.progress * 100)}%`);
+        progress(`Резервное OCR… ${Math.round(message.progress * 100)}%`);
       }
     },
   });
   const parsed = accountingParseESalyqText(recognized?.data?.text || "", requestAmount);
-  if (qrPayload) parsed.qr_payload = qrPayload;
   if (recognized?.data?.confidence !== undefined && recognized?.data?.confidence !== null) {
     parsed.parse_confidence = Math.round((asNumber(parsed.parse_confidence) + asNumber(recognized.data.confidence)) / 2);
   }
+  parsed._ocr_fallback = true;
   return parsed;
 }
 
@@ -8219,34 +8268,54 @@ function accountingPatchPath(row) {
 async function uploadAccountingReceipt(handle, file) {
   const row = accountingFindRowByHandle(handle);
   if (!row?.payment_request_id) throw new Error("Для этой строки используйте пакетную загрузку чеков");
-  setAccountingProgress(handle, "Загружаю оригинал чека…", true);
+
+  setAccountingProgress(handle, "Читаю QR чека…", true);
+  let parsed = {};
+  try {
+    parsed = await recognizeAccountingReceiptFile(
+      file,
+      row?.request_amount,
+      (text) => setAccountingProgress(handle, text, true),
+      { resolveQr: false },
+    );
+  } catch (error) {
+    console.error("Accounting receipt pre-read failed", error);
+    parsed = {};
+  }
+
+  const usedOcrFallback = Boolean(parsed?._ocr_fallback);
+  delete parsed._qr_error;
+  delete parsed._ocr_fallback;
+  setAccountingProgress(handle, parsed.qr_payload ? "QR найден. Получаю данные из КГД и сохраняю чек…" : "Сохраняю чек…", true);
+
   const form = new FormData();
   form.append("file", file, file.name);
-  let updated = await apiForm(`/accounting/self-employed/${row.payment_request_id}/receipt`, form);
+  Object.entries(parsed || {}).forEach(([key, value]) => {
+    if (String(key).startsWith("_")) return;
+    if (value !== undefined && value !== null && value !== "") form.append(key, String(value));
+  });
+
+  const updated = await apiForm(`/accounting/self-employed/${row.payment_request_id}/receipt`, form);
   accountingReplaceRow(updated);
   const updatedHandle = accountingRowHandle(updated);
   state.accountingExpandedRequestId = updatedHandle;
 
-  try {
-    const parsed = await recognizeAccountingReceiptFile(file, row?.request_amount, (text) => setAccountingProgress(updatedHandle, text, true));
-    updated = await api(accountingPatchPath(updated), {
-      method: "PATCH",
-      body: JSON.stringify(parsed),
-    });
-    accountingReplaceRow(updated);
-    setAccountingProgress(accountingRowHandle(updated), "Готово. Проверьте распознанные данные.", true);
-    const receiptMonth = String(updated.receipt_datetime || "").slice(0, 7);
-    const currentMonth = selectedMonthValue();
-    if (receiptMonth && receiptMonth !== currentMonth) {
-      showToast(`Чек отнесён в ${monthLabelRu(receiptMonth)} по дате выписки`, 5000);
-    }
-  } catch (error) {
-    console.error("Accounting OCR failed", error);
-    setAccountingProgress(updatedHandle, `Чек сохранён. Распознавание не завершилось: ${error.message}. Данные можно заполнить вручную.`, true);
+  if (updated.qr_payload && updated.receipt_number && updated.receipt_amount !== null && updated.receipt_amount !== undefined) {
+    setAccountingProgress(updatedHandle, "Данные получены из КГД по QR. Проверьте их перед подтверждением.", true);
+  } else if (updated.qr_payload) {
+    setAccountingProgress(updatedHandle, "QR сохранён, но КГД пока не отдал данные. Позже нажмите «Получить из QR КГД».", true);
+  } else if (usedOcrFallback) {
+    setAccountingProgress(updatedHandle, "QR не прочитан. Применено резервное OCR — обязательно проверьте данные.", true);
+  } else {
+    setAccountingProgress(updatedHandle, "Чек сохранён без распознанных данных. Заполните их вручную.", true);
   }
 
-  // Reload through the server after OCR: if the receipt date belongs to another
-  // month the row must immediately move there instead of lingering locally.
+  const receiptMonth = String(updated.receipt_datetime || "").slice(0, 7);
+  const currentMonth = selectedMonthValue();
+  if (receiptMonth && receiptMonth !== currentMonth) {
+    showToast(`Чек отнесён в ${monthLabelRu(receiptMonth)} по дате выписки`, 5000);
+  }
+
   await loadSelfEmployedAccounting(true);
 }
 
@@ -8317,6 +8386,43 @@ async function openAccountingReceipt(handle) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+async function refreshAccountingFromQr(handle) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.qr_payload) throw new Error("В этом чеке QR не сохранён");
+  setAccountingProgress(handle, "Получаю официальный чек из КГД по QR…", true);
+  const official = await resolveAccountingQrPayload(row.qr_payload);
+  const payload = {
+    contractor_full_name: official.contractor_full_name || null,
+    iin: official.iin || null,
+    receipt_number: official.receipt_number || null,
+    receipt_datetime: official.receipt_datetime || null,
+    service_name: official.service_name || null,
+    receipt_amount: official.receipt_amount ?? null,
+    qr_payload: official.qr_payload || row.qr_payload,
+    parse_confidence: official.parse_confidence ?? 100,
+  };
+  const updated = await api(accountingPatchPath(row), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  accountingReplaceRow(updated);
+  state.accountingExpandedRequestId = accountingRowHandle(updated);
+  setAccountingProgress(accountingRowHandle(updated), "Данные обновлены из КГД по QR.", true);
+  await loadSelfEmployedAccounting(true);
+}
+
+async function deleteAccountingReceipt(handle) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.accounting_id || !row?.has_receipt) throw new Error("Чек не найден");
+  const requestNote = Number(row.request_count || 0) > 0
+    ? " Привязанные заявки не удалятся и снова появятся отдельными строками без чека."
+    : "";
+  if (!confirm(`Удалить чек${row.receipt_number ? ` №${row.receipt_number}` : ""}?${requestNote}`)) return;
+  await api(`/accounting/self-employed/receipts/${row.accounting_id}`, { method: "DELETE" });
+  state.accountingExpandedRequestId = null;
+  await loadSelfEmployedAccounting(true);
+}
+
 function updateAccountingBatchItem(fileName, message, cls = "") {
   const items = document.querySelectorAll("[data-accounting-batch-name]");
   for (const item of items) {
@@ -8342,16 +8448,22 @@ async function importAccountingBatchFiles() {
     const file = files[index];
     let parsed = {};
     try {
-      parsed = await recognizeAccountingReceiptFile(file, null, (text) => updateAccountingBatchItem(file.name, `${index + 1}/${files.length} · ${text}`));
+      parsed = await recognizeAccountingReceiptFile(
+        file,
+        null,
+        (text) => updateAccountingBatchItem(file.name, `${index + 1}/${files.length} · ${text}`),
+        { resolveQr: false },
+      );
     } catch (error) {
-      console.error("Batch accounting OCR failed", file.name, error);
-      updateAccountingBatchItem(file.name, `OCR не сработал: ${error.message}. Файл всё равно загружаю…`, "warn");
+      console.error("Batch accounting receipt pre-read failed", file.name, error);
+      updateAccountingBatchItem(file.name, `Не удалось прочитать QR/текст: ${error.message}. Файл всё равно загружаю…`, "warn");
     }
 
     try {
       const form = new FormData();
       form.append("file", file, file.name);
       Object.entries(parsed || {}).forEach(([key, value]) => {
+        if (String(key).startsWith("_")) return;
         if (value !== undefined && value !== null && value !== "") form.append(key, String(value));
       });
       const result = await apiForm("/accounting/self-employed/receipts/import", form);
@@ -8484,6 +8596,23 @@ function attachAccountingPanel() {
       if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
       attachAccountingPanel();
     };
+  });
+
+  document.querySelectorAll("[data-accounting-refresh-qr]").forEach((button) => {
+    button.onclick = async () => {
+      const handle = button.getAttribute("data-accounting-refresh-qr");
+      try {
+        button.disabled = true;
+        await refreshAccountingFromQr(handle);
+      } catch (error) {
+        setAccountingProgress(handle, error.message || "Не удалось получить данные из КГД", true);
+      } finally {
+        button.disabled = false;
+      }
+    };
+  });
+  document.querySelectorAll("[data-accounting-delete-receipt]").forEach((button) => {
+    button.onclick = () => deleteAccountingReceipt(button.getAttribute("data-accounting-delete-receipt")).catch((error) => alert(error.message));
   });
 
   document.querySelectorAll("[data-accounting-save]").forEach((button) => {
@@ -19369,7 +19498,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.81 loaded");
+  console.info("Contrast Finance web app v0.5.82 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

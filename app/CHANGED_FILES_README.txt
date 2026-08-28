@@ -1,10 +1,12 @@
-v0.5.81 changed files
+v0.5.82 changed files
 
+app/api/routes/self_employed_accounting.py
+app/schemas/self_employed_accounting.py
 app/core/config.py
 app/web/app.js
 app/web/index.html
-app/web/styles.css
+requirements.txt
 CHANGELOG.md
 README.md
 
-Cosmetic-only admin accounting UI patch. No DB migration.
+QR-first e-Salyq/KGD receipt parsing, receipt delete, duplicate protection. No DB migration.

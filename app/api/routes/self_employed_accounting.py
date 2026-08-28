@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from html import unescape
+from io import BytesIO
+import json
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
+import requests
+from pypdf import PdfReader
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +32,8 @@ from app.schemas.self_employed_accounting import (
     SelfEmployedAccountingRead,
     SelfEmployedAccountingUpdate,
     SelfEmployedReceiptImportRead,
+    SelfEmployedReceiptQrResolveCreate,
+    SelfEmployedReceiptQrResolveRead,
     R1CustomerProfileRead,
 )
 from app.services.auth import get_current_user
@@ -42,6 +50,363 @@ ALLOWED_RECEIPT_TYPES = {
     "application/pdf",
 }
 INACTIVE_REQUEST_STATUSES = {"cancelled", "rejected"}
+
+KGD_RECEIPT_HOST = "esb.kgd.gov.kz"
+KGD_RECEIPT_PATH = "/taxpay-check-core/get-check-report"
+KGD_RECEIPT_TIMEOUT = (5, 15)
+
+
+def canonical_esalyq_qr(value: str | None) -> str | None:
+    """Return a stable KGD receipt URL or reject unrelated QR payloads.
+
+    We intentionally only allow the exact public e-Salyq receipt endpoint. This
+    keeps the server-side fetch from becoming an SSRF primitive when QR content
+    comes from an uploaded image.
+    """
+    if not value or not str(value).strip():
+        return None
+    raw = str(value).strip()
+    parsed = urlparse(raw)
+    if parsed.scheme.lower() != "https" or (parsed.hostname or "").lower() != KGD_RECEIPT_HOST:
+        raise HTTPException(status_code=400, detail="QR не относится к официальному чеку e-Salyq Business")
+    if parsed.path.rstrip("/") != KGD_RECEIPT_PATH:
+        raise HTTPException(status_code=400, detail="QR содержит неизвестную ссылку e-Salyq")
+    params = parse_qs(parsed.query, keep_blank_values=False)
+    check_id = (params.get("check_id") or [None])[0]
+    ip_reg_id = (params.get("ip_reg_id") or [None])[0]
+    if not check_id or not ip_reg_id or not str(check_id).isdigit() or not str(ip_reg_id).isdigit():
+        raise HTTPException(status_code=400, detail="В QR не найдены идентификаторы чека e-Salyq")
+    query = urlencode({"check_id": str(check_id), "ip_reg_id": str(ip_reg_id)})
+    return f"https://{KGD_RECEIPT_HOST}{KGD_RECEIPT_PATH}?{query}"
+
+
+def _strip_html_to_text(source: str) -> str:
+    source = re.sub(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>", " ", source or "")
+    source = re.sub(r"(?i)<(?:br|/p|/div|/tr|/td|/li|/h[1-6])[^>]*>", "\n", source)
+    source = re.sub(r"(?s)<[^>]+>", " ", source)
+    source = unescape(source)
+    source = source.replace("\xa0", " ").replace("\r", "")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in source.split("\n")]
+    return "\n".join(line for line in lines if line)
+
+
+_RU_MONTHS = {
+    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
+    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+    "январь": 1, "февраль": 2, "март": 3, "апрель": 4, "май": 5, "июнь": 6,
+    "июль": 7, "август": 8, "сентябрь": 9, "октябрь": 10, "ноябрь": 11, "декабрь": 12,
+}
+
+
+def _parse_report_datetime(text: str) -> datetime | None:
+    lower = str(text or "").lower()
+    match = re.search(
+        r"(?:от\s*)?(\d{1,2})\s+([а-яё]+)\s+(20\d{2})(?:\s*г(?:ода)?[.,]?)?\s*[,\-]?\s*(\d{1,2}):(\d{2})",
+        lower,
+        re.I,
+    )
+    if match:
+        month = _RU_MONTHS.get(match.group(2))
+        if month:
+            return datetime(int(match.group(3)), month, int(match.group(1)), int(match.group(4)), int(match.group(5)))
+    match = re.search(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})[^\d]{0,10}(\d{1,2}):(\d{2})", lower)
+    if match:
+        return datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)), int(match.group(4)), int(match.group(5)))
+    return None
+
+
+def _money_from_text(value: str | None) -> Decimal | None:
+    if not value:
+        return None
+    raw = re.sub(r"[^0-9,.-]", "", str(value)).replace(",", ".")
+    try:
+        return Decimal(raw).quantize(Decimal("0.01")) if raw else None
+    except InvalidOperation:
+        return None
+
+
+def _parse_esalyq_report_text(raw_text: str) -> dict:
+    """Parse the official KGD report text, not pixels from the uploaded image."""
+    text = str(raw_text or "").replace("\xa0", " ").replace("\r", "")
+    text = re.sub(r"[ \t]+", " ", text)
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    joined = "\n".join(lines)
+    result: dict = {}
+
+    receipt = re.search(r"(?:чек|receipt)\s*[№N#]?\s*([0-9]{4,24})", joined, re.I)
+    if receipt:
+        result["receipt_number"] = receipt.group(1)
+
+    dt = _parse_report_datetime(joined)
+    if dt:
+        result["receipt_datetime"] = dt
+
+    iin_matches = re.findall(r"(?:ИИН|IIN|ЖСН)[^0-9]{0,20}((?:\d[\s-]?){12})", joined, re.I)
+    for candidate in iin_matches:
+        digits = re.sub(r"\D", "", candidate)
+        if len(digits) == 12 and digits != str(R1_CUSTOMER_PROFILE.get("bin_iin") or ""):
+            result["iin"] = digits
+            break
+
+    total = re.search(r"(?:Итого|Total)[^0-9]{0,30}([0-9][0-9\s.,]{0,18})\s*(?:₸|тг|тенге|T\b)", joined, re.I)
+    if total:
+        amount = _money_from_text(total.group(1).replace(" ", ""))
+        if amount is not None:
+            result["receipt_amount"] = amount
+
+    def looks_like_name(line: str) -> bool:
+        clean = re.sub(r"\s+", " ", line or "").strip(" •·")
+        if not clean or re.search(r"режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|итого|плат[её]ж|наличн|безналичн|банк|Кбе|ИИК|HSBK|₸|тг", clean, re.I):
+            return False
+        words = clean.split()
+        letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", clean))
+        return 2 <= len(words) <= 5 and letters >= 8
+
+    iin_line_index = next((i for i, line in enumerate(lines) if re.search(r"(?:ИИН|IIN|ЖСН)", line, re.I)), -1)
+    if iin_line_index >= 0:
+        indices = list(range(iin_line_index + 1, min(len(lines), iin_line_index + 5)))
+        indices += list(range(iin_line_index - 1, max(-1, iin_line_index - 5), -1))
+        for idx in indices:
+            candidate = re.sub(r"^[^A-Za-zА-Яа-яЁё]+|[^A-Za-zА-Яа-яЁё .'-]+$", "", lines[idx]).strip()
+            if looks_like_name(candidate):
+                result["contractor_full_name"] = candidate
+                break
+
+    total_index = next((i for i, line in enumerate(lines) if re.search(r"^(?:итого|total)\b", line, re.I)), -1)
+    payment_index = next((i for i, line in enumerate(lines) if re.search(r"безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты", line, re.I)), -1)
+    if payment_index >= 0:
+        end = total_index if total_index > payment_index else min(len(lines), payment_index + 8)
+        candidates = lines[payment_index + 1:end]
+    elif total_index > 0:
+        candidates = lines[max(0, total_index - 6):total_index]
+    else:
+        candidates = []
+    service_lines = []
+    for line in candidates:
+        line = re.sub(r"\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|T\b)\s*$", "", line, flags=re.I)
+        line = re.sub(r"\s+", " ", line).strip()
+        if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)", line, re.I):
+            continue
+        if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
+            service_lines.append(line)
+    if service_lines:
+        result["service_name"] = " ".join(service_lines).strip()
+
+    return result
+
+
+def _flatten_json(value, prefix: str = "") -> list[tuple[str, object]]:
+    rows: list[tuple[str, object]] = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            rows.extend(_flatten_json(child, child_prefix))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            rows.extend(_flatten_json(child, f"{prefix}[{index}]"))
+    else:
+        rows.append((prefix.lower(), value))
+    return rows
+
+
+def _parse_esalyq_json(payload: object) -> dict:
+    rows = _flatten_json(payload)
+    result: dict = {}
+
+    def first_value(key_fragments: tuple[str, ...], reject_fragments: tuple[str, ...] = ()):
+        for path, value in rows:
+            if value in {None, ""}:
+                continue
+            if all(fragment in path for fragment in key_fragments) and not any(fragment in path for fragment in reject_fragments):
+                return value
+        return None
+
+    receipt_number = (
+        first_value(("check", "number"))
+        or first_value(("receipt", "number"))
+        or first_value(("check", "num"))
+    )
+    if receipt_number is not None:
+        digits = re.sub(r"\D", "", str(receipt_number))
+        if digits:
+            result["receipt_number"] = digits
+
+    iin_candidates = []
+    for path, value in rows:
+        if "iin" not in path and "iinbin" not in path and "bin_iin" not in path:
+            continue
+        digits = re.sub(r"\D", "", str(value or ""))
+        if len(digits) == 12 and digits != str(R1_CUSTOMER_PROFILE.get("bin_iin") or ""):
+            priority = 0 if any(token in path for token in ("seller", "executor", "taxpayer", "individual", "person", "ip")) else 1
+            iin_candidates.append((priority, digits))
+    if iin_candidates:
+        result["iin"] = sorted(iin_candidates, key=lambda item: item[0])[0][1]
+
+    name = (
+        first_value(("seller", "name"))
+        or first_value(("executor", "name"))
+        or first_value(("taxpayer", "name"))
+        or first_value(("full", "name"), ("customer", "buyer"))
+        or first_value(("fio",), ("customer", "buyer"))
+    )
+    if name:
+        cleaned = clean_text(str(name), 255)
+        if cleaned and "Contrast Event" not in cleaned:
+            result["contractor_full_name"] = cleaned
+
+    amount = (
+        first_value(("total", "amount"))
+        or first_value(("total", "sum"))
+        or first_value(("check", "amount"))
+        or first_value(("receipt", "amount"))
+    )
+    if amount is not None:
+        parsed_amount = _money_from_text(str(amount))
+        if parsed_amount is not None:
+            result["receipt_amount"] = parsed_amount
+
+    dt_value = (
+        first_value(("check", "date"))
+        or first_value(("receipt", "date"))
+        or first_value(("create", "date"))
+        or first_value(("date", "time"))
+    )
+    if dt_value:
+        try:
+            result["receipt_datetime"] = clean_datetime(str(dt_value))
+        except HTTPException:
+            parsed_dt = _parse_report_datetime(str(dt_value))
+            if parsed_dt:
+                result["receipt_datetime"] = parsed_dt
+
+    service = (
+        first_value(("service", "name"))
+        or first_value(("item", "name"))
+        or first_value(("product", "name"))
+        or first_value(("goods", "name"))
+        or first_value(("description",))
+    )
+    if service:
+        result["service_name"] = clean_text(str(service))
+
+    # JSON reports often contain human-readable labels too. Feeding a flattened
+    # representation through the text parser covers variants without hardcoding
+    # every historical backend key name.
+    flattened_text = "\n".join(f"{path}: {value}" for path, value in rows if value not in {None, ""})
+    text_result = _parse_esalyq_report_text(flattened_text)
+    for key, value in text_result.items():
+        result.setdefault(key, value)
+    return result
+
+
+def _kgd_response_payload(response: requests.Response) -> tuple[dict, str]:
+    content_type = (response.headers.get("content-type") or "").lower()
+    raw = response.content or b""
+    if "json" in content_type:
+        payload = response.json()
+        return _parse_esalyq_json(payload), json.dumps(payload, ensure_ascii=False)
+    if "pdf" in content_type or raw.startswith(b"%PDF"):
+        try:
+            reader = PdfReader(BytesIO(raw))
+            text = "\n".join((page.extract_text() or "") for page in reader.pages[:3])
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="КГД вернул PDF чека, но его не удалось прочитать") from exc
+        return _parse_esalyq_report_text(text), text
+    encoding = response.encoding or "utf-8"
+    decoded = raw.decode(encoding, errors="replace")
+    text = _strip_html_to_text(decoded) if "html" in content_type or "<html" in decoded[:500].lower() else decoded
+    return _parse_esalyq_report_text(text), text
+
+
+def resolve_esalyq_qr(qr_payload: str) -> dict:
+    canonical = canonical_esalyq_qr(qr_payload)
+    if not canonical:
+        raise HTTPException(status_code=400, detail="QR чека не найден")
+    try:
+        response = requests.get(
+            canonical,
+            timeout=KGD_RECEIPT_TIMEOUT,
+            allow_redirects=True,
+            headers={
+                "User-Agent": "ContrastFinance/0.5.82 (+e-Salyq receipt verification)",
+                "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
+            },
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="Не удалось получить чек из КГД по QR. Попробуйте позже") from exc
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"КГД не отдал чек по QR (HTTP {response.status_code})")
+    # Refuse redirects away from the trusted KGD host.
+    final = urlparse(response.url)
+    if (final.hostname or "").lower() != KGD_RECEIPT_HOST:
+        raise HTTPException(status_code=502, detail="КГД перенаправил QR на неизвестный адрес")
+    parsed, raw_text = _kgd_response_payload(response)
+    useful = [
+        parsed.get("contractor_full_name"), parsed.get("iin"), parsed.get("receipt_number"),
+        parsed.get("receipt_datetime"), parsed.get("service_name"), parsed.get("receipt_amount"),
+    ]
+    count = sum(value not in {None, ""} for value in useful)
+    if count < 2:
+        raise HTTPException(status_code=502, detail="QR действителен, но формат ответа КГД пока не удалось разобрать")
+    parsed["qr_payload"] = canonical
+    parsed["parse_confidence"] = Decimal("100.00") if count >= 5 else Decimal("90.00")
+    parsed["source_text"] = raw_text[:50000]
+    return parsed
+
+
+def _duplicate_receipt_id(
+    db: Session,
+    *,
+    exclude_id: int | None = None,
+    qr_payload: str | None = None,
+    receipt_number: str | None = None,
+    iin: str | None = None,
+) -> int | None:
+    canonical_qr = None
+    if qr_payload:
+        try:
+            canonical_qr = canonical_esalyq_qr(qr_payload)
+        except HTTPException:
+            canonical_qr = str(qr_payload).strip()[:10000]
+    if canonical_qr:
+        query = select(SelfEmployedAccounting.id).where(SelfEmployedAccounting.qr_payload == canonical_qr)
+        if exclude_id is not None:
+            query = query.where(SelfEmployedAccounting.id != int(exclude_id))
+        duplicate = db.execute(query.limit(1)).scalar_one_or_none()
+        if duplicate is not None:
+            return int(duplicate)
+    number = clean_text(receipt_number, 80)
+    normalized_iin = re.sub(r"\D", "", str(iin or ""))
+    if number and len(re.sub(r"\D", "", number)) >= 6 and len(normalized_iin) == 12:
+        query = select(SelfEmployedAccounting.id).where(
+            SelfEmployedAccounting.receipt_number == number,
+            SelfEmployedAccounting.iin == normalized_iin,
+        )
+        if exclude_id is not None:
+            query = query.where(SelfEmployedAccounting.id != int(exclude_id))
+        duplicate = db.execute(query.limit(1)).scalar_one_or_none()
+        if duplicate is not None:
+            return int(duplicate)
+    return None
+
+
+def assert_receipt_metadata_unique(
+    db: Session,
+    *,
+    exclude_id: int | None = None,
+    qr_payload: str | None = None,
+    receipt_number: str | None = None,
+    iin: str | None = None,
+) -> None:
+    duplicate = _duplicate_receipt_id(
+        db,
+        exclude_id=exclude_id,
+        qr_payload=qr_payload,
+        receipt_number=receipt_number,
+        iin=iin,
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail=f"Этот чек уже загружен (строка #{duplicate})")
 
 
 def require_accounting_access(user: User) -> None:
@@ -712,7 +1077,7 @@ def _apply_import_metadata(
     record.receipt_datetime = clean_datetime(receipt_datetime)
     record.service_name = clean_text(service_name)
     record.receipt_amount = clean_decimal(receipt_amount)
-    record.qr_payload = str(qr_payload)[:10000] if qr_payload else None
+    record.qr_payload = canonical_esalyq_qr(qr_payload) if qr_payload else None
     record.ocr_text = str(ocr_text)[:50000] if ocr_text else None
     if parse_confidence not in {None, ""}:
         try:
@@ -793,6 +1158,27 @@ def _auto_match_receipt(
     return record, "matched", [request.id for request in requests]
 
 
+@router.post("/receipts/resolve-qr", response_model=SelfEmployedReceiptQrResolveRead)
+def resolve_self_employed_receipt_qr(
+    payload: SelfEmployedReceiptQrResolveCreate,
+    current_user: User = Depends(get_current_user),
+):
+    require_accounting_access(current_user)
+    parsed = resolve_esalyq_qr(payload.qr_payload)
+    return SelfEmployedReceiptQrResolveRead(
+        contractor_full_name=parsed.get("contractor_full_name"),
+        iin=parsed.get("iin"),
+        receipt_number=parsed.get("receipt_number"),
+        receipt_datetime=parsed.get("receipt_datetime"),
+        service_name=parsed.get("service_name"),
+        receipt_amount=parsed.get("receipt_amount"),
+        qr_payload=parsed["qr_payload"],
+        parse_confidence=parsed.get("parse_confidence", Decimal("100.00")),
+        source="kgd_qr",
+        message="Данные получены из официального чека КГД по QR",
+    )
+
+
 @router.post("/receipts/import", response_model=SelfEmployedReceiptImportRead)
 async def import_self_employed_receipt(
     file: UploadFile = File(...),
@@ -817,6 +1203,36 @@ async def import_self_employed_receipt(
         raise HTTPException(status_code=400, detail="Файл пустой")
     if len(content) > MAX_RECEIPT_BYTES:
         raise HTTPException(status_code=413, detail="Чек слишком большой. Максимум 10 МБ")
+
+    qr_error: str | None = None
+    if qr_payload:
+        # QR is the source of truth. The browser only decodes the QR image; the
+        # backend then fetches the official KGD receipt report and overwrites
+        # any OCR fallback values with the verified data.
+        try:
+            official = resolve_esalyq_qr(qr_payload)
+            contractor_full_name = official.get("contractor_full_name") or contractor_full_name
+            iin = official.get("iin") or iin
+            receipt_number = official.get("receipt_number") or receipt_number
+            official_dt = official.get("receipt_datetime")
+            receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
+            service_name = official.get("service_name") or service_name
+            official_amount = official.get("receipt_amount")
+            receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
+            qr_payload = official.get("qr_payload") or qr_payload
+            parse_confidence = str(official.get("parse_confidence", Decimal("100.00")))
+            # Keep the official KGD report text only as diagnostics. It is not OCR.
+            ocr_text = official.get("source_text") or ocr_text
+        except HTTPException as exc:
+            qr_payload = canonical_esalyq_qr(qr_payload)
+            qr_error = str(exc.detail)
+
+    assert_receipt_metadata_unique(
+        db,
+        qr_payload=qr_payload,
+        receipt_number=receipt_number,
+        iin=iin,
+    )
 
     normalized_amount = clean_decimal(receipt_amount)
     record, match_status, matched_ids = _auto_match_receipt(db, contractor_full_name, normalized_amount)
@@ -843,15 +1259,19 @@ async def import_self_employed_receipt(
         ocr_text=ocr_text,
         parse_confidence=parse_confidence,
     )
+    if qr_error:
+        record.parse_status = "uploaded"
     db.add(record)
     db.commit()
 
-    if match_status == "matched":
-        message = f"Чек автоматически привязан к заявке{'м' if len(matched_ids) > 1 else ''} №" + ", №".join(str(i) for i in matched_ids)
+    if qr_error:
+        message = f"Чек сохранён, QR найден, но данные КГД не получены: {qr_error}"
+    elif match_status == "matched":
+        message = f"Чек проверен по QR КГД и автоматически привязан к заявке{'м' if len(matched_ids) > 1 else ''} №" + ", №".join(str(i) for i in matched_ids)
     elif match_status == "ambiguous":
-        message = "Есть несколько заявок с такой фамилией и суммой — чек оставлен отдельной строкой"
+        message = "Чек проверен по QR КГД. Есть несколько заявок с такой фамилией и суммой — оставлен отдельной строкой"
     else:
-        message = "Точного совпадения фамилии и суммы нет — чек создан отдельной строкой"
+        message = "Чек проверен по QR КГД. Точного совпадения фамилии и суммы нет — создан отдельной строкой" if qr_payload else "QR не найден: чек создан отдельной строкой по резервному распознаванию"
     return SelfEmployedReceiptImportRead(
         row=load_accounting_row(db, record.id),
         match_status=match_status,
@@ -990,10 +1410,44 @@ def detach_request_from_receipt(
     return load_accounting_row(db, target.id)
 
 
+@router.delete("/receipts/{accounting_id}")
+def delete_accounting_receipt(
+    accounting_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_accounting_access(current_user)
+    target = get_record_or_404(db, accounting_id, lock=True)
+    if target.act_status not in {None, "", "not_created"}:
+        raise HTTPException(status_code=409, detail="Нельзя удалить чек после формирования АВР")
+    member_ids = list(
+        db.execute(
+            select(SelfEmployedAccountingRequest.payment_request_id).where(
+                SelfEmployedAccountingRequest.accounting_id == target.id
+            )
+        ).scalars().all()
+    )
+    # Deleting the accounting object removes the receipt and its membership links.
+    # Active payment requests themselves are untouched and immediately reappear as
+    # separate rows waiting for a new receipt. Standalone bad receipts simply vanish.
+    db.delete(target)
+    db.commit()
+    return {"ok": True, "released_request_ids": member_ids}
+
+
 @router.post("/{request_id}/receipt", response_model=SelfEmployedAccountingRead)
 async def upload_self_employed_receipt(
     request_id: int,
     file: UploadFile = File(...),
+    contractor_full_name: str | None = Form(default=None),
+    iin: str | None = Form(default=None),
+    receipt_number: str | None = Form(default=None),
+    receipt_datetime: str | None = Form(default=None),
+    service_name: str | None = Form(default=None),
+    receipt_amount: str | None = Form(default=None),
+    qr_payload: str | None = Form(default=None),
+    ocr_text: str | None = Form(default=None),
+    parse_confidence: str | None = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1007,7 +1461,34 @@ async def upload_self_employed_receipt(
         raise HTTPException(status_code=400, detail="Файл пустой")
     if len(content) > MAX_RECEIPT_BYTES:
         raise HTTPException(status_code=413, detail="Чек слишком большой. Максимум 10 МБ")
+
+    qr_error: str | None = None
+    if qr_payload:
+        try:
+            official = resolve_esalyq_qr(qr_payload)
+            contractor_full_name = official.get("contractor_full_name") or contractor_full_name
+            iin = official.get("iin") or iin
+            receipt_number = official.get("receipt_number") or receipt_number
+            official_dt = official.get("receipt_datetime")
+            receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
+            service_name = official.get("service_name") or service_name
+            official_amount = official.get("receipt_amount")
+            receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
+            qr_payload = official.get("qr_payload") or qr_payload
+            parse_confidence = str(official.get("parse_confidence", Decimal("100.00")))
+            ocr_text = official.get("source_text") or ocr_text
+        except HTTPException as exc:
+            qr_payload = canonical_esalyq_qr(qr_payload)
+            qr_error = str(exc.detail)
+
     record = get_or_create_record(db, request_id)
+    assert_receipt_metadata_unique(
+        db,
+        exclude_id=record.id,
+        qr_payload=qr_payload,
+        receipt_number=receipt_number,
+        iin=iin,
+    )
     _save_receipt_binary(
         db,
         record,
@@ -1016,6 +1497,20 @@ async def upload_self_employed_receipt(
         content_type=content_type,
         current_user=current_user,
     )
+    _apply_import_metadata(
+        record,
+        contractor_full_name=contractor_full_name,
+        iin=iin,
+        receipt_number=receipt_number,
+        receipt_datetime=receipt_datetime,
+        service_name=service_name,
+        receipt_amount=receipt_amount,
+        qr_payload=qr_payload,
+        ocr_text=ocr_text,
+        parse_confidence=parse_confidence,
+    )
+    if qr_error and record.parse_status == "parsed" and not any((contractor_full_name, iin, receipt_number, receipt_datetime, service_name, receipt_amount)):
+        record.parse_status = "uploaded"
     db.add(record)
     db.commit()
     return load_group_row(db, request_id)
@@ -1035,7 +1530,7 @@ def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccounti
     if payload.receipt_amount is not None:
         record.receipt_amount = clean_decimal(payload.receipt_amount)
     if payload.qr_payload is not None:
-        record.qr_payload = str(payload.qr_payload)[:10000]
+        record.qr_payload = canonical_esalyq_qr(payload.qr_payload) if payload.qr_payload else None
     if payload.ocr_text is not None:
         record.ocr_text = str(payload.ocr_text)[:50000]
     if payload.parse_confidence is not None:
@@ -1085,6 +1580,13 @@ def update_receipt_accounting(
 ):
     require_accounting_access(current_user)
     record = get_record_or_404(db, accounting_id, lock=True)
+    assert_receipt_metadata_unique(
+        db,
+        exclude_id=record.id,
+        qr_payload=payload.qr_payload,
+        receipt_number=payload.receipt_number,
+        iin=payload.iin,
+    )
     _update_record(record, payload, current_user)
     db.add(record)
     db.commit()
@@ -1101,6 +1603,13 @@ def update_self_employed_accounting(
     require_accounting_access(current_user)
     request, _ = get_request_or_404(db, request_id)
     record = get_or_create_record(db, request_id)
+    assert_receipt_metadata_unique(
+        db,
+        exclude_id=record.id,
+        qr_payload=payload.qr_payload,
+        receipt_number=payload.receipt_number,
+        iin=payload.iin,
+    )
     _update_record(record, payload, current_user)
     db.add(record)
     db.commit()
