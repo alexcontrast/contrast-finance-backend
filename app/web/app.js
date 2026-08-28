@@ -5933,6 +5933,7 @@ const state = {
   accountingBatchFiles: [],
   accountingBatchResults: [],
   accountingBatchRunning: false,
+  accountingRefreshRunning: false,
   accountingDragRowKey: null,
   closingPanelData: null,
   closingEditingExpenseId: null,
@@ -7175,6 +7176,7 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.accountingBatchFiles = [];
   state.accountingBatchResults = [];
   state.accountingBatchRunning = false;
+  state.accountingRefreshRunning = false;
   state.accountingDragRowKey = null;
 
   if (state.monthYearChangeTimer) {
@@ -8386,29 +8388,117 @@ async function openAccountingReceipt(handle) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-async function refreshAccountingFromQr(handle) {
+function accountingReceiptFilePath(row) {
+  if (row?.accounting_id) return `/accounting/self-employed/receipts/${row.accounting_id}/file`;
+  if (row?.payment_request_id) return `/accounting/self-employed/${row.payment_request_id}/receipt`;
+  throw new Error("У чека нет идентификатора");
+}
+
+async function accountingStoredReceiptAsFile(row) {
+  const response = await fetch(accountingReceiptFilePath(row), {
+    headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+  });
+  if (!response.ok) {
+    let detail = `Ошибка ${response.status}`;
+    try { detail = (await response.json()).detail || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  const blob = await response.blob();
+  return new File([blob], row.receipt_filename || "receipt", {
+    type: blob.type || row.receipt_content_type || "application/octet-stream",
+  });
+}
+
+async function accountingDecodeStoredReceiptQr(row) {
+  await ensureAccountingQrLibrary();
+  const file = await accountingStoredReceiptAsFile(row);
+  const canvas = await canvasFromReceiptFile(file);
+  return accountingDecodeQr(canvas);
+}
+
+async function refreshAccountingFromQr(handle, options = {}) {
   const row = accountingFindRowByHandle(handle);
-  if (!row?.qr_payload) throw new Error("В этом чеке QR не сохранён");
+  if (!row?.accounting_id || !row?.has_receipt) throw new Error("Чек не найден");
+  let qrPayload = row.qr_payload || null;
+  if (!qrPayload) {
+    setAccountingProgress(handle, "Повторно читаю QR из сохранённого чека…", true);
+    qrPayload = await accountingDecodeStoredReceiptQr(row);
+  }
+  if (!qrPayload) throw new Error("QR не удалось прочитать из сохранённого чека");
+
   setAccountingProgress(handle, "Получаю официальный чек из КГД по QR…", true);
-  const official = await resolveAccountingQrPayload(row.qr_payload);
-  const payload = {
-    contractor_full_name: official.contractor_full_name || null,
-    iin: official.iin || null,
-    receipt_number: official.receipt_number || null,
-    receipt_datetime: official.receipt_datetime || null,
-    service_name: official.service_name || null,
-    receipt_amount: official.receipt_amount ?? null,
-    qr_payload: official.qr_payload || row.qr_payload,
-    parse_confidence: official.parse_confidence ?? 100,
-  };
-  const updated = await api(accountingPatchPath(row), {
-    method: "PATCH",
-    body: JSON.stringify(payload),
+  const updated = await api(`/accounting/self-employed/receipts/${row.accounting_id}/refresh-qr`, {
+    method: "POST",
+    body: JSON.stringify({ qr_payload: qrPayload }),
   });
   accountingReplaceRow(updated);
-  state.accountingExpandedRequestId = accountingRowHandle(updated);
-  setAccountingProgress(accountingRowHandle(updated), "Данные обновлены из КГД по QR.", true);
-  await loadSelfEmployedAccounting(true);
+  if (!options.silent) {
+    state.accountingExpandedRequestId = accountingRowHandle(updated);
+    setAccountingProgress(accountingRowHandle(updated), "Старые данные заменены официальными данными КГД.", true);
+  }
+  if (options.reload !== false) await loadSelfEmployedAccounting(true);
+  return updated;
+}
+
+async function refreshAccountingMonthFromQr() {
+  if (state.accountingRefreshRunning) return;
+  state.accountingRefreshRunning = true;
+  const button = $("accountingRefreshBtn");
+  const originalText = button?.textContent || "Обновить";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Проверяю чеки…";
+  }
+
+  let updatedCount = 0;
+  let noQrCount = 0;
+  let errorCount = 0;
+  try {
+    await loadSelfEmployedAccounting(true);
+    const rows = (state.accountingRows || []).filter((row) => row.has_receipt && row.accounting_id);
+    if (!rows.length) {
+      showToast("В выбранном месяце пока нет чеков для перепроверки", 3500);
+      return;
+    }
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const snapshot = rows[index];
+      if (button) button.textContent = `Проверяю ${index + 1}/${rows.length}…`;
+      // The list is not reloaded inside the loop, so locate the same record by id
+      // even after previous records were replaced in local state.
+      const current = (state.accountingRows || []).find((row) => Number(row.accounting_id) === Number(snapshot.accounting_id)) || snapshot;
+      const handle = accountingRowHandle(current);
+      try {
+        let qrPayload = current.qr_payload || null;
+        if (!qrPayload) qrPayload = await accountingDecodeStoredReceiptQr(current);
+        if (!qrPayload) {
+          noQrCount += 1;
+          continue;
+        }
+        const refreshed = await api(`/accounting/self-employed/receipts/${current.accounting_id}/refresh-qr`, {
+          method: "POST",
+          body: JSON.stringify({ qr_payload: qrPayload }),
+        });
+        accountingReplaceRow(refreshed);
+        updatedCount += 1;
+      } catch (error) {
+        console.warn("Accounting QR month refresh failed", current.accounting_id, error);
+        errorCount += 1;
+      }
+    }
+
+    await loadSelfEmployedAccounting(true);
+    const parts = [`обновлено из КГД: ${updatedCount}`];
+    if (noQrCount) parts.push(`QR не прочитан: ${noQrCount}`);
+    if (errorCount) parts.push(`ошибок: ${errorCount}`);
+    showToast(`Бухгалтерия: ${parts.join(" · ")}`, 6000);
+  } finally {
+    state.accountingRefreshRunning = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
 }
 
 async function deleteAccountingReceipt(handle) {
@@ -8518,7 +8608,7 @@ function attachAccountingPanel() {
   }
 
   const refresh = $("accountingRefreshBtn");
-  if (refresh) refresh.onclick = () => loadSelfEmployedAccounting(true).catch((error) => alert(error.message));
+  if (refresh) refresh.onclick = () => refreshAccountingMonthFromQr().catch((error) => alert(error.message));
 
   const batchOpen = $("accountingBatchOpen");
   if (batchOpen) batchOpen.onclick = () => {
@@ -19498,7 +19588,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.82 loaded");
+  console.info("Contrast Finance web app v0.5.83 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

@@ -34,6 +34,7 @@ from app.schemas.self_employed_accounting import (
     SelfEmployedReceiptImportRead,
     SelfEmployedReceiptQrResolveCreate,
     SelfEmployedReceiptQrResolveRead,
+    SelfEmployedReceiptQrRefreshCreate,
     R1CustomerProfileRead,
 )
 from app.services.auth import get_current_user
@@ -56,27 +57,67 @@ KGD_RECEIPT_PATH = "/taxpay-check-core/get-check-report"
 KGD_RECEIPT_TIMEOUT = (5, 15)
 
 
-def canonical_esalyq_qr(value: str | None) -> str | None:
-    """Return a stable KGD receipt URL or reject unrelated QR payloads.
+def _qr_query_value(params: dict[str, list[str]], *aliases: str) -> str | None:
+    normalized = {re.sub(r"[^a-z0-9]", "", str(key).lower()): values for key, values in params.items()}
+    for alias in aliases:
+        values = normalized.get(re.sub(r"[^a-z0-9]", "", alias.lower())) or []
+        for value in values:
+            digits = re.sub(r"\D", "", str(value or ""))
+            if digits:
+                return digits
+    return None
 
-    We intentionally only allow the exact public e-Salyq receipt endpoint. This
-    keeps the server-side fetch from becoming an SSRF primitive when QR content
-    comes from an uploaded image.
+
+def _extract_esalyq_qr_ids(value: str | None) -> tuple[str, str] | None:
+    """Extract e-Salyq receipt identifiers from old and new QR variants.
+
+    e-Salyq has changed QR generation over time. Older receipts can use a
+    different scheme/host/path while still carrying the same stable identifiers.
+    We therefore never fetch the raw QR URL. We only extract numeric check_id and
+    ip_reg_id, then reconstruct a request to the one trusted KGD endpoint below.
+    This keeps SSRF protection while accepting historical e-Salyq receipts.
     """
     if not value or not str(value).strip():
         return None
-    raw = str(value).strip()
-    parsed = urlparse(raw)
-    if parsed.scheme.lower() != "https" or (parsed.hostname or "").lower() != KGD_RECEIPT_HOST:
-        raise HTTPException(status_code=400, detail="QR не относится к официальному чеку e-Salyq Business")
-    if parsed.path.rstrip("/") != KGD_RECEIPT_PATH:
-        raise HTTPException(status_code=400, detail="QR содержит неизвестную ссылку e-Salyq")
-    params = parse_qs(parsed.query, keep_blank_values=False)
-    check_id = (params.get("check_id") or [None])[0]
-    ip_reg_id = (params.get("ip_reg_id") or [None])[0]
-    if not check_id or not ip_reg_id or not str(check_id).isdigit() or not str(ip_reg_id).isdigit():
-        raise HTTPException(status_code=400, detail="В QR не найдены идентификаторы чека e-Salyq")
-    query = urlencode({"check_id": str(check_id), "ip_reg_id": str(ip_reg_id)})
+    raw = unescape(str(value).strip()).replace("\\u0026", "&")
+
+    candidates = [raw]
+    # Some scanners wrap an URL in text/JSON. Extract the URL when present.
+    url_match = re.search(r"https?://[^\s\"'<>]+", raw, re.I)
+    if url_match and url_match.group(0) != raw:
+        candidates.insert(0, url_match.group(0))
+
+    for candidate in candidates:
+        parsed = urlparse(candidate if "://" in candidate else f"https://{candidate.lstrip('/')}")
+        params = parse_qs(parsed.query, keep_blank_values=False)
+        check_id = _qr_query_value(params, "check_id", "checkId", "check-id", "checkid")
+        ip_reg_id = _qr_query_value(params, "ip_reg_id", "ipRegId", "ip-reg-id", "ipregid", "ip_regid")
+        if check_id and ip_reg_id:
+            return check_id, ip_reg_id
+
+    # Fallback for QR payloads that are not a conventional URL but still contain
+    # the named identifiers (for example a JSON/deeplink payload).
+    check_match = re.search(r"check[\s_\-]*id[^0-9]{0,12}(\d{1,24})", raw, re.I)
+    ip_match = re.search(r"ip[\s_\-]*reg[\s_\-]*id[^0-9]{0,12}(\d{1,24})", raw, re.I)
+    if check_match and ip_match:
+        return check_match.group(1), ip_match.group(1)
+    return None
+
+
+def canonical_esalyq_qr(value: str | None) -> str | None:
+    """Return a stable official KGD receipt URL for any supported e-Salyq QR.
+
+    The raw QR target is deliberately ignored after the identifiers are parsed.
+    The backend always talks only to the fixed KGD host/path, so accepting older
+    QR URL variants does not create an SSRF path.
+    """
+    ids = _extract_esalyq_qr_ids(value)
+    if ids is None:
+        if not value or not str(value).strip():
+            return None
+        raise HTTPException(status_code=400, detail="В QR не найдены идентификаторы чека e-Salyq Business")
+    check_id, ip_reg_id = ids
+    query = urlencode({"check_id": check_id, "ip_reg_id": ip_reg_id})
     return f"https://{KGD_RECEIPT_HOST}{KGD_RECEIPT_PATH}?{query}"
 
 
@@ -174,21 +215,41 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
 
     total_index = next((i for i, line in enumerate(lines) if re.search(r"^(?:итого|total)\b", line, re.I)), -1)
     payment_index = next((i for i, line in enumerate(lines) if re.search(r"безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты", line, re.I)), -1)
-    if payment_index >= 0:
-        end = total_index if total_index > payment_index else min(len(lines), payment_index + 8)
-        candidates = lines[payment_index + 1:end]
-    elif total_index > 0:
-        candidates = lines[max(0, total_index - 6):total_index]
-    else:
-        candidates = []
+
+    # The most stable e-Salyq layout puts each service on a line ending with its
+    # amount immediately before ``Итого``. Prefer that signal over positional
+    # guessing so dates/FIO from shortened KGD reports cannot leak into R-1.
+    service_amount_re = re.compile(r"\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|T\b)\s*$", re.I)
     service_lines = []
-    for line in candidates:
-        line = re.sub(r"\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|T\b)\s*$", "", line, flags=re.I)
+    scan_end = total_index if total_index > 0 else len(lines)
+    for raw_line in lines[:scan_end]:
+        if not service_amount_re.search(raw_line):
+            continue
+        line = service_amount_re.sub("", raw_line)
         line = re.sub(r"\s+", " ", line).strip()
-        if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)", line, re.I):
+        if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b|плат[её]ж|наличн|безналичн)", line, re.I):
             continue
         if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
             service_lines.append(line)
+
+    if not service_lines:
+        if payment_index >= 0:
+            end = total_index if total_index > payment_index else min(len(lines), payment_index + 8)
+            candidates = lines[payment_index + 1:end]
+        elif total_index > 0:
+            candidates = lines[max(0, total_index - 6):total_index]
+        else:
+            candidates = []
+        for raw_line in candidates:
+            line = service_amount_re.sub("", raw_line)
+            line = re.sub(r"\s+", " ", line).strip()
+            if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)", line, re.I):
+                continue
+            # In fallback mode reject obvious date and person-name lines.
+            if _parse_report_datetime(line) is not None or looks_like_name(line):
+                continue
+            if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
+                service_lines.append(line)
     if service_lines:
         result["service_name"] = " ".join(service_lines).strip()
 
@@ -328,7 +389,7 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
             timeout=KGD_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.82 (+e-Salyq receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.83 (+e-Salyq receipt verification)",
                 "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
             },
         )
@@ -1176,7 +1237,58 @@ def resolve_self_employed_receipt_qr(
         parse_confidence=parsed.get("parse_confidence", Decimal("100.00")),
         source="kgd_qr",
         message="Данные получены из официального чека КГД по QR",
+        source_text=parsed.get("source_text"),
     )
+
+
+@router.post("/receipts/{accounting_id}/refresh-qr", response_model=SelfEmployedAccountingRead)
+def refresh_accounting_receipt_from_qr(
+    accounting_id: int,
+    payload: SelfEmployedReceiptQrRefreshCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-read one stored receipt from KGD and replace legacy OCR metadata.
+
+    The caller may provide a freshly decoded QR payload from the stored image.
+    This is used by the Accounting ``Обновить`` action for old receipts that
+    were saved before QR-first processing existed.
+    """
+    require_accounting_access(current_user)
+    record = get_record_or_404(db, accounting_id, lock=True)
+    qr_payload = payload.qr_payload or record.qr_payload
+    if not qr_payload:
+        raise HTTPException(status_code=400, detail="В сохранённом чеке нет QR. Повторно считайте QR из файла")
+
+    official = resolve_esalyq_qr(qr_payload)
+    assert_receipt_metadata_unique(
+        db,
+        exclude_id=record.id,
+        qr_payload=official.get("qr_payload"),
+        receipt_number=official.get("receipt_number"),
+        iin=official.get("iin"),
+    )
+
+    # KGD is authoritative here: deliberately replace old OCR values rather
+    # than merging them, so historic garbage does not survive a successful QR
+    # refresh. Missing fields stay NULL and the row remains for human review.
+    record.contractor_full_name = clean_text(official.get("contractor_full_name"), 255)
+    record.iin = clean_iin(official.get("iin"))
+    record.receipt_number = clean_text(official.get("receipt_number"), 80)
+    official_dt = official.get("receipt_datetime")
+    record.receipt_datetime = official_dt.replace(tzinfo=None) if isinstance(official_dt, datetime) else clean_datetime(official_dt)
+    record.service_name = clean_text(official.get("service_name"))
+    record.receipt_amount = clean_decimal(official.get("receipt_amount"))
+    record.qr_payload = official.get("qr_payload")
+    record.ocr_text = str(official.get("source_text") or "")[:50000] or None
+    record.parse_confidence = Decimal(official.get("parse_confidence") or Decimal("100.00"))
+    record.parse_status = "parsed"
+    record.confirmed_at = None
+    record.confirmed_by_user_id = None
+    record.updated_at = datetime.utcnow()
+    db.add(record)
+    db.commit()
+    return load_accounting_row(db, record.id)
 
 
 @router.post("/receipts/import", response_model=SelfEmployedReceiptImportRead)
@@ -1552,6 +1664,9 @@ def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccounti
         )
     ):
         record.parse_status = "reviewed" if payload.mark_confirmed else "parsed"
+        if not payload.mark_confirmed:
+            record.confirmed_at = None
+            record.confirmed_by_user_id = None
 
     if payload.mark_confirmed:
         missing = []
