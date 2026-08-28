@@ -13628,9 +13628,25 @@ body[data-cf-role="manager"] .manager-dashboard-v119 #managerCreateEventShortcut
   text-transform: uppercase;
 }
 
+/* v0.5.81: accounting as a right-side utility tab */
+body.admin-mode #adminTabs .admin-accounting-tab {
+  margin-left: auto;
+  border-color: rgba(99, 105, 97, 0.28);
+  background: linear-gradient(135deg, rgba(112, 118, 108, 0.12), rgba(247, 248, 245, 0.98));
+  color: #5f655c;
+  box-shadow: 0 8px 18px rgba(68, 74, 64, 0.08);
+  font-weight: 900;
+}
+body.admin-mode #adminTabs .admin-accounting-tab.active {
+  background: #6d736b;
+  color: #fff;
+  border-color: #6d736b;
+  box-shadow: 0 8px 18px rgba(68, 74, 64, 0.16);
+}
+
 /* v0.5.20: admin statistics tab and annual statistics panel */
 body.admin-mode #adminTabs .admin-statistics-tab {
-  margin-left: auto;
+  margin-left: 0;
   border-color: rgba(93, 180, 60, 0.46);
   background: linear-gradient(135deg, rgba(93, 180, 60, 0.18), rgba(239, 248, 229, 0.98));
   color: #2f6f1f;
@@ -13773,6 +13789,7 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
 }
 
 @media (max-width: 920px) {
+  body.admin-mode #adminTabs .admin-accounting-tab,
   body.admin-mode #adminTabs .admin-statistics-tab {
     margin-left: 0;
   }
@@ -14606,6 +14623,35 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   border: 1px solid rgba(115, 120, 105, .14);
 }
 
+.accounting-batch-open {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #eceeeb !important;
+  color: #4f554d !important;
+  border-color: #d6dad3 !important;
+  box-shadow: none !important;
+  font-weight: 900;
+}
+
+.accounting-batch-open:hover {
+  background: #e2e5e0 !important;
+  border-color: #c8cdc5 !important;
+}
+
+.accounting-batch-open svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .accounting-toggle {
   display: inline-flex;
   flex-direction: row;
@@ -14877,6 +14923,7 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   .accounting-field.wide { grid-column: span 1; }
   .accounting-summary { width: 100%; }
   .accounting-summary span { flex: 1 1 auto; justify-content: center; }
+  .accounting-batch-open { margin-left: 0; width: 100%; }
 }
 
 /* v0.5.77 — one e-Salyq receipt may cover several self-employed requests */

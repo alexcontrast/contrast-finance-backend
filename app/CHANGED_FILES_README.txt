@@ -1,12 +1,10 @@
-v0.5.80 changed files
+v0.5.81 changed files
 
-- app/api/routes/self_employed_accounting.py
-- app/schemas/self_employed_accounting.py
-- app/core/r1_profile.py
-- app/core/config.py
-- app/web/app.js
-- app/web/index.html
-- README.md
-- CHANGELOG.md
+app/core/config.py
+app/web/app.js
+app/web/index.html
+app/web/styles.css
+CHANGELOG.md
+README.md
 
-No Alembic migration is required.
+Cosmetic-only admin accounting UI patch. No DB migration.

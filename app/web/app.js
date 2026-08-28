@@ -7817,7 +7817,6 @@ function renderAccountingPanel() {
         <div>
           <div class="eyebrow">Самозанятые</div>
           <h3>Бухгалтерия</h3>
-          <p class="muted">Здесь показываются только заявки, созданные после запуска новой бухгалтерии. Пачку чеков можно загрузить отдельно: совпавшие привяжутся сами, остальные останутся строками для ручной привязки.</p>
         </div>
         <div class="accounting-summary">
           <span><strong>${totalRequests}</strong> новых заявок</span>
@@ -7827,10 +7826,13 @@ function renderAccountingPanel() {
         </div>
       </div>
       <div class="accounting-toolbar">
-        <button id="accountingBatchOpen" type="button">Загрузить чеки пачкой</button>
         <label class="accounting-toggle"><input id="accountingMissingOnly" type="checkbox" ${state.accountingShowOnlyMissingReceipt ? "checked" : ""} /> Только без чека</label>
         <button id="accountingRefreshBtn" class="secondary" type="button">Обновить</button>
         <span class="muted">Для ручной связи просто перетащите строку заявки на строку нужного чека.</span>
+        <button id="accountingBatchOpen" class="secondary accounting-batch-open" type="button" aria-label="Загрузить чеки">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 14.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4.5"/></svg>
+          <span>Загрузить чеки</span>
+        </button>
       </div>
       <div id="accountingRows">${state.accountingLoading ? `<div class="empty-state">Загружаем бухгалтерию…</div>` : renderAccountingRows(rows)}</div>
     </section>
@@ -8544,15 +8546,15 @@ function renderAdminTabs() {
     ["events_archive", "Архив мероприятий"],
     ["requests", "Заявки"],
     ["requests_archive", "Архив заявок"],
-    ["accounting", "Бухгалтерия"],
     ["plans", "Задать планы"],
     ["closing", "Закрыть месяц"],
+    ["accounting", "Бухгалтерия"],
     ["google_export", "Статистика"],
   ];
 
   $("adminTabs").classList.remove("hidden");
   $("adminTabs").innerHTML = tabs.map(([key, label]) => `
-    <button class="tab-btn ${key === "google_export" ? "admin-statistics-tab" : ""} ${state.activeAdminTab === key ? "active" : ""}" data-admin-tab="${key}">
+    <button class="tab-btn ${key === "accounting" ? "admin-accounting-tab" : ""} ${key === "google_export" ? "admin-statistics-tab" : ""} ${state.activeAdminTab === key ? "active" : ""}" data-admin-tab="${key}">
       ${label}
     </button>
   `).join("");
@@ -19367,7 +19369,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.80 loaded");
+  console.info("Contrast Finance web app v0.5.81 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
