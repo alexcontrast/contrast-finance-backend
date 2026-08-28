@@ -12,3 +12,4 @@ from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_closing import MonthlyClosing
 from app.models.export import Export
 from app.models.telegram_message import TelegramMessage
+from app.models.self_employed_accounting import SelfEmployedAccounting

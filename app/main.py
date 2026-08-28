@@ -25,6 +25,7 @@ from app.api.routes.users_manage import router as users_manage_router
 from app.api.routes.health import router as health_router
 from app.api.routes.google_sheets_export import router as google_sheets_export_router
 from app.api.routes.manager_bonuses import router as manager_bonuses_router
+from app.api.routes.self_employed_accounting import router as self_employed_accounting_router
 from app.core.config import get_settings
 from app.services.google_sheets_daily_export import (
     start_daily_google_sheets_export_scheduler,
@@ -53,6 +54,7 @@ async def stop_background_jobs():
 app.include_router(health_router)
 app.include_router(google_sheets_export_router)
 app.include_router(manager_bonuses_router)
+app.include_router(self_employed_accounting_router)
 app.include_router(departments_router)
 app.include_router(events_router)
 app.include_router(event_summary_router)
