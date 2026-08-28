@@ -14973,3 +14973,238 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     text-align: left;
   }
 }
+
+/* v0.5.79 — receipt-first accounting: batch upload + drag/drop request linking */
+.accounting-row-main {
+  grid-template-columns: 30px 105px minmax(180px, 1.3fr) minmax(170px, 1.1fr) 130px minmax(130px, .9fr) auto;
+  padding: 13px 14px;
+}
+
+.accounting-drag-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.accounting-drag-handle,
+.accounting-drop-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 34px;
+  border-radius: 9px;
+  font-weight: 900;
+  user-select: none;
+}
+
+.accounting-drag-handle {
+  color: rgba(35, 45, 31, .56) !important;
+  background: rgba(115, 120, 105, .08);
+  cursor: grab;
+  letter-spacing: -3px;
+}
+
+.accounting-drop-icon {
+  color: #238000 !important;
+  background: rgba(51, 180, 0, .11);
+  border: 1px dashed rgba(51, 180, 0, .35);
+}
+
+.accounting-row.is-draggable { cursor: grab; }
+.accounting-row.is-dragging {
+  opacity: .48;
+  transform: scale(.997);
+}
+
+.accounting-row.is-drop-target {
+  border-color: rgba(51, 180, 0, .28);
+}
+
+.accounting-row.drag-over {
+  border-color: #33b400 !important;
+  box-shadow: 0 0 0 3px rgba(51, 180, 0, .15);
+  background: rgba(228, 255, 215, .58);
+}
+
+.accounting-row.receipt-only {
+  background: linear-gradient(90deg, rgba(224, 255, 211, .38), rgba(255, 255, 255, .98));
+  border-color: rgba(51, 180, 0, .34);
+}
+
+.accounting-drag-hint,
+.accounting-drop-hint {
+  margin: -3px 14px 11px 44px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.accounting-drag-hint {
+  color: #667064;
+  background: rgba(115, 120, 105, .055);
+}
+
+.accounting-drop-hint {
+  color: #287014;
+  background: rgba(51, 180, 0, .075);
+  border: 1px dashed rgba(51, 180, 0, .25);
+}
+
+.accounting-members {
+  margin-left: 44px;
+}
+
+.accounting-member {
+  grid-template-columns: 74px minmax(0, 1fr) 120px auto;
+}
+
+.accounting-detach-btn {
+  min-height: 28px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.accounting-batch-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 20, 13, .42);
+  backdrop-filter: blur(4px);
+}
+
+.accounting-batch-modal {
+  width: min(860px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+  border-radius: 22px;
+  border: 1px solid rgba(51, 180, 0, .2);
+  background: #fff;
+  box-shadow: 0 28px 90px rgba(20, 30, 15, .25);
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.accounting-batch-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.accounting-batch-head h3 {
+  margin: 2px 0 5px;
+  font-size: 24px;
+}
+
+.accounting-batch-head p {
+  margin: 0;
+  max-width: 690px;
+}
+
+.accounting-batch-dropzone {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 132px;
+  padding: 22px;
+  border: 2px dashed rgba(51, 180, 0, .34);
+  border-radius: 16px;
+  background: rgba(228, 255, 215, .34);
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.accounting-batch-dropzone strong { font-size: 16px; }
+.accounting-batch-dropzone span { font-size: 12px; color: #697164; }
+.accounting-batch-dropzone input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.accounting-batch-list {
+  display: grid;
+  gap: 7px;
+  max-height: 330px;
+  overflow: auto;
+}
+
+.accounting-batch-item {
+  display: grid;
+  grid-template-columns: minmax(160px, .8fr) minmax(220px, 1.4fr);
+  gap: 12px;
+  align-items: center;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(115, 120, 105, .13);
+  background: rgba(248, 250, 247, .8);
+  font-size: 12px;
+}
+
+.accounting-batch-item span,
+.accounting-batch-item strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accounting-batch-item.ok { border-color: rgba(51, 180, 0, .32); background: rgba(51, 180, 0, .07); }
+.accounting-batch-item.warn { border-color: rgba(245, 158, 11, .32); background: rgba(245, 158, 11, .07); }
+.accounting-batch-item.bad { border-color: rgba(220, 38, 38, .32); background: rgba(220, 38, 38, .06); }
+.accounting-batch-item.ok strong { color: #237510; }
+.accounting-batch-item.warn strong { color: #8a5a00; }
+.accounting-batch-item.bad strong { color: #b42318; }
+
+.accounting-batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 1180px) {
+  .accounting-row-main {
+    grid-template-columns: 28px 92px minmax(180px, 1fr) minmax(160px, 1fr) 120px;
+  }
+  .accounting-state { grid-column: 3 / 5; }
+  .accounting-actions { grid-column: 5 / 6; }
+}
+
+@media (max-width: 760px) {
+  .accounting-row-main {
+    grid-template-columns: 28px 74px minmax(0, 1fr);
+    gap: 9px 10px;
+    padding: 11px;
+  }
+  .accounting-drag-cell { grid-column: 1; grid-row: 1 / 3; }
+  .accounting-date { grid-column: 2; grid-row: 1; }
+  .accounting-event { grid-column: 3; grid-row: 1; }
+  .accounting-person { grid-column: 2 / -1; grid-row: 2; }
+  .accounting-amount { grid-column: 2; }
+  .accounting-state { grid-column: 3; }
+  .accounting-actions { grid-column: 2 / -1; justify-content: flex-start; }
+  .accounting-members,
+  .accounting-drag-hint,
+  .accounting-drop-hint { margin-left: 11px; margin-right: 11px; }
+  .accounting-member { grid-template-columns: 54px minmax(0, 1fr); }
+  .accounting-member strong { grid-column: 2; text-align: left; }
+  .accounting-member .accounting-detach-btn { grid-column: 2; justify-self: start; }
+  .accounting-batch-backdrop { padding: 10px; }
+  .accounting-batch-modal { width: 100%; max-height: 94vh; border-radius: 18px; padding: 14px; }
+  .accounting-batch-item { grid-template-columns: 1fr; gap: 3px; }
+  .accounting-batch-actions { justify-content: stretch; }
+  .accounting-batch-actions button { flex: 1; }
+}

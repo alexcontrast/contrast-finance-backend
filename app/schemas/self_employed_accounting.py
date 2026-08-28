@@ -21,6 +21,10 @@ class SelfEmployedAccountingGroupCreate(BaseModel):
     request_ids: list[int] = Field(min_length=2, max_length=100)
 
 
+class SelfEmployedAccountingAttachCreate(BaseModel):
+    request_ids: list[int] = Field(min_length=1, max_length=100)
+
+
 class SelfEmployedAccountingMemberRead(BaseModel):
     payment_request_id: int
     event_id: int
@@ -41,25 +45,29 @@ class SelfEmployedAccountingMemberRead(BaseModel):
 class SelfEmployedAccountingRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    # Backward-compatible anchor request. Receipt/update endpoints may use any
-    # request from payment_request_ids; the backend resolves the shared group.
-    payment_request_id: int
+    row_key: str
+    row_kind: str = "request"  # request / receipt
+    is_receipt_only: bool = False
+
+    # For request-backed rows this is the first member and remains a convenient
+    # backwards-compatible handle. Standalone receipt rows have no request id.
+    payment_request_id: int | None = None
     payment_request_ids: list[int] = Field(default_factory=list)
-    request_count: int = 1
+    request_count: int = 0
     accounting_id: int | None = None
     is_grouped: bool = False
     members: list[SelfEmployedAccountingMemberRead] = Field(default_factory=list)
 
-    event_id: int
+    event_id: int | None = None
     event_title: str | None = None
     event_date: date | None = None
     client_name: str | None = None
     manager_name: str | None = None
 
-    request_created_at: datetime
-    request_status: str
-    money_status: str
-    request_amount: Decimal
+    request_created_at: datetime | None = None
+    request_status: str | None = None
+    money_status: str | None = None
+    request_amount: Decimal = Decimal("0.00")
     item_name: str | None = None
     request_contractor_name: str | None = None
     request_iin: str | None = None
@@ -85,3 +93,10 @@ class SelfEmployedAccountingRead(BaseModel):
     parse_status: str = "empty"
     confirmed_at: datetime | None = None
     act_status: str = "not_created"
+
+
+class SelfEmployedReceiptImportRead(BaseModel):
+    row: SelfEmployedAccountingRead
+    match_status: str  # matched / unmatched / ambiguous
+    matched_request_ids: list[int] = Field(default_factory=list)
+    message: str

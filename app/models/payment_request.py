@@ -56,6 +56,12 @@ class PaymentRequest(Base):
 
     warning_over_remaining: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # v0.5.79: clean cut-over for the new accounting workspace. Migration 0016
+    # marks every request that existed before deployment as False; ORM-created
+    # requests after deployment default to True. This keeps historical requests
+    # everywhere else while showing only new self-employed requests in Accounting.
+    self_employed_accounting_visible: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

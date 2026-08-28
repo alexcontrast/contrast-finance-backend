@@ -11,9 +11,9 @@ class SelfEmployedAccounting(Base):
     __tablename__ = "self_employed_accounting"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    payment_request_id: Mapped[int] = mapped_column(
+    payment_request_id: Mapped[int | None] = mapped_column(
         ForeignKey("payment_requests.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         unique=True,
         index=True,
     )
