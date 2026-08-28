@@ -7728,7 +7728,7 @@ function renderAccountingRows(rows) {
               </div>
               <div class="accounting-date">
                 <strong>${escapeHtml(accountingDisplayDate(row))}</strong>
-                <span>${row.is_receipt_only ? "чек без заявки" : row.request_count > 1 ? `${row.request_count} заявки` : `заявка №${row.payment_request_id}`}</span>
+                <span>${row.has_receipt && row.receipt_number ? `чек №${escapeHtml(row.receipt_number)}${row.request_count ? ` · ${row.request_count > 1 ? `${row.request_count} заявки` : `заявка №${row.payment_request_id}`}` : ""}` : row.is_receipt_only ? "чек без заявки" : row.request_count > 1 ? `${row.request_count} заявки` : `заявка №${row.payment_request_id}`}</span>
               </div>
               <div class="accounting-event">
                 <strong>${escapeHtml(row.is_receipt_only ? "Чек e-Salyq без заявки" : (row.event_title || row.item_name || "Без названия"))}</strong>
@@ -8094,6 +8094,8 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   const joined = lines.join("\n");
   const result = {};
 
+  // e-Salyq prints the self-employed person's IIN first and the customer BIN
+  // later. Read only the IIN-labelled 12-digit value for the contractor.
   const iinMatch = joined.match(/(?:ИИН|IIN|ЖСН)[^0-9]{0,20}((?:\d[\s-]?){12})/i);
   if (iinMatch) {
     const digits = iinMatch[1].replace(/\D/g, "");
@@ -8123,22 +8125,37 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   }
   if (amount !== null) result.receipt_amount = amount;
 
+  const looksLikePersonName = (line) => {
+    const clean = String(line || "").replace(/[•·]/g, " ").replace(/\s+/g, " ").trim();
+    if (!clean) return false;
+    if (/(?:режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|receipt|итого|плат[её]ж|наличн|безналичн|текущ|банк|Кбе|ИИК|HSBK|₸|тг|тенге)/i.test(clean)) return false;
+    const words = clean.split(/\s+/).filter(Boolean);
+    const letters = (clean.match(/[A-Za-zА-Яа-яЁё]/g) || []).length;
+    return words.length >= 2 && words.length <= 5 && letters >= 8;
+  };
+
+  // Real e-Salyq layout: "ИИН ..." is followed by the person's full name.
+  // Keep a backward fallback to lines before IIN for older receipt layouts.
   const iinLineIndex = lines.findIndex((line) => /(?:ИИН|IIN|ЖСН)/i.test(line));
-  if (iinLineIndex > 0) {
-    for (let i = iinLineIndex - 1; i >= Math.max(0, iinLineIndex - 5); i -= 1) {
-      const line = lines[i].replace(/[•·]/g, " ").trim();
-      if (!line || /e-?salyq|чек|receipt|\d{1,2}[:.]\d{2}|новый чек/i.test(line)) continue;
-      const letters = (line.match(/[A-Za-zА-Яа-яЁё]/g) || []).length;
-      if (letters >= 5 && !/₸|тг|тенге/i.test(line)) {
-        result.contractor_full_name = line.replace(/^[^A-Za-zА-Яа-яЁё]+|[^A-Za-zА-Яа-яЁё .'-]+$/g, "").trim();
+  if (iinLineIndex >= 0) {
+    const nearbyIndexes = [];
+    for (let i = iinLineIndex + 1; i <= Math.min(lines.length - 1, iinLineIndex + 4); i += 1) nearbyIndexes.push(i);
+    for (let i = iinLineIndex - 1; i >= Math.max(0, iinLineIndex - 4); i -= 1) nearbyIndexes.push(i);
+    for (const index of nearbyIndexes) {
+      const line = lines[index].replace(/^[^A-Za-zА-Яа-яЁё]+|[^A-Za-zА-Яа-яЁё .'-]+$/g, "").trim();
+      if (looksLikePersonName(line)) {
+        result.contractor_full_name = line;
         break;
       }
     }
   }
 
+  // The service line normally carries the amount on the same line, e.g.
+  // "Видеосъемка событий: свадеб, встреч 100 000 ₸". Strip only the trailing
+  // monetary part and preserve the exact service wording for the future R-1.
   let serviceLines = [];
-  const totalIndex = lines.findIndex((line) => /итого|total/i.test(line));
-  const paymentIndex = lines.findIndex((line) => /плат[её]ж|наличн|безналичн|текущ/i.test(line));
+  const totalIndex = lines.findIndex((line) => /^(?:итого|total)\b/i.test(line));
+  const paymentIndex = lines.findIndex((line) => /безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты/i.test(line));
   if (paymentIndex >= 0) {
     const endIndex = totalIndex > paymentIndex ? totalIndex : Math.min(lines.length, paymentIndex + 8);
     serviceLines = lines.slice(paymentIndex + 1, endIndex);
@@ -8146,7 +8163,11 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
     serviceLines = lines.slice(Math.max(0, totalIndex - 6), totalIndex);
   }
   serviceLines = serviceLines
-    .filter((line) => !/(?:ИИН|IIN|ЖСН|чек|receipt|итого|₸|тг|тенге)/i.test(line))
+    .map((line) => line
+      .replace(/\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|T\b)\s*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim())
+    .filter((line) => !/(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)/i.test(line))
     .filter((line) => (line.match(/[A-Za-zА-Яа-яЁё]/g) || []).length >= 3);
   if (serviceLines.length) result.service_name = serviceLines.join(" ").replace(/\s+/g, " ").trim();
 
@@ -8212,15 +8233,19 @@ async function uploadAccountingReceipt(handle, file) {
     });
     accountingReplaceRow(updated);
     setAccountingProgress(accountingRowHandle(updated), "Готово. Проверьте распознанные данные.", true);
+    const receiptMonth = String(updated.receipt_datetime || "").slice(0, 7);
+    const currentMonth = selectedMonthValue();
+    if (receiptMonth && receiptMonth !== currentMonth) {
+      showToast(`Чек отнесён в ${monthLabelRu(receiptMonth)} по дате выписки`, 5000);
+    }
   } catch (error) {
     console.error("Accounting OCR failed", error);
     setAccountingProgress(updatedHandle, `Чек сохранён. Распознавание не завершилось: ${error.message}. Данные можно заполнить вручную.`, true);
   }
 
-  if (state.activeAdminTab === "accounting") {
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
-  }
+  // Reload through the server after OCR: if the receipt date belongs to another
+  // month the row must immediately move there instead of lingering locally.
+  await loadSelfEmployedAccounting(true);
 }
 
 function accountingEditorPayload(handle, confirmed = false) {
@@ -8253,12 +8278,13 @@ async function saveAccountingEditor(handle, confirmed = false) {
     });
     accountingReplaceRow(updated);
     state.accountingExpandedRequestId = accountingRowHandle(updated);
-    if (state.activeAdminTab === "accounting") {
-      $("dashboardContent").innerHTML = renderAccountingPanel();
-      attachAccountingPanel();
-      const nextMessage = document.querySelector(`[data-accounting-message="${accountingRowHandle(updated)}"]`);
-      if (nextMessage) nextMessage.textContent = confirmed ? "✓ Данные подтверждены" : "✓ Сохранено";
+    const receiptMonth = String(updated.receipt_datetime || "").slice(0, 7);
+    const currentMonth = selectedMonthValue();
+    if (receiptMonth && receiptMonth !== currentMonth) {
+      state.accountingExpandedRequestId = null;
+      showToast(`Чек перемещён в ${monthLabelRu(receiptMonth)} по дате выписки`, 5000);
     }
+    await loadSelfEmployedAccounting(true);
   } catch (error) {
     if (message) message.textContent = error.message;
     else alert(error.message);
@@ -19341,7 +19367,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.79 loaded");
+  console.info("Contrast Finance web app v0.5.80 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

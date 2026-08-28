@@ -100,3 +100,15 @@ class SelfEmployedReceiptImportRead(BaseModel):
     match_status: str  # matched / unmatched / ambiguous
     matched_request_ids: list[int] = Field(default_factory=list)
     message: str
+
+
+class R1CustomerProfileRead(BaseModel):
+    name: str
+    bin_iin: str
+    country: str
+    address: str
+    iik: str
+    bank_name: str
+    bik: str
+    kbe: str
+    director: str

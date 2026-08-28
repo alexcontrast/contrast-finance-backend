@@ -13,6 +13,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.core.r1_profile import R1_CUSTOMER_PROFILE
 from app.models.event import Event
 from app.models.payment_request import PaymentRequest
 from app.models.self_employed_accounting import SelfEmployedAccounting
@@ -25,6 +26,7 @@ from app.schemas.self_employed_accounting import (
     SelfEmployedAccountingRead,
     SelfEmployedAccountingUpdate,
     SelfEmployedReceiptImportRead,
+    R1CustomerProfileRead,
 )
 from app.services.auth import get_current_user
 
@@ -405,6 +407,18 @@ def _contractor_identity(requests: list[PaymentRequest]) -> tuple[str | None, st
     return (next(iter(iins), None), next(iter(names), None))
 
 
+def _row_matches_accounting_month(
+    row: SelfEmployedAccountingRead,
+    month_bounds: tuple[date, date],
+) -> bool:
+    start, end = month_bounds
+    if row.has_receipt and row.receipt_datetime:
+        return start <= row.receipt_datetime.date() < end
+    if row.has_receipt and not row.receipt_datetime:
+        return bool(row.event_date and start <= row.event_date < end)
+    return bool(row.event_date and start <= row.event_date < end)
+
+
 def _month_bounds(month: str) -> tuple[date, date]:
     try:
         year_part, month_part = month.split("-")[:2]
@@ -417,6 +431,14 @@ def _month_bounds(month: str) -> tuple[date, date]:
     start = date(year_num, month_num, 1)
     end = date(year_num + 1, 1, 1) if month_num == 12 else date(year_num, month_num + 1, 1)
     return start, end
+
+
+@router.get("/r1/customer-profile", response_model=R1CustomerProfileRead)
+def get_r1_customer_profile(
+    current_user: User = Depends(get_current_user),
+):
+    require_accounting_access(current_user)
+    return R1CustomerProfileRead(**R1_CUSTOMER_PROFILE)
 
 
 @router.get("", response_model=list[SelfEmployedAccountingRead])
@@ -454,10 +476,11 @@ def list_self_employed_accounting(
         )
     )
 
-    month_bounds = None
-    if month:
-        month_bounds = _month_bounds(month)
-        query = query.where(Event.event_date >= month_bounds[0], Event.event_date < month_bounds[1])
+    # Do not filter request-backed rows by the event date in SQL. Once a receipt
+    # exists, accounting belongs to the month printed on that receipt, even when
+    # the event/request lives in another month. We therefore build rows first and
+    # apply the accounting-month rule below.
+    month_bounds = _month_bounds(month) if month else None
 
     rows = db.execute(query).all()
     grouped_members: dict[tuple[str, int], list[tuple[PaymentRequest, Event, str | None]]] = defaultdict(list)
@@ -468,6 +491,12 @@ def list_self_employed_accounting(
         records[key] = record
 
     result = [build_row(members, records.get(key)) for key, members in grouped_members.items()]
+
+    if month_bounds:
+        # A real e-Salyq receipt date is the source of truth for accounting
+        # period. Rows still waiting for a receipt remain discoverable by event
+        # month so the accountant can attach the future receipt.
+        result = [row for row in result if _row_matches_accounting_month(row, month_bounds)]
 
     # Receipt-first workflow: imported checks can exist before a request is found.
     no_members = ~exists(
@@ -482,6 +511,9 @@ def list_self_employed_accounting(
     standalone_records = db.execute(standalone_query).scalars().all()
     for record in standalone_records:
         if month_bounds:
+            # Standalone imported receipts are distributed strictly by the issue
+            # date read from the receipt. If OCR did not read a date yet, keep the
+            # row in the month of upload until it is corrected manually.
             probe = record.receipt_datetime or record.receipt_uploaded_at or record.created_at
             if probe and not (month_bounds[0] <= probe.date() < month_bounds[1]):
                 continue
