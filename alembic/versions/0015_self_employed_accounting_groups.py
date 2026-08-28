@@ -1,6 +1,6 @@
 """allow one self-employed receipt to cover several payment requests
 
-Revision ID: 0015_self_employed_accounting_groups
+Revision ID: 0015_self_employed_groups
 Revises: 0014_self_employed_accounting
 Create Date: 2026-08-28
 """
@@ -11,7 +11,10 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0015_self_employed_accounting_groups"
+# Alembic creates alembic_version.version_num as VARCHAR(32) by default.
+# Keep revision identifiers within that limit so PostgreSQL can record the
+# completed migration after the transactional DDL has run.
+revision: str = "0015_self_employed_groups"
 down_revision: Union[str, None] = "0014_self_employed_accounting"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
