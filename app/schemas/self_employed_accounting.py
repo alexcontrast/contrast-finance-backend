@@ -108,6 +108,10 @@ class SelfEmployedReceiptQrResolveCreate(BaseModel):
 
 class SelfEmployedReceiptQrRefreshCreate(BaseModel):
     qr_payload: str | None = Field(default=None, max_length=10000)
+    # True only when this same browser refresh already obtained the official
+    # KGD response through /receipts/resolve-qr. Avoids resolving one QR twice
+    # during the same operation.
+    kgd_resolved: bool = False
     # The browser reads the printed work name from the visual item cell and
     # fills other fields missing from KGD. This lets a saved image repair itself
     # without asking the accountant to upload the receipt again.

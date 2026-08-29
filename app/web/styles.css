@@ -14672,10 +14672,94 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
 }
 
 .accounting-row {
+  position: relative;
   border: 1px solid rgba(115, 120, 105, .17);
   border-radius: 16px;
   background: #fff;
   overflow: hidden;
+}
+
+/* v0.5.88 — visible per-receipt refresh queue */
+.accounting-row.is-refreshing {
+  border-color: rgba(115, 120, 105, .34) !important;
+  background: #eef0ed !important;
+  cursor: progress;
+}
+
+.accounting-row.is-refreshing > :not(.accounting-refresh-overlay) {
+  filter: grayscale(1);
+  opacity: .28;
+  transition: opacity .18s ease;
+}
+
+.accounting-row.is-refresh-active > :not(.accounting-refresh-overlay) {
+  opacity: .20;
+}
+
+.accounting-refresh-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 7px 9px;
+  padding: 10px 16px;
+  background: rgba(236, 239, 234, .82);
+  color: #4e554c;
+  text-align: center;
+  pointer-events: none;
+}
+
+.accounting-refresh-overlay strong {
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: .01em;
+}
+
+.accounting-refresh-overlay small {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(55, 62, 53, .68);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.accounting-refresh-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(78, 85, 76, .22);
+  border-top-color: #4e554c;
+  border-radius: 50%;
+  animation: accounting-refresh-spin .75s linear infinite;
+}
+
+.accounting-row:not(.is-refresh-active) .accounting-refresh-spinner {
+  animation-play-state: paused;
+  border-top-color: rgba(78, 85, 76, .42);
+}
+
+.accounting-refresh-error {
+  margin: -2px 13px 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(180, 35, 24, .20);
+  border-radius: 9px;
+  background: rgba(180, 35, 24, .06);
+  color: #9f291f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+@keyframes accounting-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accounting-refresh-spinner { animation: none; }
 }
 
 .accounting-row.needs-receipt {

@@ -514,7 +514,7 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
             timeout=KGD_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.87 (+e-Salyq receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.88 (+e-Salyq receipt verification)",
                 "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
             },
         )
@@ -1505,7 +1505,11 @@ def refresh_accounting_receipt_from_qr(
     if qr_payload:
         try:
             canonical_qr = canonical_esalyq_qr(qr_payload)
-            official = resolve_esalyq_qr(canonical_qr)
+            # The browser refresh first resolves the QR, then visually verifies
+            # the same receipt. Do not request the identical KGD report again
+            # when the resulting official fields are already in this payload.
+            if not payload.kgd_resolved:
+                official = resolve_esalyq_qr(canonical_qr)
         except HTTPException:
             # The pixels remain a valid accounting source even when an old KGD
             # link is unavailable. Fresh zone OCR fields are applied below.

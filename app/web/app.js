@@ -5934,6 +5934,10 @@ const state = {
   accountingBatchResults: [],
   accountingBatchRunning: false,
   accountingRefreshRunning: false,
+  accountingRefreshById: {},
+  accountingRefreshErrorsById: {},
+  accountingRefreshCompleted: 0,
+  accountingRefreshTotal: 0,
   accountingDragRowKey: null,
   closingPanelData: null,
   closingEditingExpenseId: null,
@@ -7177,6 +7181,10 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.accountingBatchResults = [];
   state.accountingBatchRunning = false;
   state.accountingRefreshRunning = false;
+  state.accountingRefreshById = {};
+  state.accountingRefreshErrorsById = {};
+  state.accountingRefreshCompleted = 0;
+  state.accountingRefreshTotal = 0;
   state.accountingDragRowKey = null;
 
   if (state.monthYearChangeTimer) {
@@ -7575,6 +7583,46 @@ function accountingFindRowByHandle(handle) {
   return (state.accountingRows || []).find((row) => accountingRowHandle(row) === String(handle)) || null;
 }
 
+function accountingRefreshEntry(row) {
+  if (!row?.accounting_id) return null;
+  return state.accountingRefreshById?.[String(Number(row.accounting_id))] || null;
+}
+
+function accountingRenderRowsInPlace() {
+  if (state.activeAdminTab !== "accounting") return;
+  const rowsEl = $("accountingRows");
+  if (!rowsEl) return;
+  rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
+  attachAccountingPanel();
+}
+
+function accountingSetRefreshEntry(accountingId, status, detail = "") {
+  const key = String(Number(accountingId));
+  state.accountingRefreshById = {
+    ...(state.accountingRefreshById || {}),
+    [key]: { status, detail },
+  };
+  const row = (state.accountingRows || []).find((item) => Number(item.accounting_id) === Number(accountingId));
+  const rowEl = row ? document.querySelector(`[data-accounting-row-handle="${accountingRowHandle(row)}"]`) : null;
+  if (!rowEl) return;
+  rowEl.classList.toggle("is-refresh-active", status === "running");
+  const detailEl = rowEl.querySelector("[data-accounting-refresh-detail]");
+  if (detailEl) detailEl.textContent = detail || (status === "running" ? "Читаю чек…" : "Ожидает своей очереди");
+}
+
+function accountingUnlockRefreshRow(accountingId, errorMessage = "") {
+  const key = String(Number(accountingId));
+  const next = { ...(state.accountingRefreshById || {}) };
+  delete next[key];
+  state.accountingRefreshById = next;
+  if (errorMessage) {
+    state.accountingRefreshErrorsById = {
+      ...(state.accountingRefreshErrorsById || {}),
+      [key]: errorMessage,
+    };
+  }
+}
+
 function accountingMoneyMatch(row) {
   if (!row?.has_receipt || row?.receipt_amount === null || row?.receipt_amount === undefined || row?.receipt_amount === "") return "unknown";
   if (!Number(row?.request_count || 0)) return "unlinked";
@@ -7728,14 +7776,20 @@ function renderAccountingRows(rows) {
       ${list.map((row) => {
         const handle = accountingRowHandle(row);
         const expanded = String(state.accountingExpandedRequestId || "") === handle;
+        const refreshEntry = accountingRefreshEntry(row);
+        const refreshLocked = refreshEntry?.status === "queued" || refreshEntry?.status === "running";
+        const refreshError = row.accounting_id
+          ? state.accountingRefreshErrorsById?.[String(Number(row.accounting_id))]
+          : "";
         const match = accountingMoneyMatch(row);
         const amountClass = match === "mismatch" ? "is-mismatch" : match === "match" ? "is-match" : "";
         const draggable = Number(row.request_count || 0) > 0 && !row.has_receipt;
         const dropTarget = Boolean(row.has_receipt && row.accounting_id);
         const mainAmount = accountingRowPrimaryAmount(row);
         return `
-          <article class="accounting-row ${row.has_receipt ? "has-receipt" : "needs-receipt"} ${row.is_receipt_only ? "receipt-only" : ""} ${draggable ? "is-draggable" : ""} ${dropTarget ? "is-drop-target" : ""}"
+          <article class="accounting-row ${row.has_receipt ? "has-receipt" : "needs-receipt"} ${row.is_receipt_only ? "receipt-only" : ""} ${draggable ? "is-draggable" : ""} ${dropTarget ? "is-drop-target" : ""} ${refreshLocked ? "is-refreshing" : ""} ${refreshEntry?.status === "running" ? "is-refresh-active" : ""}"
             data-accounting-row-handle="${handle}"
+            ${refreshLocked ? `inert aria-busy="true"` : ""}
             ${draggable ? `draggable="true" data-accounting-draggable="${handle}"` : ""}
             ${dropTarget ? `data-accounting-drop-target="${row.accounting_id}"` : ""}>
             <div class="accounting-row-main">
@@ -7769,6 +7823,14 @@ function renderAccountingRows(rows) {
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
+            ${refreshLocked ? `
+              <div class="accounting-refresh-overlay" role="status" aria-live="polite">
+                <span class="accounting-refresh-spinner" aria-hidden="true"></span>
+                <strong>Обновляется</strong>
+                <small data-accounting-refresh-detail>${escapeHtml(refreshEntry?.detail || "Ожидает своей очереди")}</small>
+              </div>
+            ` : ""}
+            ${refreshError ? `<div class="accounting-refresh-error" role="alert">Не удалось обновить чек: ${escapeHtml(refreshError)}</div>` : ""}
             ${expanded ? renderAccountingMembers(row) : ""}
             <div class="accounting-progress hidden" data-accounting-progress="${handle}"></div>
             ${expanded && row.has_receipt ? renderAccountingEditor(row) : ""}
@@ -7838,7 +7900,7 @@ function renderAccountingPanel() {
       </div>
       <div class="accounting-toolbar">
         <label class="accounting-toggle"><input id="accountingMissingOnly" type="checkbox" ${state.accountingShowOnlyMissingReceipt ? "checked" : ""} /> Только без чека</label>
-        <button id="accountingRefreshBtn" class="secondary" type="button">Обновить</button>
+        <button id="accountingRefreshBtn" class="secondary" type="button" ${state.accountingRefreshRunning ? "disabled" : ""}>${state.accountingRefreshRunning ? `Обновлено ${state.accountingRefreshCompleted}/${state.accountingRefreshTotal}` : "Обновить"}</button>
         <span class="muted">Для ручной связи просто перетащите строку заявки на строку нужного чека.</span>
         <button id="accountingBatchOpen" class="secondary accounting-batch-open" type="button" aria-label="Загрузить чеки">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 14.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4.5"/></svg>
@@ -7876,6 +7938,12 @@ function setAccountingProgress(handle, text = "", visible = true) {
 }
 
 function accountingReplaceRow(updated) {
+  if (updated?.accounting_id) {
+    const errorKey = String(Number(updated.accounting_id));
+    const nextErrors = { ...(state.accountingRefreshErrorsById || {}) };
+    delete nextErrors[errorKey];
+    state.accountingRefreshErrorsById = nextErrors;
+  }
   const updatedIds = new Set(accountingRowRequestIds(updated));
   const rows = state.accountingRows || [];
   let replaced = false;
@@ -7914,6 +7982,7 @@ async function loadSelfEmployedAccounting(force = false) {
   try {
     state.accountingRows = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}`);
     state.accountingLoadedMonth = month;
+    if (!state.accountingRefreshRunning) state.accountingRefreshErrorsById = {};
   } finally {
     state.accountingLoading = false;
   }
@@ -8510,7 +8579,27 @@ function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
   return accountingNormalizeReceiptFields(result);
 }
 
-async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress) {
+async function accountingCreateReusableOcrWorker() {
+  await ensureAccountingOcrLibraries();
+  const bundle = { worker: null, progress: null };
+  bundle.worker = await window.Tesseract.createWorker("rus+eng", 1, {
+    logger: (message) => {
+      if (message?.status === "recognizing text" && Number.isFinite(message.progress) && typeof bundle.progress === "function") {
+        bundle.progress(`Визуально читаю чек… ${Math.round(message.progress * 100)}%`);
+      }
+    },
+  });
+  return bundle;
+}
+
+async function accountingTerminateReusableOcrWorker(bundle) {
+  if (!bundle?.worker) return;
+  bundle.progress = null;
+  await bundle.worker.terminate();
+  bundle.worker = null;
+}
+
+async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress, options = {}) {
   await ensureAccountingOcrLibraries();
   const ocrCanvas = accountingPreprocessCanvas(sourceCanvas);
   progress("Визуально читаю чек… 0%");
@@ -8522,9 +8611,15 @@ async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progre
   const zones = {};
   const confidences = [];
   const itemRectangles = accountingReceiptItemRectangles(sourceCanvas, ocrCanvas);
-  let worker = null;
+  const reusableBundle = options.ocrWorkerBundle || null;
+  let worker = reusableBundle?.worker || null;
+  let ownsWorker = false;
   try {
-    worker = await window.Tesseract.createWorker("rus+eng", 1, { logger });
+    if (reusableBundle) reusableBundle.progress = progress;
+    if (!worker) {
+      worker = await window.Tesseract.createWorker("rus+eng", 1, { logger });
+      ownsWorker = true;
+    }
     const recognize = async (name, rectangle = null, pageSegMode = "3") => {
       await worker.setParameters({
         tessedit_pageseg_mode: pageSegMode,
@@ -8545,7 +8640,8 @@ async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progre
     progress("Уточняю дату и номер чека…");
     await recognize("header", accountingOcrRectangle(ocrCanvas, 0.02, 0.01, 0.96, 0.18), "6");
   } finally {
-    if (worker) await worker.terminate();
+    if (reusableBundle) reusableBundle.progress = null;
+    if (worker && ownsWorker) await worker.terminate();
   }
 
   const parsed = accountingParseVisualReceiptZones(zones, requestAmount);
@@ -8591,12 +8687,13 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
         qr_payload: official.qr_payload || qrPayload,
         parse_confidence: official.parse_confidence ?? 100,
       });
+      result._kgd_resolved = true;
       const missing = accountingReceiptMissingFields(result);
       progress(missing.length
         ? `КГД не вернул ${missing.join(", ")}. Добираю и сверяю по изображению…`
         : "Данные KGD получены. Сверяю их с изображением чека…");
       try {
-        const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
+        const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress, options);
         result = accountingMergeReceiptFields(result, fallback);
         const visualService = accountingCleanServiceName(fallback.service_name || "");
         if (visualService) result.service_name = visualService;
@@ -8609,7 +8706,7 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
     } catch (error) {
       progress(`QR найден, но КГД не отдал все данные. Читаю сам чек…`);
       try {
-        const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
+        const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress, options);
         return { ...fallback, qr_payload: qrPayload, _qr_error: error.message };
       } catch (ocrError) {
         console.warn("Accounting QR and OCR fallback failed", ocrError);
@@ -8619,7 +8716,7 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
   }
 
   progress("QR не найден или устарел. Читаю поля по зонам самого чека…");
-  return accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
+  return accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress, options);
 }
 
 function accountingPatchPath(row) {
@@ -8781,6 +8878,7 @@ function accountingQrRefreshPayload(parsed, fallbackQr = null) {
   const clean = accountingNormalizeReceiptFields(parsed || {});
   const payload = {
     qr_payload: clean.qr_payload || fallbackQr || null,
+    kgd_resolved: Boolean(clean._kgd_resolved && (clean.qr_payload || fallbackQr)),
     contractor_full_name: clean.contractor_full_name || null,
     iin: clean.iin || null,
     receipt_number: clean.receipt_number || null,
@@ -8793,9 +8891,9 @@ function accountingQrRefreshPayload(parsed, fallbackQr = null) {
   return payload;
 }
 
-async function accountingReadStoredReceipt(row, onProgress = null) {
+async function accountingReadStoredReceipt(row, onProgress = null, options = {}) {
   const file = await accountingStoredReceiptAsFile(row);
-  return recognizeAccountingReceiptFile(file, row?.request_amount, onProgress, { resolveQr: true });
+  return recognizeAccountingReceiptFile(file, row?.request_amount, onProgress, { resolveQr: true, ...options });
 }
 
 async function refreshAccountingFromQr(handle, options = {}) {
@@ -8821,6 +8919,11 @@ async function refreshAccountingFromQr(handle, options = {}) {
   return updated;
 }
 
+function accountingRefreshConcurrency(rowCount) {
+  const cores = Number(window.navigator?.hardwareConcurrency || 4);
+  return Math.max(1, Math.min(Number(rowCount || 0), cores >= 4 ? 2 : 1));
+}
+
 async function refreshAccountingMonthFromQr() {
   if (state.accountingRefreshRunning) return;
   state.accountingRefreshRunning = true;
@@ -8828,56 +8931,110 @@ async function refreshAccountingMonthFromQr() {
   const originalText = button?.textContent || "Обновить";
   if (button) {
     button.disabled = true;
-    button.textContent = "Проверяю чеки…";
+    button.textContent = "Подготавливаю обновление…";
   }
 
   let updatedCount = 0;
   let visualOnlyCount = 0;
   let errorCount = 0;
   try {
-    await loadSelfEmployedAccounting(true);
     const rows = (state.accountingRows || []).filter((row) => row.has_receipt && row.accounting_id);
     if (!rows.length) {
       showToast("В выбранном месяце пока нет чеков для перепроверки", 3500);
       return;
     }
 
-    for (let index = 0; index < rows.length; index += 1) {
-      const snapshot = rows[index];
-      if (button) button.textContent = `Проверяю ${index + 1}/${rows.length}…`;
-      // The list is not reloaded inside the loop, so locate the same record by id
-      // even after previous records were replaced in local state.
-      const current = (state.accountingRows || []).find((row) => Number(row.accounting_id) === Number(snapshot.accounting_id)) || snapshot;
-      const handle = accountingRowHandle(current);
-      try {
-        const parsed = await accountingReadStoredReceipt(current, (text) => {
-          if (button) button.textContent = `${index + 1}/${rows.length} · ${text}`;
-        });
-        const payload = accountingQrRefreshPayload(parsed, current.qr_payload || null);
-        const refreshed = await api(`/accounting/self-employed/receipts/${current.accounting_id}/refresh-qr`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        accountingReplaceRow(refreshed);
-        if (!payload.qr_payload) visualOnlyCount += 1;
-        updatedCount += 1;
-      } catch (error) {
-        console.warn("Accounting QR month refresh failed", current.accounting_id, error);
-        errorCount += 1;
-      }
-    }
+    state.accountingRefreshErrorsById = {};
+    state.accountingRefreshById = Object.fromEntries(rows.map((row) => [
+      String(Number(row.accounting_id)),
+      { status: "queued", detail: "Ожидает своей очереди" },
+    ]));
+    state.accountingRefreshCompleted = 0;
+    state.accountingRefreshTotal = rows.length;
+    accountingRenderRowsInPlace();
+    if (button) button.textContent = `Обновлено 0/${rows.length}`;
 
-    await loadSelfEmployedAccounting(true);
+    let cursor = 0;
+    const processNext = async () => {
+      let ocrWorkerBundle = null;
+      try {
+        ocrWorkerBundle = await accountingCreateReusableOcrWorker();
+      } catch (error) {
+        console.warn("Reusable accounting OCR worker unavailable", error);
+      }
+
+      try {
+        while (cursor < rows.length) {
+          const index = cursor;
+          cursor += 1;
+          const snapshot = rows[index];
+          const current = (state.accountingRows || []).find((row) => Number(row.accounting_id) === Number(snapshot.accounting_id)) || snapshot;
+          const accountingId = Number(current.accounting_id);
+          accountingSetRefreshEntry(accountingId, "running", `Чек ${index + 1} из ${rows.length}`);
+          try {
+            const parsed = await accountingReadStoredReceipt(current, (text) => {
+              accountingSetRefreshEntry(accountingId, "running", text);
+            }, { ocrWorkerBundle });
+            const payload = accountingQrRefreshPayload(parsed, current.qr_payload || null);
+            accountingSetRefreshEntry(accountingId, "running", "Сохраняю проверенные данные…");
+            const refreshed = await api(`/accounting/self-employed/receipts/${accountingId}/refresh-qr`, {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            accountingUnlockRefreshRow(accountingId);
+            if (!payload.qr_payload) visualOnlyCount += 1;
+            updatedCount += 1;
+            state.accountingRefreshCompleted += 1;
+            accountingReplaceRow(refreshed);
+          } catch (error) {
+            console.warn("Accounting QR month refresh failed", accountingId, error);
+            errorCount += 1;
+            state.accountingRefreshCompleted += 1;
+            accountingUnlockRefreshRow(accountingId, error.message || "Неизвестная ошибка");
+            accountingRenderRowsInPlace();
+          }
+          if (button) button.textContent = `Обновлено ${state.accountingRefreshCompleted}/${rows.length}`;
+        }
+      } finally {
+        try {
+          await accountingTerminateReusableOcrWorker(ocrWorkerBundle);
+        } catch (error) {
+          console.warn("Accounting OCR worker cleanup failed", error);
+        }
+      }
+    };
+
+    const concurrency = accountingRefreshConcurrency(rows.length);
+    await Promise.all(Array.from({ length: concurrency }, () => processNext()));
+
+    // One quiet reconciliation keeps rows in the correct receipt month without
+    // blanking the already updated interface.
+    const refreshMonth = selectedMonthValue();
+    try {
+      const freshRows = await api(`/accounting/self-employed?month=${encodeURIComponent(refreshMonth)}`);
+      if (selectedMonthValue() === refreshMonth) {
+        state.accountingRows = freshRows;
+        state.accountingLoadedMonth = refreshMonth;
+        accountingRenderRowsInPlace();
+      }
+    } catch (error) {
+      console.warn("Accounting quiet reconciliation failed", error);
+    }
     const parts = [`перечитано чеков: ${updatedCount}`];
     if (visualOnlyCount) parts.push(`только по изображению: ${visualOnlyCount}`);
     if (errorCount) parts.push(`ошибок: ${errorCount}`);
     showToast(`Бухгалтерия: ${parts.join(" · ")}`, 6000);
   } finally {
+    const hadLockedRows = Object.keys(state.accountingRefreshById || {}).length > 0;
     state.accountingRefreshRunning = false;
+    state.accountingRefreshById = {};
+    state.accountingRefreshCompleted = 0;
+    state.accountingRefreshTotal = 0;
     if (button) {
       button.disabled = false;
       button.textContent = originalText;
     }
+    if (hadLockedRows) accountingRenderRowsInPlace();
   }
 }
 
@@ -19968,7 +20125,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.87 loaded");
+  console.info("Contrast Finance web app v0.5.88 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
