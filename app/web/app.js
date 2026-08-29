@@ -8486,22 +8486,131 @@ function accountingScaleRectangle(rectangle, sourceCanvas, targetCanvas) {
   };
 }
 
+function accountingFindReceiptTextGeometry(canvas, rule) {
+  try {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const lineWidth = Math.max(1, rule.maxX - rule.minX + 1);
+    const bandBottom = Math.max(1, rule.y - Math.max(2, Math.round(height * 0.003)));
+    const scanTop = Math.max(0, Math.round(rule.y - height * 0.24));
+    const detectRight = Math.min(width, Math.round(rule.minX + lineWidth * 0.58));
+    const isDarkTextPixel = (x, y) => {
+      const offset = (y * width + x) * 4;
+      const red = data[offset];
+      const green = data[offset + 1];
+      const blue = data[offset + 2];
+      return Math.max(red, green, blue) - Math.min(red, green, blue) < 58
+        && red + green + blue < 570;
+    };
+
+    // Detect the last multiline text block before the blue rule. This follows
+    // the actual number of service lines instead of assuming a fixed height.
+    const rowThreshold = Math.max(3, Math.round((detectRight - rule.minX) * 0.009));
+    const activeRows = [];
+    for (let y = scanTop; y < bandBottom; y += 1) {
+      let count = 0;
+      for (let x = rule.minX; x < detectRight; x += 1) {
+        if (isDarkTextPixel(x, y)) count += 1;
+      }
+      if (count >= rowThreshold) activeRows.push(y);
+    }
+    const rawGroups = [];
+    for (const y of activeRows) {
+      const last = rawGroups[rawGroups.length - 1];
+      if (!last || y > last.end + 1) rawGroups.push({ start: y, end: y });
+      else last.end = y;
+    }
+    const minimumLineHeight = Math.max(3, Math.round(height * 0.003));
+    const lineGroups = rawGroups.filter((group) => group.end - group.start + 1 >= minimumLineHeight);
+    const mergedGroups = [];
+    const maximumLineGap = Math.max(10, Math.round(height * 0.020));
+    for (const group of lineGroups) {
+      const last = mergedGroups[mergedGroups.length - 1];
+      if (last && group.start - last.end - 1 <= maximumLineGap) last.end = group.end;
+      else mergedGroups.push({ ...group });
+    }
+    const serviceBlocks = mergedGroups.filter((group) => (
+      group.end >= rule.y - Math.round(height * 0.15)
+      && group.end - group.start + 1 >= Math.round(height * 0.012)
+    ));
+    const serviceBlock = serviceBlocks[serviceBlocks.length - 1] || null;
+    const bandTop = serviceBlock
+      ? Math.max(scanTop, serviceBlock.start - Math.round(height * 0.008))
+      : Math.max(scanTop, Math.round(rule.y - height * 0.145));
+
+    // Across the detected block, find the widest empty vertical gap between
+    // the left service text and the right-aligned amount. It adapts to both a
+    // short one-line service and a tall four-line service.
+    const columnStart = Math.round(rule.minX + lineWidth * 0.40);
+    const columnEnd = Math.min(width, Math.round(rule.minX + lineWidth * 0.96));
+    const columnThreshold = Math.max(2, Math.round((bandBottom - bandTop) * 0.012));
+    const activeColumns = [];
+    const activeColumnSet = new Set();
+    for (let x = columnStart; x < columnEnd; x += 1) {
+      let count = 0;
+      for (let y = bandTop; y < bandBottom; y += 1) {
+        if (isDarkTextPixel(x, y)) count += 1;
+      }
+      if (count >= columnThreshold) {
+        activeColumns.push(x);
+        activeColumnSet.add(x);
+      }
+    }
+    const gaps = [];
+    let gapStart = null;
+    for (let x = columnStart; x < columnEnd; x += 1) {
+      if (!activeColumnSet.has(x) && gapStart === null) gapStart = x;
+      if (activeColumnSet.has(x) && gapStart !== null) {
+        gaps.push({ start: gapStart, end: x - 1 });
+        gapStart = null;
+      }
+    }
+    if (gapStart !== null) gaps.push({ start: gapStart, end: columnEnd - 1 });
+    const minimumGapWidth = Math.max(8, Math.round(lineWidth * 0.02));
+    const validGaps = gaps.filter((gap) => {
+      const gapWidth = gap.end - gap.start + 1;
+      if (gapWidth < minimumGapWidth) return false;
+      if (gap.start <= rule.minX + lineWidth * 0.42 || gap.end >= rule.minX + lineWidth * 0.92) return false;
+      const leftActivity = activeColumns.filter((x) => x < gap.start).length;
+      const rightActivity = activeColumns.filter((x) => x > gap.end).length;
+      return leftActivity >= 8 && rightActivity >= 8;
+    });
+    const columnGap = validGaps.sort((a, b) => (b.end - b.start) - (a.end - a.start))[0] || null;
+
+    return {
+      bandTop,
+      bandBottom,
+      serviceRight: columnGap
+        ? Math.round((columnGap.start + columnGap.end) / 2)
+        : Math.round(rule.minX + lineWidth * 0.67),
+      amountLeft: columnGap
+        ? columnGap.start
+        : Math.round(rule.minX + lineWidth * 0.58),
+      serviceBlock,
+      columnGap,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 function accountingReceiptItemRectangles(sourceCanvas, ocrCanvas) {
   const rule = accountingFindReceiptBlueRule(sourceCanvas);
   if (!rule) {
     return {
-      service: accountingOcrRectangle(ocrCanvas, 0.05, 0.39, 0.67, 0.09),
-      amount: accountingOcrRectangle(ocrCanvas, 0.58, 0.39, 0.38, 0.09),
+      service: accountingOcrRectangle(ocrCanvas, 0.05, 0.34, 0.67, 0.14),
+      amount: accountingOcrRectangle(ocrCanvas, 0.58, 0.34, 0.38, 0.14),
       ruleFound: false,
     };
   }
 
   const lineWidth = Math.max(1, rule.maxX - rule.minX + 1);
-  const bandTop = Math.max(0, Math.round(rule.y - sourceCanvas.height * 0.085));
-  const bandBottom = Math.max(bandTop + 1, rule.y - Math.max(2, Math.round(sourceCanvas.height * 0.003)));
+  const detected = accountingFindReceiptTextGeometry(sourceCanvas, rule);
+  const bandTop = detected?.bandTop ?? Math.max(0, Math.round(rule.y - sourceCanvas.height * 0.145));
+  const bandBottom = Math.max(bandTop + 1, detected?.bandBottom ?? (rule.y - Math.max(2, Math.round(sourceCanvas.height * 0.003))));
   const serviceLeft = Math.max(0, rule.minX);
-  const serviceRight = Math.min(sourceCanvas.width, Math.round(rule.minX + lineWidth * 0.73));
-  const amountLeft = Math.max(0, Math.round(rule.minX + lineWidth * 0.58));
+  const serviceRight = Math.min(sourceCanvas.width, detected?.serviceRight ?? Math.round(rule.minX + lineWidth * 0.67));
+  const amountLeft = Math.max(0, detected?.amountLeft ?? Math.round(rule.minX + lineWidth * 0.58));
   const amountRight = Math.min(sourceCanvas.width, rule.maxX + 1);
   return {
     service: accountingScaleRectangle({
@@ -8532,7 +8641,9 @@ function accountingParseServiceBandText(rawText) {
     const cleaned = accountingCleanServiceName(rawLine);
     if (!cleaned) continue;
     if ((cleaned.match(/[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/g) || []).length < 3) continue;
-    serviceLines.push(cleaned);
+    // Preserve punctuation at a visual line break. Cleaning each line first
+    // would trim the comma from ``художников,`` before the lines are joined.
+    serviceLines.push(accountingNormalizeOcrText(rawLine));
   }
   return accountingCleanServiceName(serviceLines.join(" "));
 }
@@ -20125,7 +20236,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.88 loaded");
+  console.info("Contrast Finance web app v0.5.89 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
