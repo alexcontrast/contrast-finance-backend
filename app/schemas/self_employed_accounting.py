@@ -93,6 +93,11 @@ class SelfEmployedAccountingRead(BaseModel):
     parse_status: str = "empty"
     confirmed_at: datetime | None = None
     act_status: str = "not_created"
+    act_number: str | None = None
+    act_date: date | None = None
+    act_size: int | None = None
+    act_generated_at: datetime | None = None
+    has_act: bool = False
 
 
 class SelfEmployedReceiptImportRead(BaseModel):
@@ -148,4 +153,5 @@ class R1CustomerProfileRead(BaseModel):
     bank_name: str
     bik: str
     kbe: str
+    director: str
     director: str

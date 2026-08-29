@@ -39,6 +39,7 @@ from app.schemas.self_employed_accounting import (
     R1CustomerProfileRead,
 )
 from app.services.auth import get_current_user
+from app.services.r1_act_pdf import R1ActPayload, generate_r1_act_pdf
 
 
 router = APIRouter(prefix="/accounting/self-employed", tags=["self_employed_accounting"])
@@ -600,6 +601,31 @@ def require_accounting_access(user: User) -> None:
         raise HTTPException(status_code=403, detail="Бухгалтерия доступна только администратору и бухгалтеру")
 
 
+ACT_MUTABLE_STATUSES = {None, "", "not_created", "generated"}
+
+
+def _assert_act_mutable(record: SelfEmployedAccounting) -> None:
+    """Generated drafts may be replaced; signature workflow states are immutable."""
+    if record.act_status not in ACT_MUTABLE_STATUSES:
+        raise HTTPException(status_code=409, detail="Нельзя менять данные после отправки АВР на подпись")
+
+
+def _discard_generated_act(record: SelfEmployedAccounting) -> None:
+    """Drop only an unsigned draft when its source receipt/group changes."""
+    if record.act_status != "generated":
+        return
+    record.act_status = "not_created"
+    record.act_number = None
+    record.act_date = None
+    record.act_filename = None
+    record.act_content_type = None
+    record.act_size = None
+    record.act_sha256 = None
+    record.act_data = None
+    record.act_generated_at = None
+    record.act_generated_by_user_id = None
+
+
 def clean_text(value: str | None, max_length: int | None = None) -> str | None:
     if value is None:
         return None
@@ -972,6 +998,11 @@ def _receipt_fields(record: SelfEmployedAccounting | None) -> dict:
         "parse_status": record.parse_status if record else "empty",
         "confirmed_at": record.confirmed_at if record else None,
         "act_status": record.act_status if record else "not_created",
+        "act_number": record.act_number if record else None,
+        "act_date": record.act_date if record else None,
+        "act_size": record.act_size if record else None,
+        "act_generated_at": record.act_generated_at if record else None,
+        "has_act": bool(record and record.act_filename and record.act_size),
     }
 
 
@@ -1257,8 +1288,9 @@ def group_self_employed_requests(
     if len(meaningful) > 1:
         raise HTTPException(status_code=409, detail="Нельзя объединить строки, у которых уже есть разные чеки")
     destination = meaningful[0] if meaningful else (source_records[0] if source_records else None)
-    if destination is not None and destination.act_status not in {None, "", "not_created"}:
-        raise HTTPException(status_code=409, detail="Нельзя менять состав строки после формирования АВР")
+    if destination is not None:
+        _assert_act_mutable(destination)
+        _discard_generated_act(destination)
     if destination is None:
         destination = SelfEmployedAccounting(
             payment_request_id=requested_ids[0],
@@ -1340,6 +1372,8 @@ def _save_receipt_binary(
     content_type: str,
     current_user: User,
 ) -> None:
+    _assert_act_mutable(record)
+    _discard_generated_act(record)
     digest = sha256(content).hexdigest()
     duplicate = db.execute(
         select(SelfEmployedAccounting.id).where(
@@ -1499,6 +1533,8 @@ def refresh_accounting_receipt_from_qr(
     """
     require_accounting_access(current_user)
     record = get_record_or_404(db, accounting_id, lock=True)
+    _assert_act_mutable(record)
+    _discard_generated_act(record)
     qr_payload = payload.qr_payload or record.qr_payload
     official: dict = {}
     canonical_qr: str | None = None
@@ -1678,8 +1714,8 @@ def attach_requests_to_receipt(
     target = get_record_or_404(db, accounting_id, lock=True)
     if not target.receipt_filename:
         raise HTTPException(status_code=409, detail="Перетаскивать заявки можно только на строку с чеком")
-    if target.act_status not in {None, "", "not_created"}:
-        raise HTTPException(status_code=409, detail="Нельзя менять состав после формирования АВР")
+    _assert_act_mutable(target)
+    _discard_generated_act(target)
 
     request_ids = list(dict.fromkeys(int(value) for value in payload.request_ids))
     rows = db.execute(
@@ -1701,8 +1737,8 @@ def attach_requests_to_receipt(
         source = get_record_or_404(db, source.id, lock=True)
         if source.receipt_filename:
             raise HTTPException(status_code=409, detail="Нельзя перетащить строку, у которой уже есть другой чек")
-        if source.act_status not in {None, "", "not_created"}:
-            raise HTTPException(status_code=409, detail="Нельзя переносить заявку после формирования АВР")
+        _assert_act_mutable(source)
+        _discard_generated_act(source)
         source_ids.add(source.id)
 
     # Move all members of a source request group, not only its anchor row.
@@ -1770,8 +1806,8 @@ def detach_request_from_receipt(
     require_accounting_access(current_user)
     target = get_record_or_404(db, accounting_id, lock=True)
     get_request_or_404(db, request_id)
-    if target.act_status not in {None, "", "not_created"}:
-        raise HTTPException(status_code=409, detail="Нельзя менять состав после формирования АВР")
+    _assert_act_mutable(target)
+    _discard_generated_act(target)
     link = db.execute(
         select(SelfEmployedAccountingRequest).where(
             SelfEmployedAccountingRequest.accounting_id == target.id,
@@ -1805,8 +1841,7 @@ def delete_accounting_receipt(
 ):
     require_accounting_access(current_user)
     target = get_record_or_404(db, accounting_id, lock=True)
-    if target.act_status not in {None, "", "not_created"}:
-        raise HTTPException(status_code=409, detail="Нельзя удалить чек после формирования АВР")
+    _assert_act_mutable(target)
     member_ids = list(
         db.execute(
             select(SelfEmployedAccountingRequest.payment_request_id).where(
@@ -1907,6 +1942,21 @@ async def upload_self_employed_receipt(
 
 
 def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccountingUpdate, current_user: User) -> None:
+    source_changed = any(
+        value is not None
+        for value in (
+            payload.contractor_full_name,
+            payload.iin,
+            payload.receipt_number,
+            payload.receipt_datetime,
+            payload.service_name,
+            payload.receipt_amount,
+            payload.qr_payload,
+        )
+    )
+    if source_changed:
+        _assert_act_mutable(record)
+        _discard_generated_act(record)
     if payload.contractor_full_name is not None:
         record.contractor_full_name = clean_person_name(payload.contractor_full_name)
     if payload.iin is not None:
@@ -2007,6 +2057,126 @@ def update_self_employed_accounting(
     db.add(record)
     db.commit()
     return load_group_row(db, request.id)
+
+
+def _r1_payload(record: SelfEmployedAccounting, member_ids: list[int]) -> R1ActPayload:
+    missing: list[str] = []
+    if not record.receipt_filename:
+        missing.append("чек")
+    if not record.contractor_full_name:
+        missing.append("ФИО")
+    if len(re.sub(r"\D", "", str(record.iin or ""))) != 12:
+        missing.append("ИИН")
+    if not record.receipt_number:
+        missing.append("номер чека")
+    if not record.receipt_datetime:
+        missing.append("дату чека")
+    if not record.service_name:
+        missing.append("наименование работы")
+    if record.receipt_amount is None or Decimal(record.receipt_amount) <= 0:
+        missing.append("сумму")
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail="Перед формированием АВР заполните: " + ", ".join(missing),
+        )
+
+    work_date = record.receipt_datetime.date()
+    act_number = record.act_number or f"АВР-{work_date.year}-{record.id:06d}"
+    return R1ActPayload(
+        act_number=act_number,
+        act_date=work_date,
+        work_date=work_date,
+        contractor_name=str(record.contractor_full_name).strip(),
+        contractor_iin=re.sub(r"\D", "", str(record.iin or "")),
+        service_name=str(record.service_name).strip(),
+        amount=Decimal(record.receipt_amount),
+        receipt_number=str(record.receipt_number).strip() or None,
+        linked_request_ids=tuple(sorted(int(value) for value in member_ids)),
+        customer_name=str(R1_CUSTOMER_PROFILE["name"]),
+        customer_bin_iin=str(R1_CUSTOMER_PROFILE["bin_iin"]),
+        customer_address=f"{R1_CUSTOMER_PROFILE['country']}, {R1_CUSTOMER_PROFILE['address']}",
+        customer_iik=str(R1_CUSTOMER_PROFILE["iik"]),
+        customer_bank_name=str(R1_CUSTOMER_PROFILE["bank_name"]),
+        customer_bik=str(R1_CUSTOMER_PROFILE["bik"]),
+        customer_kbe=str(R1_CUSTOMER_PROFILE["kbe"]),
+        customer_director=str(R1_CUSTOMER_PROFILE["director"]),
+    )
+
+
+@router.post("/receipts/{accounting_id}/act", response_model=SelfEmployedAccountingRead)
+def generate_accounting_act(
+    accounting_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate and persist an unsigned R-1 PDF snapshot for one receipt row."""
+    require_accounting_access(current_user)
+    record = get_record_or_404(db, accounting_id, lock=True)
+    _assert_act_mutable(record)
+    member_ids = list(
+        db.execute(
+            select(SelfEmployedAccountingRequest.payment_request_id).where(
+                SelfEmployedAccountingRequest.accounting_id == record.id
+            )
+        ).scalars().all()
+    )
+    payload = _r1_payload(record, member_ids)
+    try:
+        pdf_data = generate_r1_act_pdf(payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Не удалось сформировать PDF АВР") from exc
+
+    filename = f"AVR_{payload.work_date.isoformat()}_{record.id}.pdf"
+    generated_at = datetime.utcnow()
+    record.act_status = "generated"
+    record.act_number = payload.act_number
+    record.act_date = payload.act_date
+    record.act_filename = filename
+    record.act_content_type = "application/pdf"
+    record.act_size = len(pdf_data)
+    record.act_sha256 = sha256(pdf_data).hexdigest()
+    record.act_data = pdf_data
+    record.act_generated_at = generated_at
+    record.act_generated_by_user_id = current_user.id
+    record.updated_at = generated_at
+    db.add(record)
+    db.commit()
+    return load_accounting_row(db, record.id)
+
+
+def _act_response(db: Session, record: SelfEmployedAccounting) -> Response:
+    row = db.execute(
+        select(
+            SelfEmployedAccounting.act_data,
+            SelfEmployedAccounting.act_filename,
+            SelfEmployedAccounting.act_content_type,
+        ).where(SelfEmployedAccounting.id == record.id)
+    ).one_or_none()
+    if row is None or row.act_data is None:
+        raise HTTPException(status_code=404, detail="АВР ещё не сформирован")
+    filename = Path(row.act_filename or "AVR.pdf").name.replace('"', "")
+    encoded_name = quote(filename, safe="")
+    return Response(
+        content=row.act_data,
+        media_type=row.act_content_type or "application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename=AVR.pdf; filename*=UTF-8''{encoded_name}",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+@router.get("/receipts/{accounting_id}/act/file")
+def download_accounting_act(
+    accounting_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_accounting_access(current_user)
+    return _act_response(db, get_record_or_404(db, accounting_id))
 
 
 def _receipt_response(db: Session, record: SelfEmployedAccounting) -> Response:

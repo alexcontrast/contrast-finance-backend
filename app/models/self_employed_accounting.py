@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, LargeBinary, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -44,8 +44,18 @@ class SelfEmployedAccounting(Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     confirmed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
-    # Reserved for the next stage (R-1 + signing) without changing today's workflow.
+    # R-1 document lifecycle.  The generated PDF is stored in Postgres for the
+    # same reason as the original receipt: Railway's filesystem is ephemeral.
     act_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_created", index=True)
+    act_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    act_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    act_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    act_content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    act_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    act_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    act_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    act_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    act_generated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

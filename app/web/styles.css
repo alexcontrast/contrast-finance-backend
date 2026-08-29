@@ -15488,3 +15488,79 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+/* v0.5.90 — compact receipt actions and one persistent R-1 action */
+.accounting-table-head,
+.accounting-row-main {
+  grid-template-columns: 112px minmax(270px, 1.5fr) 132px 112px minmax(285px, 1.75fr) minmax(258px, auto);
+}
+
+.accounting-actions {
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+
+.accounting-actions .accounting-icon-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+.accounting-icon-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.accounting-icon-btn.is-active {
+  color: #27651c;
+  border-color: rgba(77, 159, 45, .45);
+  background: rgba(143, 220, 96, .16);
+}
+
+.accounting-actions .accounting-act-btn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.accounting-act-btn.is-ready {
+  color: #1f6429;
+  border-color: rgba(46, 145, 66, .38);
+  background: linear-gradient(135deg, rgba(217, 255, 201, .94), rgba(241, 255, 236, .96));
+}
+
+.accounting-act-btn.is-loading {
+  color: rgba(30, 35, 25, .62);
+}
+
+@media (max-width: 1380px) {
+  .accounting-row-main {
+    grid-template-columns: 105px minmax(240px, 1.4fr) 128px 108px minmax(260px, 1.6fr);
+  }
+  .accounting-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .accounting-row-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .accounting-actions .accounting-act-btn {
+    min-width: 132px;
+  }
+}

@@ -7681,6 +7681,15 @@ function accountingDisplayWork(row) {
   return accountingCleanServiceName(source) || "—";
 }
 
+function accountingActionIcon(kind) {
+  const icons = {
+    receipt: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h10a1 1 0 0 1 1 1v16l-3-2-3 2-3-2-3 2v-16a1 1 0 0 1 1-1Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>`,
+    edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.2-1 10.6-10.6a1.8 1.8 0 0 0 0-2.5l-.7-.7a1.8 1.8 0 0 0-2.5 0L5 15.8 4 20Z"/><path d="m14.5 6.3 3.2 3.2M4 20h5"/></svg>`,
+    delete: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>`,
+  };
+  return icons[kind] || "";
+}
+
 function renderAccountingEditor(row) {
   const handle = accountingRowHandle(row);
   const match = accountingMoneyMatch(row);
@@ -7817,9 +7826,10 @@ function renderAccountingRows(rows) {
               <div class="accounting-actions">
                 ${draggable ? `<span class="accounting-drag-handle" title="Перетащите заявку на нужный чек">⋮⋮</span>` : dropTarget ? `<span class="accounting-drop-icon" title="Сюда можно перетащить заявку">⇩</span>` : ""}
                 ${!row.is_receipt_only && row.payment_request_id ? `<label class="secondary accounting-upload-btn">${row.has_receipt ? "Заменить чек" : "Прикрепить чек"}<input type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" data-accounting-file="${handle}" /></label>` : ""}
-                ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-open-receipt="${handle}">Открыть</button>` : ""}
-                ${row.has_receipt ? `<button class="ghost" type="button" data-accounting-expand="${handle}">${expanded ? "Свернуть данные" : "Проверить данные"}</button>` : ""}
-                ${row.has_receipt && row.accounting_id ? `<button class="danger" type="button" data-accounting-delete-receipt="${handle}">Удалить</button>` : ""}
+                ${row.has_receipt ? `<button class="ghost accounting-icon-btn" type="button" data-accounting-open-receipt="${handle}" title="Открыть чек" aria-label="Открыть чек">${accountingActionIcon("receipt")}</button>` : ""}
+                ${row.has_receipt ? `<button class="ghost accounting-icon-btn ${expanded ? "is-active" : ""}" type="button" data-accounting-expand="${handle}" title="${expanded ? "Свернуть данные" : "Проверить данные"}" aria-label="${expanded ? "Свернуть данные" : "Проверить данные"}">${accountingActionIcon("edit")}</button>` : ""}
+                ${row.has_receipt && row.accounting_id ? `<button class="danger accounting-icon-btn" type="button" data-accounting-delete-receipt="${handle}" title="Удалить чек" aria-label="Удалить чек">${accountingActionIcon("delete")}</button>` : ""}
+                ${row.has_receipt && row.accounting_id ? `<button class="accounting-act-btn ${row.has_act ? "is-ready" : ""}" type="button" data-accounting-generate-act="${handle}" title="${row.has_act ? `АВР ${escapeHtml(row.act_number || "")} уже сформирован. Нажмите, чтобы обновить PDF` : "Сформировать АВР по данным чека"}">Сформировать АВР</button>` : ""}
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
@@ -8957,6 +8967,62 @@ async function openAccountingReceipt(handle) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+async function openAccountingAct(handle) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.accounting_id) throw new Error("Строка АВР не найдена");
+  const response = await fetch(`/accounting/self-employed/receipts/${row.accounting_id}/act/file`, {
+    headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+  });
+  if (!response.ok) {
+    let detail = `Ошибка ${response.status}`;
+    try { detail = (await response.json()).detail || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.download = row.act_number ? `${row.act_number}.pdf` : "АВР.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function generateAccountingAct(handle) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.accounting_id || !row?.has_receipt) throw new Error("Сначала загрузите чек");
+  const button = document.querySelector(`[data-accounting-generate-act="${handle}"]`);
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.textContent = "Формирую…";
+  }
+  try {
+    const updated = await api(`/accounting/self-employed/receipts/${row.accounting_id}/act`, { method: "POST" });
+    accountingReplaceRow(updated);
+    showToast(`АВР ${updated.act_number || ""} сформирован`);
+    await openAccountingAct(accountingRowHandle(updated));
+  } catch (error) {
+    if (Number(error?.status) === 400) {
+      state.accountingExpandedRequestId = handle;
+      accountingRenderRowsInPlace();
+      setAccountingProgress(handle, error.message, true);
+    }
+    throw error;
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.classList.remove("is-loading");
+      button.textContent = "Сформировать АВР";
+    }
+  }
+}
+
 function accountingReceiptFilePath(row) {
   if (row?.accounting_id) return `/accounting/self-employed/receipts/${row.accounting_id}/file`;
   if (row?.payment_request_id) return `/accounting/self-employed/${row.payment_request_id}/receipt`;
@@ -9351,6 +9417,10 @@ function attachAccountingPanel() {
   });
   document.querySelectorAll("[data-accounting-delete-receipt]").forEach((button) => {
     button.onclick = () => deleteAccountingReceipt(button.getAttribute("data-accounting-delete-receipt")).catch((error) => alert(error.message));
+  });
+
+  document.querySelectorAll("[data-accounting-generate-act]").forEach((button) => {
+    button.onclick = () => generateAccountingAct(button.getAttribute("data-accounting-generate-act")).catch((error) => alert(error.message));
   });
 
   document.querySelectorAll("[data-accounting-save]").forEach((button) => {
