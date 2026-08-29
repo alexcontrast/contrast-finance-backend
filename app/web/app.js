@@ -8092,14 +8092,19 @@ function accountingNormalizeOcrText(text) {
     .trim();
 }
 
-function accountingCleanPersonName(value) {
+function accountingCleanPersonNameFragment(value) {
   const cleaned = accountingNormalizeOcrText(value)
     .replace(/^\s*(?:ФИО|FIO|ИП|исполнитель|самозанятый)\s*[:№#-]*\s*/i, "")
     .replace(/[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі .'-]+/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[ .'-]+|[ .'-]+$/g, "");
   const words = cleaned.split(/\s+/).filter((word) => /[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/.test(word));
-  return words.length >= 2 ? words.join(" ") : "";
+  return words.join(" ");
+}
+
+function accountingCleanPersonName(value) {
+  const cleaned = accountingCleanPersonNameFragment(value);
+  return cleaned.split(/\s+/).filter(Boolean).length >= 2 ? cleaned : "";
 }
 
 function accountingPreferFullPersonName(primary, visual) {
@@ -8212,28 +8217,55 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
   }
   if (amount !== null) result.receipt_amount = amount;
 
-  const looksLikePersonName = (line) => {
+  const looksLikePersonNameFragment = (line) => {
     const clean = String(line || "").replace(/[•·]/g, " ").replace(/\s+/g, " ").trim();
     if (!clean) return false;
     if (/[:,]/.test(clean)) return false;
+    if (/\d/.test(clean)) return false;
     if (/(?:режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|receipt|итого|плат[её]ж|наличн|безналичн|текущ|банк|Кбе|ИИК|HSBK|₸|тг|тенге)/i.test(clean)) return false;
     const words = clean.split(/\s+/).filter(Boolean);
     const letters = (clean.match(/[A-Za-zА-Яа-яЁё]/g) || []).length;
     const nameCase = clean.toUpperCase() === clean || words.every((word) => word.slice(0, 1) === word.slice(0, 1).toUpperCase());
-    return words.length >= 2 && words.length <= 5 && letters >= 8 && nameCase;
+    return words.length >= 1 && words.length <= 4 && letters >= 3 && nameCase;
+  };
+  const looksLikePersonName = (line) => {
+    const clean = accountingCleanPersonName(line);
+    const words = clean.split(/\s+/).filter(Boolean);
+    return words.length >= 2 && words.length <= 5 && looksLikePersonNameFragment(clean);
   };
 
   // Real e-Salyq layout: "ИИН ..." is followed by the person's full name.
   // Keep a backward fallback to lines before IIN for older receipt layouts.
   const iinLineIndex = lines.findIndex((line) => /(?:ИИН|IIN|ЖСН)/i.test(line));
   if (iinLineIndex >= 0) {
-    const nearbyIndexes = [];
-    for (let i = iinLineIndex + 1; i <= Math.min(lines.length - 1, iinLineIndex + 4); i += 1) nearbyIndexes.push(i);
-    for (let i = iinLineIndex - 1; i >= Math.max(0, iinLineIndex - 4); i -= 1) nearbyIndexes.push(i);
-    for (const index of nearbyIndexes) {
-      const line = accountingCleanPersonName(lines[index]);
-      if (looksLikePersonName(line)) {
-        result.contractor_full_name = line;
+    const collectName = (direction) => {
+      const fragments = [];
+      for (let offset = 1; offset <= 4; offset += 1) {
+        const index = iinLineIndex + direction * offset;
+        if (index < 0 || index >= lines.length) break;
+        const fragment = accountingCleanPersonNameFragment(lines[index]);
+        if (!looksLikePersonNameFragment(fragment)) {
+          if (fragments.length) break;
+          continue;
+        }
+        fragments.push(fragment);
+      }
+      if (direction < 0) fragments.reverse();
+      return accountingCleanPersonName(fragments.join(" "));
+    };
+    const nameCandidates = [collectName(1), collectName(-1)]
+      .filter((candidate) => looksLikePersonName(candidate))
+      .sort((a, b) => b.split(/\s+/).length - a.split(/\s+/).length);
+    if (nameCandidates.length) {
+      result.contractor_full_name = nameCandidates[0];
+    }
+  }
+
+  if (!result.contractor_full_name) {
+    for (const rawLine of lines) {
+      const candidate = accountingCleanPersonName(rawLine);
+      if (looksLikePersonName(candidate)) {
+        result.contractor_full_name = candidate;
         break;
       }
     }
@@ -8323,11 +8355,111 @@ function accountingOcrRectangle(canvas, leftRatio, topRatio, widthRatio, heightR
   };
 }
 
+function accountingFindReceiptBlueRule(canvas) {
+  try {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const startY = Math.round(height * 0.24);
+    const endY = Math.round(height * 0.70);
+    let best = null;
+    for (let y = startY; y < endY; y += 1) {
+      let count = 0;
+      let minX = width;
+      let maxX = -1;
+      const rowOffset = y * width * 4;
+      for (let x = 0; x < width; x += 1) {
+        const offset = rowOffset + x * 4;
+        const red = data[offset];
+        const green = data[offset + 1];
+        const blue = data[offset + 2];
+        const isBlue = blue >= 55
+          && blue - red >= 18
+          && blue - green >= 12
+          && blue >= red * 1.16
+          && blue >= green * 1.10;
+        if (!isBlue) continue;
+        count += 1;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+      }
+      const span = maxX >= minX ? maxX - minX + 1 : 0;
+      const score = count + span * 0.35;
+      if (count >= width * 0.16 && span >= width * 0.42 && (!best || score > best.score)) {
+        best = { y, minX, maxX, count, score };
+      }
+    }
+    return best;
+  } catch (_) {
+    return null;
+  }
+}
+
+function accountingScaleRectangle(rectangle, sourceCanvas, targetCanvas) {
+  const scaleX = targetCanvas.width / Math.max(1, sourceCanvas.width);
+  const scaleY = targetCanvas.height / Math.max(1, sourceCanvas.height);
+  return {
+    left: Math.max(0, Math.round(rectangle.left * scaleX)),
+    top: Math.max(0, Math.round(rectangle.top * scaleY)),
+    width: Math.max(1, Math.round(rectangle.width * scaleX)),
+    height: Math.max(1, Math.round(rectangle.height * scaleY)),
+  };
+}
+
+function accountingReceiptItemRectangles(sourceCanvas, ocrCanvas) {
+  const rule = accountingFindReceiptBlueRule(sourceCanvas);
+  if (!rule) {
+    return {
+      service: accountingOcrRectangle(ocrCanvas, 0.05, 0.39, 0.70, 0.09),
+      amount: accountingOcrRectangle(ocrCanvas, 0.67, 0.39, 0.29, 0.09),
+      ruleFound: false,
+    };
+  }
+
+  const lineWidth = Math.max(1, rule.maxX - rule.minX + 1);
+  const bandTop = Math.max(0, Math.round(rule.y - sourceCanvas.height * 0.085));
+  const bandBottom = Math.max(bandTop + 1, rule.y - Math.max(2, Math.round(sourceCanvas.height * 0.003)));
+  const serviceLeft = Math.max(0, rule.minX);
+  const serviceRight = Math.min(sourceCanvas.width, Math.round(rule.minX + lineWidth * 0.76));
+  const amountLeft = Math.max(0, Math.round(rule.minX + lineWidth * 0.69));
+  const amountRight = Math.min(sourceCanvas.width, rule.maxX + 1);
+  return {
+    service: accountingScaleRectangle({
+      left: serviceLeft,
+      top: bandTop,
+      width: Math.max(1, serviceRight - serviceLeft),
+      height: Math.max(1, bandBottom - bandTop),
+    }, sourceCanvas, ocrCanvas),
+    amount: accountingScaleRectangle({
+      left: amountLeft,
+      top: bandTop,
+      width: Math.max(1, amountRight - amountLeft),
+      height: Math.max(1, bandBottom - bandTop),
+    }, sourceCanvas, ocrCanvas),
+    ruleFound: true,
+  };
+}
+
+function accountingParseServiceBandText(rawText) {
+  const lines = accountingNormalizeOcrText(rawText)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const serviceLines = [];
+  for (const rawLine of lines) {
+    if (/(?:безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты|ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|total|режим\s+налогооблож|самозанят|ИП\b)/i.test(rawLine)) continue;
+    if (/^\s*[\d\s.,]+\s*(?:₸|тг|тенге|KZT|[TТ])?\s*$/i.test(rawLine)) continue;
+    const cleaned = accountingCleanServiceName(rawLine);
+    if (!cleaned) continue;
+    if ((cleaned.match(/[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/g) || []).length < 3) continue;
+    serviceLines.push(cleaned);
+  }
+  return accountingCleanServiceName(serviceLines.join(" "));
+}
+
 function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
   const full = accountingParseESalyqText(zoneText.full || "", requestAmount);
   const header = accountingParseESalyqText(zoneText.header || "", requestAmount);
   const person = accountingParseESalyqText(zoneText.person || "", requestAmount);
-  const service = accountingParseESalyqText(zoneText.service || "", requestAmount);
   const amount = accountingParseESalyqText(zoneText.amount || "", requestAmount);
   let result = accountingNormalizeReceiptFields(full);
 
@@ -8340,10 +8472,13 @@ function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
 
   // The item table is read as two overlapping visual columns. This prevents
   // Tesseract from gluing the service text to the amount and to QR fragments.
-  const zonedService = accountingCleanServiceName(service.service_name || "");
+  const zonedService = accountingParseServiceBandText(zoneText.service || "");
   if (zonedService) result.service_name = zonedService;
   if (asNumber(amount.receipt_amount) > 0) result.receipt_amount = asNumber(amount.receipt_amount);
-  else if (asNumber(service.receipt_amount) > 0 && !(asNumber(result.receipt_amount) > 0)) result.receipt_amount = asNumber(service.receipt_amount);
+  else {
+    const serviceAmounts = accountingMoneyCandidates(zoneText.service || "");
+    if (serviceAmounts.length && !(asNumber(result.receipt_amount) > 0)) result.receipt_amount = Math.max(...serviceAmounts);
+  }
 
   const allText = [
     "[FULL]", zoneText.full,
@@ -8367,23 +8502,29 @@ async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progre
   };
   const zones = {};
   const confidences = [];
+  const itemRectangles = accountingReceiptItemRectangles(sourceCanvas, ocrCanvas);
   let worker = null;
   try {
     worker = await window.Tesseract.createWorker("rus+eng", 1, { logger });
-    const recognize = async (name, rectangle = null) => {
+    const recognize = async (name, rectangle = null, pageSegMode = "3") => {
+      await worker.setParameters({
+        tessedit_pageseg_mode: pageSegMode,
+        preserve_interword_spaces: "1",
+      });
       const output = await worker.recognize(ocrCanvas, rectangle ? { rectangle } : {});
       zones[name] = output?.data?.text || "";
+      zones[`${name}_confidence`] = Number(output?.data?.confidence || 0);
       if (Number.isFinite(Number(output?.data?.confidence))) confidences.push(Number(output.data.confidence));
     };
 
     await recognize("full");
-    progress("Разделяю наименование и сумму…");
-    await recognize("service", accountingOcrRectangle(ocrCanvas, 0.02, 0.33, 0.80, 0.29));
-    await recognize("amount", accountingOcrRectangle(ocrCanvas, 0.55, 0.33, 0.43, 0.29));
+    progress(itemRectangles.ruleFound ? "Нашёл синюю черту. Читаю строку работы…" : "Читаю строку работы отдельным блоком…");
+    await recognize("service", itemRectangles.service, "6");
+    await recognize("amount", itemRectangles.amount, "6");
     progress("Уточняю ФИО и ИИН…");
-    await recognize("person", accountingOcrRectangle(ocrCanvas, 0.02, 0.10, 0.96, 0.27));
+    await recognize("person", accountingOcrRectangle(ocrCanvas, 0.02, 0.10, 0.96, 0.27), "6");
     progress("Уточняю дату и номер чека…");
-    await recognize("header", accountingOcrRectangle(ocrCanvas, 0.02, 0.01, 0.96, 0.18));
+    await recognize("header", accountingOcrRectangle(ocrCanvas, 0.02, 0.01, 0.96, 0.18), "6");
   } finally {
     if (worker) await worker.terminate();
   }
@@ -8438,6 +8579,8 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
       try {
         const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
         result = accountingMergeReceiptFields(result, fallback);
+        const visualService = accountingCleanServiceName(fallback.service_name || "");
+        if (visualService) result.service_name = visualService;
         result._visual_verified = true;
       } catch (ocrError) {
         console.warn("Accounting visual verification failed", ocrError);
@@ -19806,7 +19949,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.85 loaded");
+  console.info("Contrast Finance web app v0.5.86 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

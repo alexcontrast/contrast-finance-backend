@@ -244,24 +244,45 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
         if currency_candidates:
             result["receipt_amount"] = max(currency_candidates)
 
-    def looks_like_name(line: str) -> bool:
+    def clean_name_fragment(line: str) -> str:
+        clean = _strip_receipt_system_chars(line)
+        clean = re.sub(r"[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі .'-]+", " ", clean)
+        return re.sub(r"\s+", " ", clean).strip(" .'-")
+
+    def looks_like_name_fragment(line: str) -> bool:
         clean = re.sub(r"\s+", " ", line or "").strip(" •·")
-        if not clean or ":" in clean or "," in clean or re.search(r"режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|итого|плат[её]ж|наличн|безналичн|банк|Кбе|ИИК|HSBK|₸|тг", clean, re.I):
+        if not clean or ":" in clean or "," in clean or re.search(r"\d|режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|итого|плат[её]ж|наличн|безналичн|банк|Кбе|ИИК|HSBK|₸|тг", clean, re.I):
             return False
         words = clean.split()
         letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", clean))
         name_case = clean.upper() == clean or all(word[:1].isupper() for word in words)
-        return 2 <= len(words) <= 5 and letters >= 8 and name_case
+        return 1 <= len(words) <= 4 and letters >= 3 and name_case
+
+    def looks_like_name(line: str) -> bool:
+        words = str(line or "").split()
+        return 2 <= len(words) <= 5 and looks_like_name_fragment(line)
 
     iin_line_index = next((i for i, line in enumerate(lines) if re.search(r"(?:ИИН|IIN|ЖСН)", line, re.I)), -1)
     if iin_line_index >= 0:
-        indices = list(range(iin_line_index + 1, min(len(lines), iin_line_index + 5)))
-        indices += list(range(iin_line_index - 1, max(-1, iin_line_index - 5), -1))
-        for idx in indices:
-            candidate = clean_person_name(lines[idx])
-            if looks_like_name(candidate):
-                result["contractor_full_name"] = candidate
-                break
+        def collect_name(direction: int) -> str | None:
+            fragments: list[str] = []
+            for offset in range(1, 5):
+                idx = iin_line_index + direction * offset
+                if idx < 0 or idx >= len(lines):
+                    break
+                fragment = clean_name_fragment(lines[idx])
+                if not looks_like_name_fragment(fragment):
+                    if fragments:
+                        break
+                    continue
+                fragments.append(fragment)
+            if direction < 0:
+                fragments.reverse()
+            return clean_person_name(" ".join(fragments))
+
+        candidates = [candidate for candidate in (collect_name(1), collect_name(-1)) if looks_like_name(candidate)]
+        if candidates:
+            result["contractor_full_name"] = max(candidates, key=lambda candidate: len(candidate.split()))
 
     total_index = next((i for i, line in enumerate(lines) if re.search(r"^(?:итого|total)\b", line, re.I)), -1)
     payment_index = next((i for i, line in enumerate(lines) if re.search(r"безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты", line, re.I)), -1)
@@ -493,7 +514,7 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
             timeout=KGD_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.85 (+e-Salyq receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.86 (+e-Salyq receipt verification)",
                 "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
             },
         )
@@ -1485,9 +1506,9 @@ def refresh_accounting_receipt_from_qr(
         iin=official.get("iin") or payload.iin,
     )
 
-    # KGD wins for valid fields. Zone-aware OCR fills gaps; the current stored
-    # value is only a last fallback and is cleaned again so legacy date/service
-    # mix-ups disappear on refresh.
+    # KGD wins for identifiers and dates. The service is deliberately taken
+    # from the visual item cell because generic KGD descriptions have proven
+    # unreliable for the printed work name.
     record.contractor_full_name = prefer_full_person_name(
         official.get("contractor_full_name"),
         payload.contractor_full_name or record.contractor_full_name,
@@ -1501,8 +1522,8 @@ def refresh_accounting_receipt_from_qr(
     selected_dt = official.get("receipt_datetime") or payload.receipt_datetime or record.receipt_datetime
     record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
     record.service_name = (
-        clean_service_name(official.get("service_name"))
-        or clean_service_name(payload.service_name)
+        clean_service_name(payload.service_name)
+        or clean_service_name(official.get("service_name"))
         or clean_service_name(record.service_name)
     )
     selected_amount = official.get("receipt_amount")
@@ -1562,7 +1583,7 @@ async def import_self_employed_receipt(
             receipt_number = official.get("receipt_number") or receipt_number
             official_dt = official.get("receipt_datetime")
             receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
-            service_name = clean_service_name(official.get("service_name")) or clean_service_name(service_name)
+            service_name = clean_service_name(service_name) or clean_service_name(official.get("service_name"))
             official_amount = official.get("receipt_amount")
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
@@ -1820,7 +1841,7 @@ async def upload_self_employed_receipt(
             receipt_number = official.get("receipt_number") or receipt_number
             official_dt = official.get("receipt_datetime")
             receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
-            service_name = clean_service_name(official.get("service_name")) or clean_service_name(service_name)
+            service_name = clean_service_name(service_name) or clean_service_name(official.get("service_name"))
             official_amount = official.get("receipt_amount")
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
