@@ -514,7 +514,7 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
             timeout=KGD_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.86 (+e-Salyq receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.87 (+e-Salyq receipt verification)",
                 "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
             },
         )
@@ -697,6 +697,19 @@ def clean_service_name(value: str | None) -> str | None:
         cleaned,
         flags=re.I,
     ):
+        return None
+
+    # The work-name cell on e-Salyq contains text only. A long service may
+    # visually overlap the amount column and OCR can return fragments such as
+    # ``с 1 2 ( водителем``. Strip every numeric/currency remnant while
+    # preserving the words on both sides of it.
+    cleaned = re.sub(r"\d+", " ", cleaned)
+    cleaned = re.sub(r"(?:₸|%|№|#|=|\*)", " ", cleaned)
+    cleaned = re.sub(r"\b(?:тг|тенге|KZT)\b", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"(?:^|\s)[TТ](?=\s|$|[.,;:])", " ", cleaned, flags=re.I)
+    cleaned = re.sub(r"[()\[\]{}<>]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,:;_-—")
+    if not cleaned:
         return None
     if re.match(
         r"^(?:для\s+юридическ|режим\s+налогооблож|специальн\w*\s+налогов|безналичн|наличн|текущ\w*\s+плат[её]ж|способ\s+оплаты|чек\b|receipt\b|итого\b|total\b)",

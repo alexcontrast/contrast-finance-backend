@@ -8136,6 +8136,18 @@ function accountingCleanServiceName(value) {
   const months = "январ[ья]|феврал[ья]|март[а]?|апрел[ья]|ма[йя]|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья]";
   const receiptDateOnly = new RegExp(`^(?:от\\s+)?\\d{1,2}\\s+(?:${months})(?:\\s+20\\d{2}(?:\\s*г(?:ода)?[.]?)?)?(?:\\s*[,;]\\s*\\d{1,2}:\\d{2})?$`, "i");
   if (receiptDateOnly.test(cleaned)) return "";
+  // A work name is text-only. Long e-Salyq rows can overlap the adjacent
+  // amount column, so remove every number/currency/bracket fragment while
+  // keeping words that OCR found after the amount.
+  cleaned = cleaned
+    .replace(/\d+/g, " ")
+    .replace(/(?:₸|%|№|#|=|\*)/g, " ")
+    .replace(/\b(?:тг|тенге|KZT)\b/gi, " ")
+    .replace(/(^|\s)[TТ](?=\s|$|[.,;:])/gi, "$1")
+    .replace(/[()\[\]{}<>]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[ .,:;_\-—]+|[ .,:;_\-—]+$/g, "");
+  if (!cleaned) return "";
   if (/^(?:для\s+юридическ|режим\s+налогооблож|специальн\w*\s+налогов|безналичн|наличн|текущ\w*\s+плат[её]ж|способ\s+оплаты|чек\b|receipt\b|итого\b|total\b)/i.test(cleaned)) return "";
   return cleaned;
 }
@@ -8409,8 +8421,8 @@ function accountingReceiptItemRectangles(sourceCanvas, ocrCanvas) {
   const rule = accountingFindReceiptBlueRule(sourceCanvas);
   if (!rule) {
     return {
-      service: accountingOcrRectangle(ocrCanvas, 0.05, 0.39, 0.70, 0.09),
-      amount: accountingOcrRectangle(ocrCanvas, 0.67, 0.39, 0.29, 0.09),
+      service: accountingOcrRectangle(ocrCanvas, 0.05, 0.39, 0.67, 0.09),
+      amount: accountingOcrRectangle(ocrCanvas, 0.58, 0.39, 0.38, 0.09),
       ruleFound: false,
     };
   }
@@ -8419,8 +8431,8 @@ function accountingReceiptItemRectangles(sourceCanvas, ocrCanvas) {
   const bandTop = Math.max(0, Math.round(rule.y - sourceCanvas.height * 0.085));
   const bandBottom = Math.max(bandTop + 1, rule.y - Math.max(2, Math.round(sourceCanvas.height * 0.003)));
   const serviceLeft = Math.max(0, rule.minX);
-  const serviceRight = Math.min(sourceCanvas.width, Math.round(rule.minX + lineWidth * 0.76));
-  const amountLeft = Math.max(0, Math.round(rule.minX + lineWidth * 0.69));
+  const serviceRight = Math.min(sourceCanvas.width, Math.round(rule.minX + lineWidth * 0.73));
+  const amountLeft = Math.max(0, Math.round(rule.minX + lineWidth * 0.58));
   const amountRight = Math.min(sourceCanvas.width, rule.maxX + 1);
   return {
     service: accountingScaleRectangle({
@@ -8474,7 +8486,14 @@ function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
   // Tesseract from gluing the service text to the amount and to QR fragments.
   const zonedService = accountingParseServiceBandText(zoneText.service || "");
   if (zonedService) result.service_name = zonedService;
-  if (asNumber(amount.receipt_amount) > 0) result.receipt_amount = asNumber(amount.receipt_amount);
+  // Read the numeric column directly as well as through the generic receipt
+  // parser. If a previous narrow crop saw only ``200 000``, the wider crop can
+  // now restore the full ``1 200 000`` and the largest zoned candidate wins.
+  const zonedAmounts = [
+    asNumber(amount.receipt_amount),
+    ...accountingMoneyCandidates(zoneText.amount || ""),
+  ].filter((value) => value > 0);
+  if (zonedAmounts.length) result.receipt_amount = Math.max(...zonedAmounts);
   else {
     const serviceAmounts = accountingMoneyCandidates(zoneText.service || "");
     if (serviceAmounts.length && !(asNumber(result.receipt_amount) > 0)) result.receipt_amount = Math.max(...serviceAmounts);
@@ -19949,7 +19968,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.86 loaded");
+  console.info("Contrast Finance web app v0.5.87 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
