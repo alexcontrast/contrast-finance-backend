@@ -7677,7 +7677,7 @@ function renderAccountingEditor(row) {
         </label>
       </div>
       <div class="accounting-editor-actions">
-        ${row.qr_payload ? `<button class="secondary" type="button" data-accounting-refresh-qr="${handle}">↻ Получить из QR КГД</button>` : ""}
+        ${row.has_receipt ? `<button class="secondary" type="button" data-accounting-refresh-qr="${handle}">↻ Перечитать чек</button>` : ""}
         <button class="secondary" type="button" data-accounting-save="${handle}">Сохранить</button>
         <button type="button" data-accounting-confirm="${handle}">Сохранить и подтвердить</button>
         <button class="ghost" type="button" data-accounting-collapse="${handle}">Свернуть</button>
@@ -8102,14 +8102,37 @@ function accountingCleanPersonName(value) {
   return words.length >= 2 ? words.join(" ") : "";
 }
 
+function accountingPreferFullPersonName(primary, visual) {
+  const official = accountingCleanPersonName(primary || "");
+  const fallback = accountingCleanPersonName(visual || "");
+  if (!official) return fallback;
+  if (!fallback) return official;
+  const officialWords = official.toLocaleLowerCase("ru").split(/\s+/);
+  const fallbackWords = fallback.toLocaleLowerCase("ru").split(/\s+/);
+  if (
+    fallbackWords.length > officialWords.length
+    && officialWords.length >= 2
+    && officialWords.slice(0, 2).join(" ") === fallbackWords.slice(0, 2).join(" ")
+  ) return fallback;
+  return official;
+}
+
 function accountingCleanServiceName(value) {
-  return accountingNormalizeOcrText(value)
+  let cleaned = accountingNormalizeOcrText(value)
     .replace(/^\s*(?:услуга|service|наименование(?:\s+работы)?|description)\s*[:#-]*\s*/i, "")
-    .replace(/[|¦¬`~^{}\[\]<>\\]+/g, " ")
-    .replace(/\s+\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$/i, "")
+    .split(/\s*[|¦]\s*/, 1)[0]
+    .replace(/[¬`~^{}\[\]<>\\]+/g, " ")
+    .replace(/(?<!\d)\d{1,6}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ](?=$|\s|[.,;:]))?/gi, " ")
+    .replace(/\s+(?:I{1,4}|IV|V|VI|L)\s*["'“”«].*$/i, "")
     .split(/\b(?:ИИН|IIN|ЖСН|БИН|BIN|Итого|Total|Чек\s*[№N#])\b/i, 1)[0]
     .replace(/\s+/g, " ")
     .replace(/^[ .,:;_\-—]+|[ .,:;_\-—]+$/g, "");
+  if (!cleaned) return "";
+  const months = "январ[ья]|феврал[ья]|март[а]?|апрел[ья]|ма[йя]|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья]";
+  const receiptDateOnly = new RegExp(`^(?:от\\s+)?\\d{1,2}\\s+(?:${months})(?:\\s+20\\d{2}(?:\\s*г(?:ода)?[.]?)?)?(?:\\s*[,;]\\s*\\d{1,2}:\\d{2})?$`, "i");
+  if (receiptDateOnly.test(cleaned)) return "";
+  if (/^(?:для\s+юридическ|режим\s+налогооблож|специальн\w*\s+налогов|безналичн|наличн|текущ\w*\s+плат[её]ж|способ\s+оплаты|чек\b|receipt\b|итого\b|total\b)/i.test(cleaned)) return "";
+  return cleaned;
 }
 
 function accountingServiceTextScore(value) {
@@ -8122,7 +8145,7 @@ function accountingServiceTextScore(value) {
 }
 
 function accountingMoneyCandidates(text) {
-  const matches = String(text || "").matchAll(/(?<!\d)(\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?|\d{3,}(?:[.,]\d{1,2})?)(?!\d)/g);
+  const matches = String(text || "").matchAll(/(?<!\d)(\d{1,6}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?|\d{3,}(?:[.,]\d{1,2})?)(?!\d)/g);
   return [...matches]
     .map((match) => accountingCleanMoney(match[1]))
     .filter((value) => value !== null && value > 0);
@@ -8175,7 +8198,7 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
     if (totalCandidates.length) amount = Math.max(...totalCandidates);
   }
   if (amount === null) {
-    const candidates = [...joined.matchAll(/([0-9][0-9\s]{1,15}(?:[.,]\d{1,2})?)\s*(?:₸|тг|тенге|T\b)/gi)]
+    const candidates = [...joined.matchAll(/([0-9][0-9\s]{1,15}(?:[.,]\d{1,2})?)\s*(?:₸|тг|тенге|KZT|[TТ](?=$|\s|[.,;:]))/gi)]
       .map((match) => accountingCleanMoney(match[1]))
       .filter((value) => value !== null && value > 0);
     if (candidates.length) {
@@ -8262,7 +8285,10 @@ function accountingReceiptMissingFields(data) {
 function accountingNormalizeReceiptFields(data) {
   const result = { ...(data || {}) };
   if (result.contractor_full_name) result.contractor_full_name = accountingCleanPersonName(result.contractor_full_name) || null;
-  if (result.iin) result.iin = String(result.iin).replace(/\D/g, "").slice(0, 12) || null;
+  if (result.iin) {
+    const digits = String(result.iin).replace(/\D/g, "").slice(0, 12);
+    result.iin = /^\d{12}$/.test(digits) ? digits : null;
+  }
   if (result.receipt_number) result.receipt_number = String(result.receipt_number).replace(/[ОO]/g, "0").replace(/\D/g, "") || null;
   if (result.service_name) result.service_name = accountingCleanServiceName(result.service_name) || null;
   if (!(asNumber(result.receipt_amount) > 0)) result.receipt_amount = null;
@@ -8272,6 +8298,10 @@ function accountingNormalizeReceiptFields(data) {
 function accountingMergeReceiptFields(primary, fallback) {
   const result = accountingNormalizeReceiptFields(primary);
   const secondary = accountingNormalizeReceiptFields(fallback);
+  result.contractor_full_name = accountingPreferFullPersonName(
+    result.contractor_full_name,
+    secondary.contractor_full_name,
+  ) || null;
   for (const key of ["contractor_full_name", "iin", "receipt_number", "receipt_datetime", "service_name", "receipt_amount"]) {
     if (result[key] === null || result[key] === undefined || result[key] === "") result[key] = secondary[key] ?? null;
   }
@@ -8282,22 +8312,89 @@ function accountingMergeReceiptFields(primary, fallback) {
   return accountingNormalizeReceiptFields(result);
 }
 
+function accountingOcrRectangle(canvas, leftRatio, topRatio, widthRatio, heightRatio) {
+  const left = Math.max(0, Math.round(canvas.width * leftRatio));
+  const top = Math.max(0, Math.round(canvas.height * topRatio));
+  return {
+    left,
+    top,
+    width: Math.max(1, Math.min(canvas.width - left, Math.round(canvas.width * widthRatio))),
+    height: Math.max(1, Math.min(canvas.height - top, Math.round(canvas.height * heightRatio))),
+  };
+}
+
+function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
+  const full = accountingParseESalyqText(zoneText.full || "", requestAmount);
+  const header = accountingParseESalyqText(zoneText.header || "", requestAmount);
+  const person = accountingParseESalyqText(zoneText.person || "", requestAmount);
+  const service = accountingParseESalyqText(zoneText.service || "", requestAmount);
+  const amount = accountingParseESalyqText(zoneText.amount || "", requestAmount);
+  let result = accountingNormalizeReceiptFields(full);
+
+  if (header.receipt_number) result.receipt_number = header.receipt_number;
+  if (header.receipt_datetime) result.receipt_datetime = header.receipt_datetime;
+  if (person.contractor_full_name) result.contractor_full_name = accountingCleanPersonName(person.contractor_full_name);
+  if (/^\d{12}$/.test(String(person.iin || ""))) result.iin = person.iin;
+  result = accountingMergeReceiptFields(result, header);
+  result = accountingMergeReceiptFields(result, person);
+
+  // The item table is read as two overlapping visual columns. This prevents
+  // Tesseract from gluing the service text to the amount and to QR fragments.
+  const zonedService = accountingCleanServiceName(service.service_name || "");
+  if (zonedService) result.service_name = zonedService;
+  if (asNumber(amount.receipt_amount) > 0) result.receipt_amount = asNumber(amount.receipt_amount);
+  else if (asNumber(service.receipt_amount) > 0 && !(asNumber(result.receipt_amount) > 0)) result.receipt_amount = asNumber(service.receipt_amount);
+
+  const allText = [
+    "[FULL]", zoneText.full,
+    "[HEADER]", zoneText.header,
+    "[PERSON]", zoneText.person,
+    "[SERVICE_COLUMN]", zoneText.service,
+    "[AMOUNT_COLUMN]", zoneText.amount,
+  ].filter(Boolean).join("\n");
+  result.ocr_text = accountingNormalizeOcrText(allText);
+  return accountingNormalizeReceiptFields(result);
+}
+
 async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress) {
   await ensureAccountingOcrLibraries();
   const ocrCanvas = accountingPreprocessCanvas(sourceCanvas);
-  progress("Резервное OCR… 0%");
-  const recognized = await window.Tesseract.recognize(ocrCanvas, "rus+eng", {
-    logger: (message) => {
-      if (message?.status === "recognizing text" && Number.isFinite(message.progress)) {
-        progress(`Резервное OCR… ${Math.round(message.progress * 100)}%`);
-      }
-    },
-  });
-  const parsed = accountingParseESalyqText(recognized?.data?.text || "", requestAmount);
-  if (recognized?.data?.confidence !== undefined && recognized?.data?.confidence !== null) {
-    parsed.parse_confidence = Math.round((asNumber(parsed.parse_confidence) + asNumber(recognized.data.confidence)) / 2);
+  progress("Визуально читаю чек… 0%");
+  const logger = (message) => {
+    if (message?.status === "recognizing text" && Number.isFinite(message.progress)) {
+      progress(`Визуально читаю чек… ${Math.round(message.progress * 100)}%`);
+    }
+  };
+  const zones = {};
+  const confidences = [];
+  let worker = null;
+  try {
+    worker = await window.Tesseract.createWorker("rus+eng", 1, { logger });
+    const recognize = async (name, rectangle = null) => {
+      const output = await worker.recognize(ocrCanvas, rectangle ? { rectangle } : {});
+      zones[name] = output?.data?.text || "";
+      if (Number.isFinite(Number(output?.data?.confidence))) confidences.push(Number(output.data.confidence));
+    };
+
+    await recognize("full");
+    progress("Разделяю наименование и сумму…");
+    await recognize("service", accountingOcrRectangle(ocrCanvas, 0.02, 0.33, 0.80, 0.29));
+    await recognize("amount", accountingOcrRectangle(ocrCanvas, 0.55, 0.33, 0.43, 0.29));
+    progress("Уточняю ФИО и ИИН…");
+    await recognize("person", accountingOcrRectangle(ocrCanvas, 0.02, 0.10, 0.96, 0.27));
+    progress("Уточняю дату и номер чека…");
+    await recognize("header", accountingOcrRectangle(ocrCanvas, 0.02, 0.01, 0.96, 0.18));
+  } finally {
+    if (worker) await worker.terminate();
+  }
+
+  const parsed = accountingParseVisualReceiptZones(zones, requestAmount);
+  if (confidences.length) {
+    const visualConfidence = confidences.reduce((sum, value) => sum + value, 0) / confidences.length;
+    parsed.parse_confidence = Math.round((asNumber(parsed.parse_confidence) + visualConfidence) / 2);
   }
   parsed._ocr_fallback = true;
+  parsed._visual_verified = true;
   return accountingNormalizeReceiptFields(parsed);
 }
 
@@ -8335,16 +8432,17 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
         parse_confidence: official.parse_confidence ?? 100,
       });
       const missing = accountingReceiptMissingFields(result);
-      if (missing.length) {
-        progress(`КГД не вернул ${missing.join(", ")}. Добираю из изображения…`);
-        try {
-          const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
-          result = accountingMergeReceiptFields(result, fallback);
-        } catch (ocrError) {
-          console.warn("Accounting OCR supplement failed", ocrError);
-        }
+      progress(missing.length
+        ? `КГД не вернул ${missing.join(", ")}. Добираю и сверяю по изображению…`
+        : "Данные KGD получены. Сверяю их с изображением чека…");
+      try {
+        const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
+        result = accountingMergeReceiptFields(result, fallback);
+        result._visual_verified = true;
+      } catch (ocrError) {
+        console.warn("Accounting visual verification failed", ocrError);
       }
-      progress("Данные чека собраны.");
+      progress("Данные KGD и изображение чека сверены.");
       return result;
     } catch (error) {
       progress(`QR найден, но КГД не отдал все данные. Читаю сам чек…`);
@@ -8358,9 +8456,7 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
     }
   }
 
-  // Fallback only when the QR itself cannot be decoded from the file. QR/KGD is
-  // the primary and trusted source; OCR is kept for damaged/cropped screenshots.
-  progress("QR не найден. Запускаю резервное распознавание текста…");
+  progress("QR не найден или устарел. Читаю поля по зонам самого чека…");
   return accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress);
 }
 
@@ -8521,10 +8617,17 @@ async function accountingDecodeStoredReceiptQr(row) {
 
 function accountingQrRefreshPayload(parsed, fallbackQr = null) {
   const clean = accountingNormalizeReceiptFields(parsed || {});
-  const payload = { qr_payload: clean.qr_payload || fallbackQr || null };
-  for (const key of ["contractor_full_name", "iin", "receipt_number", "receipt_datetime", "service_name", "receipt_amount", "ocr_text", "parse_confidence"]) {
-    if (clean[key] !== undefined && clean[key] !== null && clean[key] !== "") payload[key] = clean[key];
-  }
+  const payload = {
+    qr_payload: clean.qr_payload || fallbackQr || null,
+    contractor_full_name: clean.contractor_full_name || null,
+    iin: clean.iin || null,
+    receipt_number: clean.receipt_number || null,
+    receipt_datetime: clean.receipt_datetime || null,
+    service_name: clean.service_name || null,
+    receipt_amount: asNumber(clean.receipt_amount) > 0 ? asNumber(clean.receipt_amount) : null,
+    ocr_text: clean.ocr_text || null,
+    parse_confidence: clean.parse_confidence ?? null,
+  };
   return payload;
 }
 
@@ -8539,9 +8642,8 @@ async function refreshAccountingFromQr(handle, options = {}) {
   setAccountingProgress(handle, "Повторно читаю сохранённый чек…", true);
   const parsed = await accountingReadStoredReceipt(row, (text) => setAccountingProgress(handle, text, true));
   const payload = accountingQrRefreshPayload(parsed, row.qr_payload || null);
-  if (!payload.qr_payload) throw new Error("QR не удалось прочитать из сохранённого чека");
 
-  setAccountingProgress(handle, "Получаю официальный чек из КГД по QR…", true);
+  setAccountingProgress(handle, payload.qr_payload ? "Сверяю KGD и изображение…" : "Сохраняю данные, прочитанные с изображения…", true);
   const updated = await api(`/accounting/self-employed/receipts/${row.accounting_id}/refresh-qr`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -8549,7 +8651,9 @@ async function refreshAccountingFromQr(handle, options = {}) {
   accountingReplaceRow(updated);
   if (!options.silent) {
     state.accountingExpandedRequestId = accountingRowHandle(updated);
-    setAccountingProgress(accountingRowHandle(updated), "Старые данные заменены официальными данными КГД.", true);
+    setAccountingProgress(accountingRowHandle(updated), payload.qr_payload
+      ? "Данные KGD сверены и дополнены по изображению чека."
+      : "Чек перечитан визуально без рабочего QR.", true);
   }
   if (options.reload !== false) await loadSelfEmployedAccounting(true);
   return updated;
@@ -8566,7 +8670,7 @@ async function refreshAccountingMonthFromQr() {
   }
 
   let updatedCount = 0;
-  let noQrCount = 0;
+  let visualOnlyCount = 0;
   let errorCount = 0;
   try {
     await loadSelfEmployedAccounting(true);
@@ -8588,15 +8692,12 @@ async function refreshAccountingMonthFromQr() {
           if (button) button.textContent = `${index + 1}/${rows.length} · ${text}`;
         });
         const payload = accountingQrRefreshPayload(parsed, current.qr_payload || null);
-        if (!payload.qr_payload) {
-          noQrCount += 1;
-          continue;
-        }
         const refreshed = await api(`/accounting/self-employed/receipts/${current.accounting_id}/refresh-qr`, {
           method: "POST",
           body: JSON.stringify(payload),
         });
         accountingReplaceRow(refreshed);
+        if (!payload.qr_payload) visualOnlyCount += 1;
         updatedCount += 1;
       } catch (error) {
         console.warn("Accounting QR month refresh failed", current.accounting_id, error);
@@ -8605,8 +8706,8 @@ async function refreshAccountingMonthFromQr() {
     }
 
     await loadSelfEmployedAccounting(true);
-    const parts = [`обновлено из КГД: ${updatedCount}`];
-    if (noQrCount) parts.push(`QR не прочитан: ${noQrCount}`);
+    const parts = [`перечитано чеков: ${updatedCount}`];
+    if (visualOnlyCount) parts.push(`только по изображению: ${visualOnlyCount}`);
     if (errorCount) parts.push(`ошибок: ${errorCount}`);
     showToast(`Бухгалтерия: ${parts.join(" · ")}`, 6000);
   } finally {
@@ -19705,7 +19806,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.84 loaded");
+  console.info("Contrast Finance web app v0.5.85 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

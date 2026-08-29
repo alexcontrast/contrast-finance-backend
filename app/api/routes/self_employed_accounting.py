@@ -187,7 +187,7 @@ def _money_from_text(value: str | None) -> Decimal | None:
 
 
 _MONEY_TOKEN_RE = re.compile(
-    r"(?<!\d)(\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?|\d{3,}(?:[.,]\d{1,2})?)(?!\d)"
+    r"(?<!\d)(\d{1,6}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?|\d{3,}(?:[.,]\d{1,2})?)(?!\d)"
 )
 
 
@@ -239,7 +239,7 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
     if "receipt_amount" not in result:
         currency_candidates: list[Decimal] = []
         for line in lines:
-            if re.search(r"(?:₸|тг|тенге|тенге|KZT)", line, re.I):
+            if re.search(r"(?:₸|тг|тенге|KZT|[TТ]\b)", line, re.I):
                 currency_candidates.extend(_money_candidates(line))
         if currency_candidates:
             result["receipt_amount"] = max(currency_candidates)
@@ -270,7 +270,7 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
     # amount immediately before ``Итого``. Prefer that signal over positional
     # guessing so dates/FIO from shortened KGD reports cannot leak into R-1.
     service_amount_re = re.compile(
-        r"\s+(?:\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+|\d{3,})(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$",
+        r"\s+(?:\d{1,6}(?:[\s\u00a0\u202f]+\d{3})+|\d{3,})(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$",
         re.I,
     )
     service_candidates: list[tuple[int, str]] = []
@@ -279,8 +279,7 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
         has_amount = bool(service_amount_re.search(raw_line))
         if not has_amount:
             continue
-        line = service_amount_re.sub("", raw_line)
-        line = clean_service_name(line)
+        line = clean_service_name(raw_line)
         if not line:
             continue
         if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b|плат[её]ж|наличн|безналичн)", line, re.I):
@@ -297,8 +296,7 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
         else:
             candidates = []
         for raw_line in candidates:
-            line = service_amount_re.sub("", raw_line)
-            line = clean_service_name(line)
+            line = clean_service_name(raw_line)
             if not line:
                 continue
             if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b)", line, re.I):
@@ -415,14 +413,21 @@ def _parse_esalyq_json(payload: object) -> dict:
         if not isinstance(value, str) or not value.strip():
             continue
         normalized_path = re.sub(r"[^a-z0-9]", "", path)
-        if not any(token in normalized_path for token in ("service", "item", "product", "goods", "work", "description")):
+        service_path = any(token in normalized_path for token in ("service", "item", "product", "goods", "commodity", "work"))
+        operation_path = "operation" in normalized_path and any(token in normalized_path for token in ("name", "title", "description"))
+        description_path = "description" in normalized_path
+        if not (service_path or operation_path or description_path):
             continue
         cleaned = clean_service_name(value)
         if not cleaned or len(re.findall(r"[A-Za-zА-Яа-яЁё]", cleaned)) < 3:
             continue
         score = _service_text_score(cleaned)
-        if any(token in normalized_path for token in ("name", "title", "description")):
+        if service_path:
+            score += 35
+        if any(token in normalized_path for token in ("name", "title")):
             score += 25
+        if description_path and not service_path:
+            score -= 20
         service_candidates.append((score, cleaned))
     if service_candidates:
         result["service_name"] = max(service_candidates, key=lambda item: item[0])[1]
@@ -488,7 +493,7 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
             timeout=KGD_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.84 (+e-Salyq receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.85 (+e-Salyq receipt verification)",
                 "Accept": "application/json,text/html,application/pdf,text/plain;q=0.9,*/*;q=0.5",
             },
         )
@@ -613,6 +618,26 @@ def clean_person_name(value: str | None) -> str | None:
     return " ".join(words)[:255]
 
 
+def prefer_full_person_name(primary: str | None, visual: str | None) -> str | None:
+    """Keep KGD identity, but restore a patronymic visible on the receipt."""
+    official = clean_person_name(primary)
+    fallback = clean_person_name(visual)
+    if not official:
+        return fallback
+    if not fallback:
+        return official
+    official_words = official.casefold().split()
+    fallback_words = fallback.casefold().split()
+    shared_prefix = min(2, len(official_words), len(fallback_words))
+    if (
+        len(fallback_words) > len(official_words)
+        and shared_prefix >= 2
+        and fallback_words[:shared_prefix] == official_words[:shared_prefix]
+    ):
+        return fallback
+    return official
+
+
 def clean_receipt_number(value: str | None) -> str | None:
     if not value:
         return None
@@ -626,19 +651,39 @@ def clean_service_name(value: str | None) -> str | None:
         return None
     cleaned = _strip_receipt_system_chars(value)
     cleaned = re.sub(r"^\s*(?:услуга|service|наименование(?:\s+работы)?|description)\s*[:#-]*\s*", "", cleaned, flags=re.I)
-    cleaned = re.sub(r"[|¦¬`~^{}\[\]<>\\]+", " ", cleaned)
-    # OCR commonly appends an amount and then fragments from the next visual
-    # column.  The formatted-thousands signal is safe for names such as
-    # ``Фото 360`` while trimming ``... 100 000 ₸ I|L|...`` completely.
+    # A receipt is a visual table. OCR may concatenate the left service cell,
+    # the right amount cell and fragments from the following column. Preserve
+    # meaningful words on both sides of the amount, then cut scanner garbage.
+    cleaned = re.split(r"\s*[|¦]\s*", cleaned, maxsplit=1)[0]
+    cleaned = re.sub(r"[¬`~^{}\[\]<>\\]+", " ", cleaned)
     cleaned = re.sub(
-        r"\s+\d{1,3}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?.*$",
-        "",
+        r"(?<!\d)\d{1,6}(?:[\s\u00a0\u202f]+\d{3})+(?:[.,]\d{1,2})?\s*(?:₸|тг|тенге|KZT|[TТ]\b)?",
+        " ",
         cleaned,
         flags=re.I,
     )
+    cleaned = re.sub(r"\s+(?:I{1,4}|IV|V|VI|L)\s*[\"'“”«].*$", "", cleaned, flags=re.I)
     cleaned = re.split(r"\b(?:ИИН|IIN|ЖСН|БИН|BIN|Итого|Total|Чек\s*[№N#])\b", cleaned, maxsplit=1, flags=re.I)[0]
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,:;_-—")
-    return cleaned or None
+    if not cleaned:
+        return None
+
+    months = r"январ[ья]|феврал[ья]|март[а]?|апрел[ья]|ма[йя]|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья]"
+    # KGD JSON has generic ``description`` fields. A date description such as
+    # ``от 28 августа`` is metadata, never a service name.
+    if re.fullmatch(
+        rf"(?:от\s+)?\d{{1,2}}\s+(?:{months})(?:\s+20\d{{2}}(?:\s*г(?:ода)?[.]?)?)?(?:\s*[,;]\s*\d{{1,2}}:\d{{2}})?",
+        cleaned,
+        flags=re.I,
+    ):
+        return None
+    if re.match(
+        r"^(?:для\s+юридическ|режим\s+налогооблож|специальн\w*\s+налогов|безналичн|наличн|текущ\w*\s+плат[её]ж|способ\s+оплаты|чек\b|receipt\b|итого\b|total\b)",
+        cleaned,
+        flags=re.I,
+    ):
+        return None
+    return cleaned
 
 
 def _service_text_score(value: str | None) -> int:
@@ -1412,46 +1457,65 @@ def refresh_accounting_receipt_from_qr(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Re-read one stored receipt from KGD and replace legacy OCR metadata.
+    """Re-read one stored receipt using KGD plus visual receipt fields.
 
-    The caller may provide a freshly decoded QR payload from the stored image.
-    This is used by the Accounting ``Обновить`` action for old receipts that
-    were saved before QR-first processing existed.
+    Historical e-Salyq QR codes may no longer resolve.  In that case the same
+    endpoint accepts the browser's zone-aware visual recognition instead of
+    refusing to repair the stored receipt.
     """
     require_accounting_access(current_user)
     record = get_record_or_404(db, accounting_id, lock=True)
     qr_payload = payload.qr_payload or record.qr_payload
-    if not qr_payload:
-        raise HTTPException(status_code=400, detail="В сохранённом чеке нет QR. Повторно считайте QR из файла")
+    official: dict = {}
+    canonical_qr: str | None = None
+    if qr_payload:
+        try:
+            canonical_qr = canonical_esalyq_qr(qr_payload)
+            official = resolve_esalyq_qr(canonical_qr)
+        except HTTPException:
+            # The pixels remain a valid accounting source even when an old KGD
+            # link is unavailable. Fresh zone OCR fields are applied below.
+            official = {}
 
-    official = resolve_esalyq_qr(qr_payload)
     assert_receipt_metadata_unique(
         db,
         exclude_id=record.id,
-        qr_payload=official.get("qr_payload"),
+        qr_payload=official.get("qr_payload") or canonical_qr,
         receipt_number=official.get("receipt_number") or payload.receipt_number,
         iin=official.get("iin") or payload.iin,
     )
 
-    # KGD remains authoritative.  The browser is allowed to supply OCR values
-    # only for fields the official report omitted; old stored OCR is never
-    # merged, so its scanner garbage cannot survive a refresh.
-    official_name = official.get("contractor_full_name")
-    official_iin = official.get("iin")
-    official_number = official.get("receipt_number")
-    official_dt = official.get("receipt_datetime")
-    official_service = official.get("service_name")
-    official_amount = official.get("receipt_amount")
-    record.contractor_full_name = clean_person_name(official_name or payload.contractor_full_name)
-    record.iin = clean_iin(official_iin or payload.iin)
-    record.receipt_number = clean_receipt_number(official_number or payload.receipt_number)
-    selected_dt = official_dt or payload.receipt_datetime
+    # KGD wins for valid fields. Zone-aware OCR fills gaps; the current stored
+    # value is only a last fallback and is cleaned again so legacy date/service
+    # mix-ups disappear on refresh.
+    record.contractor_full_name = prefer_full_person_name(
+        official.get("contractor_full_name"),
+        payload.contractor_full_name or record.contractor_full_name,
+    )
+    record.iin = clean_iin(official.get("iin") or payload.iin or record.iin)
+    record.receipt_number = (
+        clean_receipt_number(official.get("receipt_number"))
+        or clean_receipt_number(payload.receipt_number)
+        or clean_receipt_number(record.receipt_number)
+    )
+    selected_dt = official.get("receipt_datetime") or payload.receipt_datetime or record.receipt_datetime
     record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
-    record.service_name = clean_service_name(official_service or payload.service_name)
-    record.receipt_amount = clean_decimal(official_amount if official_amount is not None else payload.receipt_amount)
-    record.qr_payload = official.get("qr_payload")
+    record.service_name = (
+        clean_service_name(official.get("service_name"))
+        or clean_service_name(payload.service_name)
+        or clean_service_name(record.service_name)
+    )
+    selected_amount = official.get("receipt_amount")
+    if selected_amount is None:
+        selected_amount = payload.receipt_amount if payload.receipt_amount is not None else record.receipt_amount
+    record.receipt_amount = clean_decimal(selected_amount)
+    record.qr_payload = official.get("qr_payload") or canonical_qr or record.qr_payload
     record.ocr_text = str(official.get("source_text") or payload.ocr_text or "")[:50000] or None
-    record.parse_confidence = Decimal(official.get("parse_confidence") or Decimal("100.00"))
+    record.parse_confidence = Decimal(
+        official.get("parse_confidence")
+        or payload.parse_confidence
+        or (Decimal("80.00") if payload.ocr_text else Decimal("50.00"))
+    )
     record.parse_status = "parsed"
     record.confirmed_at = None
     record.confirmed_by_user_id = None
@@ -1493,12 +1557,12 @@ async def import_self_employed_receipt(
         # any OCR fallback values with the verified data.
         try:
             official = resolve_esalyq_qr(qr_payload)
-            contractor_full_name = official.get("contractor_full_name") or contractor_full_name
+            contractor_full_name = prefer_full_person_name(official.get("contractor_full_name"), contractor_full_name)
             iin = official.get("iin") or iin
             receipt_number = official.get("receipt_number") or receipt_number
             official_dt = official.get("receipt_datetime")
             receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
-            service_name = official.get("service_name") or service_name
+            service_name = clean_service_name(official.get("service_name")) or clean_service_name(service_name)
             official_amount = official.get("receipt_amount")
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
@@ -1506,7 +1570,10 @@ async def import_self_employed_receipt(
             # Keep the official KGD report text only as diagnostics. It is not OCR.
             ocr_text = official.get("source_text") or ocr_text
         except HTTPException as exc:
-            qr_payload = canonical_esalyq_qr(qr_payload)
+            try:
+                qr_payload = canonical_esalyq_qr(qr_payload)
+            except HTTPException:
+                qr_payload = None
             qr_error = str(exc.detail)
 
     assert_receipt_metadata_unique(
@@ -1748,19 +1815,22 @@ async def upload_self_employed_receipt(
     if qr_payload:
         try:
             official = resolve_esalyq_qr(qr_payload)
-            contractor_full_name = official.get("contractor_full_name") or contractor_full_name
+            contractor_full_name = prefer_full_person_name(official.get("contractor_full_name"), contractor_full_name)
             iin = official.get("iin") or iin
             receipt_number = official.get("receipt_number") or receipt_number
             official_dt = official.get("receipt_datetime")
             receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
-            service_name = official.get("service_name") or service_name
+            service_name = clean_service_name(official.get("service_name")) or clean_service_name(service_name)
             official_amount = official.get("receipt_amount")
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
             parse_confidence = str(official.get("parse_confidence", Decimal("100.00")))
             ocr_text = official.get("source_text") or ocr_text
         except HTTPException as exc:
-            qr_payload = canonical_esalyq_qr(qr_payload)
+            try:
+                qr_payload = canonical_esalyq_qr(qr_payload)
+            except HTTPException:
+                qr_payload = None
             qr_error = str(exc.detail)
 
     record = get_or_create_record(db, request_id)

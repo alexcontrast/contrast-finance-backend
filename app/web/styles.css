@@ -15346,3 +15346,61 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   .accounting-actions { grid-column: 1 / -1; grid-row: auto; }
   .accounting-members { margin-left: 11px; }
 }
+
+/* v0.5.85 — compact ledger typography and more room for full names/services */
+.accounting-table-head,
+.accounting-row-main {
+  grid-template-columns: 112px minmax(270px, 1.5fr) 132px 112px minmax(285px, 1.65fr) minmax(305px, auto);
+  gap: 10px;
+}
+
+.accounting-table-head {
+  font-size: 10px;
+}
+
+.accounting-row-main {
+  padding: 11px 13px;
+}
+
+.accounting-date strong,
+.accounting-amount strong {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.accounting-fio strong,
+.accounting-work strong {
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.accounting-iin strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.accounting-date small,
+.accounting-fio small,
+.accounting-iin small,
+.accounting-amount small,
+.accounting-work small {
+  font-size: 10px;
+}
+
+.accounting-actions button {
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
+@media (max-width: 1380px) {
+  .accounting-row-main {
+    grid-template-columns: 105px minmax(240px, 1.4fr) 128px 108px minmax(260px, 1.6fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .accounting-row-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
