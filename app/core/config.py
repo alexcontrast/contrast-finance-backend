@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.5.91"
+    VERSION: str = "0.5.92"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -38,7 +38,7 @@ class Settings:
     # forwards the public host, but an explicit value keeps links stable behind
     # proxies and custom domains.
     PUBLIC_BASE_URL: str | None = os.getenv("PUBLIC_BASE_URL")
-    R1_CUSTOMER_SIGNER_PHONE: str | None = os.getenv("R1_CUSTOMER_SIGNER_PHONE")
+    R1_CUSTOMER_SIGNER_PHONE: str | None = os.getenv("R1_CUSTOMER_SIGNER_PHONE", "+77021123403")
     SIGEX_BASE_URL: str = os.getenv("SIGEX_BASE_URL", "https://sigex.kz").rstrip("/")
 
 

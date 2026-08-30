@@ -126,11 +126,11 @@ class SelfEmployedActInviteRead(BaseModel):
 class SelfEmployedActPublicRead(BaseModel):
     act_number: str
     act_date: date
-    signer_role: str
-    signer_label: str
     contractor_name: str
     amount: Decimal
     status: str
+    customer_status: str
+    contractor_status: str
     token_expires_at: datetime
 
 

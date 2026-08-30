@@ -34,14 +34,14 @@
 </head>
 <body>
   <main class="card">
-    <div class="eyebrow">Contrast Finance · SIGEX</div>
+    <div class="eyebrow">Contrast Finance</div>
     <h1>Подписание АВР</h1>
     <p id="lead" class="muted">Загружаем данные документа…</p>
     <section id="summary" class="summary" hidden>
       <div><small>Документ</small><strong id="actNumber">—</strong></div>
       <div><small>Сумма</small><strong id="amount">—</strong></div>
-      <div><small>Подписант</small><strong id="signer">—</strong></div>
-      <div><small>Исполнитель</small><strong id="contractor">—</strong></div>
+      <div><small>ИП Contrast Event</small><strong id="customerStatus">Ожидается</strong></div>
+      <div><small id="contractorLabel">Самозанятый</small><strong id="contractorStatus">Ожидается</strong></div>
     </section>
     <button id="startBtn" type="button" hidden>Подписать через eGov</button>
     <a id="previewBtn" class="button secondary preview" href="#" target="_blank" rel="noopener" hidden>Открыть АВР</a>
@@ -69,11 +69,34 @@
         if (!response.ok) throw new Error(typeof data?.detail === "string" ? data.detail : `Ошибка ${response.status}`);
         return data;
       }
+      const partyStatus = (value) => value === "signed" ? "✓ Подписано" : "Ожидается";
+      function applyInfo(data) {
+        $("lead").textContent = data.status === "signed"
+          ? "Документ подписан обеими сторонами."
+          : "Проверьте АВР и подпишите его. Сторона определится автоматически по ИИН вашей ЭЦП.";
+        $("actNumber").textContent = `${data.act_number} от ${new Date(`${data.act_date}T00:00:00`).toLocaleDateString("ru-RU")}`;
+        $("amount").textContent = money(data.amount);
+        $("customerStatus").textContent = partyStatus(data.customer_status);
+        $("contractorLabel").textContent = data.contractor_name || "Самозанятый";
+        $("contractorStatus").textContent = partyStatus(data.contractor_status);
+        $("summary").hidden = false; $("previewBtn").hidden = false;
+        $("previewBtn").href = `/sign/avr/${encodeURIComponent(token)}/file`;
+      }
+      async function refreshInfo() { const data = await request("/info"); applyInfo(data); return data; }
       function renderSession(data) {
         if (data.status === "signed") {
           clearInterval(timer); timer = null;
           $("startBtn").hidden = true; $("signBox").classList.remove("visible");
-          setStatus("Готово — подпись проверена и сохранена в SIGEX.", "ok");
+          refreshInfo().catch(() => {});
+          setStatus("Готово — обе подписи проверены и сохранены.", "ok");
+          return;
+        }
+        if (data.status === "partially_signed") {
+          clearInterval(timer); timer = null;
+          $("startBtn").hidden = false; $("startBtn").disabled = false; $("startBtn").textContent = "Подписать второй стороной";
+          $("signBox").classList.remove("visible");
+          refreshInfo().catch(() => {});
+          setStatus("Первая подпись получена. Теперь документ может подписать вторая сторона.", "ok");
           return;
         }
         if (data.status === "error") {
@@ -91,7 +114,7 @@
           $("businessLink").hidden = !data.egov_business_url;
           $("signBox").classList.add("visible");
           $("startBtn").hidden = true;
-          setStatus("Ожидаем подпись в приложении eGov…");
+          setStatus("Ожидаем подпись в приложении eGov… Сторону определим по ИИН сертификата.");
         }
       }
       async function poll() {
@@ -109,15 +132,8 @@
       };
       (async () => {
         try {
-          const data = await request("/info");
-          $("lead").textContent = data.status === "signed" ? "Эта сторона уже подписала документ." : "Проверьте документ и подпишите его своей ЭЦП.";
-          $("actNumber").textContent = `${data.act_number} от ${new Date(`${data.act_date}T00:00:00`).toLocaleDateString("ru-RU")}`;
-          $("amount").textContent = money(data.amount);
-          $("signer").textContent = data.signer_label;
-          $("contractor").textContent = data.contractor_name;
-          $("summary").hidden = false; $("previewBtn").hidden = false;
-          $("previewBtn").href = `/sign/avr/${encodeURIComponent(token)}/file`;
-          if (data.status === "signed") setStatus("Готово — подпись уже сохранена в SIGEX.", "ok");
+          const data = await refreshInfo();
+          if (data.status === "signed") setStatus("Готово — обе подписи уже сохранены.", "ok");
           else { $("startBtn").hidden = false; setStatus("Документ готов к подписанию."); }
         } catch (error) { $("lead").textContent = "Не удалось открыть документ"; setStatus(error.message, "bad"); }
       })();

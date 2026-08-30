@@ -59,6 +59,19 @@ class SelfEmployedAccounting(Base):
     act_generated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     act_sigex_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     act_sigex_registered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # One public URL per AVR. Both parties receive this exact URL; the signer
+    # role is inferred from the IIN in the certificate returned by eGov.
+    act_signing_token: Mapped[str | None] = mapped_column(String(96), nullable=True, unique=True, index=True)
+    act_signing_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    act_session_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    act_session_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    act_session_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    act_sigex_data_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    act_sigex_sign_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    act_egov_mobile_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    act_egov_business_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    act_qr_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    act_signing_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

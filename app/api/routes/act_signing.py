@@ -20,6 +20,7 @@ from app.core.r1_profile import R1_CUSTOMER_PROFILE
 from app.db.session import SessionLocal, get_db
 from app.models.self_employed_accounting import SelfEmployedAccounting
 from app.models.self_employed_act_signature import SelfEmployedActSignature
+from app.models.self_employed_contact import SelfEmployedContact
 from app.models.user import User
 from app.schemas.self_employed_accounting import (
     SelfEmployedActInviteCreate,
@@ -82,14 +83,14 @@ def _record_or_404(db: Session, accounting_id: int, *, lock: bool = False) -> Se
     return record
 
 
-def _invite_or_404(db: Session, token: str, *, lock: bool = False) -> SelfEmployedActSignature:
-    query = select(SelfEmployedActSignature).where(SelfEmployedActSignature.token == token)
+def _record_by_token(db: Session, token: str, *, lock: bool = False) -> SelfEmployedAccounting:
+    query = select(SelfEmployedAccounting).where(SelfEmployedAccounting.act_signing_token == token)
     if lock:
         query = query.with_for_update()
-    invite = db.execute(query).scalar_one_or_none()
-    if invite is None:
+    record = db.execute(query).scalar_one_or_none()
+    if record is None:
         raise HTTPException(status_code=404, detail="Ссылка на подписание не найдена")
-    return invite
+    return record
 
 
 def _resolve_customer_phone(db: Session, current_user: User, supplied: str | None) -> str | None:
@@ -109,6 +110,46 @@ def _resolve_customer_phone(db: Session, current_user: User, supplied: str | Non
     return None
 
 
+def _contact_for_iin(db: Session, iin: str | None) -> SelfEmployedContact | None:
+    digits = _digits(iin)
+    if len(digits) != 12:
+        return None
+    return db.execute(select(SelfEmployedContact).where(SelfEmployedContact.iin == digits)).scalar_one_or_none()
+
+
+def _save_contractor_contact(
+    db: Session,
+    *,
+    iin: str | None,
+    phone: str,
+    full_name: str | None,
+) -> SelfEmployedContact:
+    digits = _digits(iin)
+    if len(digits) != 12:
+        raise HTTPException(status_code=400, detail="Для самозанятого не указан корректный ИИН")
+    contact = _contact_for_iin(db, digits)
+    now = datetime.utcnow()
+    if contact is None:
+        contact = SelfEmployedContact(
+            iin=digits,
+            whatsapp_phone=phone,
+            full_name=str(full_name or "").strip() or None,
+            created_at=now,
+            updated_at=now,
+        )
+    else:
+        contact.whatsapp_phone = phone
+        if str(full_name or "").strip():
+            contact.full_name = str(full_name).strip()
+        contact.updated_at = now
+    db.add(contact)
+    return contact
+
+
+def _signature_for_role(record: SelfEmployedAccounting, role: str) -> SelfEmployedActSignature | None:
+    return next((item for item in record.act_signatures if item.signer_role == role), None)
+
+
 def _signature_status(
     record: SelfEmployedAccounting,
     current: SelfEmployedActSignature | None = None,
@@ -121,17 +162,25 @@ def _signature_status(
         record.act_status = "signed"
     elif signed == 1:
         record.act_status = "partially_signed"
-    elif record.act_signatures:
+    elif any(statuses.get(role) in {"sent", "signing", "error"} for role in ("customer", "contractor")):
         record.act_status = "awaiting_signatures"
     else:
         record.act_status = "generated"
+
+
+def _ensure_shared_token(record: SelfEmployedAccounting, now: datetime) -> None:
+    expired = bool(record.act_signing_token_expires_at and record.act_signing_token_expires_at <= now)
+    if not record.act_signing_token or (expired and record.act_status != "signed"):
+        record.act_signing_token = secrets.token_urlsafe(32)
+    if record.act_status != "signed":
+        record.act_signing_token_expires_at = now + INVITE_TTL
 
 
 def _whatsapp_message(record: SelfEmployedAccounting, role: str, signing_url: str) -> str:
     addressee = "ИП Contrast Event" if role == "customer" else str(record.contractor_full_name or "самозанятого")
     return (
         f"Здравствуйте! АВР {record.act_number or ''} ожидает подписи ({addressee}).\n"
-        f"Откройте ссылку и подпишите документ через eGov/SIGEX:\n{signing_url}"
+        f"Откройте ссылку, проверьте документ и подпишите его через eGov Mobile:\n{signing_url}"
     )
 
 
@@ -161,7 +210,8 @@ def create_act_invite(
         phone = _resolve_customer_phone(db, current_user, payload.phone)
         phone_error = "Укажите WhatsApp владельца ИП"
     else:
-        phone = _whatsapp_phone(payload.phone or record.contractor_phone)
+        contact = _contact_for_iin(db, expected_iin)
+        phone = _whatsapp_phone(payload.phone or record.contractor_phone or (contact.whatsapp_phone if contact else None))
         phone_error = "Укажите WhatsApp самозанятого"
     if not phone:
         raise HTTPException(status_code=400, detail=phone_error)
@@ -175,6 +225,7 @@ def create_act_invite(
         .with_for_update()
     ).scalar_one_or_none()
     now = datetime.utcnow()
+    _ensure_shared_token(record, now)
     if invite is None:
         invite = SelfEmployedActSignature(
             accounting_id=record.id,
@@ -182,7 +233,7 @@ def create_act_invite(
             expected_iin=expected_iin,
             phone=phone,
             token=secrets.token_urlsafe(32),
-            token_expires_at=now + INVITE_TTL,
+            token_expires_at=record.act_signing_token_expires_at or now + INVITE_TTL,
             status="sent",
             sent_at=now,
             created_at=now,
@@ -192,21 +243,20 @@ def create_act_invite(
     elif invite.status != "signed":
         invite.expected_iin = expected_iin
         invite.phone = phone
+        invite.token_expires_at = record.act_signing_token_expires_at or now + INVITE_TTL
+        invite.status = "sent"
         invite.sent_at = now
         invite.updated_at = now
-        if invite.token_expires_at <= now:
-            invite.token = secrets.token_urlsafe(32)
-            invite.token_expires_at = now + INVITE_TTL
-            invite.status = "sent"
     if signer_role == "contractor":
         record.contractor_phone = phone
+        _save_contractor_contact(db, iin=expected_iin, phone=phone, full_name=record.contractor_full_name)
     _signature_status(record, invite)
     record.updated_at = now
     db.add(record)
     db.commit()
     db.refresh(invite)
 
-    signing_url = f"{_public_base_url(request)}/sign/avr/{invite.token}"
+    signing_url = f"{_public_base_url(request)}/sign/avr/{record.act_signing_token}"
     message = _whatsapp_message(record, signer_role, signing_url)
     return SelfEmployedActInviteRead(
         signer_role=signer_role,
@@ -217,36 +267,40 @@ def create_act_invite(
     )
 
 
-def _public_info(invite: SelfEmployedActSignature, record: SelfEmployedAccounting) -> SelfEmployedActPublicRead:
-    if invite.token_expires_at <= datetime.utcnow() and invite.status != "signed":
+def _public_info(record: SelfEmployedAccounting) -> SelfEmployedActPublicRead:
+    if (
+        record.act_signing_token_expires_at
+        and record.act_signing_token_expires_at <= datetime.utcnow()
+        and record.act_status != "signed"
+    ):
         raise HTTPException(status_code=410, detail="Срок ссылки истёк. Запросите новую ссылку в бухгалтерии")
+    customer = _signature_for_role(record, "customer")
+    contractor = _signature_for_role(record, "contractor")
     return SelfEmployedActPublicRead(
         act_number=str(record.act_number or "АВР"),
         act_date=record.act_date or date.today(),
-        signer_role=invite.signer_role,
-        signer_label="ИП Contrast Event" if invite.signer_role == "customer" else str(record.contractor_full_name or "Самозанятый"),
         contractor_name=str(record.contractor_full_name or "Самозанятый"),
         amount=Decimal(record.receipt_amount or 0),
-        status=invite.status,
-        token_expires_at=invite.token_expires_at,
+        status=str(record.act_status or "generated"),
+        customer_status=str(customer.status if customer else "not_sent"),
+        contractor_status=str(contractor.status if contractor else "not_sent"),
+        token_expires_at=record.act_signing_token_expires_at or datetime.utcnow(),
     )
 
 
 @public_router.get("/{token}/info", response_model=SelfEmployedActPublicRead)
 def act_public_info(token: str, db: Session = Depends(get_db)):
-    invite = _invite_or_404(db, token)
-    return _public_info(invite, _record_or_404(db, invite.accounting_id))
+    return _public_info(_record_by_token(db, token))
 
 
 @public_router.get("/{token}/file")
 def act_public_file(token: str, db: Session = Depends(get_db)):
-    invite = _invite_or_404(db, token)
-    _public_info(invite, _record_or_404(db, invite.accounting_id))
+    record = _record_by_token(db, token)
+    _public_info(record)
     row = db.execute(
-        select(
-            SelfEmployedAccounting.act_data,
-            SelfEmployedAccounting.act_filename,
-        ).where(SelfEmployedAccounting.id == invite.accounting_id)
+        select(SelfEmployedAccounting.act_data, SelfEmployedAccounting.act_filename).where(
+            SelfEmployedAccounting.id == record.id
+        )
     ).one_or_none()
     if row is None or row.act_data is None:
         raise HTTPException(status_code=404, detail="Файл АВР не найден")
@@ -262,59 +316,93 @@ def act_public_file(token: str, db: Session = Depends(get_db)):
     )
 
 
-def _session_read(invite: SelfEmployedActSignature, message: str | None = None) -> SelfEmployedActSessionRead:
-    qr = str(invite.qr_code or "") or None
+def _session_read(record: SelfEmployedAccounting, message: str | None = None) -> SelfEmployedActSessionRead:
+    active = record.act_session_status == "signing"
+    qr = str(record.act_qr_code or "") or None
     if qr and not qr.startswith("data:"):
         qr = f"data:image/png;base64,{qr}"
+    status = "signing" if active else "error" if record.act_session_status == "error" else str(record.act_status)
     return SelfEmployedActSessionRead(
-        status=invite.status,
-        expire_at=invite.session_expires_at,
-        qr_code=qr,
-        egov_mobile_url=invite.egov_mobile_url,
-        egov_business_url=invite.egov_business_url,
-        message=message or invite.last_error,
+        status=status,
+        expire_at=record.act_session_expires_at if active else None,
+        qr_code=qr if active else None,
+        egov_mobile_url=record.act_egov_mobile_url if active else None,
+        egov_business_url=record.act_egov_business_url if active else None,
+        message=message or record.act_signing_error,
     )
 
 
-def _process_signature(invite_id: int) -> None:
+def _phone_for_inferred_role(db: Session, record: SelfEmployedAccounting, role: str) -> str:
+    if role == "customer":
+        return _whatsapp_phone(get_settings().R1_CUSTOMER_SIGNER_PHONE) or "77021123403"
+    contact = _contact_for_iin(db, record.iin)
+    return _whatsapp_phone(record.contractor_phone or (contact.whatsapp_phone if contact else None)) or ""
+
+
+def _process_signature(accounting_id: int) -> None:
     if SessionLocal is None:
         return
     try:
         with SessionLocal() as db:
-            invite = db.get(SelfEmployedActSignature, invite_id)
-            if invite is None or invite.status != "signing":
-                return
-            record = db.get(SelfEmployedAccounting, invite.accounting_id)
-            if record is None:
+            record = db.get(SelfEmployedAccounting, accounting_id)
+            if record is None or record.act_session_status != "signing":
                 return
             pdf_row = db.execute(
                 select(SelfEmployedAccounting.act_data).where(SelfEmployedAccounting.id == record.id)
             ).scalar_one_or_none()
             signature_b64 = wait_for_egov_signature(
-                data_url=str(invite.sigex_data_url or ""),
-                sign_url=str(invite.sigex_sign_url or ""),
+                data_url=str(record.act_sigex_data_url or ""),
+                sign_url=str(record.act_sigex_sign_url or ""),
                 pdf_data=bytes(pdf_row or b""),
                 act_number=str(record.act_number or "АВР"),
                 contractor_name=str(record.contractor_full_name or "Самозанятый"),
                 amount_text=f"{Decimal(record.receipt_amount or 0):,.2f} ₸".replace(",", " "),
             )
             signer_iin, signer_name = cms_signer_identity(signature_b64)
-            if signer_iin != _digits(invite.expected_iin):
-                raise SigexError("ИИН в ЭЦП не совпадает с ИИН выбранного подписанта")
+            customer_iin = _digits(R1_CUSTOMER_PROFILE.get("bin_iin"))
+            contractor_iin = _digits(record.iin)
+            if customer_iin == contractor_iin:
+                raise SigexError("ИИН ИП и самозанятого не должны совпадать")
+            if signer_iin == customer_iin:
+                signer_role = "customer"
+            elif signer_iin == contractor_iin:
+                signer_role = "contractor"
+            else:
+                raise SigexError("ИИН в ЭЦП не совпадает ни с ИП, ни с самозанятым в АВР")
 
         with SessionLocal() as db:
-            invite = db.execute(
-                select(SelfEmployedActSignature)
-                .where(SelfEmployedActSignature.id == invite_id)
-                .with_for_update()
-            ).scalar_one_or_none()
-            if invite is None or invite.status == "signed":
-                return
             record = db.execute(
                 select(SelfEmployedAccounting)
-                .where(SelfEmployedAccounting.id == invite.accounting_id)
+                .where(SelfEmployedAccounting.id == accounting_id)
                 .with_for_update()
-            ).scalar_one()
+            ).scalar_one_or_none()
+            if record is None or record.act_session_status != "signing":
+                return
+            target = db.execute(
+                select(SelfEmployedActSignature)
+                .where(
+                    SelfEmployedActSignature.accounting_id == record.id,
+                    SelfEmployedActSignature.signer_role == signer_role,
+                )
+                .with_for_update()
+            ).scalar_one_or_none()
+            if target is not None and target.status == "signed":
+                raise SigexError("Эта сторона уже подписала АВР")
+            now = datetime.utcnow()
+            if target is None:
+                target = SelfEmployedActSignature(
+                    accounting_id=record.id,
+                    signer_role=signer_role,
+                    expected_iin=signer_iin,
+                    phone=_phone_for_inferred_role(db, record, signer_role),
+                    token=secrets.token_urlsafe(32),
+                    token_expires_at=record.act_signing_token_expires_at or now + INVITE_TTL,
+                    status="sent",
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.add(target)
+                db.flush()
             pdf_data = db.execute(
                 select(SelfEmployedAccounting.act_data).where(SelfEmployedAccounting.id == record.id)
             ).scalar_one()
@@ -326,90 +414,98 @@ def _process_signature(invite_id: int) -> None:
                     expected_iins=[str(R1_CUSTOMER_PROFILE.get("bin_iin") or ""), str(record.iin or "")],
                 )
                 record.act_sigex_document_id = document_id
-                record.act_sigex_registered_at = datetime.utcnow()
+                record.act_sigex_registered_at = now
             else:
                 sign_id = add_document_signature(record.act_sigex_document_id, signature_b64)
             raw_signature = base64.b64decode(re.sub(r"\s+", "", signature_b64), validate=True)
-            invite.signature_data = raw_signature
-            invite.signature_sha256 = sha256(raw_signature).hexdigest()
-            invite.sigex_sign_id = sign_id
-            invite.signer_iin = signer_iin
-            invite.signer_name = signer_name
-            invite.signed_at = datetime.utcnow()
-            invite.status = "signed"
-            invite.last_error = None
-            invite.updated_at = datetime.utcnow()
-            _signature_status(record, invite)
-            record.updated_at = datetime.utcnow()
-            db.add_all([invite, record])
+            target.signature_data = raw_signature
+            target.signature_sha256 = sha256(raw_signature).hexdigest()
+            target.sigex_sign_id = sign_id
+            target.signer_iin = signer_iin
+            target.signer_name = signer_name
+            target.signed_at = now
+            target.status = "signed"
+            target.last_error = None
+            target.updated_at = now
+            record.act_session_status = "idle"
+            record.act_signing_error = None
+            _signature_status(record, target)
+            record.updated_at = now
+            db.add_all([target, record])
             db.commit()
     except Exception as exc:
         if SessionLocal is not None:
             with SessionLocal() as db:
-                invite = db.get(SelfEmployedActSignature, invite_id)
-                if invite is not None and invite.status != "signed":
-                    invite.status = "error"
-                    invite.last_error = str(exc)[:1000] or "Не удалось завершить подписание"
-                    invite.updated_at = datetime.utcnow()
-                    db.add(invite)
+                record = db.get(SelfEmployedAccounting, accounting_id)
+                if record is not None and record.act_session_status == "signing":
+                    record.act_session_status = "error"
+                    record.act_signing_error = str(exc)[:1000] or "Не удалось завершить подписание"
+                    record.updated_at = datetime.utcnow()
+                    db.add(record)
                     db.commit()
     finally:
         with _worker_lock:
-            _active_workers.discard(invite_id)
+            _active_workers.discard(accounting_id)
 
 
-def _start_worker(invite_id: int) -> None:
+def _start_worker(accounting_id: int) -> None:
     with _worker_lock:
-        if invite_id in _active_workers:
+        if accounting_id in _active_workers:
             return
-        _active_workers.add(invite_id)
-    threading.Thread(target=_process_signature, args=(invite_id,), daemon=True).start()
+        _active_workers.add(accounting_id)
+    threading.Thread(target=_process_signature, args=(accounting_id,), daemon=True).start()
 
 
 @public_router.post("/{token}/session", response_model=SelfEmployedActSessionRead)
 def start_act_session(token: str, request: Request, db: Session = Depends(get_db)):
-    invite = _invite_or_404(db, token, lock=True)
-    record = _record_or_404(db, invite.accounting_id)
-    _public_info(invite, record)
-    if invite.status == "signed":
-        return _session_read(invite, "АВР уже подписан этой стороной")
+    record = _record_by_token(db, token, lock=True)
+    _public_info(record)
+    if record.act_status == "signed":
+        return _session_read(record, "АВР уже подписан обеими сторонами")
+    customer_iin = _digits(R1_CUSTOMER_PROFILE.get("bin_iin"))
+    contractor_iin = _digits(record.iin)
+    if len(customer_iin) != 12 or len(contractor_iin) != 12 or customer_iin == contractor_iin:
+        raise HTTPException(status_code=400, detail="Не удалось определить корректные ИИН обеих сторон АВР")
     now = datetime.utcnow()
-    if invite.status == "signing" and invite.session_expires_at and invite.session_expires_at > now:
+    if record.act_session_status == "signing" and record.act_session_expires_at and record.act_session_expires_at > now:
         db.commit()
-        _start_worker(invite.id)
-        return _session_read(invite)
+        _start_worker(record.id)
+        return _session_read(record)
     try:
         session = create_egov_session(
-            f"АВР {record.act_number or ''}: подпись {'ИП' if invite.signer_role == 'customer' else 'самозанятого'}",
-            f"{_public_base_url(request)}/sign/avr/{invite.token}",
+            f"АВР {record.act_number or ''}: подпись одной из сторон",
+            f"{_public_base_url(request)}/sign/avr/{record.act_signing_token}",
         )
     except SigexError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    invite.status = "signing"
-    invite.session_started_at = now
-    invite.session_expires_at = datetime.utcfromtimestamp(session.expire_at_ms / 1000)
-    invite.sigex_data_url = session.data_url
-    invite.sigex_sign_url = session.sign_url
-    invite.egov_mobile_url = session.egov_mobile_url
-    invite.egov_business_url = session.egov_business_url
-    invite.qr_code = session.qr_code
-    invite.last_error = None
-    invite.updated_at = now
-    db.add(invite)
+    record.act_session_status = "signing"
+    record.act_session_started_at = now
+    record.act_session_expires_at = datetime.utcfromtimestamp(session.expire_at_ms / 1000)
+    record.act_sigex_data_url = session.data_url
+    record.act_sigex_sign_url = session.sign_url
+    record.act_egov_mobile_url = session.egov_mobile_url
+    record.act_egov_business_url = session.egov_business_url
+    record.act_qr_code = session.qr_code
+    record.act_signing_error = None
+    record.updated_at = now
+    db.add(record)
     db.commit()
-    result = _session_read(invite)
-    _start_worker(invite.id)
+    result = _session_read(record)
+    _start_worker(record.id)
     return result
 
 
 @public_router.get("/{token}/status", response_model=SelfEmployedActSessionRead)
 def act_session_status(token: str, db: Session = Depends(get_db)):
-    invite = _invite_or_404(db, token)
-    record = _record_or_404(db, invite.accounting_id)
-    _public_info(invite, record)
-    if invite.status == "signing" and invite.session_expires_at and invite.session_expires_at > datetime.utcnow():
-        _start_worker(invite.id)
-    return _session_read(invite)
+    record = _record_by_token(db, token)
+    _public_info(record)
+    if (
+        record.act_session_status == "signing"
+        and record.act_session_expires_at
+        and record.act_session_expires_at > datetime.utcnow()
+    ):
+        _start_worker(record.id)
+    return _session_read(record)
 
 
 @public_router.get("/{token}", response_class=HTMLResponse)

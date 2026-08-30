@@ -18,6 +18,7 @@ import requests
 from pypdf import PdfReader
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.db.session import get_db
 from app.core.r1_profile import R1_CUSTOMER_PROFILE
@@ -25,6 +26,7 @@ from app.models.event import Event
 from app.models.payment_request import PaymentRequest
 from app.models.self_employed_accounting import SelfEmployedAccounting
 from app.models.self_employed_accounting_request import SelfEmployedAccountingRequest
+from app.models.self_employed_contact import SelfEmployedContact
 from app.models.user import User
 from app.schemas.self_employed_accounting import (
     SelfEmployedAccountingAttachCreate,
@@ -58,6 +60,83 @@ INACTIVE_REQUEST_STATUSES = {"cancelled", "rejected"}
 KGD_RECEIPT_HOST = "esb.kgd.gov.kz"
 KGD_RECEIPT_PATH = "/taxpay-check-core/get-check-report"
 KGD_RECEIPT_TIMEOUT = (5, 15)
+
+
+def _phone_digits(value: str | None) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    elif len(digits) == 10:
+        digits = "7" + digits
+    return digits if 10 <= len(digits) <= 15 else ""
+
+
+def _saved_contact(db: Session, iin: str | None) -> SelfEmployedContact | None:
+    digits = re.sub(r"\D", "", str(iin or ""))
+    if len(digits) != 12:
+        return None
+    return db.execute(select(SelfEmployedContact).where(SelfEmployedContact.iin == digits)).scalar_one_or_none()
+
+
+def _hydrate_contact_phone(db: Session, record: SelfEmployedAccounting | None) -> None:
+    if record is None or record.contractor_phone:
+        return
+    contact = _saved_contact(db, record.iin)
+    if contact and contact.whatsapp_phone:
+        # Expose the reusable contact without turning a GET into a DB update.
+        set_committed_value(record, "contractor_phone", contact.whatsapp_phone)
+
+
+def _hydrate_contact_phones(db: Session, records: list[SelfEmployedAccounting | None]) -> None:
+    pending: dict[str, list[SelfEmployedAccounting]] = defaultdict(list)
+    for record in records:
+        if record is None or record.contractor_phone:
+            continue
+        digits = re.sub(r"\D", "", str(record.iin or ""))
+        if len(digits) == 12:
+            pending[digits].append(record)
+    if not pending:
+        return
+    contacts = db.execute(
+        select(SelfEmployedContact).where(SelfEmployedContact.iin.in_(list(pending)))
+    ).scalars().all()
+    for contact in contacts:
+        for record in pending.get(contact.iin, []):
+            set_committed_value(record, "contractor_phone", contact.whatsapp_phone)
+
+
+def _remember_contact_phone(
+    db: Session,
+    record: SelfEmployedAccounting,
+    *,
+    iin: str | None,
+    phone_value: str | None,
+) -> None:
+    if phone_value is None:
+        return
+    phone = _phone_digits(phone_value)
+    if str(phone_value).strip() and not phone:
+        raise HTTPException(status_code=400, detail="Укажите корректный номер WhatsApp самозанятого")
+    record.contractor_phone = phone or None
+    digits = re.sub(r"\D", "", str(iin or ""))
+    if not phone or len(digits) != 12:
+        return
+    contact = _saved_contact(db, digits)
+    now = datetime.utcnow()
+    if contact is None:
+        contact = SelfEmployedContact(
+            iin=digits,
+            full_name=record.contractor_full_name,
+            whatsapp_phone=phone,
+            created_at=now,
+            updated_at=now,
+        )
+    else:
+        contact.whatsapp_phone = phone
+        if record.contractor_full_name:
+            contact.full_name = record.contractor_full_name
+        contact.updated_at = now
+    db.add(contact)
 
 
 def _qr_query_value(params: dict[str, list[str]], *aliases: str) -> str | None:
@@ -1087,6 +1166,7 @@ def build_row(
 
 def load_accounting_row(db: Session, accounting_id: int) -> SelfEmployedAccountingRead:
     record = get_record_or_404(db, accounting_id)
+    _hydrate_contact_phone(db, record)
     return build_row(_members_for_record(db, record.id), record)
 
 
@@ -1205,6 +1285,7 @@ def list_self_employed_accounting(
         grouped_members[key].append((request, event, manager_name))
         records[key] = record
 
+    _hydrate_contact_phones(db, list(records.values()))
     result = [build_row(members, records.get(key)) for key, members in grouped_members.items()]
 
     if month_bounds:
@@ -1224,6 +1305,7 @@ def list_self_employed_accounting(
         SelfEmployedAccounting.receipt_filename.is_not(None),
     )
     standalone_records = db.execute(standalone_query).scalars().all()
+    _hydrate_contact_phones(db, list(standalone_records))
     for record in standalone_records:
         if month_bounds:
             # Standalone imported receipts are distributed strictly by the issue
@@ -1956,7 +2038,12 @@ async def upload_self_employed_receipt(
     return load_group_row(db, request_id)
 
 
-def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccountingUpdate, current_user: User) -> None:
+def _update_record(
+    db: Session,
+    record: SelfEmployedAccounting,
+    payload: SelfEmployedAccountingUpdate,
+    current_user: User,
+) -> None:
     source_changed = any(
         value is not None
         for value in (
@@ -1974,10 +2061,14 @@ def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccounti
         _discard_generated_act(record)
     if payload.contractor_full_name is not None:
         record.contractor_full_name = clean_person_name(payload.contractor_full_name)
-    if payload.contractor_phone is not None:
-        record.contractor_phone = clean_text(payload.contractor_phone, 32)
     if payload.iin is not None:
-        record.iin = clean_iin(payload.iin)
+        new_iin = clean_iin(payload.iin)
+        if payload.contractor_phone is None and new_iin != record.iin:
+            record.contractor_phone = None
+        record.iin = new_iin
+    _remember_contact_phone(db, record, iin=record.iin, phone_value=payload.contractor_phone)
+    if payload.contractor_phone is None and payload.iin is not None:
+        _hydrate_contact_phone(db, record)
     if payload.receipt_number is not None:
         record.receipt_number = clean_receipt_number(payload.receipt_number)
     if payload.receipt_datetime is not None:
@@ -2047,7 +2138,7 @@ def update_receipt_accounting(
         receipt_number=payload.receipt_number,
         iin=payload.iin,
     )
-    _update_record(record, payload, current_user)
+    _update_record(db, record, payload, current_user)
     db.add(record)
     db.commit()
     return load_accounting_row(db, record.id)
@@ -2070,7 +2161,7 @@ def update_self_employed_accounting(
         receipt_number=payload.receipt_number,
         iin=payload.iin,
     )
-    _update_record(record, payload, current_user)
+    _update_record(db, record, payload, current_user)
     db.add(record)
     db.commit()
     return load_group_row(db, request.id)

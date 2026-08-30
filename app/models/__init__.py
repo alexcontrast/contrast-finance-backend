@@ -14,5 +14,6 @@ from app.models.export import Export
 from app.models.telegram_message import TelegramMessage
 from app.models.self_employed_accounting import SelfEmployedAccounting
 from app.models.self_employed_act_signature import SelfEmployedActSignature
+from app.models.self_employed_contact import SelfEmployedContact
 
 from app.models.self_employed_accounting_request import SelfEmployedAccountingRequest
