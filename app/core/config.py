@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.5.90"
+    VERSION: str = "0.5.91"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -33,6 +33,13 @@ class Settings:
 
     # Temporary one-time legacy migration page/API. Set before import, remove after migration.
     LEGACY_MIGRATION_TOKEN: str | None = os.getenv("LEGACY_MIGRATION_TOKEN")
+
+    # Public URL used in WhatsApp signing invitations.  Railway normally
+    # forwards the public host, but an explicit value keeps links stable behind
+    # proxies and custom domains.
+    PUBLIC_BASE_URL: str | None = os.getenv("PUBLIC_BASE_URL")
+    R1_CUSTOMER_SIGNER_PHONE: str | None = os.getenv("R1_CUSTOMER_SIGNER_PHONE")
+    SIGEX_BASE_URL: str = os.getenv("SIGEX_BASE_URL", "https://sigex.kz").rstrip("/")
 
 
 @lru_cache

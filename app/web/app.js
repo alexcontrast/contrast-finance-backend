@@ -7686,8 +7686,22 @@ function accountingActionIcon(kind) {
     receipt: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h10a1 1 0 0 1 1 1v16l-3-2-3 2-3-2-3 2v-16a1 1 0 0 1 1-1Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>`,
     edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.2-1 10.6-10.6a1.8 1.8 0 0 0 0-2.5l-.7-.7a1.8 1.8 0 0 0-2.5 0L5 15.8 4 20Z"/><path d="m14.5 6.3 3.2 3.2M4 20h5"/></svg>`,
     delete: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>`,
+    act: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M14 3.5v4h4M9 12h6M9 16h4"/><path d="m15.5 17 1.4 1.4 2.8-3"/></svg>`,
   };
   return icons[kind] || "";
+}
+
+function accountingSignatureButton(row, role, label, handle) {
+  const signature = role === "customer" ? row.customer_signature : row.contractor_signature;
+  const status = String(signature?.status || "not_sent");
+  if (status === "signed") {
+    return `<button class="accounting-sign-btn is-signed" type="button" disabled title="${label}: подпись получена" aria-label="${label}: подпись получена">✓ ${label}</button>`;
+  }
+  const pending = ["sent", "signing"].includes(status);
+  const title = role === "customer"
+    ? (pending ? "Открыть WhatsApp и повторно отправить ссылку владельцу ИП" : "Отправить владельцу ИП ссылку на подписание")
+    : (pending ? "Открыть WhatsApp и повторно отправить ссылку самозанятому" : "Отправить самозанятому ссылку на подписание");
+  return `<button class="accounting-sign-btn ${pending ? "is-pending" : status === "error" ? "is-error" : ""}" type="button" data-accounting-send-signature="${handle}:${role}" title="${title}" aria-label="${title}">${label}</button>`;
 }
 
 function renderAccountingEditor(row) {
@@ -7715,6 +7729,9 @@ function renderAccountingEditor(row) {
       <div class="accounting-form-grid">
         <label class="accounting-field wide">ФИО самозанятого
           <input data-accounting-field="contractor_full_name" value="${escapeHtml(row.contractor_full_name || row.request_contractor_name || "")}" placeholder="Фамилия Имя Отчество" />
+        </label>
+        <label class="accounting-field">WhatsApp самозанятого
+          <input data-accounting-field="contractor_phone" inputmode="tel" value="${escapeHtml(row.contractor_phone || "")}" placeholder="+7 700 000 00 00" />
         </label>
         <label class="accounting-field">ИИН
           <input data-accounting-field="iin" inputmode="numeric" maxlength="12" value="${escapeHtml(row.iin || "")}" placeholder="12 цифр" />
@@ -7829,7 +7846,10 @@ function renderAccountingRows(rows) {
                 ${row.has_receipt ? `<button class="ghost accounting-icon-btn" type="button" data-accounting-open-receipt="${handle}" title="Открыть чек" aria-label="Открыть чек">${accountingActionIcon("receipt")}</button>` : ""}
                 ${row.has_receipt ? `<button class="ghost accounting-icon-btn ${expanded ? "is-active" : ""}" type="button" data-accounting-expand="${handle}" title="${expanded ? "Свернуть данные" : "Проверить данные"}" aria-label="${expanded ? "Свернуть данные" : "Проверить данные"}">${accountingActionIcon("edit")}</button>` : ""}
                 ${row.has_receipt && row.accounting_id ? `<button class="danger accounting-icon-btn" type="button" data-accounting-delete-receipt="${handle}" title="Удалить чек" aria-label="Удалить чек">${accountingActionIcon("delete")}</button>` : ""}
-                ${row.has_receipt && row.accounting_id ? `<button class="accounting-act-btn ${row.has_act ? "is-ready" : ""}" type="button" data-accounting-generate-act="${handle}" title="${row.has_act ? `АВР ${escapeHtml(row.act_number || "")} уже сформирован. Нажмите, чтобы обновить PDF` : "Сформировать АВР по данным чека"}">Сформировать АВР</button>` : ""}
+                ${row.has_receipt && row.accounting_id && !row.has_act ? `<button class="accounting-act-btn" type="button" data-accounting-generate-act="${handle}" title="Сформировать АВР по данным чека">Сформировать АВР</button>` : ""}
+                ${row.has_act ? `<button class="ghost accounting-icon-btn accounting-act-ready" type="button" data-accounting-open-act="${handle}" title="АВР ${escapeHtml(row.act_number || "")} сформирован — открыть" aria-label="Открыть сформированный АВР">${accountingActionIcon("act")}</button>` : ""}
+                ${row.has_act ? accountingSignatureButton(row, "customer", "ИП", handle) : ""}
+                ${row.has_act ? accountingSignatureButton(row, "contractor", "СЗ", handle) : ""}
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
@@ -8909,6 +8929,7 @@ function accountingEditorPayload(handle, confirmed = false) {
   if (amountRaw && !Number.isFinite(amount)) throw new Error("Проверьте сумму чека");
   return {
     contractor_full_name: value("contractor_full_name"),
+    contractor_phone: value("contractor_phone"),
     iin: value("iin"),
     receipt_number: value("receipt_number"),
     receipt_datetime: value("receipt_datetime") || null,
@@ -9020,6 +9041,42 @@ async function generateAccountingAct(handle) {
       button.classList.remove("is-loading");
       button.textContent = "Сформировать АВР";
     }
+  }
+}
+
+async function sendAccountingActInvite(handle, role) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.accounting_id || !row?.has_act) throw new Error("Сначала сформируйте АВР");
+  const popup = window.open("about:blank", "_blank");
+  if (popup) {
+    popup.document.title = "Готовим WhatsApp…";
+    popup.document.body.textContent = "Готовим ссылку на подписание…";
+  }
+  let phone = role === "contractor" ? String(row.contractor_phone || "") : "";
+  const send = () => api(`/accounting/self-employed/receipts/${row.accounting_id}/act/invites/${role}`, {
+    method: "POST",
+    body: JSON.stringify({ phone: phone || null }),
+  });
+  try {
+    let result;
+    try {
+      result = await send();
+    } catch (error) {
+      if (Number(error?.status) !== 400 || !String(error.message || "").includes("WhatsApp")) throw error;
+      phone = window.prompt(
+        role === "customer" ? "Введите WhatsApp владельца ИП" : "Введите WhatsApp самозанятого",
+        phone || "+7 ",
+      ) || "";
+      if (!phone.trim()) throw new Error("Отправка отменена: номер WhatsApp не указан");
+      result = await send();
+    }
+    if (popup) popup.location.replace(result.whatsapp_url);
+    else window.location.href = result.whatsapp_url;
+    showToast(`Ссылка на подпись ${role === "customer" ? "ИП" : "СЗ"} подготовлена в WhatsApp`);
+    await loadSelfEmployedAccounting(true);
+  } catch (error) {
+    if (popup && !popup.closed) popup.close();
+    throw error;
   }
 }
 
@@ -9421,6 +9478,18 @@ function attachAccountingPanel() {
 
   document.querySelectorAll("[data-accounting-generate-act]").forEach((button) => {
     button.onclick = () => generateAccountingAct(button.getAttribute("data-accounting-generate-act")).catch((error) => alert(error.message));
+  });
+  document.querySelectorAll("[data-accounting-open-act]").forEach((button) => {
+    button.onclick = () => openAccountingAct(button.getAttribute("data-accounting-open-act")).catch((error) => alert(error.message));
+  });
+  document.querySelectorAll("[data-accounting-send-signature]").forEach((button) => {
+    button.onclick = () => {
+      const value = String(button.getAttribute("data-accounting-send-signature") || "");
+      const separator = value.lastIndexOf(":");
+      const handle = value.slice(0, separator);
+      const role = value.slice(separator + 1);
+      return sendAccountingActInvite(handle, role).catch((error) => alert(error.message));
+    };
   });
 
   document.querySelectorAll("[data-accounting-save]").forEach((button) => {
@@ -20080,7 +20149,44 @@ async function refreshLiveChangedEvents(changedIds) {
   }
 }
 
+async function pollAccountingSignatureChanges() {
+  if (
+    state.activeAdminTab !== "accounting"
+    || state.accountingLoading
+    || state.accountingSignaturePollRunning
+    || document.hidden
+  ) return;
+  const rows = state.accountingRows || [];
+  const hasPending = rows.some((row) => (
+    ["sent", "signing"].includes(String(row.customer_signature?.status || ""))
+    || ["sent", "signing"].includes(String(row.contractor_signature?.status || ""))
+  ));
+  if (!hasPending) return;
+  state.accountingSignaturePollRunning = true;
+  try {
+    const month = selectedMonthValue();
+    const fresh = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}&_=${Date.now()}`);
+    const before = new Map(rows.map((row) => [
+      Number(row.accounting_id || 0),
+      `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}`,
+    ]));
+    const changed = (fresh || []).some((row) => (
+      before.get(Number(row.accounting_id || 0))
+      !== `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}`
+    ));
+    if (changed) {
+      state.accountingRows = fresh;
+      accountingRenderRowsInPlace();
+    }
+  } catch (error) {
+    console.warn("Не удалось обновить статусы подписей АВР", error);
+  } finally {
+    state.accountingSignaturePollRunning = false;
+  }
+}
+
 async function pollLiveEventChanges() {
+  if (state.token && state.bootstrap?.user) await pollAccountingSignatureChanges();
   if (!state.token || !state.bootstrap?.user || state.bootstrap.user.role === "accountant" || document.hidden || state.liveEventSyncRunning) return;
   state.liveEventSyncRunning = true;
   try {

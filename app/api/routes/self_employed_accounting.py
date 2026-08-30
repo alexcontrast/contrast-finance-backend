@@ -29,6 +29,7 @@ from app.models.user import User
 from app.schemas.self_employed_accounting import (
     SelfEmployedAccountingAttachCreate,
     SelfEmployedAccountingGroupCreate,
+    SelfEmployedActPartyRead,
     SelfEmployedAccountingMemberRead,
     SelfEmployedAccountingRead,
     SelfEmployedAccountingUpdate,
@@ -979,6 +980,17 @@ def _member_rows(members: list[tuple[PaymentRequest, Event, str | None]]) -> lis
 
 
 def _receipt_fields(record: SelfEmployedAccounting | None) -> dict:
+    signatures = {item.signer_role: item for item in (record.act_signatures if record else [])}
+
+    def party(role: str) -> SelfEmployedActPartyRead:
+        signature = signatures.get(role)
+        return SelfEmployedActPartyRead(
+            status=signature.status if signature else "not_sent",
+            sent_at=signature.sent_at if signature else None,
+            signed_at=signature.signed_at if signature else None,
+            signer_iin=signature.signer_iin if signature else None,
+        )
+
     return {
         "receipt_filename": record.receipt_filename if record else None,
         "receipt_content_type": record.receipt_content_type if record else None,
@@ -987,6 +999,7 @@ def _receipt_fields(record: SelfEmployedAccounting | None) -> dict:
         "receipt_uploaded_at": record.receipt_uploaded_at if record else None,
         "has_receipt": bool(record and record.receipt_filename and record.receipt_size),
         "contractor_full_name": record.contractor_full_name if record else None,
+        "contractor_phone": record.contractor_phone if record else None,
         "iin": record.iin if record else None,
         "receipt_number": record.receipt_number if record else None,
         "receipt_datetime": record.receipt_datetime if record else None,
@@ -1003,6 +1016,8 @@ def _receipt_fields(record: SelfEmployedAccounting | None) -> dict:
         "act_size": record.act_size if record else None,
         "act_generated_at": record.act_generated_at if record else None,
         "has_act": bool(record and record.act_filename and record.act_size),
+        "customer_signature": party("customer"),
+        "contractor_signature": party("contractor"),
     }
 
 
@@ -1959,6 +1974,8 @@ def _update_record(record: SelfEmployedAccounting, payload: SelfEmployedAccounti
         _discard_generated_act(record)
     if payload.contractor_full_name is not None:
         record.contractor_full_name = clean_person_name(payload.contractor_full_name)
+    if payload.contractor_phone is not None:
+        record.contractor_phone = clean_text(payload.contractor_phone, 32)
     if payload.iin is not None:
         record.iin = clean_iin(payload.iin)
     if payload.receipt_number is not None:
@@ -2114,6 +2131,8 @@ def generate_accounting_act(
     require_accounting_access(current_user)
     record = get_record_or_404(db, accounting_id, lock=True)
     _assert_act_mutable(record)
+    if record.act_filename or record.act_size or record.act_status == "generated":
+        raise HTTPException(status_code=409, detail="АВР уже сформирован. Откройте его по иконке документа")
     member_ids = list(
         db.execute(
             select(SelfEmployedAccountingRequest.payment_request_id).where(

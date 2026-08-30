@@ -15495,6 +15495,47 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   grid-template-columns: 112px minmax(270px, 1.5fr) 132px 112px minmax(285px, 1.75fr) minmax(258px, auto);
 }
 
+/* v0.5.91 — immutable R-1 document and two compact signature states */
+.accounting-actions .accounting-act-ready {
+  color: #256f2d;
+  border-color: rgba(47, 147, 62, .48);
+  background: linear-gradient(135deg, rgba(215, 255, 198, .96), rgba(242, 255, 237, .98));
+}
+
+.accounting-actions .accounting-sign-btn {
+  min-width: 40px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .02em;
+  color: #4e584a;
+  border-color: #cad3c5;
+  background: #f5f7f3;
+}
+
+.accounting-actions .accounting-sign-btn.is-pending {
+  color: #7b570c;
+  border-color: rgba(196, 145, 36, .44);
+  background: #fff8dc;
+}
+
+.accounting-actions .accounting-sign-btn.is-signed {
+  color: #1d6a2d;
+  border-color: rgba(47, 147, 62, .42);
+  background: #def8d7;
+  opacity: 1;
+  cursor: default;
+}
+
+.accounting-actions .accounting-sign-btn.is-error {
+  color: #9b352b;
+  border-color: rgba(190, 67, 51, .38);
+  background: #fff0ec;
+}
+
 .accounting-actions {
   flex-wrap: nowrap;
   gap: 5px;

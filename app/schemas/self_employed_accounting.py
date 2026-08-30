@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SelfEmployedAccountingUpdate(BaseModel):
     contractor_full_name: str | None = Field(default=None, max_length=255)
+    contractor_phone: str | None = Field(default=None, max_length=32)
     iin: str | None = Field(default=None, max_length=20)
     receipt_number: str | None = Field(default=None, max_length=80)
     receipt_datetime: datetime | None = None
@@ -40,6 +41,13 @@ class SelfEmployedAccountingMemberRead(BaseModel):
     request_contractor_name: str | None = None
     request_iin: str | None = None
     request_comment: str | None = None
+
+
+class SelfEmployedActPartyRead(BaseModel):
+    status: str = "not_sent"
+    sent_at: datetime | None = None
+    signed_at: datetime | None = None
+    signer_iin: str | None = None
 
 
 class SelfEmployedAccountingRead(BaseModel):
@@ -81,6 +89,7 @@ class SelfEmployedAccountingRead(BaseModel):
     has_receipt: bool = False
 
     contractor_full_name: str | None = None
+    contractor_phone: str | None = None
     iin: str | None = None
     receipt_number: str | None = None
     receipt_datetime: datetime | None = None
@@ -98,6 +107,40 @@ class SelfEmployedAccountingRead(BaseModel):
     act_size: int | None = None
     act_generated_at: datetime | None = None
     has_act: bool = False
+    customer_signature: SelfEmployedActPartyRead = Field(default_factory=SelfEmployedActPartyRead)
+    contractor_signature: SelfEmployedActPartyRead = Field(default_factory=SelfEmployedActPartyRead)
+
+
+class SelfEmployedActInviteCreate(BaseModel):
+    phone: str | None = Field(default=None, max_length=32)
+
+
+class SelfEmployedActInviteRead(BaseModel):
+    signer_role: str
+    status: str
+    phone: str
+    signing_url: str
+    whatsapp_url: str
+
+
+class SelfEmployedActPublicRead(BaseModel):
+    act_number: str
+    act_date: date
+    signer_role: str
+    signer_label: str
+    contractor_name: str
+    amount: Decimal
+    status: str
+    token_expires_at: datetime
+
+
+class SelfEmployedActSessionRead(BaseModel):
+    status: str
+    expire_at: datetime | None = None
+    qr_code: str | None = None
+    egov_mobile_url: str | None = None
+    egov_business_url: str | None = None
+    message: str | None = None
 
 
 class SelfEmployedReceiptImportRead(BaseModel):
@@ -153,5 +196,4 @@ class R1CustomerProfileRead(BaseModel):
     bank_name: str
     bik: str
     kbe: str
-    director: str
     director: str

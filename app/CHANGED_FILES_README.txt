@@ -1,17 +1,21 @@
-v0.5.90 changed files
+v0.5.91 changed files
 
-alembic/versions/0017_accounting_avr.py
+alembic/versions/0018_avr_esign.py
+app/api/routes/act_signing.py
 app/api/routes/self_employed_accounting.py
 app/core/config.py
+app/main.py
+app/models/self_employed_act_signature.py
 app/models/self_employed_accounting.py
+app/models/__init__.py
 app/schemas/self_employed_accounting.py
-app/services/r1_act_pdf.py
+app/services/sigex_signing.py
 app/web/app.js
 app/web/index.html
+app/web/sign_avr.html
 app/web/styles.css
-nixpacks.toml
 requirements.txt
 CHANGELOG.md
 README.md
 
-Compact accounting icons and persistent R-1 PDF generation. Includes migration 0017_accounting_avr.
+Immutable R-1 acts, compact IP/SZ actions, WhatsApp invitations and two-party SIGEX/eGov signing. Includes migration 0018_avr_esign.

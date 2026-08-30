@@ -30,6 +30,7 @@ class SelfEmployedAccounting(Base):
     receipt_uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     contractor_full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contractor_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     iin: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     receipt_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     receipt_datetime: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -56,6 +57,8 @@ class SelfEmployedAccounting(Base):
     act_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     act_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     act_generated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    act_sigex_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    act_sigex_registered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -70,4 +73,10 @@ class SelfEmployedAccounting(Base):
         "SelfEmployedAccountingRequest",
         back_populates="accounting",
         cascade="all, delete-orphan",
+    )
+    act_signatures = relationship(
+        "SelfEmployedActSignature",
+        back_populates="accounting",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
