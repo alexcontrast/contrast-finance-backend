@@ -30,6 +30,9 @@
     .status.ok { color: #175d25; background: #e0f8d8; }
     .status.bad { color: #8a2b22; background: #fff0ec; }
     @media (max-width: 500px) { .card { padding: 18px; border-radius: 18px; } .summary { grid-template-columns: 1fr; } }
+    @media (max-width: 820px), (hover: none) and (pointer: coarse) {
+      #ncalayerBtn, #desktopNote { display: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -62,7 +65,9 @@
       const ua = navigator.userAgent || "";
       const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
         || (navigator.maxTouchPoints > 1 && /MacIntel/i.test(navigator.platform || ""))
-        || matchMedia("(max-width: 820px) and (pointer: coarse)").matches;
+        || matchMedia("(max-width: 820px) and (pointer: coarse)").matches
+        || window.innerWidth <= 820
+        || Math.min(Number(screen.width || 9999), Number(screen.height || 9999)) <= 820;
       let timer = null;
       let currentInfo = null;
 
@@ -293,6 +298,10 @@
       };
 
       $("ncalayerBtn").onclick = async () => {
+        if (isMobile) {
+          $("ncalayerBtn").hidden = true;
+          return;
+        }
         setSigningButtonsDisabled(true);
         $("ncalayerBtn").textContent = "Подключаемся к NCALayer…";
         setStatus("Откроется окно NCALayer для выбора ЭЦП и подтверждения подписи.");

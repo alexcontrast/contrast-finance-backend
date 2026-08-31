@@ -41,12 +41,27 @@ def _json_response(response: requests.Response, action: str) -> dict[str, Any]:
         data = response.json()
     except ValueError as exc:
         raise SigexError(f"SIGEX: некорректный ответ при операции «{action}»") from exc
-    if not response.ok:
-        message = data.get("message") if isinstance(data, dict) else None
-        raise SigexError(str(message or f"SIGEX вернул HTTP {response.status_code}"))
     if not isinstance(data, dict):
         raise SigexError(f"SIGEX: пустой ответ при операции «{action}»")
+    # SIGEX documents that API errors are JSON objects with `message` and
+    # `requestID`. Some gateway paths preserve HTTP 200 for that object, so an
+    # HTTP-only check masks the real error as a missing document/signature ID.
+    message = str(data.get("message") or "").strip()
+    request_id = str(data.get("requestID") or data.get("requestId") or "").strip()
+    if not response.ok or message:
+        detail = message or f"SIGEX вернул HTTP {response.status_code}"
+        if request_id:
+            detail = f"{detail} (SIGEX requestID: {request_id})"
+        raise SigexError(detail)
     return data
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
 
 
 def _trusted_sigex_url(value: str | None) -> str:
@@ -171,7 +186,11 @@ def register_document(
             "signaturesLimit": 2,
             "switchToPrivateAfterLimitReached": True,
             "unique": ["iin"],
-            "strictSignersRequirements": True,
+            # The first CMS has already been assigned to an AVR side after a
+            # local certificate/IIN check. SIGEX recommends `false` here so
+            # requirements constrain subsequent signatures without rejecting
+            # the registering signature under a stricter certificate profile.
+            "strictSignersRequirements": False,
             "signersRequirements": requirements,
             "publicDuringPreregistration": False,
             "publicWhileLessThanSignatures": 0,
@@ -188,9 +207,12 @@ def register_document(
         raise SigexError("SIGEX не смог зарегистрировать первую подпись") from exc
     result = _json_response(response, "регистрация документа")
     document_id = str(result.get("documentId") or "").strip()
-    sign_id = int(result.get("signId") or 0)
+    sign_id = _positive_int(result.get("signId"))
     if not document_id or sign_id <= 0:
-        raise SigexError("SIGEX не вернул номер документа или подписи")
+        fields = ", ".join(sorted(str(key) for key in result)) or "нет полей"
+        raise SigexError(
+            f"SIGEX вернул успешный ответ без номера документа или подписи (поля: {fields})"
+        )
     try:
         data_response = requests.post(
             f"{_base_url()}/api/{document_id}/data",
@@ -251,9 +273,10 @@ def add_document_signature(document_id: str, signature_b64: str) -> int:
     except requests.RequestException as exc:
         raise SigexError("SIGEX не смог зарегистрировать вторую подпись") from exc
     result = _json_response(response, "добавление подписи")
-    sign_id = int(result.get("signId") or 0)
+    sign_id = _positive_int(result.get("signId"))
     if sign_id <= 0:
-        raise SigexError("SIGEX не вернул номер подписи")
+        fields = ", ".join(sorted(str(key) for key in result)) or "нет полей"
+        raise SigexError(f"SIGEX вернул успешный ответ без номера подписи (поля: {fields})")
     return sign_id
 
 
