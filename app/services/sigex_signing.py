@@ -336,8 +336,6 @@ def build_document_card(
         "withoutSignaturesVisualization": "false",
         "withoutQRCodesInSignaturesVisualization": "false",
         "withoutID": "false",
-        "qrWithIDLink": "true",
-        "withLabelVerified": "true",
         "language": "ru",
     }
     try:
