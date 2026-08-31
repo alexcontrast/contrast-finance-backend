@@ -151,6 +151,7 @@ class SelfEmployedActSessionRead(BaseModel):
     egov_business_url: str | None = None
     signed_file_ready: bool = False
     signed_file_status: str = "pending"
+    fresh_signature_required: bool = False
     message: str | None = None
 
 

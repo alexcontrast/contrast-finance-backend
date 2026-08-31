@@ -1,10 +1,11 @@
-v0.5.97 changed files (apply directly over v0.5-2.96)
+v0.5.98 changed files (apply directly over v0.5-2.97)
 
 app/api/routes/act_signing.py
 app/core/config.py
-app/services/sigex_signing.py
+app/schemas/self_employed_accounting.py
+app/web/sign_avr.html
 app/web/index.html
 CHANGELOG.md
 README.md
 
-Personal-IP CMS registration without SIGEX organization storage and persistent two-phase recovery. No database migration.
+Automatic recovery from stale OCSP/TSP CMS validation without losing the AVR or the other side's signature. No database migration.

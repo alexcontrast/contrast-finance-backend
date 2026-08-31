@@ -53,6 +53,10 @@ _active_ddc_workers: set[int] = set()
 _worker_lock = threading.Lock()
 DDC_RETRY_COOLDOWN = timedelta(seconds=30)
 DDC_STALE_BUILD = timedelta(minutes=5)
+STALE_CMS_MESSAGE = (
+    "Срок использования полученной ЭЦП для регистрации истёк. "
+    "Получите свежую подпись через eGov Mobile или NCALayer."
+)
 
 
 def _require_accounting_access(user: User) -> None:
@@ -62,6 +66,18 @@ def _require_accounting_access(user: User) -> None:
 
 def _digits(value: str | None) -> str:
     return re.sub(r"\D", "", str(value or ""))
+
+
+def _fresh_signature_required(message: str | None) -> bool:
+    text = str(message or "").lower()
+    if text.startswith("срок использования полученной эцп для регистрации истёк"):
+        return True
+    return (
+        "ocsp" in text
+        and "tsp" in text
+        and ("time stamp" in text or "метк" in text or "врем" in text)
+        and ("differ" in text or "отлич" in text)
+    )
 
 
 def _whatsapp_phone(value: str | None) -> str | None:
@@ -414,12 +430,50 @@ def _session_read(record: SelfEmployedAccounting, message: str | None = None) ->
         egov_business_url=record.act_egov_business_url if active else None,
         signed_file_ready=signed_file_ready,
         signed_file_status=signed_file_status,
+        fresh_signature_required=_fresh_signature_required(record.act_signing_error),
         message=(
             message
             or record.act_signing_error
             or ("Сессия eGov истекла. Создайте новую попытку подписания." if expired else None)
         ),
     )
+
+
+def _discard_stale_pending_signature(
+    db: Session,
+    record: SelfEmployedAccounting,
+) -> None:
+    """Discard only a CMS that SIGEX can no longer validate against a fresh OCSP response."""
+    target: SelfEmployedActSignature | None = None
+    if record.act_pending_signature_data:
+        try:
+            signature_b64 = base64.b64encode(bytes(record.act_pending_signature_data)).decode("ascii")
+            signer_role, _, _ = _signer_role(record, signature_b64)
+            target = _signature_for_role(record, signer_role)
+        except Exception:
+            target = None
+    if target is not None and target.status != "signed":
+        target.status = "sent"
+        target.last_error = None
+        target.updated_at = datetime.utcnow()
+        db.add(target)
+    # The old eGov operation and its CMS must not be reused: TSP time is fixed
+    # inside the CMS, while SIGEX obtains a new OCSP status during registration.
+    record.act_pending_signature_data = None
+    record.act_pending_signature_sha256 = None
+    record.act_pending_signature_received_at = None
+    record.act_session_started_at = None
+    record.act_session_expires_at = None
+    record.act_sigex_data_url = None
+    record.act_sigex_sign_url = None
+    record.act_egov_mobile_url = None
+    record.act_egov_business_url = None
+    record.act_qr_code = None
+    record.act_session_status = "idle"
+    record.act_signing_error = None
+    record.updated_at = datetime.utcnow()
+    _signature_status(record, target)
+    db.add(record)
 
 
 def _phone_for_inferred_role(db: Session, record: SelfEmployedAccounting, role: str) -> str:
@@ -707,6 +761,10 @@ def _mark_signature_error(accounting_id: int, exc: Exception) -> None:
         ).scalar_one_or_none()
         if record is None or record.act_session_status not in {"signing", "finalizing", "error"}:
             return
+        stale_cms = _fresh_signature_required(message)
+        if stale_cms:
+            _discard_stale_pending_signature(db, record)
+            message = STALE_CMS_MESSAGE
         record.act_session_status = "error"
         record.act_signing_error = message
         record.updated_at = datetime.utcnow()
@@ -815,6 +873,11 @@ def start_act_session(token: str, request: Request, db: Session = Depends(get_db
     if len(customer_iin) != 12 or len(contractor_iin) != 12 or customer_iin == contractor_iin:
         raise HTTPException(status_code=400, detail="Не удалось определить корректные ИИН обеих сторон АВР")
     now = datetime.utcnow()
+    # v0.5.97 deliberately retained CMS after all SIGEX failures. A CMS that
+    # already failed the OCSP/TSP time comparison can never be repaired by
+    # resubmitting it, so upgrade existing rows to a clean new attempt here.
+    if _fresh_signature_required(record.act_signing_error):
+        _discard_stale_pending_signature(db, record)
     if record.act_pending_signature_data:
         record.act_session_status = "finalizing"
         record.act_signing_error = None

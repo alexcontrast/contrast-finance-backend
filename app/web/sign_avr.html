@@ -169,7 +169,9 @@
         if (data.status === "error") {
           stopPolling();
           showReady(false);
-          $("startBtn").textContent = "Повторить завершение подписи";
+          $("startBtn").textContent = data.fresh_signature_required
+            ? (isMobile ? "Подписать заново через eGov Mobile" : "Создать новый QR для подписи")
+            : "Повторить завершение подписи";
           setStatus(data.message || "Подписание не завершено. Повторите попытку.", "bad");
           return;
         }
