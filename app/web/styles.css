@@ -15557,14 +15557,8 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   gap: 5px;
 }
 
-/* v0.5.101 — role buttons open the shared status page; share remains separate */
-.accounting-actions .accounting-sign-group {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 2px;
-}
-
-.accounting-actions .accounting-sign-share-btn {
+/* v0.5.102 — one shared AVR link is copied without a WhatsApp recipient */
+.accounting-actions .accounting-sign-copy-btn {
   width: 24px;
   min-width: 24px;
   height: 34px;
@@ -15578,7 +15572,7 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   background: #f7faf5;
 }
 
-.accounting-actions .accounting-sign-share-btn svg {
+.accounting-actions .accounting-sign-copy-btn svg {
   width: 14px;
   height: 14px;
   fill: none;

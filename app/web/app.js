@@ -7705,9 +7705,6 @@ function accountingSignatureButton(row, role, label, handle) {
         ? "ожидается подпись"
         : "ссылка ещё не отправлена";
   const openTitle = `${label}: открыть страницу подписания (${statusText})`;
-  const sendTitle = role === "customer"
-    ? "Отправить владельцу ИП ссылку в WhatsApp"
-    : "Отправить самозанятому ссылку в WhatsApp";
   const statusClass = status === "signed"
     ? "is-signed"
     : pending
@@ -7715,10 +7712,7 @@ function accountingSignatureButton(row, role, label, handle) {
       : (status === "error" || workflowError)
         ? "is-error"
         : "";
-  return `<span class="accounting-sign-group">
-    <button class="accounting-sign-btn ${statusClass}" type="button" data-accounting-open-signing="${handle}" title="${escapeHtml(openTitle)}" aria-label="${escapeHtml(openTitle)}">${status === "signed" ? "✓ " : ""}${label}</button>
-    ${status === "signed" ? "" : `<button class="ghost accounting-sign-share-btn" type="button" data-accounting-send-signature="${handle}:${role}" title="${escapeHtml(sendTitle)}" aria-label="${escapeHtml(sendTitle)}">${accountingActionIcon("share")}</button>`}
-  </span>`;
+  return `<button class="accounting-sign-btn ${statusClass}" type="button" data-accounting-open-signing="${handle}" title="${escapeHtml(openTitle)}" aria-label="${escapeHtml(openTitle)}">${status === "signed" ? "✓ " : ""}${label}</button>`;
 }
 
 function renderAccountingEditor(row) {
@@ -7879,6 +7873,7 @@ function renderAccountingRows(rows) {
                 })() : ""}
                 ${row.has_act ? accountingSignatureButton(row, "customer", "ИП", handle) : ""}
                 ${row.has_act ? accountingSignatureButton(row, "contractor", "СЗ", handle) : ""}
+                ${row.has_act ? `<button class="ghost accounting-sign-copy-btn" type="button" data-accounting-copy-signing="${handle}" title="Скопировать общую ссылку на подписание АВР" aria-label="Скопировать общую ссылку на подписание АВР">${accountingActionIcon("share")}</button>` : ""}
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
               </div>
             </div>
@@ -9066,22 +9061,54 @@ async function openAccountingAct(handle) {
 }
 
 async function openAccountingSigningPage(handle) {
-  const row = accountingFindRowByHandle(handle);
-  if (!row?.accounting_id || !row?.has_act) throw new Error("Сначала сформируйте АВР");
   const popup = window.open("about:blank", "_blank");
   if (popup) {
     popup.document.title = "Открываем подписание АВР…";
     popup.document.body.textContent = "Получаем текущие статусы подписей…";
   }
   try {
-    const result = await api(`/accounting/self-employed/receipts/${row.accounting_id}/act/signing-link`);
-    if (!result?.signing_url) throw new Error("Ссылка на страницу подписания не получена");
-    if (popup && !popup.closed) popup.location.replace(result.signing_url);
-    else window.location.href = result.signing_url;
+    const signingUrl = await getAccountingSigningUrl(handle);
+    if (popup && !popup.closed) popup.location.replace(signingUrl);
+    else window.location.href = signingUrl;
   } catch (error) {
     if (popup && !popup.closed) popup.close();
     throw error;
   }
+}
+
+async function getAccountingSigningUrl(handle) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.accounting_id || !row?.has_act) throw new Error("Сначала сформируйте АВР");
+  const result = await api(`/accounting/self-employed/receipts/${row.accounting_id}/act/signing-link`);
+  if (!result?.signing_url) throw new Error("Ссылка на страницу подписания не получена");
+  return String(result.signing_url);
+}
+
+async function copyTextToClipboard(value) {
+  const text = String(value || "");
+  if (!text) throw new Error("Нечего копировать");
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch (_) {}
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Браузер не разрешил скопировать ссылку");
+}
+
+async function copyAccountingSigningLink(handle) {
+  const signingUrl = await getAccountingSigningUrl(handle);
+  await copyTextToClipboard(signingUrl);
+  showToast("Ссылка на подписание АВР скопирована");
 }
 
 async function generateAccountingAct(handle) {
@@ -9111,42 +9138,6 @@ async function generateAccountingAct(handle) {
       button.classList.remove("is-loading");
       button.textContent = "Сформировать АВР";
     }
-  }
-}
-
-async function sendAccountingActInvite(handle, role) {
-  const row = accountingFindRowByHandle(handle);
-  if (!row?.accounting_id || !row?.has_act) throw new Error("Сначала сформируйте АВР");
-  const popup = window.open("about:blank", "_blank");
-  if (popup) {
-    popup.document.title = "Готовим WhatsApp…";
-    popup.document.body.textContent = "Готовим ссылку на подписание…";
-  }
-  let phone = role === "contractor" ? String(row.contractor_phone || "") : "";
-  const send = () => api(`/accounting/self-employed/receipts/${row.accounting_id}/act/invites/${role}`, {
-    method: "POST",
-    body: JSON.stringify({ phone: phone || null }),
-  });
-  try {
-    let result;
-    try {
-      result = await send();
-    } catch (error) {
-      if (Number(error?.status) !== 400 || !String(error.message || "").includes("WhatsApp")) throw error;
-      phone = window.prompt(
-        role === "customer" ? "Введите WhatsApp владельца ИП" : "Введите WhatsApp самозанятого",
-        phone || "+7 ",
-      ) || "";
-      if (!phone.trim()) throw new Error("Отправка отменена: номер WhatsApp не указан");
-      result = await send();
-    }
-    if (popup) popup.location.replace(result.whatsapp_url);
-    else window.location.href = result.whatsapp_url;
-    showToast(`Ссылка на подпись ${role === "customer" ? "ИП" : "СЗ"} подготовлена в WhatsApp`);
-    await loadSelfEmployedAccounting(true);
-  } catch (error) {
-    if (popup && !popup.closed) popup.close();
-    throw error;
   }
 }
 
@@ -9555,14 +9546,8 @@ function attachAccountingPanel() {
   document.querySelectorAll("[data-accounting-open-signing]").forEach((button) => {
     button.onclick = () => openAccountingSigningPage(button.getAttribute("data-accounting-open-signing")).catch((error) => alert(error.message));
   });
-  document.querySelectorAll("[data-accounting-send-signature]").forEach((button) => {
-    button.onclick = () => {
-      const value = String(button.getAttribute("data-accounting-send-signature") || "");
-      const separator = value.lastIndexOf(":");
-      const handle = value.slice(0, separator);
-      const role = value.slice(separator + 1);
-      return sendAccountingActInvite(handle, role).catch((error) => alert(error.message));
-    };
+  document.querySelectorAll("[data-accounting-copy-signing]").forEach((button) => {
+    button.onclick = () => copyAccountingSigningLink(button.getAttribute("data-accounting-copy-signing")).catch((error) => alert(error.message));
   });
 
   document.querySelectorAll("[data-accounting-save]").forEach((button) => {
