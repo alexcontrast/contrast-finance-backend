@@ -36,7 +36,8 @@ from app.services.sigex_signing import (
     build_document_card,
     cms_signer_identity,
     create_egov_session,
-    register_document,
+    finalize_document_data,
+    register_document_signature,
     wait_for_egov_signature,
 )
 
@@ -647,14 +648,28 @@ def _finalize_pending_signature(accounting_id: int) -> None:
             select(SelfEmployedAccounting.act_data).where(SelfEmployedAccounting.id == record.id)
         ).scalar_one()
         if not record.act_sigex_document_id:
-            document_id, sign_id = register_document(
-                pdf_data=bytes(pdf_data),
+            document_id, sign_id = register_document_signature(
                 signature_b64=signature_b64,
                 title=str(record.act_filename or record.act_number or "AVR.pdf"),
                 expected_iins=[str(R1_CUSTOMER_PROFILE.get("bin_iin") or ""), str(record.iin or "")],
             )
+            # Persist the SIGEX identifiers before the separate /data call.
+            # If that call fails, retry will finish this same document instead
+            # of registering the same CMS under a second orphan document.
             record.act_sigex_document_id = document_id
             record.act_sigex_registered_at = now
+            target.sigex_sign_id = sign_id
+            target.status = "sent"
+            target.last_error = None
+            target.updated_at = now
+            db.add_all([target, record])
+            db.commit()
+            finalize_document_data(document_id, bytes(pdf_data))
+        elif target.sigex_sign_id and target.status != "signed":
+            # Registration of the first CMS succeeded earlier, while hash
+            # fixation failed. Resume only the missing second phase.
+            sign_id = int(target.sigex_sign_id)
+            finalize_document_data(record.act_sigex_document_id, bytes(pdf_data))
         else:
             sign_id = add_document_signature(record.act_sigex_document_id, signature_b64)
         target.signature_data = raw_signature

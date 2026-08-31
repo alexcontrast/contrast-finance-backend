@@ -52,7 +52,7 @@ def _json_response(response: requests.Response, action: str) -> dict[str, Any]:
         detail = message or f"SIGEX вернул HTTP {response.status_code}"
         if request_id:
             detail = f"{detail} (SIGEX requestID: {request_id})"
-        raise SigexError(detail)
+        raise SigexError(f"SIGEX — {action}: {detail}")
     return data
 
 
@@ -164,9 +164,8 @@ def wait_for_egov_signature(
     return signature
 
 
-def register_document(
+def register_document_signature(
     *,
-    pdf_data: bytes,
     signature_b64: str,
     title: str,
     expected_iins: list[str],
@@ -184,7 +183,10 @@ def register_document(
         "settings": {
             "private": False,
             "signaturesLimit": 2,
-            "switchToPrivateAfterLimitReached": True,
+            # The backend must still be able to build the public verification
+            # DDC after the second signature without authenticating as either
+            # signer. The random SIGEX document ID remains the access secret.
+            "switchToPrivateAfterLimitReached": False,
             "unique": ["iin"],
             # The first CMS has already been assigned to an AVR side after a
             # local certificate/IIN check. SIGEX recommends `false` here so
@@ -192,13 +194,6 @@ def register_document(
             # the registering signature under a stricter certificate profile.
             "strictSignersRequirements": False,
             "signersRequirements": requirements,
-            "publicDuringPreregistration": False,
-            "publicWhileLessThanSignatures": 0,
-            "documentAccess": [],
-            "forceArchive": False,
-            # Use the documented one-day temporary-storage interval. The AVR
-            # itself and both CMS files remain stored in our PostgreSQL DB.
-            "tempStorageAfterRegistration": 24 * 60 * 60 * 1000,
         },
     }
     try:
@@ -213,17 +208,29 @@ def register_document(
         raise SigexError(
             f"SIGEX вернул успешный ответ без номера документа или подписи (поля: {fields})"
         )
+    return document_id, sign_id
+
+
+def finalize_document_data(document_id: str, pdf_data: bytes) -> None:
+    clean_id = str(document_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", clean_id):
+        raise SigexError("Некорректный номер документа SIGEX")
+    source = bytes(pdf_data or b"")
+    if not source.startswith(b"%PDF-"):
+        raise SigexError("Исходный АВР не является PDF")
     try:
         data_response = requests.post(
-            f"{_base_url()}/api/{document_id}/data",
-            data=pdf_data,
-            headers={"Content-Type": "application/octet-stream", "Content-Length": str(len(pdf_data))},
+            f"{_base_url()}/api/{clean_id}/data",
+            data=source,
+            headers={"Content-Type": "application/octet-stream", "Content-Length": str(len(source))},
             timeout=(10, 90),
         )
     except requests.RequestException as exc:
         raise SigexError("SIGEX не завершил регистрацию документа") from exc
-    _json_response(data_response, "фиксация документа")
-    return document_id, sign_id
+    result = _json_response(data_response, "фиксация хешей PDF")
+    returned_id = str(result.get("documentId") or "").strip()
+    if returned_id and returned_id != clean_id:
+        raise SigexError("SIGEX вернул номер другого документа при фиксации PDF")
 
 
 def cms_signer_identity(
