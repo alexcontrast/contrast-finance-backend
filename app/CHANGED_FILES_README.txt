@@ -1,5 +1,6 @@
-v0.5.94 changed files (apply directly over v0.5-2.93)
+v0.5.95 cumulative changed files (apply over v0.5-2.92, v0.5-2.93, or failed v0.5-2.94)
 
+alembic/versions/0020_avr_signing_recovery.py
 alembic/versions/0021_avr_signed_ddc.py
 app/api/routes/act_signing.py
 app/api/routes/self_employed_accounting.py
@@ -14,4 +15,4 @@ app/web/styles.css
 CHANGELOG.md
 README.md
 
-Permanent SIGEX DDC after two signatures, stored in PostgreSQL and served instead of the unsigned-looking source PDF.
+Packaging hotfix: includes the complete 0020 -> 0021 migration chain. Permanent SIGEX DDC behavior is unchanged.
