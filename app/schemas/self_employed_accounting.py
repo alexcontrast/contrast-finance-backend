@@ -130,6 +130,10 @@ class SelfEmployedActInviteRead(BaseModel):
     whatsapp_url: str
 
 
+class SelfEmployedActSigningLinkRead(BaseModel):
+    signing_url: str
+
+
 class SelfEmployedActPublicRead(BaseModel):
     act_number: str
     act_date: date

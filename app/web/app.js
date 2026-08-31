@@ -7687,6 +7687,7 @@ function accountingActionIcon(kind) {
     edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.2-1 10.6-10.6a1.8 1.8 0 0 0 0-2.5l-.7-.7a1.8 1.8 0 0 0-2.5 0L5 15.8 4 20Z"/><path d="m14.5 6.3 3.2 3.2M4 20h5"/></svg>`,
     delete: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>`,
     act: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M14 3.5v4h4M9 12h6M9 16h4"/><path d="m15.5 17 1.4 1.4 2.8-3"/></svg>`,
+    share: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 12.5 15.5 6M11 6h4.5v4.5"/><path d="M18 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3"/></svg>`,
   };
   return icons[kind] || "";
 }
@@ -7694,18 +7695,30 @@ function accountingActionIcon(kind) {
 function accountingSignatureButton(row, role, label, handle) {
   const signature = role === "customer" ? row.customer_signature : row.contractor_signature;
   const status = String(signature?.status || "not_sent");
-  if (status === "signed") {
-    return `<button class="accounting-sign-btn is-signed" type="button" disabled title="${label}: подпись получена" aria-label="${label}: подпись получена">✓ ${label}</button>`;
-  }
   const workflowError = String(row?.act_session_status || "") === "error";
   const pending = ["sent", "signing"].includes(status) && !workflowError;
-  const title = role === "customer"
-    ? (pending ? "Открыть WhatsApp и повторно отправить ссылку владельцу ИП" : "Отправить владельцу ИП ссылку на подписание")
-    : (pending ? "Открыть WhatsApp и повторно отправить ссылку самозанятому" : "Отправить самозанятому ссылку на подписание");
-  const errorTitle = workflowError
-    ? `Подпись не завершена: ${String(row?.act_signing_error || "неизвестная ошибка")}`
-    : title;
-  return `<button class="accounting-sign-btn ${pending ? "is-pending" : (status === "error" || workflowError) ? "is-error" : ""}" type="button" data-accounting-send-signature="${handle}:${role}" title="${escapeHtml(errorTitle)}" aria-label="${escapeHtml(errorTitle)}">${label}</button>`;
+  const statusText = status === "signed"
+    ? "подпись получена"
+    : workflowError || status === "error"
+      ? `ошибка — ${String(row?.act_signing_error || "подпись не завершена")}`
+      : pending
+        ? "ожидается подпись"
+        : "ссылка ещё не отправлена";
+  const openTitle = `${label}: открыть страницу подписания (${statusText})`;
+  const sendTitle = role === "customer"
+    ? "Отправить владельцу ИП ссылку в WhatsApp"
+    : "Отправить самозанятому ссылку в WhatsApp";
+  const statusClass = status === "signed"
+    ? "is-signed"
+    : pending
+      ? "is-pending"
+      : (status === "error" || workflowError)
+        ? "is-error"
+        : "";
+  return `<span class="accounting-sign-group">
+    <button class="accounting-sign-btn ${statusClass}" type="button" data-accounting-open-signing="${handle}" title="${escapeHtml(openTitle)}" aria-label="${escapeHtml(openTitle)}">${status === "signed" ? "✓ " : ""}${label}</button>
+    ${status === "signed" ? "" : `<button class="ghost accounting-sign-share-btn" type="button" data-accounting-send-signature="${handle}:${role}" title="${escapeHtml(sendTitle)}" aria-label="${escapeHtml(sendTitle)}">${accountingActionIcon("share")}</button>`}
+  </span>`;
 }
 
 function renderAccountingEditor(row) {
@@ -9052,6 +9065,25 @@ async function openAccountingAct(handle) {
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+async function openAccountingSigningPage(handle) {
+  const row = accountingFindRowByHandle(handle);
+  if (!row?.accounting_id || !row?.has_act) throw new Error("Сначала сформируйте АВР");
+  const popup = window.open("about:blank", "_blank");
+  if (popup) {
+    popup.document.title = "Открываем подписание АВР…";
+    popup.document.body.textContent = "Получаем текущие статусы подписей…";
+  }
+  try {
+    const result = await api(`/accounting/self-employed/receipts/${row.accounting_id}/act/signing-link`);
+    if (!result?.signing_url) throw new Error("Ссылка на страницу подписания не получена");
+    if (popup && !popup.closed) popup.location.replace(result.signing_url);
+    else window.location.href = result.signing_url;
+  } catch (error) {
+    if (popup && !popup.closed) popup.close();
+    throw error;
+  }
+}
+
 async function generateAccountingAct(handle) {
   const row = accountingFindRowByHandle(handle);
   if (!row?.accounting_id || !row?.has_receipt) throw new Error("Сначала загрузите чек");
@@ -9519,6 +9551,9 @@ function attachAccountingPanel() {
   });
   document.querySelectorAll("[data-accounting-open-act]").forEach((button) => {
     button.onclick = () => openAccountingAct(button.getAttribute("data-accounting-open-act")).catch((error) => alert(error.message));
+  });
+  document.querySelectorAll("[data-accounting-open-signing]").forEach((button) => {
+    button.onclick = () => openAccountingSigningPage(button.getAttribute("data-accounting-open-signing")).catch((error) => alert(error.message));
   });
   document.querySelectorAll("[data-accounting-send-signature]").forEach((button) => {
     button.onclick = () => {

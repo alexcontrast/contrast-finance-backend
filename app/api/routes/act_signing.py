@@ -28,6 +28,7 @@ from app.schemas.self_employed_accounting import (
     SelfEmployedActInviteRead,
     SelfEmployedActPublicRead,
     SelfEmployedActSessionRead,
+    SelfEmployedActSigningLinkRead,
 )
 from app.services.auth import get_current_user
 from app.services.sigex_signing import (
@@ -213,6 +214,32 @@ def _whatsapp_message(record: SelfEmployedAccounting, role: str, signing_url: st
     return (
         f"Здравствуйте! АВР {record.act_number or ''} ожидает подписи ({addressee}).\n"
         f"Откройте ссылку, проверьте документ и подпишите его через eGov Mobile:\n{signing_url}"
+    )
+
+
+@router.get(
+    "/receipts/{accounting_id}/act/signing-link",
+    response_model=SelfEmployedActSigningLinkRead,
+)
+def get_act_signing_link(
+    accounting_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Open the shared status page without sending or resetting either invite."""
+    _require_accounting_access(current_user)
+    record = _record_or_404(db, accounting_id, lock=True)
+    if not record.act_filename or not record.act_size or record.act_status in {None, "", "not_created"}:
+        raise HTTPException(status_code=409, detail="Сначала сформируйте АВР")
+
+    now = datetime.utcnow()
+    _ensure_shared_token(record, now)
+    record.updated_at = now
+    db.add(record)
+    db.commit()
+    return SelfEmployedActSigningLinkRead(
+        signing_url=f"{_public_base_url(request)}/sign/avr/{record.act_signing_token}",
     )
 
 
