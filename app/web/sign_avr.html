@@ -278,8 +278,14 @@
             }
             let signature = response?.body?.result;
             if (Array.isArray(signature)) signature = signature[0];
+            if (signature && typeof signature === "object") {
+              const signatures = signature.signatures;
+              signature = Array.isArray(signatures)
+                ? signatures[0]
+                : signatures || signature.signature || signature.cms;
+            }
             if (!signature) {
-              finish(new Error("Подписание отменено пользователем."));
+              finish(new Error("NCALayer не вернул CMS-подпись."));
               return;
             }
             finish(null, String(signature));

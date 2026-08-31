@@ -22,6 +22,28 @@ class SigexError(RuntimeError):
     pass
 
 
+_CMS_PEM_BOUNDARY = re.compile(
+    r"-----\s*(?:BEGIN|END)\s+(?:CMS|PKCS\s*#?7(?:\s+SIGNED\s+DATA)?)\s*-----",
+    re.IGNORECASE,
+)
+
+
+def decode_cms_signature(signature: str) -> bytes:
+    """Accept pure Base64 from eGov and PEM-wrapped CMS returned by NCALayer."""
+    value = str(signature or "").strip()
+    if value.lower().startswith("data:") and "," in value:
+        value = value.split(",", 1)[1]
+    value = _CMS_PEM_BOUNDARY.sub("", value)
+    value = re.sub(r"\s+", "", value)
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise SigexError("NCALayer/eGov вернул повреждённую CMS-подпись") from exc
+    if len(decoded) < 128:
+        raise SigexError("Полученная CMS-подпись слишком короткая")
+    return decoded
+
+
 @dataclass(frozen=True)
 class SigexSession:
     expire_at_ms: int
@@ -239,10 +261,14 @@ def cms_signer_identity(
 ) -> tuple[str, str | None]:
     """Read the IIN from the certificate before assigning a signature to a side."""
     try:
-        der = base64.b64decode(re.sub(r"\s+", "", signature_b64), validate=True)
+        der = decode_cms_signature(signature_b64)
         certificates: list[x509.Certificate] = load_der_pkcs7_certificates(der)
     except Exception as exc:
-        raise SigexError("Не удалось прочитать сертификат подписи eGov") from exc
+        if isinstance(exc, SigexError):
+            raise
+        raise SigexError("Не удалось прочитать сертификат CMS-подписи") from exc
+    if not certificates:
+        raise SigexError("CMS-подпись не содержит сертификат подписанта")
     expected = {
         re.sub(r"\D", "", str(value or ""))
         for value in (expected_iins or [])
@@ -267,7 +293,7 @@ def cms_signer_identity(
                 candidates.append(candidate)
     if candidates:
         return candidates[0]
-    raise SigexError("В сертификате eGov не найден ИИН подписанта")
+    raise SigexError("В сертификате ЭЦП не найден ИИН подписанта")
 
 
 def add_document_signature(document_id: str, signature_b64: str) -> int:

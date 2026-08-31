@@ -36,6 +36,7 @@ from app.services.sigex_signing import (
     build_document_card,
     cms_signer_identity,
     create_egov_session,
+    decode_cms_signature,
     finalize_document_data,
     register_document_signature,
     wait_for_egov_signature,
@@ -484,13 +485,7 @@ def _phone_for_inferred_role(db: Session, record: SelfEmployedAccounting, role: 
 
 
 def _decode_signature(signature_b64: str) -> bytes:
-    try:
-        raw = base64.b64decode(re.sub(r"\s+", "", str(signature_b64 or "")), validate=True)
-    except ValueError as exc:
-        raise SigexError("Получена повреждённая CMS-подпись") from exc
-    if len(raw) < 128:
-        raise SigexError("Полученная CMS-подпись слишком короткая")
-    return raw
+    return decode_cms_signature(signature_b64)
 
 
 def _expected_iins(record: SelfEmployedAccounting) -> tuple[str, str]:
