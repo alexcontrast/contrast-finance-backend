@@ -15502,6 +15502,22 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   background: linear-gradient(135deg, rgba(215, 255, 198, .96), rgba(242, 255, 237, .98));
 }
 
+.accounting-actions .accounting-act-ready.is-building {
+  color: #8a6517;
+  border-color: rgba(196, 145, 36, .44);
+  background: #fff8dc;
+}
+
+.accounting-actions .accounting-act-ready.is-building svg {
+  animation: accounting-refresh-spin 1.1s linear infinite;
+}
+
+.accounting-actions .accounting-act-ready.is-error {
+  color: #9b352b;
+  border-color: rgba(190, 67, 51, .38);
+  background: #fff0ec;
+}
+
 .accounting-actions .accounting-sign-btn {
   min-width: 40px;
   height: 34px;

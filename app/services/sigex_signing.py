@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,7 @@ import requests
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization.pkcs7 import load_der_pkcs7_certificates
 from cryptography.x509.oid import NameOID
+from pypdf import PdfReader
 
 from app.core.config import get_settings
 
@@ -175,7 +177,9 @@ def register_document(
             "publicWhileLessThanSignatures": 0,
             "documentAccess": [],
             "forceArchive": False,
-            "tempStorageAfterRegistration": 30 * 24 * 60 * 60 * 1000,
+            # Use the documented one-day temporary-storage interval. The AVR
+            # itself and both CMS files remain stored in our PostgreSQL DB.
+            "tempStorageAfterRegistration": 24 * 60 * 60 * 1000,
         },
     }
     try:
@@ -200,22 +204,40 @@ def register_document(
     return document_id, sign_id
 
 
-def cms_signer_identity(signature_b64: str) -> tuple[str, str | None]:
+def cms_signer_identity(
+    signature_b64: str,
+    expected_iins: list[str] | tuple[str, ...] | None = None,
+) -> tuple[str, str | None]:
     """Read the IIN from the certificate before assigning a signature to a side."""
     try:
         der = base64.b64decode(re.sub(r"\s+", "", signature_b64), validate=True)
         certificates: list[x509.Certificate] = load_der_pkcs7_certificates(der)
     except Exception as exc:
         raise SigexError("Не удалось прочитать сертификат подписи eGov") from exc
+    expected = {
+        re.sub(r"\D", "", str(value or ""))
+        for value in (expected_iins or [])
+        if len(re.sub(r"\D", "", str(value or ""))) == 12
+    }
+    candidates: list[tuple[str, str | None]] = []
     for certificate in certificates:
-        serial_values = certificate.subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)
         common_names = certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
-        for attribute in serial_values:
+        name = str(common_names[0].value).strip() if common_names else None
+        # Current NCA certificates normally keep IIN in SERIALNUMBER, while
+        # several older/legal-person profiles expose the same IIN through a
+        # different Subject attribute. Search every Subject value, but only
+        # accept an explicitly prefixed IIN to avoid confusing it with BIN or
+        # the certificate's own serial number.
+        for attribute in certificate.subject:
             value = str(attribute.value or "")
-            digits = re.sub(r"\D", "", value)
-            if value.upper().startswith("IIN") and len(digits) == 12:
-                name = str(common_names[0].value).strip() if common_names else None
-                return digits, name
+            match = re.search(r"(?:^|[^A-Z])IIN\s*([0-9]{12})(?:\D|$)", value, re.I)
+            if match:
+                candidate = (match.group(1), name)
+                if candidate[0] in expected:
+                    return candidate
+                candidates.append(candidate)
+    if candidates:
+        return candidates[0]
     raise SigexError("В сертификате eGov не найден ИИН подписанта")
 
 
@@ -233,6 +255,64 @@ def add_document_signature(document_id: str, signature_b64: str) -> int:
     if sign_id <= 0:
         raise SigexError("SIGEX не вернул номер подписи")
     return sign_id
+
+
+def build_document_card(
+    *,
+    document_id: str,
+    pdf_data: bytes,
+    filename: str,
+) -> bytes:
+    """Build the official SIGEX DDC PDF for a registered two-party document."""
+    clean_id = str(document_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", clean_id):
+        raise SigexError("Некорректный номер документа SIGEX")
+    source = bytes(pdf_data or b"")
+    if not source.startswith(b"%PDF-"):
+        raise SigexError("Исходный АВР не является PDF")
+    safe_filename = re.sub(r"[^A-Za-z0-9._-]+", "_", str(filename or "AVR.pdf")).strip("._")
+    if not safe_filename.lower().endswith(".pdf"):
+        safe_filename = f"{safe_filename or 'AVR'}.pdf"
+    safe_filename = f"{safe_filename[:-4][:190] or 'AVR'}.pdf"
+    params = {
+        "fileName": safe_filename,
+        "withoutDocumentVisualization": "false",
+        "withoutSignaturesVisualization": "false",
+        "withoutQRCodesInSignaturesVisualization": "false",
+        "withoutID": "false",
+        "qrWithIDLink": "true",
+        "withLabelVerified": "true",
+        "language": "ru",
+    }
+    try:
+        response = requests.post(
+            f"{_base_url()}/api/{clean_id}/buildDDC",
+            params=params,
+            data=source,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(source)),
+            },
+            timeout=(15, 180),
+        )
+    except requests.RequestException as exc:
+        raise SigexError("SIGEX не смог сформировать подписанный PDF") from exc
+    result = _json_response(response, "формирование карточки электронного документа")
+    encoded = re.sub(r"\s+", "", str(result.get("ddc") or ""))
+    if not encoded:
+        raise SigexError("SIGEX не вернул карточку электронного документа")
+    try:
+        ddc = base64.b64decode(encoded, validate=True)
+    except ValueError as exc:
+        raise SigexError("SIGEX вернул повреждённую карточку электронного документа") from exc
+    if len(ddc) < 128 or not ddc.startswith(b"%PDF-"):
+        raise SigexError("SIGEX вернул некорректный PDF карточки электронного документа")
+    try:
+        if len(PdfReader(BytesIO(ddc), strict=False).pages) < 1:
+            raise ValueError("empty PDF")
+    except Exception as exc:
+        raise SigexError("SIGEX вернул повреждённый PDF карточки электронного документа") from exc
+    return ddc
 
 
 def get_document_signer(document_id: str, sign_id: int) -> tuple[str | None, str | None]:

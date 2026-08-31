@@ -7697,11 +7697,15 @@ function accountingSignatureButton(row, role, label, handle) {
   if (status === "signed") {
     return `<button class="accounting-sign-btn is-signed" type="button" disabled title="${label}: подпись получена" aria-label="${label}: подпись получена">✓ ${label}</button>`;
   }
-  const pending = ["sent", "signing"].includes(status);
+  const workflowError = String(row?.act_session_status || "") === "error";
+  const pending = ["sent", "signing"].includes(status) && !workflowError;
   const title = role === "customer"
     ? (pending ? "Открыть WhatsApp и повторно отправить ссылку владельцу ИП" : "Отправить владельцу ИП ссылку на подписание")
     : (pending ? "Открыть WhatsApp и повторно отправить ссылку самозанятому" : "Отправить самозанятому ссылку на подписание");
-  return `<button class="accounting-sign-btn ${pending ? "is-pending" : status === "error" ? "is-error" : ""}" type="button" data-accounting-send-signature="${handle}:${role}" title="${title}" aria-label="${title}">${label}</button>`;
+  const errorTitle = workflowError
+    ? `Подпись не завершена: ${String(row?.act_signing_error || "неизвестная ошибка")}`
+    : title;
+  return `<button class="accounting-sign-btn ${pending ? "is-pending" : (status === "error" || workflowError) ? "is-error" : ""}" type="button" data-accounting-send-signature="${handle}:${role}" title="${escapeHtml(errorTitle)}" aria-label="${escapeHtml(errorTitle)}">${label}</button>`;
 }
 
 function renderAccountingEditor(row) {
@@ -7847,7 +7851,19 @@ function renderAccountingRows(rows) {
                 ${row.has_receipt ? `<button class="ghost accounting-icon-btn ${expanded ? "is-active" : ""}" type="button" data-accounting-expand="${handle}" title="${expanded ? "Свернуть данные" : "Проверить данные"}" aria-label="${expanded ? "Свернуть данные" : "Проверить данные"}">${accountingActionIcon("edit")}</button>` : ""}
                 ${row.has_receipt && row.accounting_id ? `<button class="danger accounting-icon-btn" type="button" data-accounting-delete-receipt="${handle}" title="Удалить чек" aria-label="Удалить чек">${accountingActionIcon("delete")}</button>` : ""}
                 ${row.has_receipt && row.accounting_id && !row.has_act ? `<button class="accounting-act-btn" type="button" data-accounting-generate-act="${handle}" title="Сформировать АВР по данным чека">Сформировать АВР</button>` : ""}
-                ${row.has_act ? `<button class="ghost accounting-icon-btn accounting-act-ready" type="button" data-accounting-open-act="${handle}" title="АВР ${escapeHtml(row.act_number || "")} сформирован — открыть" aria-label="Открыть сформированный АВР">${accountingActionIcon("act")}</button>` : ""}
+                ${row.has_act ? (() => {
+                  const fullySigned = String(row.act_status || "") === "signed";
+                  const signedReady = Boolean(row.has_signed_act);
+                  const ddcError = String(row.act_ddc_status || "") === "error";
+                  const title = fullySigned
+                    ? signedReady
+                      ? `Подписанный АВР ${row.act_number || ""}: открыть PDF с обеими ЭЦП и QR`
+                      : ddcError
+                        ? `Обе подписи сохранены. Повторить формирование PDF: ${row.act_ddc_error || "ошибка SIGEX"}`
+                        : "Обе подписи сохранены. SIGEX формирует итоговый PDF"
+                    : `АВР ${row.act_number || ""} сформирован — открыть`;
+                  return `<button class="ghost accounting-icon-btn accounting-act-ready ${fullySigned && !signedReady && !ddcError ? "is-building" : ""} ${ddcError ? "is-error" : ""}" type="button" data-accounting-open-act="${handle}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${accountingActionIcon("act")}</button>`;
+                })() : ""}
                 ${row.has_act ? accountingSignatureButton(row, "customer", "ИП", handle) : ""}
                 ${row.has_act ? accountingSignatureButton(row, "contractor", "СЗ", handle) : ""}
                 ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
@@ -7861,6 +7877,8 @@ function renderAccountingRows(rows) {
               </div>
             ` : ""}
             ${refreshError ? `<div class="accounting-refresh-error" role="alert">Не удалось обновить чек: ${escapeHtml(refreshError)}</div>` : ""}
+            ${row.act_signing_error ? `<div class="accounting-refresh-error" role="alert">Подпись АВР не завершена: ${escapeHtml(row.act_signing_error)}</div>` : ""}
+            ${row.act_status === "signed" && row.act_ddc_status === "error" ? `<div class="accounting-refresh-error" role="alert">Обе подписи сохранены, но PDF SIGEX пока не сформирован: ${escapeHtml(row.act_ddc_error || "нажмите иконку АВР для повторной попытки")}</div>` : ""}
             ${expanded ? renderAccountingMembers(row) : ""}
             <div class="accounting-progress hidden" data-accounting-progress="${handle}"></div>
             ${expanded && row.has_receipt ? renderAccountingEditor(row) : ""}
@@ -8991,26 +9009,46 @@ async function openAccountingReceipt(handle) {
 async function openAccountingAct(handle) {
   const row = accountingFindRowByHandle(handle);
   if (!row?.accounting_id) throw new Error("Строка АВР не найдена");
-  const response = await fetch(`/accounting/self-employed/receipts/${row.accounting_id}/act/file`, {
-    headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
-  });
+  const filePath = `/accounting/self-employed/receipts/${row.accounting_id}/act/file`;
+  const headers = state.token ? { Authorization: `Bearer ${state.token}` } : {};
+  const popup = window.open("about:blank", "_blank");
+  if (popup) {
+    popup.document.title = "Открываем АВР…";
+    popup.document.body.textContent = row.act_status === "signed"
+      ? "Формируем подписанный PDF с обеими ЭЦП и QR…"
+      : "Открываем АВР…";
+  }
+  let response = await fetch(filePath, { headers });
+  if (response.status === 409) {
+    showToast("Обе подписи сохранены. SIGEX формирует итоговый PDF…", 5000);
+    await api(`/accounting/self-employed/receipts/${row.accounting_id}/act/ddc`, { method: "POST" });
+    for (let attempt = 0; attempt < 40 && response.status === 409; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      response = await fetch(filePath, { headers });
+    }
+  }
   if (!response.ok) {
     let detail = `Ошибка ${response.status}`;
     try { detail = (await response.json()).detail || detail; } catch (_) {}
+    if (popup && !popup.closed) popup.close();
     throw new Error(detail);
   }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank", "noopener,noreferrer");
-  if (!win) {
+  if (popup && !popup.closed) {
+    popup.location.replace(url);
+  } else {
     const link = document.createElement("a");
     link.href = url;
     link.target = "_blank";
-    link.download = row.act_number ? `${row.act_number}.pdf` : "АВР.pdf";
+    link.download = row.act_status === "signed"
+      ? `${row.act_number || "АВР"}_SIGNED_SIGEX.pdf`
+      : row.act_number ? `${row.act_number}.pdf` : "АВР.pdf";
     document.body.appendChild(link);
     link.click();
     link.remove();
   }
+  loadSelfEmployedAccounting(true).catch(() => {});
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
@@ -20160,6 +20198,12 @@ async function pollAccountingSignatureChanges() {
   const hasPending = rows.some((row) => (
     ["sent", "signing"].includes(String(row.customer_signature?.status || ""))
     || ["sent", "signing"].includes(String(row.contractor_signature?.status || ""))
+    || ["signing", "finalizing"].includes(String(row.act_session_status || ""))
+    || (
+      String(row.act_status || "") === "signed"
+      && !row.has_signed_act
+      && ["pending", "building", ""].includes(String(row.act_ddc_status || ""))
+    )
   ));
   if (!hasPending) return;
   state.accountingSignaturePollRunning = true;
@@ -20168,11 +20212,11 @@ async function pollAccountingSignatureChanges() {
     const fresh = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}&_=${Date.now()}`);
     const before = new Map(rows.map((row) => [
       Number(row.accounting_id || 0),
-      `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}`,
+      `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}:${row.act_session_status}:${row.act_signing_error || ""}:${row.act_ddc_status || ""}:${row.act_ddc_size || 0}:${row.act_ddc_error || ""}`,
     ]));
     const changed = (fresh || []).some((row) => (
       before.get(Number(row.accounting_id || 0))
-      !== `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}`
+      !== `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}:${row.act_session_status}:${row.act_signing_error || ""}:${row.act_ddc_status || ""}:${row.act_ddc_size || 0}:${row.act_ddc_error || ""}`
     ));
     if (changed) {
       state.accountingRows = fresh;

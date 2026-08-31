@@ -107,6 +107,13 @@ class SelfEmployedAccountingRead(BaseModel):
     act_size: int | None = None
     act_generated_at: datetime | None = None
     has_act: bool = False
+    has_signed_act: bool = False
+    act_ddc_status: str = "pending"
+    act_ddc_size: int | None = None
+    act_ddc_generated_at: datetime | None = None
+    act_ddc_error: str | None = None
+    act_session_status: str | None = None
+    act_signing_error: str | None = None
     customer_signature: SelfEmployedActPartyRead = Field(default_factory=SelfEmployedActPartyRead)
     contractor_signature: SelfEmployedActPartyRead = Field(default_factory=SelfEmployedActPartyRead)
 
@@ -131,6 +138,8 @@ class SelfEmployedActPublicRead(BaseModel):
     status: str
     customer_status: str
     contractor_status: str
+    signed_file_ready: bool = False
+    signed_file_status: str = "pending"
     token_expires_at: datetime
 
 
@@ -140,7 +149,13 @@ class SelfEmployedActSessionRead(BaseModel):
     qr_code: str | None = None
     egov_mobile_url: str | None = None
     egov_business_url: str | None = None
+    signed_file_ready: bool = False
+    signed_file_status: str = "pending"
     message: str | None = None
+
+
+class SelfEmployedActCmsCreate(BaseModel):
+    signature: str = Field(min_length=128, max_length=2_000_000)
 
 
 class SelfEmployedReceiptImportRead(BaseModel):

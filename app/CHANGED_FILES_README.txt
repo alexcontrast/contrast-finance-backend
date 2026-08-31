@@ -1,23 +1,17 @@
-v0.5.92 changed files
+v0.5.94 changed files (apply directly over v0.5-2.93)
 
-alembic/versions/0018_avr_esign.py
-alembic/versions/0019_avr_shared_link_contacts.py
+alembic/versions/0021_avr_signed_ddc.py
 app/api/routes/act_signing.py
 app/api/routes/self_employed_accounting.py
 app/core/config.py
-app/main.py
-app/models/self_employed_act_signature.py
 app/models/self_employed_accounting.py
-app/models/self_employed_contact.py
-app/models/__init__.py
 app/schemas/self_employed_accounting.py
 app/services/sigex_signing.py
 app/web/app.js
 app/web/index.html
 app/web/sign_avr.html
 app/web/styles.css
-requirements.txt
 CHANGELOG.md
 README.md
 
-One shared AVR link, IP WhatsApp +77021123403, reusable self-employed contacts by IIN, and automatic signer-role detection from the eGov certificate. Includes migrations 0018 and 0019.
+Permanent SIGEX DDC after two signatures, stored in PostgreSQL and served instead of the unsigned-looking source PDF.

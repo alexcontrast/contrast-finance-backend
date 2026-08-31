@@ -704,6 +704,14 @@ def _discard_generated_act(record: SelfEmployedAccounting) -> None:
     record.act_data = None
     record.act_generated_at = None
     record.act_generated_by_user_id = None
+    record.act_ddc_status = "pending"
+    record.act_ddc_filename = None
+    record.act_ddc_size = None
+    record.act_ddc_sha256 = None
+    record.act_ddc_data = None
+    record.act_ddc_generated_at = None
+    record.act_ddc_last_attempt_at = None
+    record.act_ddc_error = None
 
 
 def clean_text(value: str | None, max_length: int | None = None) -> str | None:
@@ -1095,6 +1103,18 @@ def _receipt_fields(record: SelfEmployedAccounting | None) -> dict:
         "act_size": record.act_size if record else None,
         "act_generated_at": record.act_generated_at if record else None,
         "has_act": bool(record and record.act_filename and record.act_size),
+        "has_signed_act": bool(
+            record
+            and record.act_ddc_status == "ready"
+            and record.act_ddc_filename
+            and record.act_ddc_size
+        ),
+        "act_ddc_status": record.act_ddc_status if record else "pending",
+        "act_ddc_size": record.act_ddc_size if record else None,
+        "act_ddc_generated_at": record.act_ddc_generated_at if record else None,
+        "act_ddc_error": record.act_ddc_error if record else None,
+        "act_session_status": record.act_session_status if record else None,
+        "act_signing_error": record.act_signing_error if record else None,
         "customer_signature": party("customer"),
         "contractor_signature": party("contractor"),
     }
@@ -2251,6 +2271,14 @@ def generate_accounting_act(
     record.act_data = pdf_data
     record.act_generated_at = generated_at
     record.act_generated_by_user_id = current_user.id
+    record.act_ddc_status = "pending"
+    record.act_ddc_filename = None
+    record.act_ddc_size = None
+    record.act_ddc_sha256 = None
+    record.act_ddc_data = None
+    record.act_ddc_generated_at = None
+    record.act_ddc_last_attempt_at = None
+    record.act_ddc_error = None
     record.updated_at = generated_at
     db.add(record)
     db.commit()
@@ -2263,15 +2291,29 @@ def _act_response(db: Session, record: SelfEmployedAccounting) -> Response:
             SelfEmployedAccounting.act_data,
             SelfEmployedAccounting.act_filename,
             SelfEmployedAccounting.act_content_type,
+            SelfEmployedAccounting.act_ddc_data,
+            SelfEmployedAccounting.act_ddc_filename,
+            SelfEmployedAccounting.act_ddc_status,
+            SelfEmployedAccounting.act_ddc_error,
         ).where(SelfEmployedAccounting.id == record.id)
     ).one_or_none()
     if row is None or row.act_data is None:
         raise HTTPException(status_code=404, detail="АВР ещё не сформирован")
-    filename = Path(row.act_filename or "AVR.pdf").name.replace('"', "")
+    content = row.act_data
+    filename = row.act_filename or "AVR.pdf"
+    if record.act_status == "signed":
+        if row.act_ddc_status != "ready" or row.act_ddc_data is None:
+            detail = "Подписанный PDF ещё формируется. Повторите открытие через несколько секунд"
+            if row.act_ddc_status == "error" and row.act_ddc_error:
+                detail = f"Обе подписи сохранены, но SIGEX пока не сформировал PDF: {row.act_ddc_error}"
+            raise HTTPException(status_code=409, detail=detail)
+        content = row.act_ddc_data
+        filename = row.act_ddc_filename or f"{Path(filename).stem}_SIGNED_SIGEX.pdf"
+    filename = Path(filename).name.replace('"', "")
     encoded_name = quote(filename, safe="")
     return Response(
-        content=row.act_data,
-        media_type=row.act_content_type or "application/pdf",
+        content=content,
+        media_type="application/pdf" if record.act_status == "signed" else row.act_content_type or "application/pdf",
         headers={
             "Content-Disposition": f"inline; filename=AVR.pdf; filename*=UTF-8''{encoded_name}",
             "Cache-Control": "private, no-store",
