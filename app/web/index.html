@@ -22,14 +22,12 @@
         <button id="logoutBtn" class="ghost hidden">Выйти</button>
       </div>
     </header>
-
     <main>
       <section id="loginScreen" class="card narrow auth-card">
         <img class="auth-logo" src="/web/contrast-logo.jpg" alt="Contrast" />
         <div class="auth-eyebrow">Экономика мероприятий</div>
         <h2 class="auth-title">Делаем больше, чем просто сметы</h2>
         <h3 class="auth-subtitle">Вход в систему</h3>
-
         <div class="auth-tabs" role="tablist" aria-label="Тип входа">
           <button class="auth-tab active" type="button" data-auth-mode="manager">Вход</button>
           <button class="auth-tab" type="button" data-auth-mode="admin">Админ</button>
@@ -39,7 +37,6 @@
         <label id="loginNameLabel">Имя менеджера
           <input id="loginName" autocomplete="username" placeholder="Имя" />
         </label>
-
         <label>PIN-код
           <input id="loginPin" autocomplete="current-password" type="password" placeholder="••••" />
         </label>
@@ -47,7 +44,6 @@
         <button id="loginBtn" type="button">Войти</button>
         <div id="loginError" class="error hidden"></div>
       </section>
-
       <section id="dashboardScreen" class="hidden">
         <div class="toolbar">
           <label class="month-control">Месяц
@@ -59,7 +55,6 @@
           <button id="reloadBtn" class="secondary">Обновить</button>
           <button id="changePinOpenBtn" class="ghost">Сменить PIN</button>
         </div>
-
         <section id="summaryCards" class="grid cards"></section>
 
         <section class="card">
@@ -70,7 +65,6 @@
           <div id="adminTabs" class="tabs hidden"></div>
           <div id="dashboardContent"></div>
         </section>
-
         <div id="eventModalBackdrop" class="modal-backdrop hidden">
           <div class="modal">
             <div class="modal-head">
@@ -83,7 +77,6 @@
             <div id="eventModalContent"></div>
           </div>
         </div>
-
         <div id="plansModalBackdrop" class="modal-backdrop hidden">
           <div class="modal">
             <div class="modal-head">
@@ -97,7 +90,6 @@
           </div>
         </div>
 
-
         <div id="departmentExpensesModalBackdrop" class="modal-backdrop hidden department-expenses-modal-backdrop">
           <div class="modal department-expenses-modal">
             <div class="modal-head">
@@ -110,7 +102,6 @@
             <div id="departmentExpensesModalContent"></div>
           </div>
         </div>
-
         <section id="changePinCard" class="card narrow hidden">
           <h2>Смена PIN</h2>
           <label>Старый PIN
@@ -125,7 +116,6 @@
       </section>
     </main>
   </div>
-
   <div id="loadingOverlay" class="loading-overlay hidden">
     <div class="loading-card">
       <div class="loading-dot"></div>
@@ -137,5 +127,6 @@
   </div>
 
   <script src="/web/app.js?v=0.5.103"></script>
+  <script src="/web/accounting-date-fix.js?v=0.5.104"></script>
 </body>
 </html>

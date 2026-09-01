@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
-
 from app.api.routes.departments import router as departments_router
 from app.api.routes.events import router as events_router
 from app.api.routes.event_summary import router as event_summary_router
@@ -28,12 +27,13 @@ from app.api.routes.manager_bonuses import router as manager_bonuses_router
 from app.api.routes.self_employed_accounting import router as self_employed_accounting_router
 from app.api.routes.act_signing import router as act_signing_router, public_router as public_act_signing_router
 from app.core.config import get_settings
+from app.services.accounting_receipt_date_fix import apply_accounting_receipt_date_fix
 from app.services.google_sheets_daily_export import (
     start_daily_google_sheets_export_scheduler,
     stop_daily_google_sheets_export_scheduler,
 )
 
-
+apply_accounting_receipt_date_fix()
 settings = get_settings()
 
 app = FastAPI(
@@ -51,7 +51,6 @@ async def start_background_jobs():
 @app.on_event("shutdown")
 async def stop_background_jobs():
     await stop_daily_google_sheets_export_scheduler()
-
 app.include_router(health_router)
 app.include_router(google_sheets_export_router)
 app.include_router(manager_bonuses_router)
@@ -78,7 +77,6 @@ app.include_router(app_bootstrap_router)
 app.include_router(manager_dashboard_router)
 app.include_router(users_import_router)
 app.include_router(users_manage_router)
-
 
 @app.get("/api/status")
 def root():

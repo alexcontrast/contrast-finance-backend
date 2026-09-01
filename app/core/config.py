@@ -5,7 +5,7 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.5.103"
+    VERSION: str = "0.5.104"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
@@ -13,16 +13,13 @@ class Settings:
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-change-me")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
     JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "43200"))
-
     KGD_MODE: str = os.getenv("KGD_MODE", "live")
     KGD_API_KEY: str | None = os.getenv("KGD_API_KEY")
     KGD_BASE_URL: str = os.getenv("KGD_BASE_URL", "https://portal.kgd.gov.kz")
-
     VAT_RATE: Decimal = Decimal(os.getenv("VAT_RATE", "0.16"))
     CONTRACTOR_DEDUCTION_RATE: Decimal = Decimal(os.getenv("CONTRACTOR_DEDUCTION_RATE", "0.10"))
     CONTRAST_INTERNAL_TAX_RATE: Decimal = Decimal(os.getenv("CONTRAST_INTERNAL_TAX_RATE", "0.12"))
     SIMPLIFIED_TAX_RATE: Decimal = Decimal(os.getenv("SIMPLIFIED_TAX_RATE", "0.05"))
-
 
     GOOGLE_SHEETS_EXPORT_WEBHOOK_URL: str | None = os.getenv("GOOGLE_SHEETS_EXPORT_WEBHOOK_URL") or os.getenv("GOOGLE_ARCHIVE_EXPORT_WEBHOOK_URL")
     GOOGLE_SHEETS_EXPORT_TOKEN: str | None = os.getenv("GOOGLE_SHEETS_EXPORT_TOKEN") or os.getenv("GOOGLE_ARCHIVE_EXPORT_TOKEN")
@@ -30,10 +27,8 @@ class Settings:
     GOOGLE_SHEETS_DAILY_EXPORT_ENABLED: bool = os.getenv("GOOGLE_SHEETS_DAILY_EXPORT_ENABLED", "true").lower() not in {"0", "false", "no", "off"}
     GOOGLE_SHEETS_DAILY_EXPORT_HOUR: int = int(os.getenv("GOOGLE_SHEETS_DAILY_EXPORT_HOUR", "0"))
     GOOGLE_SHEETS_DAILY_EXPORT_MINUTE: int = int(os.getenv("GOOGLE_SHEETS_DAILY_EXPORT_MINUTE", "0"))
-
     # Temporary one-time legacy migration page/API. Set before import, remove after migration.
     LEGACY_MIGRATION_TOKEN: str | None = os.getenv("LEGACY_MIGRATION_TOKEN")
-
     # Public URL used in WhatsApp signing invitations.  Railway normally
     # forwards the public host, but an explicit value keeps links stable behind
     # proxies and custom domains.
