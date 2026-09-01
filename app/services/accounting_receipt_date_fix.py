@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime, timezone
 from typing import Any
@@ -8,41 +9,24 @@ from zoneinfo import ZoneInfo
 _ASTANA_TZ = ZoneInfo("Asia/Almaty")
 
 _RU_MONTHS = {
-    "января": 1,
-    "февраля": 2,
-    "марта": 3,
-    "апреля": 4,
-    "мая": 5,
-    "июня": 6,
-    "июля": 7,
-    "августа": 8,
-    "сентября": 9,
-    "октября": 10,
-    "ноября": 11,
-    "декабря": 12,
+    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
+    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+    "январь": 1, "февраль": 2, "март": 3, "апрель": 4, "май": 5, "июнь": 6,
+    "июль": 7, "август": 8, "сентябрь": 9, "октябрь": 10, "ноябрь": 11, "декабрь": 12,
 }
+_KK_MONTHS = {
+    "қаңтар": 1, "ақпан": 2, "наурыз": 3, "сәуір": 4, "мамыр": 5, "маусым": 6,
+    "шілде": 7, "тамыз": 8, "қыркүйек": 9, "қазан": 10, "қараша": 11, "желтоқсан": 12,
+}
+_MONTHS = {**_RU_MONTHS, **_KK_MONTHS}
+_MONTH_PATTERN = "|".join(sorted((re.escape(v) for v in _MONTHS), key=len, reverse=True))
 
 _RECEIPT_CONTEXT = (
-    "check",
-    "receipt",
-    "fiscal",
-    "чек",
-    "issued",
-    "issue",
-    "sale",
-    "operation",
+    "check", "receipt", "fiscal", "чек", "issued", "issue", "sale", "operation", "document",
 )
 _BAD_CONTEXT = (
-    "response",
-    "request",
-    "server",
-    "generated",
-    "generation",
-    "updated",
-    "modified",
-    "upload",
-    "createdat",
-    "reportcreated",
+    "response", "request", "server", "generated", "generation", "updated", "modified", "upload",
+    "reportcreated", "responsecreated", "requestcreated",
 )
 
 
@@ -54,7 +38,7 @@ def _as_astana_naive(value: datetime) -> datetime:
 
 def _safe_datetime(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> datetime | None:
     try:
-        return datetime(year, month, day, hour, minute, second)
+        return datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
     except (TypeError, ValueError):
         return None
 
@@ -68,7 +52,6 @@ def _parse_numeric_timestamp(value: Any) -> datetime | None:
         return None
     if not numeric:
         return None
-    # e-Salyq/KGD APIs may expose Unix timestamps either in seconds or ms.
     if numeric > 10_000_000_000:
         numeric /= 1000.0
     if numeric < 946684800 or numeric > 4102444800:  # 2000-01-01 .. 2100-01-01
@@ -79,6 +62,66 @@ def _parse_numeric_timestamp(value: Any) -> datetime | None:
         return None
 
 
+def _normalized_key(value: Any) -> str:
+    return re.sub(r"[^a-zа-яёәғқңөұүһі0-9]+", "", str(value or "").casefold())
+
+
+def _parse_structured_datetime(value: Any) -> datetime | None:
+    """Handle Jackson/Java date objects and arrays sometimes returned by KGD."""
+    if isinstance(value, (list, tuple)):
+        parts = list(value)
+        if len(parts) >= 3:
+            try:
+                ints = [int(float(v)) for v in parts[:6]]
+            except (TypeError, ValueError):
+                ints = []
+            if len(ints) >= 3:
+                if 2000 <= ints[0] <= 2100:
+                    vals = ints + [0] * (6 - len(ints))
+                    return _safe_datetime(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+                if 2000 <= ints[2] <= 2100:
+                    vals = ints + [0] * (6 - len(ints))
+                    return _safe_datetime(vals[2], vals[1], vals[0], vals[3], vals[4], vals[5])
+        return None
+
+    if not isinstance(value, dict):
+        return None
+
+    keys = {_normalized_key(k): v for k, v in value.items()}
+
+    def pick(*aliases: str):
+        for alias in aliases:
+            key = _normalized_key(alias)
+            if key in keys and keys[key] not in {None, ""}:
+                return keys[key]
+        return None
+
+    year = pick("year", "год", "жыл")
+    month = pick("month", "monthValue", "месяц", "ай")
+    day = pick("day", "dayOfMonth", "date", "день", "күн")
+    if year is not None and month is not None and day is not None:
+        try:
+            month_value = int(month)
+        except (TypeError, ValueError):
+            month_value = _MONTHS.get(str(month).strip().casefold())
+        if month_value:
+            return _safe_datetime(
+                int(year), month_value, int(day),
+                int(pick("hour", "hours", "час", "сағат") or 0),
+                int(pick("minute", "minutes", "минута", "минут") or 0),
+                int(pick("second", "seconds", "секунда", "секунд") or 0),
+            )
+
+    # Some wrappers use {"value": "2026-08-28T13:36:00"} under a date field.
+    for alias in ("value", "dateTime", "datetime", "timestamp", "time"):
+        candidate = pick(alias)
+        if candidate is not None and candidate is not value:
+            parsed = _parse_any_datetime(candidate)
+            if parsed is not None:
+                return parsed
+    return None
+
+
 def _parse_any_datetime(value: Any) -> datetime | None:
     if value is None or value == "":
         return None
@@ -86,27 +129,27 @@ def _parse_any_datetime(value: Any) -> datetime | None:
         return _as_astana_naive(value)
     if isinstance(value, date):
         return datetime(value.year, value.month, value.day)
+    if isinstance(value, (dict, list, tuple)):
+        return _parse_structured_datetime(value)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return _parse_numeric_timestamp(value)
 
     text = str(value).strip()
     if not text:
         return None
-
     if re.fullmatch(r"\d{10,13}(?:\.\d+)?", text):
         parsed = _parse_numeric_timestamp(text)
         if parsed is not None:
             return parsed
 
-    # ISO-8601, including Z / timezone. Date-only ISO is intentionally accepted.
     iso = text.replace("Z", "+00:00")
     try:
         return _as_astana_naive(datetime.fromisoformat(iso))
     except ValueError:
         pass
     try:
-        parsed_date = date.fromisoformat(text[:10])
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text[:10]):
+            parsed_date = date.fromisoformat(text[:10])
             return datetime(parsed_date.year, parsed_date.month, parsed_date.day)
     except ValueError:
         pass
@@ -118,58 +161,61 @@ def _text_date_candidates(text: str) -> list[tuple[datetime, int, int]]:
     result: list[tuple[datetime, int, int]] = []
     if not text:
         return result
+    source = str(text).replace("\xa0", " ")
 
-    # 28 августа 2026 г., 13:36 / 28 августа 2026 г.
-    ru_pattern = re.compile(
-        r"(?<!\d)(\d{1,2})\s+"
-        r"(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\s+"
-        r"(20\d{2})(?:\s*г(?:ода)?\.?\s*)?"
-        r"(?:[,;\s]+(?:в\s*)?(\d{1,2})[:.](\d{2})(?::(\d{2}))?)?",
+    # 28 августа 2026 г., 13:36 / 28 тамыз 2026 ж. / same without time.
+    day_month_year = re.compile(
+        rf"(?<!\d)(\d{{1,2}})\s+({_MONTH_PATTERN})\s+(20\d{{2}})"
+        rf"(?:\s*(?:г(?:ода)?|ж(?:ылы)?|жылғы)?\.?\s*)?"
+        rf"(?:[,;\s]+(?:в\s*)?(\d{{1,2}})[:.](\d{{2}})(?::(\d{{2}}))?)?",
         re.IGNORECASE,
     )
-    for match in ru_pattern.finditer(text):
-        day = int(match.group(1))
-        month = _RU_MONTHS[match.group(2).lower()]
-        year = int(match.group(3))
-        hour = int(match.group(4) or 0)
-        minute = int(match.group(5) or 0)
-        second = int(match.group(6) or 0)
-        parsed = _safe_datetime(year, month, day, hour, minute, second)
+    for match in day_month_year.finditer(source):
+        month = _MONTHS.get(match.group(2).casefold())
+        parsed = _safe_datetime(
+            int(match.group(3)), month or 0, int(match.group(1)),
+            int(match.group(4) or 0), int(match.group(5) or 0), int(match.group(6) or 0),
+        )
         if parsed is not None:
             result.append((parsed, match.start(), match.end()))
 
-    # 28.08.2026 13:36 / 28-08-2026 / 28/08/2026
+    # Kazakh official style: 2026 жылғы 28 тамыз, 13:36.
+    year_day_month = re.compile(
+        rf"(?<!\d)(20\d{{2}})\s*(?:жылғы|ж\.?|г\.?|года)?\s*(\d{{1,2}})\s+({_MONTH_PATTERN})"
+        rf"(?:[,;\s]+(\d{{1,2}})[:.](\d{{2}})(?::(\d{{2}}))?)?",
+        re.IGNORECASE,
+    )
+    for match in year_day_month.finditer(source):
+        month = _MONTHS.get(match.group(3).casefold())
+        parsed = _safe_datetime(
+            int(match.group(1)), month or 0, int(match.group(2)),
+            int(match.group(4) or 0), int(match.group(5) or 0), int(match.group(6) or 0),
+        )
+        if parsed is not None:
+            result.append((parsed, match.start(), match.end()))
+
     dmy_pattern = re.compile(
         r"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](20\d{2})"
         r"(?:[T,;\s]+(\d{1,2})[:.](\d{2})(?::(\d{2}))?)?",
         re.IGNORECASE,
     )
-    for match in dmy_pattern.finditer(text):
+    for match in dmy_pattern.finditer(source):
         parsed = _safe_datetime(
-            int(match.group(3)),
-            int(match.group(2)),
-            int(match.group(1)),
-            int(match.group(4) or 0),
-            int(match.group(5) or 0),
-            int(match.group(6) or 0),
+            int(match.group(3)), int(match.group(2)), int(match.group(1)),
+            int(match.group(4) or 0), int(match.group(5) or 0), int(match.group(6) or 0),
         )
         if parsed is not None:
             result.append((parsed, match.start(), match.end()))
 
-    # 2026-08-28T13:36:00 / 2026-08-28 13:36 / 2026-08-28
     ymd_pattern = re.compile(
-        r"(?<!\d)(20\d{2})-(\d{1,2})-(\d{1,2})"
-        r"(?:[T,;\s]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?",
+        r"(?<!\d)(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})"
+        r"(?:[T,;\s]+(\d{1,2}):?(\d{2})(?::?(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?",
         re.IGNORECASE,
     )
-    for match in ymd_pattern.finditer(text):
+    for match in ymd_pattern.finditer(source):
         parsed = _safe_datetime(
-            int(match.group(1)),
-            int(match.group(2)),
-            int(match.group(3)),
-            int(match.group(4) or 0),
-            int(match.group(5) or 0),
-            int(match.group(6) or 0),
+            int(match.group(1)), int(match.group(2)), int(match.group(3)),
+            int(match.group(4) or 0), int(match.group(5) or 0), int(match.group(6) or 0),
         )
         if parsed is not None:
             result.append((parsed, match.start(), match.end()))
@@ -178,17 +224,17 @@ def _text_date_candidates(text: str) -> list[tuple[datetime, int, int]]:
 
 
 def _context_score(text: str, start: int, end: int) -> int:
-    left = text[max(0, start - 120):start].lower()
-    around = text[max(0, start - 70):min(len(text), end + 70)].lower()
+    left = text[max(0, start - 140):start].casefold()
+    around = text[max(0, start - 90):min(len(text), end + 90)].casefold()
     score = 0
-    if "чек" in around or "receipt" in around or "check" in around:
-        score += 140
-    if re.search(r"(?:^|\s)от\s*$", left[-20:]):
-        score += 60
-    if "дата чека" in around or "дата выписки" in around or "issue date" in around:
-        score += 100
-    if re.search(r"\bсоздан(?:о|а)?\b|сформирован(?:о|а)?|загружен(?:о|а)?", around):
-        score -= 120
+    if any(token in around for token in ("чек", "receipt", "check")):
+        score += 160
+    if re.search(r"(?:^|\s)от\s*$", left[-24:], re.IGNORECASE):
+        score += 70
+    if any(token in around for token in ("дата чека", "дата выписки", "issue date", "receipt date", "чек күні")):
+        score += 120
+    if re.search(r"создан(?:о|а)?|сформирован(?:о|а)?|загружен(?:о|а)?|generated|response|server", around, re.IGNORECASE):
+        score -= 150
     return score
 
 
@@ -196,89 +242,109 @@ def _best_text_datetime(text: str) -> datetime | None:
     candidates = _text_date_candidates(text or "")
     if not candidates:
         return None
-    # Prefer a date explicitly tied to a receipt/check; otherwise the earliest
-    # printed date. This prevents footer/report generation timestamps winning.
-    ranked = sorted(
-        candidates,
-        key=lambda item: (_context_score(text, item[1], item[2]), -item[1]),
-        reverse=True,
-    )
+    ranked = sorted(candidates, key=lambda item: (_context_score(text, item[1], item[2]), -item[1]), reverse=True)
     return ranked[0][0]
 
 
 def _path_score(path: str) -> int | None:
-    normalized = re.sub(r"[^a-zа-я0-9]+", "", (path or "").lower())
+    normalized = _normalized_key(path)
     if not normalized:
         return None
-    has_date_signal = any(token in normalized for token in ("date", "time", "дата", "время", "created", "issued", "issue"))
+    has_date_signal = any(token in normalized for token in ("date", "time", "дата", "время", "created", "issued", "issue", "timestamp", "күн"))
     if not has_date_signal:
         return None
 
     score = 0
     if any(token in normalized for token in _RECEIPT_CONTEXT):
-        score += 140
-    if any(token in normalized for token in ("issued", "issue", "checkdate", "receiptdate", "fiscaldate")):
-        score += 100
-    if any(token in normalized for token in ("operation", "sale")):
-        score += 35
-
+        score += 150
+    if any(token in normalized for token in (
+        "receiptdatetime", "checkdatetime", "receiptdate", "checkdate", "fiscaldate",
+        "issuedat", "issueddate", "issuedtime", "documentdatetime", "operationdatetime",
+    )):
+        score += 130
+    if any(token in normalized for token in ("issued", "issue", "operation", "sale")):
+        score += 45
     if any(token in normalized for token in _BAD_CONTEXT):
-        score -= 180
+        score -= 220
 
-    # A bare create_date/createDate is not trustworthy. KGD can use it for the
-    # generated report/response time; accept create only when nested under an
-    # explicit receipt/check/fiscal context.
     has_create = "create" in normalized or "created" in normalized
-    has_receipt_context = any(token in normalized for token in ("check", "receipt", "fiscal", "чек"))
+    has_receipt_context = any(token in normalized for token in ("check", "receipt", "fiscal", "чек", "document"))
     if has_create and not has_receipt_context:
         return None
 
-    # Generic top-level "date"/"datetime" is weaker but can still be the only
-    # field in compact KGD payloads. It must beat no candidate, not a receipt one.
-    if score == 0 and normalized in {"date", "datetime", "dateandtime", "datetimevalue"}:
+    if score == 0 and normalized in {"date", "datetime", "dateandtime", "datetimevalue", "timestamp", "createdate"}:
         score = 10
     if score <= -100:
         return None
     return score
 
 
+def _container_receipt_score(value: Any) -> int:
+    if not isinstance(value, dict):
+        return 0
+    keys = {_normalized_key(key) for key in value.keys()}
+    joined = " ".join(keys)
+    score = 0
+    if any(token in joined for token in ("check", "receipt", "fiscal", "чек")):
+        score += 70
+    if any(token in joined for token in ("iin", "bin", "seller", "executor", "taxpayer", "total", "amount", "service", "item")):
+        score += 35
+    return score
+
+
 def _find_json_receipt_datetime(accounting: Any, payload: Any) -> datetime | None:
     candidates: list[tuple[int, datetime, str]] = []
-    try:
-        flat = accounting._flatten_json(payload)
-    except Exception:
-        flat = []
 
-    for path, value in flat:
-        score = _path_score(str(path))
-        if score is not None:
+    def walk(node: Any, path: str = "", inherited_score: int = 0) -> None:
+        local_score = inherited_score + _container_receipt_score(node)
+        if path:
+            score = _path_score(path)
+            if score is not None:
+                parsed = _parse_any_datetime(node)
+                if parsed is not None:
+                    candidates.append((score + min(local_score, 80), parsed, path))
+
+        if isinstance(node, dict):
+            for key, child in node.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                walk(child, child_path, min(local_score, 80))
+        elif isinstance(node, list):
+            for index, child in enumerate(node):
+                walk(child, f"{path}[{index}]", min(local_score, 80))
+        elif isinstance(node, str):
+            lowered = node.casefold()
+            looks_like_receipt_text = (
+                any(token in lowered for token in ("чек", "receipt", "check"))
+                or bool(re.search(r"\bот\s+\d{1,2}(?:[./-]|\s+[а-яёәғқңөұүһі]+)", lowered, re.IGNORECASE))
+                or "жылғы" in lowered
+            )
+            if looks_like_receipt_text:
+                parsed = _best_text_datetime(node)
+                if parsed is not None:
+                    text_score = 190 if any(token in lowered for token in ("чек", "receipt", "check")) else 110
+                    candidates.append((text_score + min(local_score, 50), parsed, path))
+
+    walk(payload)
+
+    # Keep compatibility with route-specific flattening and catch unusual key wrappers.
+    try:
+        for path, value in accounting._flatten_json(payload):
+            score = _path_score(str(path))
+            if score is None:
+                continue
             parsed = _parse_any_datetime(value)
             if parsed is not None:
                 candidates.append((score, parsed, str(path)))
-
-        # Some API fields contain a whole human-readable receipt/HTML fragment.
-        # Do not treat an arbitrary ISO string as receipt text: that is exactly
-        # how technical response timestamps used to become today's receipt date.
-        if isinstance(value, str):
-            value_text = value.lower()
-            looks_like_receipt_text = (
-                "чек" in value_text
-                or "receipt" in value_text
-                or "check" in value_text
-                or bool(re.search(r"\bот\s+\d{1,2}(?:[.\/-]|\s+[а-яё]+)", value_text, re.I))
-            )
-            if looks_like_receipt_text:
-                text_dt = _best_text_datetime(value)
-                if text_dt is not None:
-                    text_score = 170 if any(token in value_text for token in ("чек", "receipt", "check")) else 90
-                    candidates.append((text_score, text_dt, str(path)))
+    except Exception:
+        pass
 
     if not candidates:
-        # A JSON dump may contain many machine timestamps. Only use a textual
-        # fallback when the payload itself clearly contains receipt/check text.
-        raw_text = str(payload)
-        lowered = raw_text.lower()
-        if any(token in lowered for token in ("чек", "receipt", "check")):
+        try:
+            raw_text = json.dumps(payload, ensure_ascii=False, default=str)
+        except Exception:
+            raw_text = str(payload)
+        lowered = raw_text.casefold()
+        if any(token in lowered for token in ("чек", "receipt", "check", "жылғы")):
             return _best_text_datetime(raw_text)
         return None
 
@@ -286,17 +352,108 @@ def _find_json_receipt_datetime(accounting: Any, payload: Any) -> datetime | Non
     return candidates[0][1]
 
 
-def apply_accounting_receipt_date_fix() -> None:
-    """Patch v0.5.103 accounting date helpers without replacing its large route.
+def _letter_count(value: str) -> int:
+    return sum(1 for char in str(value or "") if char.isalpha())
 
-    This is intentionally a small compatibility layer so the v0.5.103 SIGEX/
-    eGov/R-1 changes remain untouched while receipt-date handling is corrected.
+
+def _trim_person_candidate(value: str) -> str:
+    text = " ".join(str(value or "").replace("\xa0", " ").split()).strip()
+    allowed_edge = {".", "'", "’", "-"}
+    while text and not (text[0].isalpha() or text[0] in allowed_edge):
+        text = text[1:]
+    while text and not (text[-1].isalpha() or text[-1] in allowed_edge):
+        text = text[:-1]
+    return text.strip()
+
+
+def _looks_like_person_name(value: str) -> bool:
+    clean = _trim_person_candidate(value)
+    if not clean or any(char.isdigit() for char in clean):
+        return False
+    lowered = clean.casefold()
+    reject = (
+        "режим", "налогооблож", "самозанят", "бин", "чек", "receipt", "итого", "платеж", "платёж",
+        "наличн", "безналичн", "банк", "кбе", "иик", "contrast event", "қорытынды", "төлем",
+    )
+    if any(token in lowered for token in reject):
+        return False
+    words = [part for part in clean.split() if part]
+    return 2 <= len(words) <= 6 and _letter_count(clean) >= 6
+
+
+def _extract_unicode_name_from_text(raw_text: str) -> str | None:
+    text = str(raw_text or "").replace("\xa0", " ").replace("\r", "")
+    lines = [" ".join(line.split()).strip() for line in text.split("\n") if line.strip()]
+    iin_index = next((i for i, line in enumerate(lines) if re.search(r"(?:ИИН|IIN|ЖСН)", line, re.IGNORECASE)), -1)
+    if iin_index < 0:
+        return None
+    indexes = list(range(iin_index + 1, min(len(lines), iin_index + 6)))
+    indexes += list(range(iin_index - 1, max(-1, iin_index - 5), -1))
+    for index in indexes:
+        candidate = _trim_person_candidate(lines[index])
+        if _looks_like_person_name(candidate):
+            return candidate
+    return None
+
+
+def _extract_unicode_service_from_text(raw_text: str) -> str | None:
+    text = str(raw_text or "").replace("\xa0", " ").replace("\r", "")
+    lines = [" ".join(line.split()).strip() for line in text.split("\n") if line.strip()]
+    total_index = next((i for i, line in enumerate(lines) if re.search(r"^(?:итого|total|барлығы|қорытынды)\b", line, re.IGNORECASE)), -1)
+    payment_index = next((i for i, line in enumerate(lines) if re.search(r"безналичн|наличн|текущ(?:ий)?\s+плат[её]ж|способ\s+оплаты|төлем", line, re.IGNORECASE)), -1)
+    end = total_index if total_index > 0 else len(lines)
+    start = payment_index + 1 if payment_index >= 0 else max(0, end - 8)
+    amount_tail = re.compile(r"\s+[0-9][0-9\s.,]{0,18}\s*(?:₸|тг|тенге|теңге|T\b)\s*$", re.IGNORECASE)
+    candidates: list[str] = []
+    for raw_line in lines[start:end]:
+        if not amount_tail.search(raw_line):
+            continue
+        line = amount_tail.sub("", raw_line).strip()
+        lowered = line.casefold()
+        if any(token in lowered for token in ("иин", "жсн", "бин", "чек", "receipt", "итого", "режим", "самозанят", "ип ", "қорытынды")):
+            continue
+        if _letter_count(line) >= 3:
+            candidates.append(line)
+    return " ".join(candidates).strip() or None
+
+
+def _extract_json_unicode_name(accounting: Any, payload: Any) -> str | None:
+    try:
+        rows = accounting._flatten_json(payload)
+    except Exception:
+        return None
+    candidates: list[tuple[int, str]] = []
+    for path, value in rows:
+        if not isinstance(value, str):
+            continue
+        normalized = _normalized_key(path)
+        if any(token in normalized for token in ("customer", "buyer")):
+            continue
+        has_name = any(token in normalized for token in ("fullname", "fio", "name", "атжөні", "атыжөні"))
+        has_party = any(token in normalized for token in ("seller", "executor", "taxpayer", "individual", "person", "ip", "contractor"))
+        if not has_name:
+            continue
+        candidate = _trim_person_candidate(value)
+        if not _looks_like_person_name(candidate) or "contrast event" in candidate.casefold():
+            continue
+        score = 100 if has_party else 20
+        candidates.append((score, candidate))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1] if candidates else None
+
+
+def apply_accounting_receipt_date_fix() -> None:
+    """Patch current accounting helpers without replacing the large v0.5.103 route.
+
+    v0.5.105 extends the v0.5.104 date repair with KGD date-shape support and
+    full Unicode/Kazakh handling. The QR/KGD response remains authoritative.
     """
     from app.api.routes import self_employed_accounting as accounting
 
-    if getattr(accounting, "_receipt_date_fix_v0104", False):
+    if getattr(accounting, "_receipt_data_fix_v0105", False):
         return
 
+    original_parse_text = accounting._parse_esalyq_report_text
     original_parse_json = accounting._parse_esalyq_json
     original_build_row = accounting.build_row
 
@@ -309,24 +466,40 @@ def apply_accounting_receipt_date_fix() -> None:
         parsed = _parse_any_datetime(value)
         if parsed is not None:
             return parsed
-        # Preserve the route's existing API contract for invalid manual input.
         raise accounting.HTTPException(status_code=422, detail="Некорректная дата чека")
+
+    def patched_parse_esalyq_report_text(raw_text: str) -> dict[str, Any]:
+        result = dict(original_parse_text(raw_text) or {})
+        receipt_dt = _best_text_datetime(raw_text or "")
+        if receipt_dt is not None:
+            result["receipt_datetime"] = receipt_dt
+        contractor = _extract_unicode_name_from_text(raw_text or "")
+        if contractor:
+            result["contractor_full_name"] = contractor
+        service = _extract_unicode_service_from_text(raw_text or "")
+        if service:
+            result["service_name"] = service
+        return result
 
     def patched_parse_esalyq_json(payload: Any) -> dict[str, Any]:
         result = dict(original_parse_json(payload) or {})
-        # Never trust the old generic create_date fallback. Only an explicitly
-        # receipt/check-related field or the printed receipt text may set it.
+        # Never keep the old generic create_date result. Re-select from a
+        # receipt/check-context field, structured LocalDateTime, or printed text.
         result.pop("receipt_datetime", None)
         receipt_dt = _find_json_receipt_datetime(accounting, payload)
         if receipt_dt is not None:
             result["receipt_datetime"] = receipt_dt
+
+        # Prefer the exact Unicode value delivered by KGD when available. This
+        # preserves Ә Ғ Қ Ң Ө Ұ Ү Һ І instead of filtering them as non-Russian.
+        contractor = _extract_json_unicode_name(accounting, payload)
+        if contractor:
+            result["contractor_full_name"] = contractor
         return result
 
     def patched_build_row(*args: Any, **kwargs: Any):
         row = original_build_row(*args, **kwargs)
-        # Do not present upload time as if it were the receipt issue date. This
-        # changes display semantics only; a request without a receipt date can
-        # still be found in its event month until QR refresh repairs it.
+        # Never display upload time as the legal receipt issue date.
         if getattr(row, "has_receipt", False) and not getattr(row, "receipt_datetime", None):
             updates = {"receipt_uploaded_at": None}
             if getattr(row, "is_receipt_only", False):
@@ -339,6 +512,8 @@ def apply_accounting_receipt_date_fix() -> None:
 
     accounting._parse_report_datetime = patched_parse_report_datetime
     accounting.clean_datetime = patched_clean_datetime
+    accounting._parse_esalyq_report_text = patched_parse_esalyq_report_text
     accounting._parse_esalyq_json = patched_parse_esalyq_json
     accounting.build_row = patched_build_row
     accounting._receipt_date_fix_v0104 = True
+    accounting._receipt_data_fix_v0105 = True
