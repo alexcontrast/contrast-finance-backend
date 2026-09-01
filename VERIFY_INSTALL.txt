@@ -1,0 +1,11 @@
+Contrast Finance v0.5.107 verification
+
+After Railway deploy open:
+/api/status
+
+Expected JSON field:
+"version": "0.5.107"
+
+If it still says 0.5.103/0.5.106, the app files were not replaced.
+
+Then hard refresh and click "Обновить" in Accounting for the month containing the bad receipt rows.

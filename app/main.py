@@ -27,13 +27,13 @@ from app.api.routes.manager_bonuses import router as manager_bonuses_router
 from app.api.routes.self_employed_accounting import router as self_employed_accounting_router
 from app.api.routes.act_signing import router as act_signing_router, public_router as public_act_signing_router
 from app.core.config import get_settings
-from app.services.accounting_receipt_date_fix import apply_accounting_receipt_date_fix
+from app.services.accounting_receipt_data_fix import apply_accounting_receipt_data_fix
 from app.services.google_sheets_daily_export import (
     start_daily_google_sheets_export_scheduler,
     stop_daily_google_sheets_export_scheduler,
 )
 
-apply_accounting_receipt_date_fix()
+apply_accounting_receipt_data_fix()
 settings = get_settings()
 
 app = FastAPI(
