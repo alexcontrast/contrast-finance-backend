@@ -1,15 +1,13 @@
-v0.5.103 changed files (apply directly over v0.5-2.102)
+v0.5.106 cumulative changed files (base: v0.5.103)
 
-app/api/routes/act_signing.py
-app/api/routes/self_employed_accounting.py
-app/core/config.py
-app/schemas/self_employed_accounting.py
-app/services/sigex_signing.py
-app/web/app.js
+app/main.py
+app/services/accounting_receipt_date_fix.py
+app/web/accounting-date-fix.js
 app/web/index.html
-app/web/sign_avr.html
-app/web/styles.css
-CHANGELOG.md
+app/core/config.py
+app/CHANGED_FILES_README.txt
 README.md
+CHANGELOG.md
 
-Keep the AVR page URL permanent, use a real mobile eGov deep-link, retry interrupted SIGEX waits, and remove selected requests only from Accounting. No database migration.
+This package intentionally includes all v0.5.104 + v0.5.105 receipt-date/Kazakh-Unicode fixes so it can be applied directly over v0.5.103.
+No database migration is required.
