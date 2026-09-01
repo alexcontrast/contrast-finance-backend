@@ -82,6 +82,19 @@ def _fresh_signature_required(message: str | None) -> bool:
     )
 
 
+def _egov_session_unusable(message: str | None) -> bool:
+    text = str(message or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "invalid qr signing state",
+            "временная сессия egov закончилась",
+            "сессия egov истекла",
+            "подписание отменено",
+        )
+    )
+
+
 def _whatsapp_phone(value: str | None) -> str | None:
     digits = _digits(value)
     if len(digits) == 11 and digits.startswith("8"):
@@ -201,12 +214,13 @@ def _signature_status(
         record.act_status = "generated"
 
 
-def _ensure_shared_token(record: SelfEmployedAccounting, now: datetime) -> None:
-    expired = bool(record.act_signing_token_expires_at and record.act_signing_token_expires_at <= now)
-    if not record.act_signing_token or (expired and record.act_status != "signed"):
+def _ensure_shared_token(record: SelfEmployedAccounting, _now: datetime) -> None:
+    # This is the durable Contrast Finance page URL, not the one-time eGov QR
+    # operation. Keep it stable for the complete AVR lifecycle; the page creates
+    # a fresh short-lived SIGEX session whenever another signature is needed.
+    if not record.act_signing_token:
         record.act_signing_token = secrets.token_urlsafe(32)
-    if record.act_status != "signed":
-        record.act_signing_token_expires_at = now + INVITE_TTL
+    record.act_signing_token_expires_at = None
 
 
 def _whatsapp_message(record: SelfEmployedAccounting, role: str, signing_url: str) -> str:
@@ -327,12 +341,6 @@ def create_act_invite(
 
 
 def _public_info(record: SelfEmployedAccounting) -> SelfEmployedActPublicRead:
-    if (
-        record.act_signing_token_expires_at
-        and record.act_signing_token_expires_at <= datetime.utcnow()
-        and record.act_status != "signed"
-    ):
-        raise HTTPException(status_code=410, detail="Срок ссылки истёк. Запросите новую ссылку в бухгалтерии")
     customer = _signature_for_role(record, "customer")
     contractor = _signature_for_role(record, "contractor")
     return SelfEmployedActPublicRead(
@@ -345,7 +353,7 @@ def _public_info(record: SelfEmployedAccounting) -> SelfEmployedActPublicRead:
         contractor_status=str(contractor.status if contractor else "not_sent"),
         signed_file_ready=_signed_file_ready(record),
         signed_file_status=str(record.act_ddc_status or "pending"),
-        token_expires_at=record.act_signing_token_expires_at or datetime.utcnow(),
+        token_expires_at=None,
     )
 
 
@@ -827,6 +835,7 @@ def _process_signature(accounting_id: int) -> None:
                     act_number=str(record.act_number or "АВР"),
                     contractor_name=str(record.contractor_full_name or "Самозанятый"),
                     amount_text=f"{Decimal(record.receipt_amount or 0):,.2f} ₸".replace(",", " "),
+                    session_expires_at=record.act_session_expires_at,
                 )
             else:
                 return
@@ -915,7 +924,7 @@ def start_act_session(token: str, request: Request, db: Session = Depends(get_db
         and record.act_session_expires_at > now
         and record.act_sigex_data_url
         and record.act_sigex_sign_url
-        and "отменено" not in str(record.act_signing_error or "").lower()
+        and not _egov_session_unusable(record.act_signing_error)
     ):
         # A network interruption may happen after the person has already
         # signed in eGov. Reuse the still-valid one-time operation and retrieve

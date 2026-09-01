@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 from io import BytesIO
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -20,6 +22,12 @@ from app.core.config import get_settings
 
 class SigexError(RuntimeError):
     pass
+
+
+EGOV_SESSION_ENDED_MESSAGE = (
+    "Временная сессия eGov закончилась. Исходная ссылка АВР остаётся действующей — "
+    "откройте её и запустите eGov Mobile ещё раз."
+)
 
 
 _CMS_PEM_BOUNDARY = re.compile(
@@ -130,6 +138,7 @@ def wait_for_egov_signature(
     act_number: str,
     contractor_name: str,
     amount_text: str,
+    session_expires_at: datetime | None = None,
 ) -> str:
     payload = {
         "signMethod": "CMS_SIGN_ONLY",
@@ -152,22 +161,67 @@ def wait_for_egov_signature(
             }
         ],
     }
-    try:
-        post_response = requests.post(
-            _trusted_sigex_url(data_url),
-            json=payload,
-            timeout=(15, 420),
-        )
-    except requests.RequestException as exc:
-        raise SigexError("eGov не забрал документ на подписание вовремя") from exc
-    post_data = _json_response(post_response, "отправка документа в eGov")
-    result_url = _trusted_sigex_url(post_data.get("signURLAuto") or post_data.get("signURL") or sign_url)
+    def remaining_seconds() -> float | None:
+        if session_expires_at is None:
+            return None
+        return (session_expires_at - datetime.utcnow()).total_seconds()
 
-    try:
-        sign_response = requests.get(result_url, timeout=(15, 600))
-    except requests.RequestException as exc:
-        raise SigexError("Не получен результат подписания из eGov") from exc
-    result = _json_response(sign_response, "получение подписи eGov")
+    def request_json(method: str, url: str, *, action: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Repeat interrupted long polls while this exact one-time session is valid."""
+        trusted_url = _trusted_sigex_url(url)
+        while True:
+            remaining = remaining_seconds()
+            if remaining is not None and remaining <= 2:
+                raise SigexError(EGOV_SESSION_ENDED_MESSAGE)
+            connect_timeout = 15
+            read_timeout = 120
+            if remaining is not None:
+                request_budget = max(1, int(remaining - 1))
+                connect_timeout = min(connect_timeout, request_budget)
+                read_timeout = min(read_timeout, request_budget)
+            try:
+                if method == "POST":
+                    response = requests.post(
+                        trusted_url,
+                        json=json,
+                        timeout=(connect_timeout, read_timeout),
+                    )
+                else:
+                    response = requests.get(
+                        trusted_url,
+                        timeout=(connect_timeout, read_timeout),
+                    )
+            except requests.RequestException as exc:
+                remaining = remaining_seconds()
+                if remaining is None:
+                    legacy = (
+                        "eGov не забрал документ на подписание вовремя"
+                        if method == "POST"
+                        else "Не получен результат подписания из eGov"
+                    )
+                    raise SigexError(legacy) from exc
+                if remaining <= 3:
+                    raise SigexError(EGOV_SESSION_ENDED_MESSAGE) from exc
+                # A lost HTTP response does not invalidate the SIGEX operation.
+                # Retrying the same one-time URL is explicitly supported; a
+                # short pause also prevents a tight loop on an offline gateway.
+                time.sleep(min(2.0, max(0.25, remaining - 2)))
+                continue
+            try:
+                return _json_response(response, action)
+            except SigexError as exc:
+                if "invalid qr signing state" in str(exc).lower():
+                    raise SigexError(EGOV_SESSION_ENDED_MESSAGE) from exc
+                raise
+
+    post_data = request_json(
+        "POST",
+        data_url,
+        action="отправка документа в eGov",
+        json=payload,
+    )
+    result_url = _trusted_sigex_url(post_data.get("signURLAuto") or post_data.get("signURL") or sign_url)
+    result = request_json("GET", result_url, action="получение подписи eGov")
     if str(result.get("status") or "").upper() == "CANCELED":
         raise SigexError("Подписание отменено в eGov")
     documents = result.get("documentsToSign")

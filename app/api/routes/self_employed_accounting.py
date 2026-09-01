@@ -1950,6 +1950,71 @@ def detach_request_from_receipt(
     return load_accounting_row(db, target.id)
 
 
+@router.delete("/requests/{request_id}")
+def hide_self_employed_request_from_accounting(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove one request from Accounting without deleting it from the event."""
+    require_accounting_access(current_user)
+    request, _ = get_request_or_404(
+        db,
+        request_id,
+        require_active=False,
+        require_visible=True,
+    )
+    request = db.execute(
+        select(PaymentRequest)
+        .where(PaymentRequest.id == request.id)
+        .with_for_update()
+    ).scalar_one()
+
+    target = find_record_for_request(db, request.id)
+    standalone_receipt_id: int | None = None
+    if target is not None:
+        target = get_record_or_404(db, target.id, lock=True)
+        _assert_act_mutable(target)
+        _discard_generated_act(target)
+        link = db.execute(
+            select(SelfEmployedAccountingRequest).where(
+                SelfEmployedAccountingRequest.accounting_id == target.id,
+                SelfEmployedAccountingRequest.payment_request_id == request.id,
+            )
+        ).scalar_one_or_none()
+        if link is not None:
+            db.delete(link)
+        if target.payment_request_id == request.id:
+            target.payment_request_id = None
+        target.confirmed_at = None
+        target.confirmed_by_user_id = None
+        if target.parse_status == "reviewed":
+            target.parse_status = "parsed"
+        target.updated_at = datetime.utcnow()
+        db.flush()
+        remaining_link = db.execute(
+            select(SelfEmployedAccountingRequest.id).where(
+                SelfEmployedAccountingRequest.accounting_id == target.id
+            ).limit(1)
+        ).scalar_one_or_none()
+        if remaining_link is None and not record_has_business_data(target):
+            db.delete(target)
+        else:
+            if remaining_link is None and target.receipt_filename:
+                standalone_receipt_id = target.id
+            db.add(target)
+
+    request.self_employed_accounting_visible = False
+    request.updated_at = datetime.utcnow()
+    db.add(request)
+    db.commit()
+    return {
+        "ok": True,
+        "removed_request_id": request.id,
+        "standalone_receipt_id": standalone_receipt_id,
+    }
+
+
 @router.delete("/receipts/{accounting_id}")
 def delete_accounting_receipt(
     accounting_id: int,

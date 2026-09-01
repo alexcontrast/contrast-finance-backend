@@ -144,7 +144,9 @@ class SelfEmployedActPublicRead(BaseModel):
     contractor_status: str
     signed_file_ready: bool = False
     signed_file_status: str = "pending"
-    token_expires_at: datetime
+    # The Contrast Finance page link is permanent. Only the eGov/SIGEX session
+    # created from that page has a short expiration time.
+    token_expires_at: datetime | None = None
 
 
 class SelfEmployedActSessionRead(BaseModel):

@@ -15199,6 +15199,20 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   font-size: 11px;
 }
 
+.accounting-member-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.accounting-hide-request-btn,
+.accounting-actions .accounting-request-remove-btn {
+  color: #9b352b;
+  border-color: rgba(190, 67, 51, .32);
+  background: #fff7f4;
+}
+
 .accounting-batch-backdrop {
   position: fixed;
   inset: 0;
@@ -15332,7 +15346,7 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
   .accounting-drop-hint { margin-left: 11px; margin-right: 11px; }
   .accounting-member { grid-template-columns: 54px minmax(0, 1fr); }
   .accounting-member strong { grid-column: 2; text-align: left; }
-  .accounting-member .accounting-detach-btn { grid-column: 2; justify-self: start; }
+  .accounting-member-actions { grid-column: 2; justify-self: start; }
   .accounting-batch-backdrop { padding: 10px; }
   .accounting-batch-modal { width: 100%; max-height: 94vh; border-radius: 18px; padding: 14px; }
   .accounting-batch-item { grid-template-columns: 1fr; gap: 3px; }

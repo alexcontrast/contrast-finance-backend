@@ -31,7 +31,7 @@
     .status.bad { color: #8a2b22; background: #fff0ec; }
     @media (max-width: 500px) { .card { padding: 18px; border-radius: 18px; } .summary { grid-template-columns: 1fr; } }
     @media (max-width: 820px), (hover: none) and (pointer: coarse) {
-      #ncalayerBtn, #desktopNote { display: none !important; }
+      #startBtn, #ncalayerBtn, #desktopNote { display: none !important; }
     }
   </style>
 </head>
@@ -47,7 +47,8 @@
       <div><small id="contractorLabel">Самозанятый</small><strong id="contractorStatus">Ожидается</strong></div>
     </section>
     <section class="actions">
-      <button id="startBtn" type="button" hidden>Подписать через eGov Mobile</button>
+      <a id="egovLaunchBtn" class="button" href="#" hidden>Открыть eGov Mobile</a>
+      <button id="startBtn" type="button" hidden>Показать QR для eGov Mobile</button>
       <button id="ncalayerBtn" class="secondary" type="button" hidden>Подписать ЭЦП через NCALayer</button>
       <a id="previewBtn" class="button secondary preview" href="#" target="_blank" rel="noopener" hidden>Открыть АВР</a>
     </section>
@@ -70,6 +71,8 @@
         || Math.min(Number(screen.width || 9999), Number(screen.height || 9999)) <= 820;
       let timer = null;
       let currentInfo = null;
+      let mobileLaunchUrl = "";
+      let mobileSessionPreparing = null;
 
       const money = (value) => `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value || 0))} ₸`;
       const setStatus = (text, type = "") => { $("status").textContent = text; $("status").className = `status ${type}`.trim(); };
@@ -78,7 +81,24 @@
       const setSigningButtonsDisabled = (value) => {
         $("startBtn").disabled = value;
         $("ncalayerBtn").disabled = value;
+        $("egovLaunchBtn").setAttribute("aria-disabled", value ? "true" : "false");
       };
+
+      function clearMobileLaunch() {
+        mobileLaunchUrl = "";
+        $("egovLaunchBtn").href = "#";
+        $("egovLaunchBtn").setAttribute("aria-disabled", "true");
+      }
+
+      function setMobileLaunch(url, secondParty = false) {
+        mobileLaunchUrl = String(url || "");
+        $("egovLaunchBtn").href = mobileLaunchUrl || "#";
+        $("egovLaunchBtn").hidden = !isMobile;
+        $("egovLaunchBtn").setAttribute("aria-disabled", mobileLaunchUrl ? "false" : "true");
+        $("egovLaunchBtn").textContent = mobileLaunchUrl
+          ? (secondParty ? "Открыть eGov Mobile для второй подписи" : "Открыть eGov Mobile")
+          : "Готовим eGov Mobile…";
+      }
 
       async function request(path, options) {
         const response = await fetch(`/sign/avr/${encodeURIComponent(token)}${path}`, options);
@@ -122,20 +142,25 @@
 
       function showReady(secondParty = false) {
         $("signBox").classList.remove("visible");
-        $("startBtn").hidden = false;
+        $("startBtn").hidden = isMobile;
         $("startBtn").disabled = false;
-        $("startBtn").textContent = isMobile
-          ? (secondParty ? "Подписать второй стороной в eGov Mobile" : "Подписать через eGov Mobile")
-          : (secondParty ? "QR для подписи второй стороны" : "Показать QR для eGov Mobile");
+        $("startBtn").textContent = secondParty ? "QR для подписи второй стороны" : "Показать QR для eGov Mobile";
         $("ncalayerBtn").hidden = isMobile;
         $("ncalayerBtn").disabled = false;
         $("ncalayerBtn").textContent = "Подписать ЭЦП через NCALayer";
         $("desktopNote").hidden = isMobile;
+        if (isMobile) {
+          setMobileLaunch(mobileLaunchUrl, secondParty);
+          prepareMobileSession(secondParty);
+        } else {
+          $("egovLaunchBtn").hidden = true;
+        }
       }
 
-      function renderSession(data, options = {}) {
-        const allowMobileLaunch = Boolean(options.allowMobileLaunch);
+      function renderSession(data) {
         if (data.status === "document_building" || data.status === "document_error") {
+          clearMobileLaunch();
+          $("egovLaunchBtn").hidden = true;
           $("startBtn").hidden = true;
           $("ncalayerBtn").hidden = true;
           $("desktopNote").hidden = true;
@@ -151,6 +176,8 @@
         }
         if (data.status === "signed") {
           stopPolling();
+          clearMobileLaunch();
+          $("egovLaunchBtn").hidden = true;
           $("startBtn").hidden = true;
           $("ncalayerBtn").hidden = true;
           $("desktopNote").hidden = true;
@@ -161,6 +188,7 @@
         }
         if (data.status === "partially_signed") {
           stopPolling();
+          clearMobileLaunch();
           refreshInfo().catch(() => {});
           showReady(true);
           setStatus("Первая подпись получена. Документ готов для подписи второй стороны.", "ok");
@@ -168,14 +196,19 @@
         }
         if (data.status === "error") {
           stopPolling();
+          clearMobileLaunch();
           showReady(false);
-          $("startBtn").textContent = data.fresh_signature_required
-            ? (isMobile ? "Подписать заново через eGov Mobile" : "Создать новый QR для подписи")
-            : "Повторить завершение подписи";
+          if (!isMobile) {
+            $("startBtn").textContent = data.fresh_signature_required
+              ? "Создать новый QR для подписи"
+              : "Повторить завершение подписи";
+          }
           setStatus(data.message || "Подписание не завершено. Повторите попытку.", "bad");
           return;
         }
         if (data.status === "finalizing") {
+          clearMobileLaunch();
+          $("egovLaunchBtn").hidden = true;
           $("signBox").classList.remove("visible");
           $("startBtn").hidden = true;
           $("ncalayerBtn").hidden = true;
@@ -191,20 +224,17 @@
             $("startBtn").hidden = true;
             $("ncalayerBtn").hidden = true;
             $("desktopNote").hidden = true;
-            if (allowMobileLaunch) {
-              if (!data.egov_mobile_url) {
-                stopPolling();
-                showReady(false);
-                setStatus("eGov не вернул ссылку для запуска мобильного приложения.", "bad");
-                return;
-              }
-              setStatus("Открываем eGov Mobile… После подписи вернитесь на эту страницу.");
-              window.setTimeout(() => location.assign(data.egov_mobile_url), 120);
-            } else {
-              setStatus("Ожидаем результат из eGov Mobile…");
+            if (!data.egov_mobile_url) {
+              clearMobileLaunch();
+              $("egovLaunchBtn").hidden = true;
+              setStatus("eGov не вернул ссылку для запуска мобильного приложения.", "bad");
+              return;
             }
+            setMobileLaunch(data.egov_mobile_url, currentInfo?.status === "partially_signed");
+            setStatus("Нажмите кнопку, подпишите документ в eGov Mobile и вернитесь на эту страницу.");
             return;
           }
+          $("egovLaunchBtn").hidden = true;
           if (data.qr_code) {
             $("qr").src = data.qr_code;
             $("signBox").classList.add("visible");
@@ -216,6 +246,25 @@
           return;
         }
         showReady(data.status === "partially_signed");
+      }
+
+      function prepareMobileSession(secondParty = false) {
+        if (!isMobile || mobileLaunchUrl || mobileSessionPreparing) return mobileSessionPreparing;
+        setMobileLaunch("", secondParty);
+        mobileSessionPreparing = request("/session", { method: "POST" })
+          .then((session) => {
+            renderSession(session);
+            return session;
+          })
+          .catch((error) => {
+            clearMobileLaunch();
+            $("egovLaunchBtn").hidden = false;
+            $("egovLaunchBtn").textContent = "Повторить подготовку eGov Mobile";
+            setStatus(error.message, "bad");
+            return null;
+          })
+          .finally(() => { mobileSessionPreparing = null; });
+        return mobileSessionPreparing;
       }
 
       async function poll() {
@@ -294,15 +343,28 @@
       }
 
       $("startBtn").onclick = async () => {
+        if (isMobile) return;
         setSigningButtonsDisabled(true);
-        $("startBtn").textContent = isMobile ? "Открываем eGov Mobile…" : "Создаём QR…";
+        $("startBtn").textContent = "Создаём QR…";
         try {
           const session = await request("/session", { method: "POST" });
-          renderSession(session, { allowMobileLaunch: isMobile });
+          renderSession(session);
         } catch (error) {
           showReady(false);
           setStatus(error.message, "bad");
         }
+      };
+
+      $("egovLaunchBtn").onclick = (event) => {
+        if (!isMobile || !mobileLaunchUrl) {
+          event.preventDefault();
+          prepareMobileSession(Boolean(currentInfo?.status === "partially_signed"));
+          return;
+        }
+        setStatus("Открываем eGov Mobile… После подписи вернитесь на эту страницу.");
+        startPolling();
+        // Do not preventDefault: a real user click on SIGEX's deep-link is
+        // required for reliable Universal Link / App Link handling.
       };
 
       $("ncalayerBtn").onclick = async () => {
@@ -329,6 +391,21 @@
           setStatus(error.message, "bad");
         }
       };
+
+      async function resumeAfterEgov() {
+        if (!currentInfo || document.visibilityState === "hidden") return;
+        try {
+          await refreshInfo();
+          renderSession(await request("/status"));
+        } catch (error) {
+          setStatus(error.message, "bad");
+        }
+      }
+
+      window.addEventListener("pageshow", () => { if (currentInfo) resumeAfterEgov(); });
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && currentInfo) resumeAfterEgov();
+      });
 
       (async () => {
         try {

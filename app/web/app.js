@@ -7686,6 +7686,7 @@ function accountingActionIcon(kind) {
     receipt: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h10a1 1 0 0 1 1 1v16l-3-2-3 2-3-2-3 2v-16a1 1 0 0 1 1-1Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>`,
     edit: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.2-1 10.6-10.6a1.8 1.8 0 0 0 0-2.5l-.7-.7a1.8 1.8 0 0 0-2.5 0L5 15.8 4 20Z"/><path d="m14.5 6.3 3.2 3.2M4 20h5"/></svg>`,
     delete: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>`,
+    removeRequest: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="7.5" r="3"/><path d="M3.5 19v-2.2c0-2.3 2-4.1 4.4-4.1h1.2c1.1 0 2.2.4 3 1.1M16 10l5 5M21 10l-5 5"/></svg>`,
     act: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4 4v13H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M14 3.5v4h4M9 12h6M9 16h4"/><path d="m15.5 17 1.4 1.4 2.8-3"/></svg>`,
     share: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 12.5 15.5 6M11 6h4.5v4.5"/><path d="M18 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3"/></svg>`,
   };
@@ -7784,7 +7785,10 @@ function renderAccountingMembers(row) {
             <span>№${member.payment_request_id}</span>
             <span>${escapeHtml(member.event_title || "Мероприятие")}${member.item_name ? ` · ${escapeHtml(member.item_name)}` : ""}</span>
             <strong>${formatMoney(member.request_amount)} ₸</strong>
-            ${row.has_receipt && row.accounting_id ? `<button class="ghost accounting-detach-btn" type="button" data-accounting-detach="${row.accounting_id}:${member.payment_request_id}">Отвязать</button>` : ""}
+            <span class="accounting-member-actions">
+              ${row.has_receipt && row.accounting_id ? `<button class="ghost accounting-detach-btn" type="button" data-accounting-detach="${row.accounting_id}:${member.payment_request_id}">Отвязать</button>` : ""}
+              ${row.request_count > 1 ? `<button class="ghost accounting-detach-btn accounting-hide-request-btn" type="button" data-accounting-hide-request="${member.payment_request_id}" title="Убрать заявку из бухгалтерии">Убрать</button>` : ""}
+            </span>
           </div>
         `).join("")}
       </div>
@@ -7857,6 +7861,7 @@ function renderAccountingRows(rows) {
                 ${row.has_receipt ? `<button class="ghost accounting-icon-btn" type="button" data-accounting-open-receipt="${handle}" title="Открыть чек" aria-label="Открыть чек">${accountingActionIcon("receipt")}</button>` : ""}
                 ${row.has_receipt ? `<button class="ghost accounting-icon-btn ${expanded ? "is-active" : ""}" type="button" data-accounting-expand="${handle}" title="${expanded ? "Свернуть данные" : "Проверить данные"}" aria-label="${expanded ? "Свернуть данные" : "Проверить данные"}">${accountingActionIcon("edit")}</button>` : ""}
                 ${row.has_receipt && row.accounting_id ? `<button class="danger accounting-icon-btn" type="button" data-accounting-delete-receipt="${handle}" title="Удалить чек" aria-label="Удалить чек">${accountingActionIcon("delete")}</button>` : ""}
+                ${Number(row.request_count || 0) === 1 && row.payment_request_id ? `<button class="ghost accounting-icon-btn accounting-request-remove-btn" type="button" data-accounting-hide-request="${row.payment_request_id}" title="Убрать заявку №${row.payment_request_id} из бухгалтерии" aria-label="Убрать заявку №${row.payment_request_id} из бухгалтерии">${accountingActionIcon("removeRequest")}</button>` : ""}
                 ${row.has_receipt && row.accounting_id && !row.has_act ? `<button class="accounting-act-btn" type="button" data-accounting-generate-act="${handle}" title="Сформировать АВР по данным чека">Сформировать АВР</button>` : ""}
                 ${row.has_act ? (() => {
                   const fullySigned = String(row.act_status || "") === "signed";
@@ -7887,7 +7892,7 @@ function renderAccountingRows(rows) {
             ${refreshError ? `<div class="accounting-refresh-error" role="alert">Не удалось обновить чек: ${escapeHtml(refreshError)}</div>` : ""}
             ${row.act_signing_error ? `<div class="accounting-refresh-error" role="alert">Подпись АВР не завершена: ${escapeHtml(row.act_signing_error)}</div>` : ""}
             ${row.act_status === "signed" && row.act_ddc_status === "error" ? `<div class="accounting-refresh-error" role="alert">Обе подписи сохранены, но PDF SIGEX пока не сформирован: ${escapeHtml(row.act_ddc_error || "нажмите иконку АВР для повторной попытки")}</div>` : ""}
-            ${expanded ? renderAccountingMembers(row) : ""}
+            ${expanded || (row.is_grouped && !row.has_receipt) ? renderAccountingMembers(row) : ""}
             <div class="accounting-progress hidden" data-accounting-progress="${handle}"></div>
             ${expanded && row.has_receipt ? renderAccountingEditor(row) : ""}
           </article>
@@ -9345,6 +9350,25 @@ async function deleteAccountingReceipt(handle) {
   await loadSelfEmployedAccounting(true);
 }
 
+async function hideAccountingRequest(requestId) {
+  const numericId = Number(requestId);
+  const row = (state.accountingRows || []).find((item) => accountingRowRequestIds(item).includes(numericId));
+  let note = " Заявка останется в мероприятии и общем списке заявок.";
+  if (row?.has_receipt && Number(row.request_count || 0) === 1) {
+    note += " Чек останется отдельной строкой без заявки.";
+  } else if (row?.has_receipt) {
+    note += " Чек и остальные связанные заявки останутся на месте.";
+  }
+  if (String(row?.act_status || "") === "generated") {
+    note += " Неподписанный черновик АВР будет сброшен.";
+  }
+  if (!confirm(`Убрать заявку №${numericId} из бухгалтерии?${note}`)) return;
+  await api(`/accounting/self-employed/requests/${numericId}`, { method: "DELETE" });
+  state.accountingExpandedRequestId = null;
+  await loadSelfEmployedAccounting(true);
+  showToast(`Заявка №${numericId} убрана из бухгалтерии`);
+}
+
 function updateAccountingBatchItem(fileName, message, cls = "") {
   const items = document.querySelectorAll("[data-accounting-batch-name]");
   for (const item of items) {
@@ -9535,6 +9559,9 @@ function attachAccountingPanel() {
   });
   document.querySelectorAll("[data-accounting-delete-receipt]").forEach((button) => {
     button.onclick = () => deleteAccountingReceipt(button.getAttribute("data-accounting-delete-receipt")).catch((error) => alert(error.message));
+  });
+  document.querySelectorAll("[data-accounting-hide-request]").forEach((button) => {
+    button.onclick = () => hideAccountingRequest(button.getAttribute("data-accounting-hide-request")).catch((error) => alert(error.message));
   });
 
   document.querySelectorAll("[data-accounting-generate-act]").forEach((button) => {
