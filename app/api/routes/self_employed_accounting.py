@@ -1597,7 +1597,9 @@ def build_row(
 def load_accounting_row(db: Session, accounting_id: int) -> SelfEmployedAccountingRead:
     record = get_record_or_404(db, accounting_id)
     _hydrate_contact_phone(db, record)
-    return build_row(_members_for_record(db, record.id), record)
+    # The accounting UI is receipt-first. Keep request memberships only as
+    # historical backend links; never surface them as bookkeeping rows.
+    return build_row([], record)
 
 
 def load_group_row(db: Session, request_id: int) -> SelfEmployedAccountingRead:
@@ -1673,11 +1675,15 @@ def list_self_employed_accounting(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Return receipt-first accounting rows only.
+
+    Payment requests continue to live in the normal request tabs. Historical
+    receipt-to-request links are intentionally preserved in the database for
+    audit/history and already generated acts, but the accounting workspace is
+    now strictly receipt -> R-1 -> signatures.
+    """
     require_accounting_access(current_user)
 
-    # Repair old rows too, not only the receipt currently being uploaded. A
-    # full exact-name match is safe for repeat contractors; conflicting IINs
-    # for the same name deliberately leave the target untouched.
     identity_records = db.execute(
         select(SelfEmployedAccounting).where(
             SelfEmployedAccounting.contractor_full_name.is_not(None)
@@ -1689,85 +1695,26 @@ def list_self_employed_accounting(
             db.add(record)
         db.commit()
 
-    query = (
-        select(
-            PaymentRequest,
-            Event,
-            User.name,
-            SelfEmployedAccountingRequest.accounting_id,
-            SelfEmployedAccounting,
-        )
-        .join(Event, Event.id == PaymentRequest.event_id)
-        .outerjoin(User, User.id == Event.manager_id)
-        .outerjoin(
-            SelfEmployedAccountingRequest,
-            SelfEmployedAccountingRequest.payment_request_id == PaymentRequest.id,
-        )
-        .outerjoin(
-            SelfEmployedAccounting,
-            SelfEmployedAccounting.id == SelfEmployedAccountingRequest.accounting_id,
-        )
-        .where(
-            PaymentRequest.payment_method == "self_employed",
-            PaymentRequest.self_employed_accounting_visible.is_(True),
-            PaymentRequest.status.notin_(list(INACTIVE_REQUEST_STATUSES)),
-            PaymentRequest.money_status != "cancelled",
-            Event.status != "cancelled",
-        )
+    query = select(SelfEmployedAccounting).where(
+        SelfEmployedAccounting.receipt_filename.is_not(None)
     )
+    records = db.execute(query).scalars().all()
+    _hydrate_contact_phones(db, list(records))
 
-    # Do not filter request-backed rows by the event date in SQL. Once a receipt
-    # exists, accounting belongs to the month printed on that receipt, even when
-    # the event/request lives in another month. We therefore build rows first and
-    # apply the accounting-month rule below.
     month_bounds = _month_bounds(month) if month else None
-
-    rows = db.execute(query).all()
-    grouped_members: dict[tuple[str, int], list[tuple[PaymentRequest, Event, str | None]]] = defaultdict(list)
-    records: dict[tuple[str, int], SelfEmployedAccounting | None] = {}
-    for request, event, manager_name, accounting_id, record in rows:
-        key = ("accounting", int(accounting_id)) if accounting_id is not None else ("request", int(request.id))
-        grouped_members[key].append((request, event, manager_name))
-        records[key] = record
-
-    _hydrate_contact_phones(db, list(records.values()))
-    result = [build_row(members, records.get(key)) for key, members in grouped_members.items()]
-
-    if month_bounds:
-        # A real e-Salyq receipt date is the source of truth for accounting
-        # period. Rows still waiting for a receipt remain discoverable by event
-        # month so the accountant can attach the future receipt.
-        result = [
-            row for row in result
-            if _row_matches_accounting_month(row, month_bounds)
-            or (include_undated and row.has_receipt and not row.receipt_datetime)
-        ]
-
-    # Receipt-first workflow: imported checks can exist before a request is found.
-    no_members = ~exists(
-        select(SelfEmployedAccountingRequest.id).where(
-            SelfEmployedAccountingRequest.accounting_id == SelfEmployedAccounting.id
-        )
-    )
-    standalone_query = select(SelfEmployedAccounting).where(
-        no_members,
-        SelfEmployedAccounting.receipt_filename.is_not(None),
-    )
-    standalone_records = db.execute(standalone_query).scalars().all()
-    _hydrate_contact_phones(db, list(standalone_records))
-    for record in standalone_records:
+    result: list[SelfEmployedAccountingRead] = []
+    for record in records:
         if month_bounds:
-            # Never invent a legal accounting period from upload/create time.
-            # Undated checks stay visible only as an explicit repair queue.
-            if record.receipt_datetime is None and not include_undated:
-                continue
-            if record.receipt_datetime and not (month_bounds[0] <= record.receipt_datetime.date() < month_bounds[1]):
+            if record.receipt_datetime is None:
+                if not include_undated:
+                    continue
+            elif not (month_bounds[0] <= record.receipt_datetime.date() < month_bounds[1]):
                 continue
         result.append(build_row([], record))
 
     def sort_key(row: SelfEmployedAccountingRead):
-        probe = row.receipt_datetime or row.request_created_at or row.receipt_uploaded_at or datetime.min
-        return (probe, row.accounting_id or 0, row.payment_request_id or 0)
+        probe = row.receipt_datetime or row.receipt_uploaded_at or row.request_created_at or datetime.min
+        return (probe, row.accounting_id or 0)
 
     result.sort(key=sort_key, reverse=True)
     return result
@@ -2093,6 +2040,16 @@ def resolve_self_employed_receipt_qr(
     )
 
 
+@router.get("/receipts/{accounting_id}", response_model=SelfEmployedAccountingRead)
+def get_accounting_receipt_row(
+    accounting_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_accounting_access(current_user)
+    return load_accounting_row(db, accounting_id)
+
+
 @router.post("/receipts/{accounting_id}/refresh-qr", response_model=SelfEmployedAccountingRead)
 def refresh_accounting_receipt_from_qr(
     accounting_id: int,
@@ -2262,18 +2219,13 @@ async def import_self_employed_receipt(
         iin=iin,
     )
 
-    normalized_amount = clean_decimal(receipt_amount)
-    record, match_status, matched_ids = _auto_match_receipt(db, contractor_full_name, iin, normalized_amount)
-    if record is None:
-        record = create_standalone_record(db)
-    elif not contractor_full_name and matched_ids:
-        matched_name = db.execute(
-            select(PaymentRequest.contractor_name_snapshot)
-            .where(PaymentRequest.id.in_(matched_ids), PaymentRequest.contractor_name_snapshot.is_not(None))
-            .order_by(PaymentRequest.id)
-            .limit(1)
-        ).scalar_one_or_none()
-        contractor_full_name = clean_person_name(matched_name)
+    # Receipt-first accounting: do not auto-match or create bookkeeping rows
+    # from payment requests. Requests remain in their normal request tabs.
+    # Existing historical links are preserved, but every newly imported check
+    # is a standalone accounting object.
+    record = create_standalone_record(db)
+    match_status = "unmatched"
+    matched_ids: list[int] = []
 
     _save_receipt_binary(
         db,
@@ -2304,12 +2256,10 @@ async def import_self_employed_receipt(
     receipt_source = "Kaspi" if qr_payload and (urlparse(qr_payload).hostname or "").lower() == KASPI_RECEIPT_HOST else "КГД"
     if qr_error:
         message = f"Чек сохранён, QR найден, но официальные данные не получены: {qr_error}"
-    elif match_status == "matched":
-        message = f"Чек проверен по QR {receipt_source} и автоматически привязан к заявке{'м' if len(matched_ids) > 1 else ''} №" + ", №".join(str(i) for i in matched_ids)
-    elif match_status == "ambiguous":
-        message = f"Чек проверен по QR {receipt_source}. Есть несколько подходящих заявок — оставлен отдельной строкой"
+    elif qr_payload:
+        message = f"Чек проверен по QR {receipt_source} и добавлен в бухгалтерию"
     else:
-        message = f"Чек проверен по QR {receipt_source}. Точного совпадения данных и суммы нет — создан отдельной строкой" if qr_payload else "QR не найден: чек создан отдельной строкой по резервному распознаванию"
+        message = "QR не найден: чек добавлен в бухгалтерию по резервному распознаванию"
     return SelfEmployedReceiptImportRead(
         row=load_accounting_row(db, record.id),
         match_status=match_status,

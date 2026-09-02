@@ -5927,6 +5927,7 @@ const state = {
   accountingLoading: false,
   accountingLoadedMonth: null,
   accountingShowOnlyMissingReceipt: false,
+  accountingStatusFilter: "all",
   accountingExpandedRequestId: null,
   accountingSelectedRequestIds: [],
   accountingBatchOpen: false,
@@ -7174,6 +7175,7 @@ function resetDashboardUiAndRoleState(message = "Загружаем кабине
   state.accountingLoading = false;
   state.accountingLoadedMonth = null;
   state.accountingShowOnlyMissingReceipt = false;
+  state.accountingStatusFilter = "all";
   state.accountingExpandedRequestId = null;
   state.accountingSelectedRequestIds = [];
   state.accountingBatchOpen = false;
@@ -7719,21 +7721,12 @@ function accountingSignatureButton(row, role, label, handle) {
 
 function renderAccountingEditor(row) {
   const handle = accountingRowHandle(row);
-  const match = accountingMoneyMatch(row);
-  const amountNote = match === "match"
-    ? `<span class="accounting-match ok">✓ Чек совпадает с суммой ${row.request_count > 1 ? "заявок" : "заявки"}</span>`
-    : match === "mismatch"
-      ? `<span class="accounting-match bad">⚠ Заявки: ${formatMoney(row.request_amount)} ₸</span>`
-      : match === "unlinked"
-        ? `<span class="accounting-match neutral">Чек пока не связан с заявкой</span>`
-        : `<span class="accounting-match neutral">Сверим после привязки заявки</span>`;
-
   return `
     <div class="accounting-editor" data-accounting-editor="${handle}">
       <div class="accounting-editor-head">
         <div>
           <strong>Данные чека</strong>
-          <div class="muted">${row.request_count > 1 ? `Этот чек покрывает ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : row.is_receipt_only ? "К этому чеку пока не добавлена заявка. Её можно перетащить сюда вручную." : "Проверьте данные чека."}</div>
+          <div class="muted">Проверьте реквизиты чека — они используются для формирования Р-1.</div>
         </div>
         ${row.parse_confidence !== null && row.parse_confidence !== undefined
           ? `<span class="accounting-confidence">${row.qr_payload ? "официальный QR" : "OCR fallback"} ${Math.round(asNumber(row.parse_confidence))}%</span>`
@@ -7741,7 +7734,7 @@ function renderAccountingEditor(row) {
       </div>
       <div class="accounting-form-grid">
         <label class="accounting-field wide">ФИО самозанятого
-          <input data-accounting-field="contractor_full_name" value="${escapeHtml(row.contractor_full_name || row.request_contractor_name || "")}" placeholder="Фамилия Имя Отчество" />
+          <input data-accounting-field="contractor_full_name" value="${escapeHtml(row.contractor_full_name || "")}" placeholder="Фамилия Имя Отчество" />
         </label>
         <label class="accounting-field">WhatsApp самозанятого
           <input data-accounting-field="contractor_phone" inputmode="tel" value="${escapeHtml(row.contractor_phone || "")}" placeholder="+7 700 000 00 00" />
@@ -7757,10 +7750,9 @@ function renderAccountingEditor(row) {
         </label>
         <label class="accounting-field">Сумма чека
           <input data-accounting-field="receipt_amount" inputmode="decimal" value="${row.receipt_amount !== null && row.receipt_amount !== undefined ? escapeHtml(String(row.receipt_amount)) : ""}" />
-          ${amountNote}
         </label>
         <label class="accounting-field wide">Наименование работы
-          <textarea data-accounting-field="service_name" rows="3" placeholder="Наименование оказанной работы">${escapeHtml(accountingCleanServiceName(row.service_name || row.item_name || ""))}</textarea>
+          <textarea data-accounting-field="service_name" rows="3" placeholder="Наименование оказанной работы">${escapeHtml(accountingCleanServiceName(row.service_name || ""))}</textarea>
         </label>
       </div>
       <div class="accounting-editor-actions">
@@ -7797,14 +7789,100 @@ function renderAccountingMembers(row) {
   `;
 }
 
+function accountingRowMatchesStatusFilter(row) {
+  const filter = String(state.accountingStatusFilter || "all");
+  if (filter === "no_act") return !row?.has_act;
+  if (filter === "unsigned") return Boolean(row?.has_act) && String(row?.act_status || "") !== "signed";
+  if (filter === "no_sz_signature") return Boolean(row?.has_act) && String(row?.contractor_signature?.status || "") !== "signed";
+  return true;
+}
+
+function accountingRowBelongsToSelectedMonth(row) {
+  const month = selectedMonthValue();
+  const receiptMonth = String(row?.receipt_datetime || "").slice(0, 7);
+  return !receiptMonth || receiptMonth === month;
+}
+
+function renderAccountingRow(row) {
+  if (!accountingRowMatchesStatusFilter(row)) return "";
+  const handle = accountingRowHandle(row);
+  const expanded = String(state.accountingExpandedRequestId || "") === handle;
+  const refreshEntry = accountingRefreshEntry(row);
+  const refreshLocked = refreshEntry?.status === "queued" || refreshEntry?.status === "running";
+  const refreshError = row.accounting_id
+    ? state.accountingRefreshErrorsById?.[String(Number(row.accounting_id))]
+    : "";
+  const mainAmount = asNumber(row?.receipt_amount);
+  return `
+    <article class="accounting-row has-receipt receipt-only ${refreshLocked ? "is-refreshing" : ""} ${refreshEntry?.status === "running" ? "is-refresh-active" : ""}"
+      data-accounting-row-handle="${handle}"
+      ${refreshLocked ? `inert aria-busy="true"` : ""}>
+      <div class="accounting-row-main">
+        <div class="accounting-date">
+          <span class="accounting-mobile-label">Дата чека</span>
+          <strong>${escapeHtml(accountingDisplayDate(row))}</strong>
+          ${row.receipt_number ? `<span>№ ${escapeHtml(String(row.receipt_number).replace(/\D/g, ""))}</span>` : ""}
+        </div>
+        <div class="accounting-person accounting-fio">
+          <span class="accounting-mobile-label">ФИО</span>
+          <strong>${escapeHtml(accountingDisplayName(row))}</strong>
+        </div>
+        <div class="accounting-iin">
+          <span class="accounting-mobile-label">ИИН</span>
+          <strong>${escapeHtml(accountingDisplayIin(row))}</strong>
+        </div>
+        <div class="accounting-amount">
+          <span class="accounting-mobile-label">Сумма</span>
+          <strong>${mainAmount > 0 ? `${formatMoney(mainAmount)} ₸` : "—"}</strong>
+        </div>
+        <div class="accounting-work">
+          <span class="accounting-mobile-label">Наименование работы</span>
+          <strong>${escapeHtml(accountingDisplayWork(row))}</strong>
+        </div>
+        <div class="accounting-actions">
+          <button class="ghost accounting-icon-btn" type="button" data-accounting-open-receipt="${handle}" title="Открыть чек" aria-label="Открыть чек">${accountingActionIcon("receipt")}</button>
+          <button class="ghost accounting-icon-btn ${expanded ? "is-active" : ""}" type="button" data-accounting-expand="${handle}" title="${expanded ? "Свернуть данные" : "Проверить данные"}" aria-label="${expanded ? "Свернуть данные" : "Проверить данные"}">${accountingActionIcon("edit")}</button>
+          ${row.accounting_id ? `<button class="danger accounting-icon-btn" type="button" data-accounting-delete-receipt="${handle}" title="Удалить чек" aria-label="Удалить чек">${accountingActionIcon("delete")}</button>` : ""}
+          ${row.accounting_id && !row.has_act ? `<button class="accounting-act-btn" type="button" data-accounting-generate-act="${handle}" title="Сформировать АВР по данным чека">Сформировать АВР</button>` : ""}
+          ${row.has_act ? (() => {
+            const fullySigned = String(row.act_status || "") === "signed";
+            const signedReady = Boolean(row.has_signed_act);
+            const ddcError = String(row.act_ddc_status || "") === "error";
+            const title = fullySigned
+              ? signedReady
+                ? `Подписанный АВР ${row.act_number || ""}: открыть PDF с обеими ЭЦП и QR`
+                : ddcError
+                  ? `Обе подписи сохранены. Повторить формирование PDF: ${row.act_ddc_error || "ошибка SIGEX"}`
+                  : "Обе подписи сохранены. SIGEX формирует итоговый PDF"
+              : `АВР ${row.act_number || ""} сформирован — открыть`;
+            return `<button class="ghost accounting-icon-btn accounting-act-ready ${fullySigned && !signedReady && !ddcError ? "is-building" : ""} ${ddcError ? "is-error" : ""}" type="button" data-accounting-open-act="${handle}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${accountingActionIcon("act")}</button>`;
+          })() : ""}
+          ${row.has_act ? accountingSignatureButton(row, "customer", "ИП", handle) : ""}
+          ${row.has_act ? accountingSignatureButton(row, "contractor", "СЗ", handle) : ""}
+          ${row.has_act ? `<button class="ghost accounting-sign-copy-btn" type="button" data-accounting-copy-signing="${handle}" title="Скопировать общую ссылку на подписание АВР" aria-label="Скопировать общую ссылку на подписание АВР">${accountingActionIcon("share")}</button>` : ""}
+        </div>
+      </div>
+      ${refreshLocked ? `
+        <div class="accounting-refresh-overlay" role="status" aria-live="polite">
+          <span class="accounting-refresh-spinner" aria-hidden="true"></span>
+          <strong>Обновляется</strong>
+          <small data-accounting-refresh-detail>${escapeHtml(refreshEntry?.detail || "Ожидает своей очереди")}</small>
+        </div>
+      ` : ""}
+      ${refreshError ? `<div class="accounting-refresh-error" role="alert">Не удалось обновить чек: ${escapeHtml(refreshError)}</div>` : ""}
+      ${row.act_signing_error ? `<div class="accounting-refresh-error" role="alert">Подпись АВР не завершена: ${escapeHtml(row.act_signing_error)}</div>` : ""}
+      ${row.act_status === "signed" && row.act_ddc_status === "error" ? `<div class="accounting-refresh-error" role="alert">Обе подписи сохранены, но PDF SIGEX пока не сформирован: ${escapeHtml(row.act_ddc_error || "нажмите иконку АВР для повторной попытки")}</div>` : ""}
+      <div class="accounting-progress hidden" data-accounting-progress="${handle}"></div>
+      ${expanded ? renderAccountingEditor(row) : ""}
+    </article>
+  `;
+}
+
 function renderAccountingRows(rows) {
-  let list = [...(rows || [])];
-  if (state.accountingShowOnlyMissingReceipt) list = list.filter((row) => !row.has_receipt);
-
+  const list = [...(rows || [])].filter(accountingRowMatchesStatusFilter);
   if (!list.length) {
-    return `<div class="empty-state">${state.accountingShowOnlyMissingReceipt ? "Все новые заявки уже с чеками." : "Пока нет новых заявок «Самозанятый» и загруженных чеков за этот месяц."}</div>`;
+    return `<div class="empty-state">${String(state.accountingStatusFilter || "all") === "all" ? "Пока нет загруженных чеков за этот месяц." : "По выбранному статусу чеков нет."}</div>`;
   }
-
   return `
     <div class="accounting-list">
       <div class="accounting-table-head" aria-hidden="true">
@@ -7815,90 +7893,7 @@ function renderAccountingRows(rows) {
         <span>Наименование работы</span>
         <span></span>
       </div>
-      ${list.map((row) => {
-        const handle = accountingRowHandle(row);
-        const expanded = String(state.accountingExpandedRequestId || "") === handle;
-        const refreshEntry = accountingRefreshEntry(row);
-        const refreshLocked = refreshEntry?.status === "queued" || refreshEntry?.status === "running";
-        const refreshError = row.accounting_id
-          ? state.accountingRefreshErrorsById?.[String(Number(row.accounting_id))]
-          : "";
-        const match = accountingMoneyMatch(row);
-        const amountClass = match === "mismatch" ? "is-mismatch" : match === "match" ? "is-match" : "";
-        const draggable = Number(row.request_count || 0) > 0 && !row.has_receipt;
-        const dropTarget = Boolean(row.has_receipt && row.accounting_id);
-        const mainAmount = accountingRowPrimaryAmount(row);
-        return `
-          <article class="accounting-row ${row.has_receipt ? "has-receipt" : "needs-receipt"} ${row.is_receipt_only ? "receipt-only" : ""} ${draggable ? "is-draggable" : ""} ${dropTarget ? "is-drop-target" : ""} ${refreshLocked ? "is-refreshing" : ""} ${refreshEntry?.status === "running" ? "is-refresh-active" : ""}"
-            data-accounting-row-handle="${handle}"
-            ${refreshLocked ? `inert aria-busy="true"` : ""}
-            ${draggable ? `draggable="true" data-accounting-draggable="${handle}"` : ""}
-            ${dropTarget ? `data-accounting-drop-target="${row.accounting_id}"` : ""}>
-            <div class="accounting-row-main">
-              <div class="accounting-date">
-                <span class="accounting-mobile-label">Дата чека</span>
-                <strong>${escapeHtml(accountingDisplayDate(row))}</strong>
-                ${row.has_receipt && row.receipt_number ? `<span>№ ${escapeHtml(String(row.receipt_number).replace(/\D/g, ""))}</span>` : ""}
-              </div>
-              <div class="accounting-person accounting-fio">
-                <span class="accounting-mobile-label">ФИО</span>
-                <strong>${escapeHtml(accountingDisplayName(row))}</strong>
-              </div>
-              <div class="accounting-iin">
-                <span class="accounting-mobile-label">ИИН</span>
-                <strong>${escapeHtml(accountingDisplayIin(row))}</strong>
-              </div>
-              <div class="accounting-amount ${amountClass}">
-                <span class="accounting-mobile-label">Сумма</span>
-                <strong>${mainAmount > 0 ? `${formatMoney(mainAmount)} ₸` : "—"}</strong>
-              </div>
-              <div class="accounting-work">
-                <span class="accounting-mobile-label">Наименование работы</span>
-                <strong>${escapeHtml(accountingDisplayWork(row))}</strong>
-              </div>
-              <div class="accounting-actions">
-                ${draggable ? `<span class="accounting-drag-handle" title="Перетащите заявку на нужный чек">⋮⋮</span>` : dropTarget ? `<span class="accounting-drop-icon" title="Сюда можно перетащить заявку">⇩</span>` : ""}
-                ${!row.is_receipt_only && row.payment_request_id ? `<label class="secondary accounting-upload-btn">${row.has_receipt ? "Заменить чек" : "Прикрепить чек"}<input type="file" hidden accept="image/jpeg,image/png,image/webp,application/pdf" data-accounting-file="${handle}" /></label>` : ""}
-                ${row.has_receipt ? `<button class="ghost accounting-icon-btn" type="button" data-accounting-open-receipt="${handle}" title="Открыть чек" aria-label="Открыть чек">${accountingActionIcon("receipt")}</button>` : ""}
-                ${row.has_receipt ? `<button class="ghost accounting-icon-btn ${expanded ? "is-active" : ""}" type="button" data-accounting-expand="${handle}" title="${expanded ? "Свернуть данные" : "Проверить данные"}" aria-label="${expanded ? "Свернуть данные" : "Проверить данные"}">${accountingActionIcon("edit")}</button>` : ""}
-                ${row.has_receipt && row.accounting_id ? `<button class="danger accounting-icon-btn" type="button" data-accounting-delete-receipt="${handle}" title="Удалить чек" aria-label="Удалить чек">${accountingActionIcon("delete")}</button>` : ""}
-                ${Number(row.request_count || 0) === 1 && row.payment_request_id ? `<button class="ghost accounting-icon-btn accounting-request-remove-btn" type="button" data-accounting-hide-request="${row.payment_request_id}" title="Убрать заявку №${row.payment_request_id} из бухгалтерии" aria-label="Убрать заявку №${row.payment_request_id} из бухгалтерии">${accountingActionIcon("removeRequest")}</button>` : ""}
-                ${row.has_receipt && row.accounting_id && !row.has_act ? `<button class="accounting-act-btn" type="button" data-accounting-generate-act="${handle}" title="Сформировать АВР по данным чека">Сформировать АВР</button>` : ""}
-                ${row.has_act ? (() => {
-                  const fullySigned = String(row.act_status || "") === "signed";
-                  const signedReady = Boolean(row.has_signed_act);
-                  const ddcError = String(row.act_ddc_status || "") === "error";
-                  const title = fullySigned
-                    ? signedReady
-                      ? `Подписанный АВР ${row.act_number || ""}: открыть PDF с обеими ЭЦП и QR`
-                      : ddcError
-                        ? `Обе подписи сохранены. Повторить формирование PDF: ${row.act_ddc_error || "ошибка SIGEX"}`
-                        : "Обе подписи сохранены. SIGEX формирует итоговый PDF"
-                    : `АВР ${row.act_number || ""} сформирован — открыть`;
-                  return `<button class="ghost accounting-icon-btn accounting-act-ready ${fullySigned && !signedReady && !ddcError ? "is-building" : ""} ${ddcError ? "is-error" : ""}" type="button" data-accounting-open-act="${handle}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${accountingActionIcon("act")}</button>`;
-                })() : ""}
-                ${row.has_act ? accountingSignatureButton(row, "customer", "ИП", handle) : ""}
-                ${row.has_act ? accountingSignatureButton(row, "contractor", "СЗ", handle) : ""}
-                ${row.has_act ? `<button class="ghost accounting-sign-copy-btn" type="button" data-accounting-copy-signing="${handle}" title="Скопировать общую ссылку на подписание АВР" aria-label="Скопировать общую ссылку на подписание АВР">${accountingActionIcon("share")}</button>` : ""}
-                ${row.is_grouped && !row.has_receipt && ["empty", null, undefined].includes(row.parse_status) && row.payment_request_id ? `<button class="ghost" type="button" data-accounting-split="${row.payment_request_id}">Разъединить</button>` : ""}
-              </div>
-            </div>
-            ${refreshLocked ? `
-              <div class="accounting-refresh-overlay" role="status" aria-live="polite">
-                <span class="accounting-refresh-spinner" aria-hidden="true"></span>
-                <strong>Обновляется</strong>
-                <small data-accounting-refresh-detail>${escapeHtml(refreshEntry?.detail || "Ожидает своей очереди")}</small>
-              </div>
-            ` : ""}
-            ${refreshError ? `<div class="accounting-refresh-error" role="alert">Не удалось обновить чек: ${escapeHtml(refreshError)}</div>` : ""}
-            ${row.act_signing_error ? `<div class="accounting-refresh-error" role="alert">Подпись АВР не завершена: ${escapeHtml(row.act_signing_error)}</div>` : ""}
-            ${row.act_status === "signed" && row.act_ddc_status === "error" ? `<div class="accounting-refresh-error" role="alert">Обе подписи сохранены, но PDF SIGEX пока не сформирован: ${escapeHtml(row.act_ddc_error || "нажмите иконку АВР для повторной попытки")}</div>` : ""}
-            ${expanded || (row.is_grouped && !row.has_receipt) ? renderAccountingMembers(row) : ""}
-            <div class="accounting-progress hidden" data-accounting-progress="${handle}"></div>
-            ${expanded && row.has_receipt ? renderAccountingEditor(row) : ""}
-          </article>
-        `;
-      }).join("")}
+      ${list.map(renderAccountingRow).join("")}
     </div>
   `;
 }
@@ -7926,7 +7921,7 @@ function renderAccountingBatchModal() {
         <div class="accounting-batch-list" id="accountingBatchList">
           ${files.length ? files.map((file) => {
             const result = resultByName.get(file.name);
-            const cls = result?.match_status === "matched" ? "ok" : result?.error ? "bad" : result ? "warn" : "";
+            const cls = result?.error ? "bad" : result ? "ok" : "";
             return `<div class="accounting-batch-item ${cls}" data-accounting-batch-name="${escapeHtml(file.name)}"><span>${escapeHtml(file.name)}</span><strong>${escapeHtml(result?.message || "Готов к загрузке")}</strong></div>`;
           }).join("") : `<div class="muted">Файлы ещё не выбраны.</div>`}
         </div>
@@ -7939,14 +7934,35 @@ function renderAccountingBatchModal() {
   `;
 }
 
+function accountingStatusCounts(rows = state.accountingRows || []) {
+  return {
+    total: rows.length,
+    noAct: rows.filter((row) => !row.has_act).length,
+    unsigned: rows.filter((row) => row.has_act && String(row.act_status || "") !== "signed").length,
+    noSz: rows.filter((row) => row.has_act && String(row.contractor_signature?.status || "") !== "signed").length,
+    undated: rows.filter((row) => !row.receipt_datetime).length,
+  };
+}
+
+function accountingSummaryHtml(rows = state.accountingRows || []) {
+  const counts = accountingStatusCounts(rows);
+  return `
+    <span><strong id="accountingCountTotal">${counts.total}</strong> чеков</span>
+    <span><strong id="accountingCountNoAct">${counts.noAct}</strong> без акта</span>
+    <span><strong id="accountingCountUnsigned">${counts.unsigned}</strong> не подписано</span>
+    <span><strong id="accountingCountNoSz">${counts.noSz}</strong> без подписи СЗ</span>
+  `;
+}
+
+function accountingUndatedHtml(rows = state.accountingRows || []) {
+  const count = accountingStatusCounts(rows).undated;
+  return count
+    ? `<div class="accounting-refresh-error" role="status"><strong>${count}</strong> ${count === 1 ? "чек без даты не отнесён" : "чека без даты не отнесены"} к месяцу. Нажмите «Обновить» или откройте карандаш и укажите дату с чека.</div>`
+    : "";
+}
+
 function renderAccountingPanel() {
   const rows = state.accountingRows || [];
-  const totalRequests = rows.reduce((sum, row) => sum + Number(row.request_count || 0), 0);
-  const withReceipt = rows.filter((row) => row.has_receipt).length;
-  const unmatchedReceipts = rows.filter((row) => row.is_receipt_only).length;
-  const reviewed = rows.filter((row) => row.parse_status === "reviewed").length;
-  const undatedReceipts = rows.filter((row) => row.has_receipt && !row.receipt_datetime).length;
-
   return `
     <section class="accounting-panel">
       <div class="accounting-panel-head">
@@ -7954,26 +7970,27 @@ function renderAccountingPanel() {
           <div class="eyebrow">Самозанятые</div>
           <h3>Бухгалтерия</h3>
         </div>
-        <div class="accounting-summary">
-          <span><strong>${totalRequests}</strong> новых заявок</span>
-          <span><strong>${withReceipt}</strong> чеков</span>
-          <span><strong>${unmatchedReceipts}</strong> чеков без заявок</span>
-          <span><strong>${reviewed}</strong> проверено</span>
-        </div>
+        <div class="accounting-summary" id="accountingSummary">${accountingSummaryHtml(rows)}</div>
       </div>
-      ${undatedReceipts ? `<div class="accounting-refresh-error" role="status"><strong>${undatedReceipts}</strong> ${undatedReceipts === 1 ? "чек без даты не отнесён" : "чека без даты не отнесены"} к месяцу. Нажмите «Обновить» или откройте карандаш и укажите дату с чека.</div>` : ""}
+      <div id="accountingUndatedNotice">${accountingUndatedHtml(rows)}</div>
       <div class="accounting-toolbar">
-        <label class="accounting-toggle"><input id="accountingMissingOnly" type="checkbox" ${state.accountingShowOnlyMissingReceipt ? "checked" : ""} /> Только без чека</label>
+        <label class="accounting-status-filter">Статус
+          <select id="accountingStatusFilter">
+            <option value="all" ${state.accountingStatusFilter === "all" ? "selected" : ""}>Все</option>
+            <option value="no_act" ${state.accountingStatusFilter === "no_act" ? "selected" : ""}>Без Акта</option>
+            <option value="unsigned" ${state.accountingStatusFilter === "unsigned" ? "selected" : ""}>Не подписанные</option>
+            <option value="no_sz_signature" ${state.accountingStatusFilter === "no_sz_signature" ? "selected" : ""}>Без подписи СЗ</option>
+          </select>
+        </label>
         <button id="accountingRefreshBtn" class="secondary" type="button" ${state.accountingRefreshRunning ? "disabled" : ""}>${state.accountingRefreshRunning ? `Обновлено ${state.accountingRefreshCompleted}/${state.accountingRefreshTotal}` : "Обновить"}</button>
-        <span class="muted">Для ручной связи просто перетащите строку заявки на строку нужного чека.</span>
         <button id="accountingBatchOpen" class="secondary accounting-batch-open" type="button" aria-label="Загрузить чеки">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M5 14.5V19a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4.5"/></svg>
           <span>Загрузить чеки</span>
         </button>
       </div>
       <div id="accountingRows">${state.accountingLoading ? `<div class="empty-state">Загружаем бухгалтерию…</div>` : renderAccountingRows(rows)}</div>
+      <div id="accountingBatchModalHost">${renderAccountingBatchModal()}</div>
     </section>
-    ${renderAccountingBatchModal()}
   `;
 }
 
@@ -8001,36 +8018,99 @@ function setAccountingProgress(handle, text = "", visible = true) {
   el.classList.toggle("hidden", !visible);
 }
 
-function accountingReplaceRow(updated) {
-  if (updated?.accounting_id) {
-    const errorKey = String(Number(updated.accounting_id));
+function accountingSortRows(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const left = String(a?.receipt_datetime || a?.receipt_uploaded_at || "");
+    const right = String(b?.receipt_datetime || b?.receipt_uploaded_at || "");
+    if (left !== right) return right.localeCompare(left);
+    return Number(b?.accounting_id || 0) - Number(a?.accounting_id || 0);
+  });
+}
+
+function accountingUpdateChromeInPlace() {
+  const summary = $("accountingSummary");
+  if (summary) summary.innerHTML = accountingSummaryHtml(state.accountingRows || []);
+  const notice = $("accountingUndatedNotice");
+  if (notice) notice.innerHTML = accountingUndatedHtml(state.accountingRows || []);
+}
+
+function accountingEnsureRowsDom() {
+  const rowsEl = $("accountingRows");
+  if (!rowsEl) return null;
+  const visible = (state.accountingRows || []).filter(accountingRowMatchesStatusFilter);
+  const list = rowsEl.querySelector(".accounting-list");
+  if (!visible.length) {
+    rowsEl.innerHTML = renderAccountingRows(state.accountingRows || []);
+    return rowsEl;
+  }
+  if (!list) rowsEl.innerHTML = renderAccountingRows(state.accountingRows || []);
+  return rowsEl;
+}
+
+function accountingReplaceRow(updated, options = {}) {
+  if (!updated?.accounting_id) return;
+  const accountingId = Number(updated.accounting_id);
+  const errorKey = String(accountingId);
+  if (options.clearRefreshError !== false) {
     const nextErrors = { ...(state.accountingRefreshErrorsById || {}) };
     delete nextErrors[errorKey];
     state.accountingRefreshErrorsById = nextErrors;
   }
-  const updatedIds = new Set(accountingRowRequestIds(updated));
-  const rows = state.accountingRows || [];
-  let replaced = false;
-  const next = [];
-  for (const row of rows) {
-    const sameAccounting = updated.accounting_id && row.accounting_id && Number(updated.accounting_id) === Number(row.accounting_id);
-    const overlaps = accountingRowRequestIds(row).some((id) => updatedIds.has(id));
-    if (sameAccounting || overlaps) {
-      if (!replaced) {
-        next.push(updated);
-        replaced = true;
-      }
-    } else {
-      next.push(row);
+
+  const oldHandle = `a${accountingId}`;
+  const existingEl = document.querySelector(`[data-accounting-row-handle="${oldHandle}"]`);
+  const existingIndex = (state.accountingRows || []).findIndex((row) => Number(row.accounting_id) === accountingId);
+  const staysInMonth = accountingRowBelongsToSelectedMonth(updated);
+
+  let next = [...(state.accountingRows || [])];
+  if (existingIndex >= 0) next.splice(existingIndex, 1);
+  if (staysInMonth) next.push(updated);
+  state.accountingRows = accountingSortRows(next);
+
+  if (state.activeAdminTab !== "accounting") return;
+  if (!staysInMonth || !accountingRowMatchesStatusFilter(updated)) {
+    if (existingEl) existingEl.remove();
+    accountingEnsureRowsDom();
+    accountingUpdateChromeInPlace();
+    attachAccountingPanel();
+    return;
+  }
+
+  const template = document.createElement("template");
+  template.innerHTML = renderAccountingRow(updated).trim();
+  const node = template.content.firstElementChild;
+  if (existingEl && node) {
+    existingEl.replaceWith(node);
+  } else {
+    const rowsEl = accountingEnsureRowsDom();
+    const list = rowsEl?.querySelector(".accounting-list");
+    if (list && node) {
+      const visible = (state.accountingRows || []).filter(accountingRowMatchesStatusFilter);
+      const position = visible.findIndex((row) => Number(row.accounting_id) === accountingId);
+      const nextRow = visible.slice(position + 1).find((row) => document.querySelector(`[data-accounting-row-handle="${accountingRowHandle(row)}"]`));
+      const nextEl = nextRow ? document.querySelector(`[data-accounting-row-handle="${accountingRowHandle(nextRow)}"]`) : null;
+      if (nextEl) list.insertBefore(node, nextEl);
+      else list.appendChild(node);
     }
   }
-  if (!replaced) next.unshift(updated);
-  state.accountingRows = next;
-  if (state.activeAdminTab === "accounting") {
-    const rowsEl = $("accountingRows");
-    if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
-    attachAccountingPanel();
-  }
+  accountingUpdateChromeInPlace();
+  attachAccountingPanel();
+}
+
+function accountingRemoveRow(accountingId) {
+  const numericId = Number(accountingId);
+  state.accountingRows = (state.accountingRows || []).filter((row) => Number(row.accounting_id) !== numericId);
+  const rowEl = document.querySelector(`[data-accounting-row-handle="a${numericId}"]`);
+  if (rowEl) rowEl.remove();
+  accountingEnsureRowsDom();
+  accountingUpdateChromeInPlace();
+  attachAccountingPanel();
+}
+
+async function refreshAccountingRow(accountingId) {
+  const updated = await api(`/accounting/self-employed/receipts/${Number(accountingId)}?_=${Date.now()}`);
+  accountingReplaceRow(updated);
+  return updated;
 }
 
 async function loadSelfEmployedAccounting(force = false) {
@@ -8039,12 +8119,12 @@ async function loadSelfEmployedAccounting(force = false) {
   if (!force && state.accountingLoadedMonth === month) return;
 
   state.accountingLoading = true;
-  if (state.activeAdminTab === "accounting") {
-    const rowsEl = $("accountingRows");
-    if (rowsEl) rowsEl.innerHTML = `<div class="empty-state">Загружаем бухгалтерию…</div>`;
+  const rowsEl = $("accountingRows");
+  if (state.activeAdminTab === "accounting" && rowsEl && !state.accountingRows.length) {
+    rowsEl.innerHTML = `<div class="empty-state">Загружаем бухгалтерию…</div>`;
   }
   try {
-    state.accountingRows = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}&include_undated=true`);
+    state.accountingRows = accountingSortRows(await api(`/accounting/self-employed?month=${encodeURIComponent(month)}&include_undated=true`));
     state.accountingLoadedMonth = month;
     if (!state.accountingRefreshRunning) state.accountingRefreshErrorsById = {};
   } finally {
@@ -8052,8 +8132,15 @@ async function loadSelfEmployedAccounting(force = false) {
   }
 
   if (state.activeAdminTab === "accounting") {
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
+    const currentRows = $("accountingRows");
+    if (currentRows) {
+      currentRows.innerHTML = renderAccountingRows(state.accountingRows);
+      accountingUpdateChromeInPlace();
+      attachAccountingPanel();
+    } else {
+      $("dashboardContent").innerHTML = renderAccountingPanel();
+      attachAccountingPanel();
+    }
   }
 }
 
@@ -9107,7 +9194,6 @@ async function saveAccountingEditor(handle, confirmed = false) {
       state.accountingExpandedRequestId = null;
       showToast(`Чек перемещён в ${monthLabelRu(receiptMonth)} по дате выписки`, 5000);
     }
-    await loadSelfEmployedAccounting(true);
   } catch (error) {
     if (message) message.textContent = error.message;
     else alert(error.message);
@@ -9180,7 +9266,7 @@ async function openAccountingAct(handle) {
     link.click();
     link.remove();
   }
-  loadSelfEmployedAccounting(true).catch(() => {});
+  // Status changes are polled in-place; opening a document must never reload the ledger.
   window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
@@ -9252,7 +9338,7 @@ async function generateAccountingAct(handle) {
   } catch (error) {
     if (Number(error?.status) === 400) {
       state.accountingExpandedRequestId = handle;
-      accountingRenderRowsInPlace();
+      accountingReplaceRow(row);
       setAccountingProgress(handle, error.message, true);
     }
     throw error;
@@ -9334,7 +9420,6 @@ async function refreshAccountingFromQr(handle, options = {}) {
       ? "Официальные данные сверены и дополнены по изображению чека."
       : "Чек перечитан визуально без рабочего QR.", true);
   }
-  if (options.reload !== false) await loadSelfEmployedAccounting(true);
   return updated;
 }
 
@@ -9364,13 +9449,9 @@ async function refreshAccountingMonthFromQr() {
     }
 
     state.accountingRefreshErrorsById = {};
-    state.accountingRefreshById = Object.fromEntries(rows.map((row) => [
-      String(Number(row.accounting_id)),
-      { status: "queued", detail: "Ожидает своей очереди" },
-    ]));
+    state.accountingRefreshById = {};
     state.accountingRefreshCompleted = 0;
     state.accountingRefreshTotal = rows.length;
-    accountingRenderRowsInPlace();
     if (button) button.textContent = `Обновлено 0/${rows.length}`;
 
     let cursor = 0;
@@ -9390,6 +9471,7 @@ async function refreshAccountingMonthFromQr() {
           const current = (state.accountingRows || []).find((row) => Number(row.accounting_id) === Number(snapshot.accounting_id)) || snapshot;
           const accountingId = Number(current.accounting_id);
           accountingSetRefreshEntry(accountingId, "running", `Чек ${index + 1} из ${rows.length}`);
+          accountingReplaceRow(current);
           try {
             const parsed = await accountingReadStoredReceipt(current, (text) => {
               accountingSetRefreshEntry(accountingId, "running", text);
@@ -9410,7 +9492,7 @@ async function refreshAccountingMonthFromQr() {
             errorCount += 1;
             state.accountingRefreshCompleted += 1;
             accountingUnlockRefreshRow(accountingId, error.message || "Неизвестная ошибка");
-            accountingRenderRowsInPlace();
+            accountingReplaceRow(current, { clearRefreshError: false });
           }
           if (button) button.textContent = `Обновлено ${state.accountingRefreshCompleted}/${rows.length}`;
         }
@@ -9426,25 +9508,11 @@ async function refreshAccountingMonthFromQr() {
     const concurrency = accountingRefreshConcurrency(rows.length);
     await Promise.all(Array.from({ length: concurrency }, () => processNext()));
 
-    // One quiet reconciliation keeps rows in the correct receipt month without
-    // blanking the already updated interface.
-    const refreshMonth = selectedMonthValue();
-    try {
-      const freshRows = await api(`/accounting/self-employed?month=${encodeURIComponent(refreshMonth)}&include_undated=true`);
-      if (selectedMonthValue() === refreshMonth) {
-        state.accountingRows = freshRows;
-        state.accountingLoadedMonth = refreshMonth;
-        accountingRenderRowsInPlace();
-      }
-    } catch (error) {
-      console.warn("Accounting quiet reconciliation failed", error);
-    }
     const parts = [`перечитано чеков: ${updatedCount}`];
     if (visualOnlyCount) parts.push(`только по изображению: ${visualOnlyCount}`);
     if (errorCount) parts.push(`ошибок: ${errorCount}`);
     showToast(`Бухгалтерия: ${parts.join(" · ")}`, 6000);
   } finally {
-    const hadLockedRows = Object.keys(state.accountingRefreshById || {}).length > 0;
     state.accountingRefreshRunning = false;
     state.accountingRefreshById = {};
     state.accountingRefreshCompleted = 0;
@@ -9453,7 +9521,6 @@ async function refreshAccountingMonthFromQr() {
       button.disabled = false;
       button.textContent = originalText;
     }
-    if (hadLockedRows) accountingRenderRowsInPlace();
   }
 }
 
@@ -9465,8 +9532,8 @@ async function deleteAccountingReceipt(handle) {
     : "";
   if (!confirm(`Удалить чек${row.receipt_number ? ` №${row.receipt_number}` : ""}?${requestNote}`)) return;
   await api(`/accounting/self-employed/receipts/${row.accounting_id}`, { method: "DELETE" });
-  state.accountingExpandedRequestId = null;
-  await loadSelfEmployedAccounting(true);
+  if (String(state.accountingExpandedRequestId || "") === handle) state.accountingExpandedRequestId = null;
+  accountingRemoveRow(row.accounting_id);
 }
 
 async function hideAccountingRequest(requestId) {
@@ -9533,7 +9600,8 @@ async function importAccountingBatchFiles() {
       });
       const result = await apiForm("/accounting/self-employed/receipts/import", form);
       state.accountingBatchResults.push({ name: file.name, ...result });
-      updateAccountingBatchItem(file.name, result.message, result.match_status === "matched" ? "ok" : "warn");
+      updateAccountingBatchItem(file.name, result.message, "ok");
+      if (result?.row) accountingReplaceRow(result.row);
     } catch (error) {
       state.accountingBatchResults.push({ name: file.name, error: true, message: error.message });
       updateAccountingBatchItem(file.name, error.message, "bad");
@@ -9541,11 +9609,12 @@ async function importAccountingBatchFiles() {
   }
 
   state.accountingBatchRunning = false;
-  await loadSelfEmployedAccounting(true);
-  if (state.activeAdminTab === "accounting") {
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
+  const startButton = $("accountingBatchStart");
+  if (startButton) {
+    startButton.disabled = false;
+    startButton.textContent = `Распознать и загрузить${files.length ? ` (${files.length})` : ""}`;
   }
+  accountingUpdateChromeInPlace();
 }
 
 async function attachAccountingRowToReceipt(sourceHandle, targetAccountingId) {
@@ -9571,13 +9640,34 @@ async function detachAccountingRequest(accountingId, requestId) {
   await loadSelfEmployedAccounting(true);
 }
 
+function accountingRenderBatchModalInPlace() {
+  const host = $("accountingBatchModalHost");
+  if (!host) return;
+  host.innerHTML = renderAccountingBatchModal();
+  attachAccountingPanel();
+}
+
+function accountingToggleExpanded(handle, forceClosed = false) {
+  const previous = String(state.accountingExpandedRequestId || "");
+  const next = forceClosed || previous === handle ? null : handle;
+  state.accountingExpandedRequestId = next;
+  if (previous) {
+    const oldRow = accountingFindRowByHandle(previous);
+    if (oldRow) accountingReplaceRow(oldRow);
+  }
+  if (next && next !== previous) {
+    const newRow = accountingFindRowByHandle(next);
+    if (newRow) accountingReplaceRow(newRow);
+  }
+}
+
 function attachAccountingPanel() {
-  const missingOnly = $("accountingMissingOnly");
-  if (missingOnly) {
-    missingOnly.onchange = () => {
-      state.accountingShowOnlyMissingReceipt = Boolean(missingOnly.checked);
+  const statusFilter = $("accountingStatusFilter");
+  if (statusFilter) {
+    statusFilter.onchange = () => {
+      state.accountingStatusFilter = String(statusFilter.value || "all");
       const rowsEl = $("accountingRows");
-      if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
+      if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows || []);
       attachAccountingPanel();
     };
   }
@@ -9590,8 +9680,7 @@ function attachAccountingPanel() {
     state.accountingBatchOpen = true;
     state.accountingBatchFiles = [];
     state.accountingBatchResults = [];
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
+    accountingRenderBatchModalInPlace();
   };
 
   const batchClose = $("accountingBatchClose");
@@ -9600,24 +9689,21 @@ function attachAccountingPanel() {
     state.accountingBatchOpen = false;
     state.accountingBatchFiles = [];
     state.accountingBatchResults = [];
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
+    accountingRenderBatchModalInPlace();
   };
 
   const batchFiles = $("accountingBatchFiles");
   if (batchFiles) batchFiles.onchange = () => {
     state.accountingBatchFiles = Array.from(batchFiles.files || []).slice(0, 100);
     state.accountingBatchResults = [];
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
+    accountingRenderBatchModalInPlace();
   };
 
   const batchClear = $("accountingBatchClear");
   if (batchClear) batchClear.onclick = () => {
     state.accountingBatchFiles = [];
     state.accountingBatchResults = [];
-    $("dashboardContent").innerHTML = renderAccountingPanel();
-    attachAccountingPanel();
+    accountingRenderBatchModalInPlace();
   };
 
   const batchStart = $("accountingBatchStart");
@@ -9626,41 +9712,16 @@ function attachAccountingPanel() {
     alert(error.message);
   });
 
-  document.querySelectorAll("[data-accounting-file]").forEach((input) => {
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const handle = input.getAttribute("data-accounting-file");
-      input.value = "";
-      try {
-        await uploadAccountingReceipt(handle, file);
-      } catch (error) {
-        setAccountingProgress(handle, error.message, true);
-      }
-    };
-  });
-
   document.querySelectorAll("[data-accounting-open-receipt]").forEach((button) => {
     button.onclick = () => openAccountingReceipt(button.getAttribute("data-accounting-open-receipt")).catch((error) => alert(error.message));
   });
 
   document.querySelectorAll("[data-accounting-expand]").forEach((button) => {
-    button.onclick = () => {
-      const handle = button.getAttribute("data-accounting-expand");
-      state.accountingExpandedRequestId = String(state.accountingExpandedRequestId || "") === handle ? null : handle;
-      const rowsEl = $("accountingRows");
-      if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
-      attachAccountingPanel();
-    };
+    button.onclick = () => accountingToggleExpanded(button.getAttribute("data-accounting-expand"));
   });
 
   document.querySelectorAll("[data-accounting-collapse]").forEach((button) => {
-    button.onclick = () => {
-      state.accountingExpandedRequestId = null;
-      const rowsEl = $("accountingRows");
-      if (rowsEl) rowsEl.innerHTML = renderAccountingRows(state.accountingRows);
-      attachAccountingPanel();
-    };
+    button.onclick = () => accountingToggleExpanded(button.getAttribute("data-accounting-collapse") || String(state.accountingExpandedRequestId || ""), true);
   });
 
   document.querySelectorAll("[data-accounting-refresh-qr]").forEach((button) => {
@@ -9672,17 +9733,14 @@ function attachAccountingPanel() {
       } catch (error) {
         setAccountingProgress(handle, error.message || "Не удалось получить данные из КГД", true);
       } finally {
-        button.disabled = false;
+        if (button.isConnected) button.disabled = false;
       }
     };
   });
+
   document.querySelectorAll("[data-accounting-delete-receipt]").forEach((button) => {
     button.onclick = () => deleteAccountingReceipt(button.getAttribute("data-accounting-delete-receipt")).catch((error) => alert(error.message));
   });
-  document.querySelectorAll("[data-accounting-hide-request]").forEach((button) => {
-    button.onclick = () => hideAccountingRequest(button.getAttribute("data-accounting-hide-request")).catch((error) => alert(error.message));
-  });
-
   document.querySelectorAll("[data-accounting-generate-act]").forEach((button) => {
     button.onclick = () => generateAccountingAct(button.getAttribute("data-accounting-generate-act")).catch((error) => alert(error.message));
   });
@@ -9695,59 +9753,13 @@ function attachAccountingPanel() {
   document.querySelectorAll("[data-accounting-copy-signing]").forEach((button) => {
     button.onclick = () => copyAccountingSigningLink(button.getAttribute("data-accounting-copy-signing")).catch((error) => alert(error.message));
   });
-
   document.querySelectorAll("[data-accounting-save]").forEach((button) => {
     button.onclick = () => saveAccountingEditor(button.getAttribute("data-accounting-save"), false);
   });
   document.querySelectorAll("[data-accounting-confirm]").forEach((button) => {
     button.onclick = () => saveAccountingEditor(button.getAttribute("data-accounting-confirm"), true);
   });
-  document.querySelectorAll("[data-accounting-split]").forEach((button) => {
-    button.onclick = () => splitAccountingGroup(Number(button.getAttribute("data-accounting-split"))).catch((error) => alert(error.message));
-  });
-  document.querySelectorAll("[data-accounting-detach]").forEach((button) => {
-    button.onclick = () => {
-      const [accountingId, requestId] = String(button.getAttribute("data-accounting-detach") || "").split(":").map(Number);
-      detachAccountingRequest(accountingId, requestId).catch((error) => alert(error.message));
-    };
-  });
-
-  document.querySelectorAll("[data-accounting-draggable]").forEach((rowEl) => {
-    rowEl.ondragstart = (event) => {
-      const handle = rowEl.getAttribute("data-accounting-draggable");
-      state.accountingDragRowKey = handle;
-      rowEl.classList.add("is-dragging");
-      if (event.dataTransfer) {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", handle);
-      }
-    };
-    rowEl.ondragend = () => {
-      state.accountingDragRowKey = null;
-      rowEl.classList.remove("is-dragging");
-      document.querySelectorAll(".accounting-row.drag-over").forEach((el) => el.classList.remove("drag-over"));
-    };
-  });
-
-  document.querySelectorAll("[data-accounting-drop-target]").forEach((targetEl) => {
-    targetEl.ondragover = (event) => {
-      if (!state.accountingDragRowKey) return;
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      targetEl.classList.add("drag-over");
-    };
-    targetEl.ondragleave = () => targetEl.classList.remove("drag-over");
-    targetEl.ondrop = (event) => {
-      event.preventDefault();
-      targetEl.classList.remove("drag-over");
-      const sourceHandle = event.dataTransfer?.getData("text/plain") || state.accountingDragRowKey;
-      const targetAccountingId = Number(targetEl.getAttribute("data-accounting-drop-target"));
-      state.accountingDragRowKey = null;
-      attachAccountingRowToReceipt(sourceHandle, targetAccountingId).catch((error) => alert(error.message));
-    };
-  });
 }
-
 
 function renderAdminTabs() {
   const tabs = [
@@ -20412,7 +20424,7 @@ async function pollAccountingSignatureChanges() {
     || document.hidden
   ) return;
   const rows = state.accountingRows || [];
-  const hasPending = rows.some((row) => (
+  const pending = rows.filter((row) => (
     ["sent", "signing"].includes(String(row.customer_signature?.status || ""))
     || ["sent", "signing"].includes(String(row.contractor_signature?.status || ""))
     || ["signing", "finalizing"].includes(String(row.act_session_status || ""))
@@ -20422,25 +20434,16 @@ async function pollAccountingSignatureChanges() {
       && ["pending", "building", ""].includes(String(row.act_ddc_status || ""))
     )
   ));
-  if (!hasPending) return;
+  if (!pending.length) return;
   state.accountingSignaturePollRunning = true;
   try {
-    const month = selectedMonthValue();
-    const fresh = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}&_=${Date.now()}`);
-    const before = new Map(rows.map((row) => [
-      Number(row.accounting_id || 0),
-      `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}:${row.act_session_status}:${row.act_signing_error || ""}:${row.act_ddc_status || ""}:${row.act_ddc_size || 0}:${row.act_ddc_error || ""}`,
-    ]));
-    const changed = (fresh || []).some((row) => (
-      before.get(Number(row.accounting_id || 0))
-      !== `${row.act_status}:${row.customer_signature?.status}:${row.contractor_signature?.status}:${row.act_session_status}:${row.act_signing_error || ""}:${row.act_ddc_status || ""}:${row.act_ddc_size || 0}:${row.act_ddc_error || ""}`
-    ));
-    if (changed) {
-      state.accountingRows = fresh;
-      accountingRenderRowsInPlace();
+    for (const row of pending) {
+      try {
+        await refreshAccountingRow(row.accounting_id);
+      } catch (error) {
+        console.warn("Не удалось обновить статус АВР", row.accounting_id, error);
+      }
     }
-  } catch (error) {
-    console.warn("Не удалось обновить статусы подписей АВР", error);
   } finally {
     state.accountingSignaturePollRunning = false;
   }
@@ -20595,7 +20598,7 @@ async function loadDashboard() {
         tabs.innerHTML = `<button class="tab-btn active" type="button">Бухгалтерия</button>`;
       }
       if (document.getElementById("dashboardTitle")) document.getElementById("dashboardTitle").textContent = "Бухгалтерия";
-      if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "Самозанятые · чеки и подготовка документов";
+      if (document.getElementById("dashboardHint")) document.getElementById("dashboardHint").textContent = "Самозанятые · чеки, АВР и подписи";
       if (document.getElementById("summaryCards")) document.getElementById("summaryCards").innerHTML = "";
       if (document.getElementById("dashboardContent")) document.getElementById("dashboardContent").innerHTML = renderAccountingPanel();
       attachAccountingPanel();

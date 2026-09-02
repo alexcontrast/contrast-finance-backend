@@ -15661,3 +15661,27 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
     min-width: 132px;
   }
 }
+
+/* v0.5.116 — receipt-only accounting status filters */
+.accounting-status-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #5f695b;
+  white-space: nowrap;
+}
+.accounting-status-filter select {
+  min-height: 40px;
+  padding: 0 34px 0 12px;
+  border: 1px solid rgba(77, 91, 70, .16);
+  border-radius: 12px;
+  background: #fff;
+  color: #20251f;
+  font: inherit;
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .accounting-status-filter { width: 100%; justify-content: space-between; }
+  .accounting-status-filter select { flex: 1 1 auto; min-width: 0; }
+}

@@ -1,18 +1,20 @@
-Contrast Finance v0.5.115
+Contrast Finance v0.5.116
 
 Changed files:
-- app/api/routes/act_signing.py
-- app/web/sign_avr.html
+- app/api/routes/self_employed_accounting.py
+- app/web/app.js
+- app/web/styles.css
 - app/web/index.html
 - app/core/config.py
+- tests/test_accounting_receipt_only_v0116.py
 - README.md
 - CHANGELOG.md
-- VERIFY_INSTALL.txt
 
 Behavior:
-- iPhone primary launch uses a local Contrast recovery page with Apple Smart App Banner.
-- Smart App Banner targets current eGov Mobile App Store id 1476128386 and receives the exact active SIGEX eGovMobileLaunchLink as app-argument.
-- Official SIGEX HTTPS deeplink remains available as a secondary fallback; same-session QR remains available.
-- No mobileSign: URL is exposed to Safari and the one-time SIGEX session is never recreated merely because iOS failed to open the app.
+- Accounting is receipt-only: payment requests stay in their existing request tabs.
+- Batch receipt import no longer auto-matches payment requests.
+- Receipt edits, act generation, deletion, QR refresh and signature polling update rows in-place.
+- Status filters: no act / unsigned / no self-employed signature.
+- Historical request links remain stored but are hidden from the accounting UI.
 
 No database migration. Alembic head remains 0021_avr_signed_ddc.

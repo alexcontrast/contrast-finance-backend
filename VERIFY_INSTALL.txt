@@ -1,11 +1,16 @@
-Contrast Finance v0.5.115 verification
+Contrast Finance v0.5.116 verification
 
 After Railway deploy open:
 /api/status
 
 Expected JSON field:
-"version": "0.5.115"
+"version": "0.5.116"
 
-Then open an AVR signing link on an iPhone. The primary `Открыть eGov Mobile` button must first open a local URL ending in `/ios-open`, not App Store and not `mobileSign:`.
+Accounting smoke check:
+1. Open Admin -> Бухгалтерия.
+2. The table must contain only uploaded receipts; payment-request-only rows must not appear.
+3. Upload one receipt: a new receipt row should appear without a full page reload.
+4. Edit receipt data or generate an AVR: only that row/statuses should change.
+5. Check filters: Без Акта / Не подписанные / Без подписи СЗ.
 
-On the `/ios-open` page Safari should expose the eGov Mobile Smart App Banner at the top. If the application is installed, tap `OPEN / Открыть`. The page also keeps the exact official SIGEX HTTPS deeplink and QR of the same one-time session as fallbacks.
+The v0.5.115 iPhone eGov Mobile recovery flow remains unchanged.
