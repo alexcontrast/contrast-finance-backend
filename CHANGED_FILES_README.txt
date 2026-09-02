@@ -1,5 +1,4 @@
-v0.40.55 changed files:
-- app/api/routes/monthly_closings.py
-- CHANGELOG_v0.40.55.txt
+Contrast Finance v0.5.108 changed-only package
 
-Apps Script unchanged.
+See `app/CHANGED_FILES_README.txt` for the exact changed and removed files.
+No database migration. Apps Script unchanged.

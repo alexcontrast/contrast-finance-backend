@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from difflib import SequenceMatcher
 from html import unescape
 from io import BytesIO
 import json
@@ -42,6 +43,15 @@ from app.schemas.self_employed_accounting import (
     R1CustomerProfileRead,
 )
 from app.services.auth import get_current_user
+from app.services.accounting_receipt_data_fix import (
+    _extract_iin_from_text,
+    _extract_json_iin,
+    _extract_json_receipt_number,
+    _extract_json_unicode_name,
+    _extract_receipt_number_from_text,
+    _extract_unicode_name_from_text,
+    _find_json_receipt_datetime,
+)
 from app.services.r1_act_pdf import R1ActPayload, generate_r1_act_pdf
 
 
@@ -60,6 +70,9 @@ INACTIVE_REQUEST_STATUSES = {"cancelled", "rejected"}
 KGD_RECEIPT_HOST = "esb.kgd.gov.kz"
 KGD_RECEIPT_PATH = "/taxpay-check-core/get-check-report"
 KGD_RECEIPT_TIMEOUT = (5, 15)
+KASPI_RECEIPT_HOST = "receipt.kaspi.kz"
+KASPI_RECEIPT_PATH = "/web/self-employed"
+KASPI_RECEIPT_TIMEOUT = (5, 20)
 
 
 def _phone_digits(value: str | None) -> str:
@@ -203,6 +216,38 @@ def canonical_esalyq_qr(value: str | None) -> str | None:
     return f"https://{KGD_RECEIPT_HOST}{KGD_RECEIPT_PATH}?{query}"
 
 
+def canonical_kaspi_qr(value: str | None) -> str | None:
+    """Validate a Kaspi self-employed QR and rebuild its trusted public URL."""
+    if not value or not str(value).strip():
+        return None
+    parsed = urlparse(unescape(str(value).strip()).replace("\\u0026", "&"))
+    if (
+        parsed.scheme.lower() != "https"
+        or (parsed.hostname or "").lower() != KASPI_RECEIPT_HOST
+        or parsed.path.rstrip("/") != KASPI_RECEIPT_PATH
+    ):
+        raise HTTPException(status_code=400, detail="QR не относится к чеку самозанятого Kaspi")
+    params = parse_qs(parsed.query, keep_blank_values=False)
+    operation_id = str((params.get("operation_id") or [""])[0]).strip()
+    operation_time = str((params.get("operation_time") or [""])[0]).strip()
+    if not re.fullmatch(r"\d{6,30}", operation_id):
+        raise HTTPException(status_code=400, detail="В QR Kaspi не найден корректный номер операции")
+    if not re.fullmatch(r"20\d{2}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?", operation_time):
+        raise HTTPException(status_code=400, detail="В QR Kaspi не найдено корректное время операции")
+    query = urlencode({"operation_id": operation_id, "operation_time": operation_time})
+    return f"https://{KASPI_RECEIPT_HOST}{KASPI_RECEIPT_PATH}?{query}"
+
+
+def canonical_receipt_qr(value: str | None) -> str | None:
+    """Canonicalize any officially supported self-employed receipt QR."""
+    if not value or not str(value).strip():
+        return None
+    parsed = urlparse(unescape(str(value).strip()).replace("\\u0026", "&"))
+    if (parsed.hostname or "").lower() == KASPI_RECEIPT_HOST:
+        return canonical_kaspi_qr(value)
+    return canonical_esalyq_qr(value)
+
+
 def _strip_html_to_text(source: str) -> str:
     source = re.sub(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>", " ", source or "")
     source = re.sub(r"(?i)<(?:br|/p|/div|/tr|/td|/li|/h[1-6])[^>]*>", "\n", source)
@@ -219,22 +264,45 @@ _RU_MONTHS = {
     "январь": 1, "февраль": 2, "март": 3, "апрель": 4, "май": 5, "июнь": 6,
     "июль": 7, "август": 8, "сентябрь": 9, "октябрь": 10, "ноябрь": 11, "декабрь": 12,
 }
+_KK_MONTHS = {
+    "қаңтар": 1, "қаңтары": 1, "ақпан": 2, "ақпаны": 2, "наурыз": 3, "наурызы": 3,
+    "сәуір": 4, "сәуірі": 4, "мамыр": 5, "мамыры": 5, "маусым": 6, "маусымы": 6,
+    "шілде": 7, "шілдесі": 7, "тамыз": 8, "тамызы": 8, "қыркүйек": 9, "қыркүйегі": 9,
+    "қазан": 10, "қазаны": 10, "қараша": 11, "қарашасы": 11, "желтоқсан": 12, "желтоқсаны": 12,
+}
+_REPORT_MONTHS = {**_RU_MONTHS, **_KK_MONTHS}
+
+
+def _safe_datetime(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime | None:
+    try:
+        return datetime(year, month, day, hour, minute)
+    except ValueError:
+        return None
 
 
 def _parse_report_datetime(text: str) -> datetime | None:
     lower = str(text or "").lower()
+    month_names = "|".join(sorted((re.escape(value) for value in _REPORT_MONTHS), key=len, reverse=True))
     match = re.search(
-        r"(?:от\s*)?(\d{1,2})\s+([а-яё]+)\s+(20\d{2})(?:\s*г(?:ода)?[.,]?)?\s*[,\-]?\s*(\d{1,2}):(\d{2})",
+        rf"(?:от\s*)?(\d{{1,2}})\s+({month_names})\s+(20\d{{2}})(?:\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\s*[,\-]?\s*(\d{{1,2}}):(\d{{2}}))?",
         lower,
         re.I,
     )
     if match:
-        month = _RU_MONTHS.get(match.group(2))
+        month = _REPORT_MONTHS.get(match.group(2))
         if month:
-            return datetime(int(match.group(3)), month, int(match.group(1)), int(match.group(4)), int(match.group(5)))
-    match = re.search(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})[^\d]{0,10}(\d{1,2}):(\d{2})", lower)
+            return _safe_datetime(int(match.group(3)), month, int(match.group(1)), int(match.group(4) or 0), int(match.group(5) or 0))
+    match = re.search(r"(20\d{2})\s*(?:жылғы|жыл)?\s*(\d{1,2})\s+([а-яёәғқңөұүһі]+)(?:\s*[,\-]?\s*(\d{1,2}):(\d{2}))?", lower, re.I)
     if match:
-        return datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)), int(match.group(4)), int(match.group(5)))
+        month = _REPORT_MONTHS.get(match.group(3))
+        if month:
+            return _safe_datetime(int(match.group(1)), month, int(match.group(2)), int(match.group(4) or 0), int(match.group(5) or 0))
+    match = re.search(r"(?<!\d)(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?", lower)
+    if match:
+        return _safe_datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)), int(match.group(4) or 0), int(match.group(5) or 0))
+    match = re.search(r"(?<!\d)(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?", lower)
+    if match:
+        return _safe_datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4) or 0), int(match.group(5) or 0))
     return None
 
 
@@ -335,7 +403,7 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
         if not clean or ":" in clean or "," in clean or re.search(r"\d|режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|итого|плат[её]ж|наличн|безналичн|банк|Кбе|ИИК|HSBK|₸|тг", clean, re.I):
             return False
         words = clean.split()
-        letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", clean))
+        letters = len(re.findall(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", clean))
         name_case = clean.upper() == clean or all(word[:1].isupper() for word in words)
         return 1 <= len(words) <= 4 and letters >= 3 and name_case
 
@@ -386,7 +454,7 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
             continue
         if re.search(r"(?:ИИН|IIN|ЖСН|БИН|BIN|чек|receipt|итого|режим\s+налогооблож|самозанят|ИП\b|плат[её]ж|наличн|безналичн)", line, re.I):
             continue
-        if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
+        if len(re.findall(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", line)) >= 3:
             service_candidates.append((_service_text_score(line) + 40, line))
 
     if not service_candidates:
@@ -406,10 +474,22 @@ def _parse_esalyq_report_text(raw_text: str) -> dict:
             # In fallback mode reject obvious date and person-name lines.
             if _parse_report_datetime(line) is not None or looks_like_name(line):
                 continue
-            if len(re.findall(r"[A-Za-zА-Яа-яЁё]", line)) >= 3:
+            if len(re.findall(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", line)) >= 3:
                 service_candidates.append((_service_text_score(line), line))
     if service_candidates:
         result["service_name"] = max(service_candidates, key=lambda item: item[0])[1]
+
+    exact_iin = _extract_iin_from_text(joined, str(R1_CUSTOMER_PROFILE.get("bin_iin") or ""))
+    if exact_iin:
+        result["iin"] = exact_iin
+    exact_number = clean_receipt_number(_extract_receipt_number_from_text(joined))
+    if exact_number:
+        result["receipt_number"] = exact_number
+    exact_name = clean_person_name(_extract_unicode_name_from_text(joined))
+    if exact_name:
+        result["contractor_full_name"] = prefer_full_person_name(result.get("contractor_full_name"), exact_name)
+    if result.get("receipt_number"):
+        result["receipt_number"] = clean_receipt_number(result["receipt_number"])
 
     return result
 
@@ -444,34 +524,50 @@ def _parse_esalyq_json(payload: object) -> dict:
         first_value(("check", "number"))
         or first_value(("receipt", "number"))
         or first_value(("check", "num"))
+        or first_value(("номер", "чек"))
+        or first_value(("№", "чек"))
     )
     if receipt_number is not None:
-        digits = re.sub(r"\D", "", str(receipt_number))
-        if digits:
-            result["receipt_number"] = digits
+        cleaned_number = clean_receipt_number(str(receipt_number))
+        if cleaned_number:
+            result["receipt_number"] = cleaned_number
 
     iin_candidates = []
     for path, value in rows:
-        if "iin" not in path and "iinbin" not in path and "bin_iin" not in path:
+        normalized_path = re.sub(r"[^a-zа-яёәғқңөұүһі0-9]", "", path.casefold())
+        if not any(token in normalized_path for token in ("iin", "iinbin", "biniin", "иин", "жсн")):
             continue
         digits = re.sub(r"\D", "", str(value or ""))
         if len(digits) == 12 and digits != str(R1_CUSTOMER_PROFILE.get("bin_iin") or ""):
-            priority = 0 if any(token in path for token in ("seller", "executor", "taxpayer", "individual", "person", "ip")) else 1
+            if any(token in normalized_path for token in ("customer", "buyer", "payer", "покупател", "плательщик", "төлеуші")):
+                continue
+            priority = 0 if any(token in normalized_path for token in ("seller", "executor", "taxpayer", "individual", "person", "самозанят", "сатушы")) else 1
             iin_candidates.append((priority, digits))
     if iin_candidates:
         result["iin"] = sorted(iin_candidates, key=lambda item: item[0])[0][1]
 
-    name = (
-        first_value(("seller", "name"))
-        or first_value(("executor", "name"))
-        or first_value(("taxpayer", "name"))
-        or first_value(("full", "name"), ("customer", "buyer"))
-        or first_value(("fio",), ("customer", "buyer"))
-    )
-    if name:
-        cleaned = clean_person_name(str(name))
-        if cleaned and "Contrast Event" not in cleaned:
-            result["contractor_full_name"] = cleaned
+    name_candidates: list[tuple[int, str]] = []
+    for path, value in rows:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        normalized_path = re.sub(r"[^a-zа-яёәғқңөұүһі0-9]", "", path.casefold())
+        if any(token in normalized_path for token in ("customer", "buyer", "payer", "покупател", "плательщик", "төлеуші")):
+            continue
+        is_name = any(token in normalized_path for token in ("fullname", "fio", "фио", "атыжөні", "атыжони"))
+        is_party_name = "name" in normalized_path and any(
+            token in normalized_path for token in ("seller", "executor", "taxpayer", "individual", "person")
+        )
+        if not (is_name or is_party_name):
+            continue
+        cleaned = clean_person_name(value)
+        if not cleaned or "contrast event" in cleaned.casefold():
+            continue
+        priority = 0 if any(token in normalized_path for token in ("seller", "executor", "taxpayer", "самозанят", "сатушы")) else 1
+        name_candidates.append((priority, cleaned))
+    if name_candidates:
+        best_priority = min(item[0] for item in name_candidates)
+        best_names = [item[1] for item in name_candidates if item[0] == best_priority]
+        result["contractor_full_name"] = max(best_names, key=lambda value: (len(re.findall(r"[ӘәҒғҚқҢңӨөҰұҮүҺһІі]", value)), len(value.split()), len(value)))
 
     amount_candidates: list[tuple[int, Decimal]] = []
     for path, value in rows:
@@ -521,7 +617,7 @@ def _parse_esalyq_json(payload: object) -> dict:
         if not (service_path or operation_path or description_path):
             continue
         cleaned = clean_service_name(value)
-        if not cleaned or len(re.findall(r"[A-Za-zА-Яа-яЁё]", cleaned)) < 3:
+        if not cleaned or len(re.findall(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", cleaned)) < 3:
             continue
         score = _service_text_score(cleaned)
         if service_path:
@@ -547,6 +643,22 @@ def _parse_esalyq_json(payload: object) -> dict:
     text_result = _parse_esalyq_report_text(flattened_text)
     for key, value in text_result.items():
         result.setdefault(key, value)
+
+    # Legal receipt fields must come from receipt-specific keys, never from a
+    # generic response/create timestamp or arbitrary numeric ID in the KGD JSON.
+    result.pop("receipt_datetime", None)
+    exact_datetime = _find_json_receipt_datetime(__import__(__name__, fromlist=["*"]), payload)
+    if exact_datetime:
+        result["receipt_datetime"] = exact_datetime
+    exact_name = clean_person_name(_extract_json_unicode_name(__import__(__name__, fromlist=["*"]), payload))
+    if exact_name:
+        result["contractor_full_name"] = prefer_full_person_name(result.get("contractor_full_name"), exact_name)
+    exact_iin = _extract_json_iin(__import__(__name__, fromlist=["*"]), payload)
+    if exact_iin:
+        result["iin"] = exact_iin
+    exact_number = clean_receipt_number(_extract_json_receipt_number(__import__(__name__, fromlist=["*"]), payload))
+    if exact_number:
+        result["receipt_number"] = exact_number
     if result.get("contractor_full_name"):
         result["contractor_full_name"] = clean_person_name(result["contractor_full_name"])
     if result.get("receipt_number"):
@@ -618,7 +730,119 @@ def resolve_esalyq_qr(qr_payload: str) -> dict:
     parsed["qr_payload"] = canonical
     parsed["parse_confidence"] = Decimal("100.00") if count >= 5 else Decimal("90.00")
     parsed["source_text"] = raw_text[:50000]
+    parsed["source"] = "kgd_qr"
     return parsed
+
+
+def _nuxt_reference(values: list, value):
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(values):
+        return values[value]
+    return value
+
+
+def _parse_kaspi_receipt_html(source: str) -> dict:
+    match = re.search(
+        r"<script\b[^>]*\bid=[\"']__NUXT_DATA__[\"'][^>]*>(.*?)</script>",
+        source or "",
+        flags=re.I | re.S,
+    )
+    if not match:
+        raise HTTPException(status_code=502, detail="Kaspi вернул чек без структурированных данных")
+    try:
+        values = json.loads(unescape(match.group(1)))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail="Не удалось разобрать данные официального чека Kaspi") from exc
+    if not isinstance(values, list):
+        raise HTTPException(status_code=502, detail="Kaspi вернул неизвестный формат чека")
+
+    receipt = next((
+        value for value in values
+        if isinstance(value, dict) and {"header", "amount", "cartItems", "payParameters"}.issubset(value)
+    ), None)
+    if receipt is None:
+        raise HTTPException(status_code=502, detail="В ответе Kaspi не найдена карточка чека")
+
+    item_names: list[str] = []
+    items_value = _nuxt_reference(values, receipt.get("cartItems"))
+    if isinstance(items_value, list):
+        for item_ref in items_value:
+            item = _nuxt_reference(values, item_ref)
+            if not isinstance(item, dict):
+                continue
+            cleaned = clean_service_name(str(_nuxt_reference(values, item.get("item_name")) or ""))
+            if cleaned:
+                item_names.append(cleaned)
+
+    parameters: dict[str, str] = {}
+    parameters_value = _nuxt_reference(values, receipt.get("payParameters"))
+    if isinstance(parameters_value, list):
+        for parameter_ref in parameters_value:
+            parameter = _nuxt_reference(values, parameter_ref)
+            if not isinstance(parameter, dict):
+                continue
+            name = _strip_html_to_text(str(_nuxt_reference(values, parameter.get("name")) or ""))
+            value = _strip_html_to_text(str(_nuxt_reference(values, parameter.get("value")) or ""))
+            if name and value:
+                parameters[re.sub(r"\s+", " ", name).strip().casefold()] = value
+
+    amount_text = str(_nuxt_reference(values, receipt.get("amount")) or "")
+    parsed = {
+        "contractor_full_name": None,
+        "iin": clean_iin(parameters.get("иин самозанятого") or parameters.get("жсн самозанятого")),
+        "receipt_number": clean_receipt_number(parameters.get("№ чека") or parameters.get("номер чека")),
+        "receipt_datetime": _parse_report_datetime(parameters.get("дата и время по астане", "")),
+        "service_name": clean_service_name("; ".join(dict.fromkeys(item_names))),
+        "receipt_amount": _money_from_text(amount_text),
+    }
+    useful = [
+        parsed.get("iin"), parsed.get("receipt_number"), parsed.get("receipt_datetime"),
+        parsed.get("service_name"), parsed.get("receipt_amount"),
+    ]
+    if sum(value not in {None, ""} for value in useful) < 4:
+        raise HTTPException(status_code=502, detail="Официальный чек Kaspi получен, но в нём не хватает основных полей")
+    parsed["parse_confidence"] = Decimal("100.00")
+    parsed["source"] = "kaspi_qr"
+    parsed["source_text"] = json.dumps(
+        {"header": "Чек самозанятого Kaspi", "items": item_names, "parameters": parameters, "amount": amount_text},
+        ensure_ascii=False,
+    )[:50000]
+    return parsed
+
+
+def resolve_kaspi_qr(qr_payload: str) -> dict:
+    canonical = canonical_kaspi_qr(qr_payload)
+    if not canonical:
+        raise HTTPException(status_code=400, detail="QR чека Kaspi не найден")
+    try:
+        response = requests.get(
+            canonical,
+            timeout=KASPI_RECEIPT_TIMEOUT,
+            allow_redirects=True,
+            headers={
+                "User-Agent": "ContrastFinance/0.5.108 (+Kaspi self-employed receipt verification)",
+                "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+            },
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail="Не удалось получить официальный чек Kaspi по QR. Попробуйте позже") from exc
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Kaspi не отдал чек по QR (HTTP {response.status_code})")
+    final = urlparse(response.url)
+    if final.scheme.lower() != "https" or (final.hostname or "").lower() != KASPI_RECEIPT_HOST:
+        raise HTTPException(status_code=502, detail="Kaspi перенаправил QR на неизвестный адрес")
+    encoding = response.encoding or "utf-8"
+    parsed = _parse_kaspi_receipt_html((response.content or b"").decode(encoding, errors="replace"))
+    parsed["qr_payload"] = canonical
+    return parsed
+
+
+def resolve_receipt_qr(qr_payload: str) -> dict:
+    canonical = canonical_receipt_qr(qr_payload)
+    if not canonical:
+        raise HTTPException(status_code=400, detail="QR чека не найден")
+    if (urlparse(canonical).hostname or "").lower() == KASPI_RECEIPT_HOST:
+        return resolve_kaspi_qr(canonical)
+    return resolve_esalyq_qr(canonical)
 
 
 def _duplicate_receipt_id(
@@ -632,7 +856,7 @@ def _duplicate_receipt_id(
     canonical_qr = None
     if qr_payload:
         try:
-            canonical_qr = canonical_esalyq_qr(qr_payload)
+            canonical_qr = canonical_receipt_qr(qr_payload)
         except HTTPException:
             canonical_qr = str(qr_payload).strip()[:10000]
     if canonical_qr:
@@ -642,9 +866,9 @@ def _duplicate_receipt_id(
         duplicate = db.execute(query.limit(1)).scalar_one_or_none()
         if duplicate is not None:
             return int(duplicate)
-    number = clean_text(receipt_number, 80)
+    number = clean_receipt_number(receipt_number)
     normalized_iin = re.sub(r"\D", "", str(iin or ""))
-    if number and len(re.sub(r"\D", "", number)) >= 6 and len(normalized_iin) == 12:
+    if number and len(normalized_iin) == 12:
         query = select(SelfEmployedAccounting.id).where(
             SelfEmployedAccounting.receipt_number == number,
             SelfEmployedAccounting.iin == normalized_iin,
@@ -754,7 +978,7 @@ def clean_person_name(value: str | None) -> str | None:
 
 
 def prefer_full_person_name(primary: str | None, visual: str | None) -> str | None:
-    """Keep KGD identity, but restore a patronymic visible on the receipt."""
+    """Prefer the most complete spelling without crossing contractor identities."""
     official = clean_person_name(primary)
     fallback = clean_person_name(visual)
     if not official:
@@ -763,22 +987,38 @@ def prefer_full_person_name(primary: str | None, visual: str | None) -> str | No
         return official
     official_words = official.casefold().split()
     fallback_words = fallback.casefold().split()
-    shared_prefix = min(2, len(official_words), len(fallback_words))
-    if (
-        len(fallback_words) > len(official_words)
-        and shared_prefix >= 2
-        and fallback_words[:shared_prefix] == official_words[:shared_prefix]
-    ):
-        return fallback
-    return official
+    if official_words[0] != fallback_words[0]:
+        return official
+
+    kazakh_map = str.maketrans("әғқңөұүһі", "агкноууhi")
+    def comparable(value: str) -> str:
+        return re.sub(r"[^a-zа-яё]", "", value.casefold().translate(kazakh_map))
+
+    similarity = SequenceMatcher(None, comparable(official), comparable(fallback)).ratio()
+    if similarity < 0.64:
+        return official
+
+    def quality(value: str) -> tuple[int, int, int]:
+        kazakh_letters = len(re.findall(r"[ӘәҒғҚқҢңӨөҰұҮүҺһІі]", value))
+        words = len(value.split())
+        letters = len(re.findall(r"[A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]", value))
+        return (kazakh_letters, words, letters)
+
+    return fallback if quality(fallback) > quality(official) else official
 
 
 def clean_receipt_number(value: str | None) -> str | None:
     if not value:
         return None
     source = str(value).replace("О", "0").replace("O", "0")
-    match = re.search(r"\d{4,24}", re.sub(r"[\s-]+", "", source))
-    return match.group(0) if match else None
+    compact = re.sub(r"[\s-]+", "", source)
+    for candidate in re.findall(r"\d{12,24}", compact):
+        if len(candidate) == 12:
+            return candidate
+        suffix = candidate[-12:]
+        if suffix.startswith("0"):
+            return suffix
+    return None
 
 
 def clean_service_name(value: str | None) -> str | None:
@@ -852,6 +1092,61 @@ def clean_iin(value: str | None) -> str | None:
     if len(digits) != 12:
         raise HTTPException(status_code=400, detail="ИИН должен содержать 12 цифр")
     return digits
+
+
+def _person_identity_key(value: str | None) -> str:
+    cleaned = clean_person_name(value)
+    return re.sub(r"[^a-zа-яёәғқңөұүһі]", "", (cleaned or "").casefold())
+
+
+def _valid_iin_or_none(value: object) -> str | None:
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits if len(digits) == 12 else None
+
+
+def _restore_receipt_identity(db: Session, record: SelfEmployedAccounting) -> None:
+    """Reuse only unambiguous identity data from receipts of the same person."""
+    current_name = clean_person_name(record.contractor_full_name)
+    current_iin = _valid_iin_or_none(record.iin)
+    historical = db.execute(
+        select(
+            SelfEmployedAccounting.id,
+            SelfEmployedAccounting.iin,
+            SelfEmployedAccounting.contractor_full_name,
+        ).where(SelfEmployedAccounting.id != record.id)
+    ).all()
+
+    if current_iin is None and current_name:
+        name_key = _person_identity_key(current_name)
+        matching_iins = {
+            _valid_iin_or_none(iin)
+            for _record_id, iin, full_name in historical
+            if iin and _person_identity_key(full_name) == name_key
+        }
+        matching_iins.discard(None)
+        if len(matching_iins) == 1:
+            current_iin = next(iter(matching_iins))
+            record.iin = current_iin
+
+    if current_iin:
+        names = [current_name] if current_name else []
+        names.extend(
+            clean_person_name(full_name)
+            for _record_id, iin, full_name in historical
+            if iin and _valid_iin_or_none(iin) == current_iin and full_name
+        )
+        contact = _saved_contact(db, current_iin)
+        if contact and contact.full_name:
+            names.append(clean_person_name(contact.full_name))
+        best_name: str | None = None
+        for candidate in (name for name in names if name):
+            best_name = prefer_full_person_name(best_name, candidate)
+        if best_name:
+            record.contractor_full_name = best_name
+            if contact and contact.full_name != best_name:
+                contact.full_name = best_name
+                contact.updated_at = datetime.utcnow()
+                db.add(contact)
 
 
 def clean_decimal(value: str | Decimal | None) -> Decimal | None:
@@ -1230,7 +1525,7 @@ def _row_matches_accounting_month(
     if row.has_receipt and row.receipt_datetime:
         return start <= row.receipt_datetime.date() < end
     if row.has_receipt and not row.receipt_datetime:
-        return bool(row.event_date and start <= row.event_date < end)
+        return False
     return bool(row.event_date and start <= row.event_date < end)
 
 
@@ -1259,6 +1554,7 @@ def get_r1_customer_profile(
 @router.get("", response_model=list[SelfEmployedAccountingRead])
 def list_self_employed_accounting(
     month: str | None = None,
+    include_undated: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1312,7 +1608,11 @@ def list_self_employed_accounting(
         # A real e-Salyq receipt date is the source of truth for accounting
         # period. Rows still waiting for a receipt remain discoverable by event
         # month so the accountant can attach the future receipt.
-        result = [row for row in result if _row_matches_accounting_month(row, month_bounds)]
+        result = [
+            row for row in result
+            if _row_matches_accounting_month(row, month_bounds)
+            or (include_undated and row.has_receipt and not row.receipt_datetime)
+        ]
 
     # Receipt-first workflow: imported checks can exist before a request is found.
     no_members = ~exists(
@@ -1328,11 +1628,11 @@ def list_self_employed_accounting(
     _hydrate_contact_phones(db, list(standalone_records))
     for record in standalone_records:
         if month_bounds:
-            # Standalone imported receipts are distributed strictly by the issue
-            # date read from the receipt. If OCR did not read a date yet, keep the
-            # row in the month of upload until it is corrected manually.
-            probe = record.receipt_datetime or record.receipt_uploaded_at or record.created_at
-            if probe and not (month_bounds[0] <= probe.date() < month_bounds[1]):
+            # Never invent a legal accounting period from upload/create time.
+            # Undated checks stay visible only as an explicit repair queue.
+            if record.receipt_datetime is None and not include_undated:
+                continue
+            if record.receipt_datetime and not (month_bounds[0] <= record.receipt_datetime.date() < month_bounds[1]):
                 continue
         result.append(build_row([], record))
 
@@ -1532,7 +1832,7 @@ def _apply_import_metadata(
     record.receipt_datetime = clean_datetime(receipt_datetime)
     record.service_name = clean_service_name(service_name)
     record.receipt_amount = clean_decimal(receipt_amount)
-    record.qr_payload = canonical_esalyq_qr(qr_payload) if qr_payload else None
+    record.qr_payload = canonical_receipt_qr(qr_payload) if qr_payload else None
     record.ocr_text = str(ocr_text)[:50000] if ocr_text else None
     if parse_confidence not in {None, ""}:
         try:
@@ -1588,21 +1888,33 @@ def _unreceipted_candidate_groups(db: Session) -> list[tuple[list[PaymentRequest
 def _auto_match_receipt(
     db: Session,
     contractor_full_name: str | None,
+    iin: str | None,
     receipt_amount: Decimal | None,
 ) -> tuple[SelfEmployedAccounting | None, str, list[int]]:
     surname = _surname_key(contractor_full_name)
-    if not surname or receipt_amount is None:
+    normalized_iin = clean_iin(iin)
+    if receipt_amount is None:
         return None, "unmatched", []
 
-    matches: list[tuple[list[PaymentRequest], SelfEmployedAccounting | None]] = []
+    amount_matches: list[tuple[list[PaymentRequest], SelfEmployedAccounting | None]] = []
+    identity_matches: list[tuple[list[PaymentRequest], SelfEmployedAccounting | None]] = []
     for requests, record in _unreceipted_candidate_groups(db):
         total = sum((Decimal(request.amount_requested) for request in requests), Decimal("0.00")).quantize(Decimal("0.01"))
         if total != receipt_amount:
             continue
+        amount_matches.append((requests, record))
+        candidate_iins = {
+            clean_iin(value)
+            for value in [getattr(record, "iin", None), *(request.iin_bin_snapshot for request in requests)]
+            if value
+        }
+        candidate_iins.discard(None)
         request_surnames = {_surname_key(request.contractor_name_snapshot) for request in requests}
         request_surnames.discard(None)
-        if surname in request_surnames:
-            matches.append((requests, record))
+        if (normalized_iin and normalized_iin in candidate_iins) or (surname and surname in request_surnames):
+            identity_matches.append((requests, record))
+
+    matches = identity_matches or (amount_matches if not surname and not normalized_iin else [])
 
     if len(matches) != 1:
         return None, "ambiguous" if len(matches) > 1 else "unmatched", []
@@ -1619,7 +1931,8 @@ def resolve_self_employed_receipt_qr(
     current_user: User = Depends(get_current_user),
 ):
     require_accounting_access(current_user)
-    parsed = resolve_esalyq_qr(payload.qr_payload)
+    parsed = resolve_receipt_qr(payload.qr_payload)
+    source = parsed.get("source") or "kgd_qr"
     return SelfEmployedReceiptQrResolveRead(
         contractor_full_name=parsed.get("contractor_full_name"),
         iin=parsed.get("iin"),
@@ -1629,8 +1942,11 @@ def resolve_self_employed_receipt_qr(
         receipt_amount=parsed.get("receipt_amount"),
         qr_payload=parsed["qr_payload"],
         parse_confidence=parsed.get("parse_confidence", Decimal("100.00")),
-        source="kgd_qr",
-        message="Данные получены из официального чека КГД по QR",
+        source=source,
+        message=(
+            "Данные получены из официального чека Kaspi по QR"
+            if source == "kaspi_qr" else "Данные получены из официального чека КГД по QR"
+        ),
         source_text=parsed.get("source_text"),
     )
 
@@ -1657,12 +1973,12 @@ def refresh_accounting_receipt_from_qr(
     canonical_qr: str | None = None
     if qr_payload:
         try:
-            canonical_qr = canonical_esalyq_qr(qr_payload)
+            canonical_qr = canonical_receipt_qr(qr_payload)
             # The browser refresh first resolves the QR, then visually verifies
             # the same receipt. Do not request the identical KGD report again
             # when the resulting official fields are already in this payload.
             if not payload.kgd_resolved:
-                official = resolve_esalyq_qr(canonical_qr)
+                official = resolve_receipt_qr(canonical_qr)
         except HTTPException:
             # The pixels remain a valid accounting source even when an old KGD
             # link is unavailable. Fresh zone OCR fields are applied below.
@@ -1676,9 +1992,9 @@ def refresh_accounting_receipt_from_qr(
         iin=official.get("iin") or payload.iin,
     )
 
-    # KGD wins for identifiers and dates. The service is deliberately taken
-    # from the visual item cell because generic KGD descriptions have proven
-    # unreliable for the printed work name.
+    official_source = official.get("source") or (
+        "kaspi_qr" if canonical_qr and (urlparse(canonical_qr).hostname or "").lower() == KASPI_RECEIPT_HOST else "kgd_qr"
+    )
     record.contractor_full_name = prefer_full_person_name(
         official.get("contractor_full_name"),
         payload.contractor_full_name or record.contractor_full_name,
@@ -1691,11 +2007,18 @@ def refresh_accounting_receipt_from_qr(
     )
     selected_dt = official.get("receipt_datetime") or payload.receipt_datetime or record.receipt_datetime
     record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
-    record.service_name = (
-        clean_service_name(payload.service_name)
-        or clean_service_name(official.get("service_name"))
-        or clean_service_name(record.service_name)
-    )
+    if official_source == "kaspi_qr":
+        record.service_name = (
+            clean_service_name(official.get("service_name"))
+            or clean_service_name(payload.service_name)
+            or clean_service_name(record.service_name)
+        )
+    else:
+        record.service_name = (
+            clean_service_name(payload.service_name)
+            or clean_service_name(official.get("service_name"))
+            or clean_service_name(record.service_name)
+        )
     selected_amount = official.get("receipt_amount")
     if selected_amount is None:
         selected_amount = payload.receipt_amount if payload.receipt_amount is not None else record.receipt_amount
@@ -1711,6 +2034,7 @@ def refresh_accounting_receipt_from_qr(
     record.confirmed_at = None
     record.confirmed_by_user_id = None
     record.updated_at = datetime.utcnow()
+    _restore_receipt_identity(db, record)
     db.add(record)
     db.commit()
     return load_accounting_row(db, record.id)
@@ -1747,13 +2071,16 @@ async def import_self_employed_receipt(
         # backend then fetches the official KGD receipt report and overwrites
         # any OCR fallback values with the verified data.
         try:
-            official = resolve_esalyq_qr(qr_payload)
+            official = resolve_receipt_qr(qr_payload)
             contractor_full_name = prefer_full_person_name(official.get("contractor_full_name"), contractor_full_name)
             iin = official.get("iin") or iin
             receipt_number = official.get("receipt_number") or receipt_number
             official_dt = official.get("receipt_datetime")
             receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
-            service_name = clean_service_name(service_name) or clean_service_name(official.get("service_name"))
+            if official.get("source") == "kaspi_qr":
+                service_name = clean_service_name(official.get("service_name")) or clean_service_name(service_name)
+            else:
+                service_name = clean_service_name(service_name) or clean_service_name(official.get("service_name"))
             official_amount = official.get("receipt_amount")
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
@@ -1762,7 +2089,7 @@ async def import_self_employed_receipt(
             ocr_text = official.get("source_text") or ocr_text
         except HTTPException as exc:
             try:
-                qr_payload = canonical_esalyq_qr(qr_payload)
+                qr_payload = canonical_receipt_qr(qr_payload)
             except HTTPException:
                 qr_payload = None
             qr_error = str(exc.detail)
@@ -1775,9 +2102,17 @@ async def import_self_employed_receipt(
     )
 
     normalized_amount = clean_decimal(receipt_amount)
-    record, match_status, matched_ids = _auto_match_receipt(db, contractor_full_name, normalized_amount)
+    record, match_status, matched_ids = _auto_match_receipt(db, contractor_full_name, iin, normalized_amount)
     if record is None:
         record = create_standalone_record(db)
+    elif not contractor_full_name and matched_ids:
+        matched_name = db.execute(
+            select(PaymentRequest.contractor_name_snapshot)
+            .where(PaymentRequest.id.in_(matched_ids), PaymentRequest.contractor_name_snapshot.is_not(None))
+            .order_by(PaymentRequest.id)
+            .limit(1)
+        ).scalar_one_or_none()
+        contractor_full_name = clean_person_name(matched_name)
 
     _save_receipt_binary(
         db,
@@ -1801,17 +2136,19 @@ async def import_self_employed_receipt(
     )
     if qr_error:
         record.parse_status = "uploaded"
+    _restore_receipt_identity(db, record)
     db.add(record)
     db.commit()
 
+    receipt_source = "Kaspi" if qr_payload and (urlparse(qr_payload).hostname or "").lower() == KASPI_RECEIPT_HOST else "КГД"
     if qr_error:
-        message = f"Чек сохранён, QR найден, но данные КГД не получены: {qr_error}"
+        message = f"Чек сохранён, QR найден, но официальные данные не получены: {qr_error}"
     elif match_status == "matched":
-        message = f"Чек проверен по QR КГД и автоматически привязан к заявке{'м' if len(matched_ids) > 1 else ''} №" + ", №".join(str(i) for i in matched_ids)
+        message = f"Чек проверен по QR {receipt_source} и автоматически привязан к заявке{'м' if len(matched_ids) > 1 else ''} №" + ", №".join(str(i) for i in matched_ids)
     elif match_status == "ambiguous":
-        message = "Чек проверен по QR КГД. Есть несколько заявок с такой фамилией и суммой — оставлен отдельной строкой"
+        message = f"Чек проверен по QR {receipt_source}. Есть несколько подходящих заявок — оставлен отдельной строкой"
     else:
-        message = "Чек проверен по QR КГД. Точного совпадения фамилии и суммы нет — создан отдельной строкой" if qr_payload else "QR не найден: чек создан отдельной строкой по резервному распознаванию"
+        message = f"Чек проверен по QR {receipt_source}. Точного совпадения данных и суммы нет — создан отдельной строкой" if qr_payload else "QR не найден: чек создан отдельной строкой по резервному распознаванию"
     return SelfEmployedReceiptImportRead(
         row=load_accounting_row(db, record.id),
         match_status=match_status,
@@ -2069,13 +2406,16 @@ async def upload_self_employed_receipt(
     qr_error: str | None = None
     if qr_payload:
         try:
-            official = resolve_esalyq_qr(qr_payload)
+            official = resolve_receipt_qr(qr_payload)
             contractor_full_name = prefer_full_person_name(official.get("contractor_full_name"), contractor_full_name)
             iin = official.get("iin") or iin
             receipt_number = official.get("receipt_number") or receipt_number
             official_dt = official.get("receipt_datetime")
             receipt_datetime = official_dt.isoformat() if isinstance(official_dt, datetime) else (official_dt or receipt_datetime)
-            service_name = clean_service_name(service_name) or clean_service_name(official.get("service_name"))
+            if official.get("source") == "kaspi_qr":
+                service_name = clean_service_name(official.get("service_name")) or clean_service_name(service_name)
+            else:
+                service_name = clean_service_name(service_name) or clean_service_name(official.get("service_name"))
             official_amount = official.get("receipt_amount")
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
@@ -2083,7 +2423,7 @@ async def upload_self_employed_receipt(
             ocr_text = official.get("source_text") or ocr_text
         except HTTPException as exc:
             try:
-                qr_payload = canonical_esalyq_qr(qr_payload)
+                qr_payload = canonical_receipt_qr(qr_payload)
             except HTTPException:
                 qr_payload = None
             qr_error = str(exc.detail)
@@ -2118,6 +2458,7 @@ async def upload_self_employed_receipt(
     )
     if qr_error and record.parse_status == "parsed" and not any((contractor_full_name, iin, receipt_number, receipt_datetime, service_name, receipt_amount)):
         record.parse_status = "uploaded"
+    _restore_receipt_identity(db, record)
     db.add(record)
     db.commit()
     return load_group_row(db, request_id)
@@ -2163,7 +2504,7 @@ def _update_record(
     if payload.receipt_amount is not None:
         record.receipt_amount = clean_decimal(payload.receipt_amount)
     if payload.qr_payload is not None:
-        record.qr_payload = canonical_esalyq_qr(payload.qr_payload) if payload.qr_payload else None
+        record.qr_payload = canonical_receipt_qr(payload.qr_payload) if payload.qr_payload else None
     if payload.ocr_text is not None:
         record.ocr_text = str(payload.ocr_text)[:50000]
     if payload.parse_confidence is not None:
@@ -2224,6 +2565,7 @@ def update_receipt_accounting(
         iin=payload.iin,
     )
     _update_record(db, record, payload, current_user)
+    _restore_receipt_identity(db, record)
     db.add(record)
     db.commit()
     return load_accounting_row(db, record.id)

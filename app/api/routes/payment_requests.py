@@ -210,6 +210,10 @@ def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary:
         item.external_quantity = Decimal("1.00")
         item.external_days = Decimal("1.00")
         item.amount_fact = q(manager_salary)
+        item.payment_method = None
+        item.iin_bin = None
+        item.iin_bin_locked = False
+        item.tax_check_status = None
         item.vat_amount = Decimal("0.00")
         item.deduction_amount = Decimal("0.00")
         item.updated_at = datetime.utcnow()
@@ -220,10 +224,10 @@ def get_or_create_manager_salary_item(db: Session, event: Event, manager_salary:
 
 
 def validate_manager_salary_payment_rules(payment_method: str, payload: PaymentRequestCreate):
-    if payment_method not in {"card", "cash"}:
+    if payment_method not in {"card", "cash", "self_employed"}:
         raise HTTPException(
             status_code=400,
-            detail="ЗП менеджера можно оформить только На карту или Налик",
+            detail="ЗП менеджера можно оформить только На карту, Нал или Самозанятый",
         )
 
     if payment_method == "card" and not looks_like_card_number(payload.card_number):
@@ -231,6 +235,10 @@ def validate_manager_salary_payment_rules(payment_method: str, payload: PaymentR
             status_code=400,
             detail="Для ЗП менеджера На карту нужен номер карты из 16 цифр",
         )
+    if payment_method == "self_employed":
+        surname = (getattr(payload, "self_employed_surname", None) or "").strip()
+        if not comment_has_surname(surname):
+            raise HTTPException(status_code=400, detail="Для Самозанятого фамилия обязательна")
 
 
 def normalize_payment_method(payment_method: str | None) -> str | None:
@@ -340,8 +348,13 @@ def active_payment_methods_for_item(db: Session, item_id: int) -> list[str]:
 
 
 def validate_payment_method_lock(db: Session, item: EventItem, payment_method: str) -> None:
-    if item.item_type == "coordinator" and payment_method != "cash":
-        raise HTTPException(status_code=409, detail="Координатор оплачивается только Налом")
+    if item.item_type in {"coordinator", "manager_salary"}:
+        if payment_method not in {"cash", "card", "self_employed"}:
+            raise HTTPException(
+                status_code=400,
+                detail="Для Координатора и ЗП менеджера доступны Нал, На карту и Самозанятый",
+            )
+        return
 
     active_methods = active_payment_methods_for_item(db, item.id)
     if active_methods:
@@ -372,6 +385,17 @@ def apply_payment_context_to_item(
 ) -> None:
     """Persist only payment-related fields; never reopen ordinary estimate editing."""
     validate_payment_method_lock(db, item, payment_method)
+
+    if item.item_type in {"coordinator", "manager_salary"}:
+        item.payment_method = None
+        item.iin_bin = None
+        item.iin_bin_locked = False
+        item.tax_check_status = None
+        item.vat_amount = Decimal("0.00")
+        item.deduction_amount = Decimal("0.00")
+        item.updated_at = datetime.utcnow()
+        db.add(item)
+        return
 
     if payment_method in {"cash", "card"}:
         item.payment_method = payment_method
@@ -905,7 +929,7 @@ def create_manager_salary_payment_request(
     if not payment_method:
         raise HTTPException(
             status_code=400,
-            detail="Для заявки на ЗП менеджера нужно выбрать способ оплаты: card или cash",
+            detail="Для заявки на ЗП менеджера нужно выбрать способ оплаты: card, cash или self_employed",
         )
 
     validate_manager_salary_payment_rules(payment_method, payload)
@@ -938,13 +962,16 @@ def create_manager_salary_payment_request(
         item_remaining_snapshot=remaining,
 
         contractor_id=None,
-        contractor_name_snapshot=None,
+        contractor_name_snapshot=(
+            (getattr(payload, "self_employed_surname", None) or "").strip() or None
+            if payment_method == "self_employed" else None
+        ),
         iin_bin_snapshot=None,
-        tax_status_snapshot=None,
-        vat_status_snapshot=None,
+        tax_status_snapshot="self_employed" if payment_method == "self_employed" else None,
+        vat_status_snapshot="no_vat" if payment_method == "self_employed" else None,
         vat_amount_snapshot=Decimal("0.00"),
         deduction_amount_snapshot=Decimal("0.00"),
-        tax_source_snapshot=None,
+        tax_source_snapshot="payment_request_only" if payment_method == "self_employed" else None,
 
         card_number=payload.card_number if payment_method == "card" else None,
         manual_tax_mode=False,

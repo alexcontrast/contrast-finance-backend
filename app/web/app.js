@@ -7654,6 +7654,7 @@ function accountingReceiptDateInputValue(value) {
 
 function accountingDisplayDate(row) {
   if (row?.receipt_datetime) return formatDateRu(String(row.receipt_datetime).slice(0, 10));
+  if (row?.has_receipt) return "Дата не распознана";
   if (row?.receipt_uploaded_at) return formatDateRu(String(row.receipt_uploaded_at).slice(0, 10));
   if (row?.event_date) return formatDateRu(row.event_date);
   return "—";
@@ -7735,7 +7736,7 @@ function renderAccountingEditor(row) {
           <div class="muted">${row.request_count > 1 ? `Этот чек покрывает ${row.request_count} заявки на ${formatMoney(row.request_amount)} ₸.` : row.is_receipt_only ? "К этому чеку пока не добавлена заявка. Её можно перетащить сюда вручную." : "Проверьте данные чека."}</div>
         </div>
         ${row.parse_confidence !== null && row.parse_confidence !== undefined
-          ? `<span class="accounting-confidence">${row.qr_payload ? "QR/КГД" : "OCR fallback"} ${Math.round(asNumber(row.parse_confidence))}%</span>`
+          ? `<span class="accounting-confidence">${row.qr_payload ? "официальный QR" : "OCR fallback"} ${Math.round(asNumber(row.parse_confidence))}%</span>`
           : ""}
       </div>
       <div class="accounting-form-grid">
@@ -7911,9 +7912,9 @@ function renderAccountingBatchModal() {
       <div class="accounting-batch-modal" role="dialog" aria-modal="true">
         <div class="accounting-batch-head">
           <div>
-            <div class="eyebrow">e-Salyq Business</div>
+            <div class="eyebrow">e-Salyq Business и Kaspi</div>
             <h3>Загрузить пачку чеков</h3>
-            <p class="muted">Сайт читает QR e-Salyq, получает официальный чек из КГД и добирает из изображения только те поля, которых нет в ответе. Точное совпадение фамилии + суммы привязывается автоматически.</p>
+            <p class="muted">Сайт читает официальные QR e-Salyq и Kaspi. Kaspi разбирается по структурированной карточке чека, e-Salyq сверяется с КГД и изображением.</p>
           </div>
           <button class="ghost" id="accountingBatchClose" type="button" ${state.accountingBatchRunning ? "disabled" : ""}>✕</button>
         </div>
@@ -7944,6 +7945,7 @@ function renderAccountingPanel() {
   const withReceipt = rows.filter((row) => row.has_receipt).length;
   const unmatchedReceipts = rows.filter((row) => row.is_receipt_only).length;
   const reviewed = rows.filter((row) => row.parse_status === "reviewed").length;
+  const undatedReceipts = rows.filter((row) => row.has_receipt && !row.receipt_datetime).length;
 
   return `
     <section class="accounting-panel">
@@ -7959,6 +7961,7 @@ function renderAccountingPanel() {
           <span><strong>${reviewed}</strong> проверено</span>
         </div>
       </div>
+      ${undatedReceipts ? `<div class="accounting-refresh-error" role="status"><strong>${undatedReceipts}</strong> ${undatedReceipts === 1 ? "чек без даты не отнесён" : "чека без даты не отнесены"} к месяцу. Нажмите «Обновить» или откройте карандаш и укажите дату с чека.</div>` : ""}
       <div class="accounting-toolbar">
         <label class="accounting-toggle"><input id="accountingMissingOnly" type="checkbox" ${state.accountingShowOnlyMissingReceipt ? "checked" : ""} /> Только без чека</label>
         <button id="accountingRefreshBtn" class="secondary" type="button" ${state.accountingRefreshRunning ? "disabled" : ""}>${state.accountingRefreshRunning ? `Обновлено ${state.accountingRefreshCompleted}/${state.accountingRefreshTotal}` : "Обновить"}</button>
@@ -8041,7 +8044,7 @@ async function loadSelfEmployedAccounting(force = false) {
     if (rowsEl) rowsEl.innerHTML = `<div class="empty-state">Загружаем бухгалтерию…</div>`;
   }
   try {
-    state.accountingRows = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}`);
+    state.accountingRows = await api(`/accounting/self-employed?month=${encodeURIComponent(month)}&include_undated=true`);
     state.accountingLoadedMonth = month;
     if (!state.accountingRefreshRunning) state.accountingRefreshErrorsById = {};
   } finally {
@@ -8179,9 +8182,19 @@ function accountingDecodeQr(canvas) {
   if (!window.jsQR) return null;
   try {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const result = window.jsQR(image.data, image.width, image.height, { inversionAttempts: "attemptBoth" });
-    return result?.data || null;
+    const regions = [
+      [0, 0, canvas.width, canvas.height],
+      [0, Math.round(canvas.height * 0.45), canvas.width, Math.round(canvas.height * 0.55)],
+      [Math.round(canvas.width * 0.08), Math.round(canvas.height * 0.52), Math.round(canvas.width * 0.84), Math.round(canvas.height * 0.44)],
+    ];
+    for (const [left, top, width, height] of regions) {
+      const safeWidth = Math.max(1, Math.min(canvas.width - left, width));
+      const safeHeight = Math.max(1, Math.min(canvas.height - top, height));
+      const image = ctx.getImageData(left, top, safeWidth, safeHeight);
+      const result = window.jsQR(image.data, image.width, image.height, { inversionAttempts: "attemptBoth" });
+      if (result?.data) return result.data;
+    }
+    return null;
   } catch (_) {
     return null;
   }
@@ -8211,6 +8224,10 @@ const ACCOUNTING_RU_MONTHS = {
   июля: 7, августа: 8, сентября: 9, октября: 10, ноября: 11, декабря: 12,
   январь: 1, февраль: 2, март: 3, апрель: 4, май: 5, июнь: 6,
   июль: 7, август: 8, сентябрь: 9, октябрь: 10, ноябрь: 11, декабрь: 12,
+  қаңтар: 1, қаңтары: 1, ақпан: 2, ақпаны: 2, наурыз: 3, наурызы: 3,
+  сәуір: 4, сәуірі: 4, мамыр: 5, мамыры: 5, маусым: 6, маусымы: 6,
+  шілде: 7, шілдесі: 7, тамыз: 8, тамызы: 8, қыркүйек: 9, қыркүйегі: 9,
+  қазан: 10, қазаны: 10, қараша: 11, қарашасы: 11, желтоқсан: 12, желтоқсаны: 12,
 };
 
 function accountingNormalizeOcrText(text) {
@@ -8242,13 +8259,19 @@ function accountingPreferFullPersonName(primary, visual) {
   const fallback = accountingCleanPersonName(visual || "");
   if (!official) return fallback;
   if (!fallback) return official;
-  const officialWords = official.toLocaleLowerCase("ru").split(/\s+/);
-  const fallbackWords = fallback.toLocaleLowerCase("ru").split(/\s+/);
-  if (
-    fallbackWords.length > officialWords.length
-    && officialWords.length >= 2
-    && officialWords.slice(0, 2).join(" ") === fallbackWords.slice(0, 2).join(" ")
-  ) return fallback;
+  const officialWords = official.toLocaleLowerCase("kk").split(/\s+/);
+  const fallbackWords = fallback.toLocaleLowerCase("kk").split(/\s+/);
+  if (officialWords[0] !== fallbackWords[0]) return official;
+  const quality = (value) => [
+    (String(value).match(/[ӘәҒғҚқҢңӨөҰұҮүҺһІі]/g) || []).length,
+    String(value).split(/\s+/).filter(Boolean).length,
+    (String(value).match(/\p{L}/gu) || []).length,
+  ];
+  const left = quality(official);
+  const right = quality(fallback);
+  for (let index = 0; index < left.length; index += 1) {
+    if (right[index] !== left[index]) return right[index] > left[index] ? fallback : official;
+  }
   return official;
 }
 
@@ -8305,15 +8328,48 @@ function accountingCleanMoney(text) {
   return Number.isFinite(value) ? value : null;
 }
 
+function accountingNormalizeIinCandidate(value) {
+  const digits = String(value || "")
+    .replace(/[ОOоo]/g, "0")
+    .replace(/[ІIil|]/g, "1")
+    .replace(/\D/g, "");
+  return /^\d{12}$/.test(digits) ? digits : null;
+}
+
+function accountingNormalizeReceiptNumber(value) {
+  const compact = String(value || "").replace(/[ОOоo]/g, "0").replace(/[\s-]+/g, "");
+  const candidates = compact.match(/\d{12,24}/g) || [];
+  for (const candidate of candidates) {
+    if (candidate.length === 12) return candidate;
+    const suffix = candidate.slice(-12);
+    if (suffix.startsWith("0")) return suffix;
+  }
+  return null;
+}
+
 function accountingParseReceiptDate(text) {
   const lower = String(text || "").toLowerCase();
-  let m = lower.match(/(?:от\s*)?(\d{1,2})\s+([а-яё]+)\s+(20\d{2})(?:\s*г(?:ода)?[.,]?)?\s*[,\-]?\s*(\d{1,2}):(\d{2})/i);
+  const monthPattern = Object.keys(ACCOUNTING_RU_MONTHS)
+    .sort((a, b) => b.length - a.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const iso = (year, month, day, hour = 0, minute = 0) => {
+    const probe = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+    if (Number.isNaN(probe.getTime()) || probe.getFullYear() !== Number(year) || probe.getMonth() !== Number(month) - 1 || probe.getDate() !== Number(day)) return null;
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00`;
+  };
+  let m = lower.match(new RegExp(`(?:от\\s*)?(\\d{1,2})\\s+(${monthPattern})\\s+(20\\d{2})(?:\\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\\s*[,\\-]?\\s*(\\d{1,2}):(\\d{2}))?`, "iu"));
   if (m) {
     const month = ACCOUNTING_RU_MONTHS[m[2]];
-    if (month) return `${m[3]}-${String(month).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}T${String(m[4]).padStart(2, "0")}:${m[5]}:00`;
+    if (month) return iso(m[3], month, m[1], m[4] || 0, m[5] || 0);
   }
-  m = lower.match(/(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})[^\d]{0,10}(\d{1,2}):(\d{2})/);
-  if (m) return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}T${String(m[4]).padStart(2, "0")}:${m[5]}:00`;
+  m = lower.match(new RegExp(`(20\\d{2})\\s*(?:жылғы|жыл)?\\s*(\\d{1,2})\\s+(${monthPattern})(?:\\s*[,\\-]?\\s*(\\d{1,2}):(\\d{2}))?`, "iu"));
+  if (m) return iso(m[1], ACCOUNTING_RU_MONTHS[m[3]], m[2], m[4] || 0, m[5] || 0);
+  m = lower.match(/(?:^|\D)(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?/);
+  if (m) return iso(m[3], m[2], m[1], m[4] || 0, m[5] || 0);
+  m = lower.match(/(?:^|\D)(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?/);
+  if (m) return iso(m[1], m[2], m[3], m[4] || 0, m[5] || 0);
   return null;
 }
 
@@ -8325,14 +8381,14 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
 
   // e-Salyq prints the self-employed person's IIN first and the customer BIN
   // later. Read only the IIN-labelled 12-digit value for the contractor.
-  const iinMatch = joined.match(/(?:ИИН|IIN|ЖСН)[^0-9]{0,20}((?:\d[\s-]?){12})/i);
+  const iinMatch = joined.match(/(?:ИИН|IIN|ЖСН)\s*[:№#-]*\s*((?:[0-9ОOоoІIil|][ \t-]?){12,18})/iu);
   if (iinMatch) {
-    const digits = iinMatch[1].replace(/\D/g, "");
-    if (digits.length === 12) result.iin = digits;
+    const digits = accountingNormalizeIinCandidate(iinMatch[1]);
+    if (digits) result.iin = digits;
   }
 
-  const receiptMatch = joined.match(/(?:чек|receipt)\s*[№N#]?\s*([0-9ОO]{4,24})/i);
-  if (receiptMatch) result.receipt_number = receiptMatch[1].replace(/[ОO]/g, "0");
+  const receiptMatch = joined.match(/(?:чек|receipt)\s*(?:№|N|#|номер|number)?\s*[:#=-]*\s*((?:[0-9ОOоo][ \t-]?){12,26})/iu);
+  if (receiptMatch) result.receipt_number = accountingNormalizeReceiptNumber(receiptMatch[1]);
 
   const dateValue = accountingParseReceiptDate(joined);
   if (dateValue) result.receipt_datetime = dateValue;
@@ -8366,7 +8422,7 @@ function accountingParseESalyqText(rawText, requestAmount = null) {
     if (/\d/.test(clean)) return false;
     if (/(?:режим|налогооблож|самозанят|БИН|BIN|ИП\b|ТОО\b|чек|receipt|итого|плат[её]ж|наличн|безналичн|текущ|банк|Кбе|ИИК|HSBK|₸|тг|тенге)/i.test(clean)) return false;
     const words = clean.split(/\s+/).filter(Boolean);
-    const letters = (clean.match(/[A-Za-zА-Яа-яЁё]/g) || []).length;
+    const letters = (clean.match(/\p{L}/gu) || []).length;
     const nameCase = clean.toUpperCase() === clean || words.every((word) => word.slice(0, 1) === word.slice(0, 1).toUpperCase());
     return words.length >= 1 && words.length <= 4 && letters >= 3 && nameCase;
   };
@@ -8449,7 +8505,7 @@ function accountingReceiptMissingFields(data) {
   const missing = [];
   if (!accountingCleanPersonName(data?.contractor_full_name || "")) missing.push("ФИО");
   if (!/^\d{12}$/.test(String(data?.iin || "").replace(/\D/g, ""))) missing.push("ИИН");
-  if (!String(data?.receipt_number || "").replace(/\D/g, "")) missing.push("номер");
+  if (!accountingNormalizeReceiptNumber(data?.receipt_number)) missing.push("номер");
   if (!data?.receipt_datetime) missing.push("дату");
   if (!(asNumber(data?.receipt_amount) > 0)) missing.push("сумму");
   if (!accountingCleanServiceName(data?.service_name || "")) missing.push("наименование работы");
@@ -8460,10 +8516,9 @@ function accountingNormalizeReceiptFields(data) {
   const result = { ...(data || {}) };
   if (result.contractor_full_name) result.contractor_full_name = accountingCleanPersonName(result.contractor_full_name) || null;
   if (result.iin) {
-    const digits = String(result.iin).replace(/\D/g, "").slice(0, 12);
-    result.iin = /^\d{12}$/.test(digits) ? digits : null;
+    result.iin = accountingNormalizeIinCandidate(result.iin);
   }
-  if (result.receipt_number) result.receipt_number = String(result.receipt_number).replace(/[ОO]/g, "0").replace(/\D/g, "") || null;
+  if (result.receipt_number) result.receipt_number = accountingNormalizeReceiptNumber(result.receipt_number);
   if (result.service_name) result.service_name = accountingCleanServiceName(result.service_name) || null;
   if (!(asNumber(result.receipt_amount) > 0)) result.receipt_amount = null;
   return result;
@@ -8754,13 +8809,19 @@ function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
 async function accountingCreateReusableOcrWorker() {
   await ensureAccountingOcrLibraries();
   const bundle = { worker: null, progress: null };
-  bundle.worker = await window.Tesseract.createWorker("rus+eng", 1, {
+  const options = {
     logger: (message) => {
       if (message?.status === "recognizing text" && Number.isFinite(message.progress) && typeof bundle.progress === "function") {
         bundle.progress(`Визуально читаю чек… ${Math.round(message.progress * 100)}%`);
       }
     },
-  });
+  };
+  try {
+    bundle.worker = await window.Tesseract.createWorker("kaz+rus+eng", 1, options);
+  } catch (error) {
+    console.warn("Казахская OCR-модель недоступна, использую русскую", error);
+    bundle.worker = await window.Tesseract.createWorker("rus+eng", 1, options);
+  }
   return bundle;
 }
 
@@ -8789,7 +8850,12 @@ async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progre
   try {
     if (reusableBundle) reusableBundle.progress = progress;
     if (!worker) {
-      worker = await window.Tesseract.createWorker("rus+eng", 1, { logger });
+      try {
+        worker = await window.Tesseract.createWorker("kaz+rus+eng", 1, { logger });
+      } catch (error) {
+        console.warn("Казахская OCR-модель недоступна, использую русскую", error);
+        worker = await window.Tesseract.createWorker("rus+eng", 1, { logger });
+      }
       ownsWorker = true;
     }
     const recognize = async (name, rectangle = null, pageSegMode = "3") => {
@@ -8835,7 +8901,7 @@ async function resolveAccountingQrPayload(qrPayload) {
 
 async function recognizeAccountingReceiptFile(file, requestAmount = null, onProgress = null, options = {}) {
   const progress = (text) => { if (typeof onProgress === "function") onProgress(text); };
-  progress("Ищу QR e-Salyq…");
+  progress("Ищу официальный QR чека…");
   await ensureAccountingQrLibrary();
   progress(String(file.type || "") === "application/pdf" ? "Открываю PDF и ищу QR…" : "Открываю изображение и ищу QR…");
   const sourceCanvas = await canvasFromReceiptFile(file);
@@ -8843,10 +8909,10 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
 
   if (qrPayload) {
     if (options.resolveQr === false) {
-      progress("QR найден. Данные будут получены из КГД при загрузке…");
+      progress("QR найден. Официальные данные будут получены при загрузке…");
       return { qr_payload: qrPayload };
     }
-    progress("QR найден. Получаю официальный чек из КГД…");
+    progress("QR найден. Получаю официальный чек…");
     try {
       const official = await resolveAccountingQrPayload(qrPayload);
       let result = accountingNormalizeReceiptFields({
@@ -8860,6 +8926,11 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
         parse_confidence: official.parse_confidence ?? 100,
       });
       result._kgd_resolved = true;
+      result._official_source = official.source || "kgd_qr";
+      if (result._official_source === "kaspi_qr") {
+        progress("Точные данные получены из официального чека Kaspi.");
+        return result;
+      }
       const missing = accountingReceiptMissingFields(result);
       progress(missing.length
         ? `КГД не вернул ${missing.join(", ")}. Добираю и сверяю по изображению…`
@@ -8873,10 +8944,10 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
       } catch (ocrError) {
         console.warn("Accounting visual verification failed", ocrError);
       }
-      progress("Данные KGD и изображение чека сверены.");
+      progress("Данные КГД и изображение чека сверены.");
       return result;
     } catch (error) {
-      progress(`QR найден, но КГД не отдал все данные. Читаю сам чек…`);
+      progress("QR найден, но официальный сервис не отдал все данные. Читаю сам чек…");
       try {
         const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress, options);
         return { ...fallback, qr_payload: qrPayload, _qr_error: error.message };
@@ -8918,7 +8989,7 @@ async function uploadAccountingReceipt(handle, file) {
   const usedOcrFallback = Boolean(parsed?._ocr_fallback);
   delete parsed._qr_error;
   delete parsed._ocr_fallback;
-  setAccountingProgress(handle, parsed.qr_payload ? "QR найден. Получаю данные из КГД и сохраняю чек…" : "Сохраняю чек…", true);
+  setAccountingProgress(handle, parsed.qr_payload ? "QR найден. Сохраняю официальные данные чека…" : "Сохраняю чек…", true);
 
   const form = new FormData();
   form.append("file", file, file.name);
@@ -8933,9 +9004,9 @@ async function uploadAccountingReceipt(handle, file) {
   state.accountingExpandedRequestId = updatedHandle;
 
   if (updated.qr_payload && updated.receipt_number && updated.receipt_amount !== null && updated.receipt_amount !== undefined) {
-    setAccountingProgress(updatedHandle, "Данные получены из КГД по QR. Проверьте их перед подтверждением.", true);
+    setAccountingProgress(updatedHandle, "Данные получены по официальному QR. Проверьте их перед подтверждением.", true);
   } else if (updated.qr_payload) {
-    setAccountingProgress(updatedHandle, "QR сохранён, но КГД пока не отдал данные. Позже нажмите «Получить из QR КГД».", true);
+    setAccountingProgress(updatedHandle, "QR сохранён, но официальный сервис пока не отдал данные. Позже нажмите «Обновить».", true);
   } else if (usedOcrFallback) {
     setAccountingProgress(updatedHandle, "QR не прочитан. Применено резервное OCR — обязательно проверьте данные.", true);
   } else {
@@ -9203,7 +9274,7 @@ async function refreshAccountingFromQr(handle, options = {}) {
   const parsed = await accountingReadStoredReceipt(row, (text) => setAccountingProgress(handle, text, true));
   const payload = accountingQrRefreshPayload(parsed, row.qr_payload || null);
 
-  setAccountingProgress(handle, payload.qr_payload ? "Сверяю KGD и изображение…" : "Сохраняю данные, прочитанные с изображения…", true);
+  setAccountingProgress(handle, payload.qr_payload ? "Сверяю официальный QR и изображение…" : "Сохраняю данные, прочитанные с изображения…", true);
   const updated = await api(`/accounting/self-employed/receipts/${row.accounting_id}/refresh-qr`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -9212,7 +9283,7 @@ async function refreshAccountingFromQr(handle, options = {}) {
   if (!options.silent) {
     state.accountingExpandedRequestId = accountingRowHandle(updated);
     setAccountingProgress(accountingRowHandle(updated), payload.qr_payload
-      ? "Данные KGD сверены и дополнены по изображению чека."
+      ? "Официальные данные сверены и дополнены по изображению чека."
       : "Чек перечитан визуально без рабочего QR.", true);
   }
   if (options.reload !== false) await loadSelfEmployedAccounting(true);
@@ -16498,6 +16569,15 @@ function selfEmployedDeductionBase(item) {
 
 function ensureSelfEmployedItemTax(item) {
   if (!item) return item;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") {
+    item.payment_method = null;
+    item.iin_bin = null;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
+    return item;
+  }
 
   // Самозанятый становится жёстко закреплённым только после активной заявки/оплаты
   // по этой позиции. Простое переключение в смете остаётся обычным черновым выбором.
@@ -16657,7 +16737,7 @@ function itemCanSwitchCashCardMethod(item) {
 
 function itemPaymentMethodLocked(item) {
   if (!item) return false;
-  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return false;
   if (itemHasLockedInvoicePayment(item)) return true;
   if (itemCanSwitchCashCardMethod(item)) return false;
   return itemHasActivePaymentRequest(item);
@@ -16682,7 +16762,7 @@ function itemHasLockedSelfEmployedPayment(item) {
 function paymentMethodIsFixed(item) {
   if (!item) return false;
   if (item.is_new_payment_position) return false;
-  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return true;
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return false;
   if (itemHasLockedInvoicePayment(item)) return true;
   if (itemCanSwitchCashCardMethod(item)) return false;
   if (itemHasActivePaymentRequest(item)) return true;
@@ -16692,7 +16772,7 @@ function paymentMethodIsFixed(item) {
 
 function fixedPaymentMethodForItem(item) {
   if (!item) return null;
-  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return "cash";
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") return null;
   const activeMethod = paymentMethodFromActiveRequest(item);
   if (activeMethod) return activeMethod;
   if (itemHasLockedInvoicePayment(item)) return "invoice";
@@ -16727,7 +16807,7 @@ function paymentPositionsForEvent(eventId) {
       external_amount: 0,
       amount_fact: managerSalary,
       paid_amount: managerPaid,
-      payment_method: "cash",
+      payment_method: null,
       internal_note: "Системная позиция ЗП менеджера",
       is_manager_salary_virtual: true,
       is_new_payment_position: false,
@@ -16768,7 +16848,18 @@ function simplePaymentMethodOptions() {
   ];
 }
 
+function untrackedSpecialPaymentMethodOptions() {
+  return [
+    ["cash", "Нал"],
+    ["card", "На карту"],
+    ["self_employed", "Самозанятый"],
+  ];
+}
+
 function paymentMethodOptionsForItem(item) {
+  if (item?.item_type === "coordinator" || item?.item_type === "manager_salary") {
+    return untrackedSpecialPaymentMethodOptions();
+  }
   if (itemCanSwitchCashCardMethod(item)) {
     return simplePaymentMethodOptions();
   }
@@ -17090,7 +17181,8 @@ function renderPaymentExtraFields(eventId) {
 
   if (method === "self_employed") {
     const surname = selfEmployedSurnameFromItem(item);
-    const isLocked = Boolean(surname) && !item.is_new_payment_position;
+    const isUntrackedSpecial = item.item_type === "coordinator" || item.item_type === "manager_salary";
+    const isLocked = !isUntrackedSpecial && Boolean(surname) && !item.is_new_payment_position;
     extra.innerHTML = `
       <label>Фамилия самозанятого
         <input id="paymentSelfEmployedInput" value="${surname}" placeholder="Фамилия" ${isLocked ? "disabled" : ""} />
@@ -17098,7 +17190,9 @@ function renderPaymentExtraFields(eventId) {
       <div class="payment-extra-hint">${
         isLocked
           ? "Самозанятый уже закреплён за этой позицией."
-          : "Укажи фамилию. КГД не нужен, вычеты 10% запишутся в смету."
+          : (isUntrackedSpecial
+            ? "Укажи фамилию. Для этой позиции способ не закрепляется, вычеты не начисляются."
+            : "Укажи фамилию. КГД не нужен, вычеты 10% запишутся в смету.")
       }</div>
     `;
     return;
@@ -17548,6 +17642,16 @@ async function prepareSelfEmployedPaymentItem(eventId, item) {
     throw new Error("Для самозанятого обязательно укажи фамилию");
   }
 
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") {
+    item.payment_method = null;
+    item.iin_bin = null;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
+    return surname;
+  }
+
   item = await materializePaymentItemIfNeeded(eventId, item, "self_employed");
 
   item.payment_method = "self_employed";
@@ -17590,6 +17694,17 @@ function simplePaymentItemNeedsPersist(item, finalMethod) {
 
 async function prepareSimplePaymentItem(eventId, item, method) {
   item = await materializePaymentItemIfNeeded(eventId, item, method);
+
+  if (item.item_type === "coordinator" || item.item_type === "manager_salary") {
+    item.payment_method = null;
+    item.iin_bin = null;
+    item.iin_bin_locked = false;
+    item.tax_check_status = null;
+    item.vat_amount = 0;
+    item.deduction_amount = 0;
+    patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
+    return item;
+  }
 
   const fixed = fixedPaymentMethodForItem(item);
   const finalMethod = fixed || method;
@@ -17671,11 +17786,17 @@ async function submitManagerPayment(eventId) {
     let createdRequest = null;
 
     if (item.item_type === "manager_salary") {
-      if (!["cash", "card"].includes(method)) {
-        throw new Error("ЗП менеджера можно оформить только налом или на карту");
+      if (!["cash", "card", "self_employed"].includes(method)) {
+        throw new Error("ЗП менеджера можно оформить налом, на карту или на самозанятого");
       }
 
       const card = method === "card" ? validatePaymentCardBeforeSubmit() : null;
+      const selfEmployedSurname = method === "self_employed"
+        ? (($("paymentSelfEmployedInput")?.value || "").trim())
+        : null;
+      if (method === "self_employed" && !selfEmployedSurname) {
+        throw new Error("Для самозанятого обязательно укажи фамилию");
+      }
 
       createdRequest = await timedAction("manager-payment-create-salary-api", () => api(`/events/${eventId}/manager-salary/payment-requests`, {
         method: "POST",
@@ -17684,6 +17805,7 @@ async function submitManagerPayment(eventId) {
           payment_method: method,
           card_number: card,
           comment: paymentPayloadComment() || "ЗП менеджера",
+          self_employed_surname: selfEmployedSurname,
         }),
       }));
     } else {

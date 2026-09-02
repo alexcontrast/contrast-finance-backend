@@ -790,8 +790,8 @@ def fixed_payment_method_for_item(db: Session, item: EventItem | None, is_salary
         return None
     if is_salary:
         return None
-    if item.item_type == "coordinator":
-        return "cash"
+    if item.item_type in {"coordinator", "manager_salary"}:
+        return None
 
     active_request = active_payment_requests_for_item(db, int(item.id))[0:1]
     if active_request:
@@ -875,6 +875,7 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
             "taxCheckStatus": item.tax_check_status,
             "internalNote": item.internal_note,
             "selfEmployedSurname": self_employed_surname_from_item(item),
+            "itemType": item.item_type,
             "isManagerSalary": False,
         })
 
@@ -1180,14 +1181,19 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
                 db.add(item)
                 db.flush()
         elif item_token == SALARY_ITEM_ID:
-            if method not in {"card", "cash"}:
-                raise RuntimeError("ЗП менеджера можно оформить только На карту или Нал")
+            if method not in {"card", "cash", "self_employed"}:
+                raise RuntimeError("ЗП менеджера можно оформить только На карту, Нал или Самозанятый")
             items = db.execute(
                 select(EventItem).where(EventItem.event_id == event.id, EventItem.is_deleted == False)  # noqa: E712
             ).scalars().all()
             summary = calculate_event_summary_values(event, items)
             item = get_or_create_salary_item(db, event, money(summary.get("manager_salary")))
-            item.payment_method = method
+            item.payment_method = None
+            item.iin_bin = None
+            item.iin_bin_locked = False
+            item.tax_check_status = None
+            item.vat_amount = Decimal("0.00")
+            item.deduction_amount = Decimal("0.00")
             db.add(item)
         else:
             item = db.get(EventItem, int(item_token))
@@ -1199,8 +1205,17 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
                 raise RuntimeError(f"Способ оплаты уже закреплён за этой позицией: {payment_method_label(fixed_method)}")
             method = fixed_method or method
 
-            item.payment_method = method
-            if method == "invoice":
+            special_untracked = item.item_type in {"coordinator", "manager_salary"}
+            item.payment_method = None if special_untracked else method
+            if special_untracked:
+                if method not in {"card", "cash", "self_employed"}:
+                    raise RuntimeError("Для Координатора доступны На карту, Нал или Самозанятый")
+                item.iin_bin = None
+                item.iin_bin_locked = False
+                item.tax_check_status = None
+                item.vat_amount = Decimal("0.00")
+                item.deduction_amount = Decimal("0.00")
+            elif method == "invoice":
                 if payload.get("bin_iin"):
                     apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin")))
                 else:
@@ -1391,11 +1406,11 @@ def items_keyboard(items: List[Dict[str, Any]], allow_extra: bool) -> InlineKeyb
     return InlineKeyboardMarkup(rows)
 
 
-def payment_method_keyboard(is_salary: bool = False, fixed_method: str | None = None) -> InlineKeyboardMarkup:
+def payment_method_keyboard(is_salary: bool = False, fixed_method: str | None = None, is_untracked_special: bool = False) -> InlineKeyboardMarkup:
     if fixed_method:
         methods = [payment_method_label(fixed_method)]
     else:
-        methods = ["На карту", "Нал"] if is_salary else PAYMENT_METHODS
+        methods = ["Самозанятый", "На карту", "Нал"] if (is_salary or is_untracked_special) else PAYMENT_METHODS
     return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=f"paymethod:{label}")] for label in methods])
 
 
@@ -1873,11 +1888,16 @@ async def choose_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["selected_item"] = item or {}
     context.user_data.pop("new_position_name", None)
     is_salary = item_id == SALARY_ITEM_ID
+    is_untracked_special = is_salary or (item or {}).get("itemType") == "coordinator"
     fixed_method = (item or {}).get("fixedPaymentMethod") if not is_salary else None
     fixed_hint = "\nСпособ оплаты уже закреплён за этой позицией." if fixed_method else ""
     await query.edit_message_text(
         f"Позиция: {item.get('positionName') if item else item_id}{fixed_hint}\n\nВыбери способ оплаты:",
-        reply_markup=payment_method_keyboard(is_salary=is_salary, fixed_method=fixed_method),
+        reply_markup=payment_method_keyboard(
+            is_salary=is_salary,
+            fixed_method=fixed_method,
+            is_untracked_special=is_untracked_special,
+        ),
     )
     return PAYMENT_METHOD
 
@@ -1921,7 +1941,10 @@ async def choose_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("Введи БИН/ИИН подрядчика. Ровно 12 цифр:")
         return BIN_IIN
     if method == "self_employed":
-        await query.edit_message_text("Самозанятый: НДС 0, вычеты 10%.\n\n" + amount_prompt_for_selected_item(context))
+        selected_type = selected_item.get("itemType")
+        is_untracked_special = selected_item.get("isManagerSalary") or selected_type == "coordinator"
+        hint = "Самозанятый: вычеты по этой позиции не начисляются." if is_untracked_special else "Самозанятый: НДС 0, вычеты 10%."
+        await query.edit_message_text(hint + "\n\n" + amount_prompt_for_selected_item(context))
         return AMOUNT
     await query.edit_message_text(amount_prompt_for_selected_item(context))
     return AMOUNT

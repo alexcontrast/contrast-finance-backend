@@ -70,7 +70,7 @@ def create_coordinator_item(
             external_note=payload.external_note,
             amount_fact=coordinator_fact,
             paid_amount=Decimal("0.00"),
-            payment_method="cash",
+            payment_method=None,
             iin_bin=None,
             iin_bin_locked=False,
             tax_check_status=None,
@@ -90,7 +90,7 @@ def create_coordinator_item(
         item.external_amount = payload.external_amount
         item.external_note = payload.external_note
         item.amount_fact = coordinator_fact
-        item.payment_method = "cash"
+        item.payment_method = None
         item.iin_bin = None
         item.iin_bin_locked = False
         item.tax_check_status = None
