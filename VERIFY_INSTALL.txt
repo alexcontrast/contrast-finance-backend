@@ -1,11 +1,11 @@
-Contrast Finance v0.5.108 verification
+Contrast Finance v0.5.109 verification
 
 After Railway deploy open:
 /api/status
 
 Expected JSON field:
-"version": "0.5.108"
+"version": "0.5.109"
 
 If it still shows an older version, the application files were not replaced.
 
-Then hard refresh and click "Обновить" in Accounting. Undated receipts remain visible as an explicit repair queue and move to the correct month after their printed date is recovered.
+Then hard refresh and click "Обновить" in Accounting. Stored receipts are re-read from their printed header and move to the correct month after the date is recovered.

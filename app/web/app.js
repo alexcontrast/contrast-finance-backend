@@ -8347,8 +8347,20 @@ function accountingNormalizeReceiptNumber(value) {
   return null;
 }
 
+function accountingNormalizeDateOcrText(value) {
+  return String(value || "").replace(
+    /(?<![\p{L}\d])[0-9OОOoоIІil|]{1,4}(?![\p{L}\d])/gu,
+    (token) => {
+      if (!/\d/.test(token)) return token;
+      return token
+        .replace(/[OОOoо]/g, "0")
+        .replace(/[IІil|]/g, "1");
+    },
+  );
+}
+
 function accountingParseReceiptDate(text) {
-  const lower = String(text || "").toLowerCase();
+  const lower = accountingNormalizeDateOcrText(text).toLowerCase();
   const monthPattern = Object.keys(ACCOUNTING_RU_MONTHS)
     .sort((a, b) => b.length - a.length)
     .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
@@ -8359,16 +8371,16 @@ function accountingParseReceiptDate(text) {
     const pad = (value) => String(value).padStart(2, "0");
     return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00`;
   };
-  let m = lower.match(new RegExp(`(?:от\\s*)?(\\d{1,2})\\s+(${monthPattern})\\s+(20\\d{2})(?:\\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\\s*[,\\-]?\\s*(\\d{1,2}):(\\d{2}))?`, "iu"));
+  let m = lower.match(new RegExp(`(?:от\\s*)?(\\d{1,2})\\s+(${monthPattern})\\s+(20\\d{2})(?:\\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\\s*[,\\-]?\\s*(\\d{1,2})[:.](\\d{2}))?`, "iu"));
   if (m) {
     const month = ACCOUNTING_RU_MONTHS[m[2]];
     if (month) return iso(m[3], month, m[1], m[4] || 0, m[5] || 0);
   }
-  m = lower.match(new RegExp(`(20\\d{2})\\s*(?:жылғы|жыл)?\\s*(\\d{1,2})\\s+(${monthPattern})(?:\\s*[,\\-]?\\s*(\\d{1,2}):(\\d{2}))?`, "iu"));
+  m = lower.match(new RegExp(`(20\\d{2})\\s*(?:жылғы|жыл)?\\s*(\\d{1,2})\\s+(${monthPattern})(?:\\s*[,\\-]?\\s*(\\d{1,2})[:.](\\d{2}))?`, "iu"));
   if (m) return iso(m[1], ACCOUNTING_RU_MONTHS[m[3]], m[2], m[4] || 0, m[5] || 0);
-  m = lower.match(/(?:^|\D)(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?/);
+  m = lower.match(/(?:^|\D)(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})(?:[^\d]{0,10}(\d{1,2})[:.](\d{2}))?/);
   if (m) return iso(m[3], m[2], m[1], m[4] || 0, m[5] || 0);
-  m = lower.match(/(?:^|\D)(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?/);
+  m = lower.match(/(?:^|\D)(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[^\d]{0,10}(\d{1,2})[:.](\d{2}))?/);
   if (m) return iso(m[1], m[2], m[3], m[4] || 0, m[5] || 0);
   return null;
 }
@@ -8773,6 +8785,13 @@ function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
 
   if (header.receipt_number) result.receipt_number = header.receipt_number;
   if (header.receipt_datetime) result.receipt_datetime = header.receipt_datetime;
+  const visualDate = accountingParseReceiptDate([
+    zoneText.date_header,
+    zoneText.date_middle,
+    zoneText.header,
+    zoneText.full,
+  ].filter(Boolean).join("\n"));
+  if (visualDate) result.receipt_datetime = visualDate;
   if (person.contractor_full_name) result.contractor_full_name = accountingCleanPersonName(person.contractor_full_name);
   if (/^\d{12}$/.test(String(person.iin || ""))) result.iin = person.iin;
   result = accountingMergeReceiptFields(result, header);
@@ -8798,6 +8817,8 @@ function accountingParseVisualReceiptZones(zoneText, requestAmount = null) {
   const allText = [
     "[FULL]", zoneText.full,
     "[HEADER]", zoneText.header,
+    "[DATE_HEADER]", zoneText.date_header,
+    "[DATE_MIDDLE]", zoneText.date_middle,
     "[PERSON]", zoneText.person,
     "[SERVICE_COLUMN]", zoneText.service,
     "[AMOUNT_COLUMN]", zoneText.amount,
@@ -8877,6 +8898,16 @@ async function accountingRecognizeCanvasText(sourceCanvas, requestAmount, progre
     await recognize("person", accountingOcrRectangle(ocrCanvas, 0.02, 0.10, 0.96, 0.27), "6");
     progress("Уточняю дату и номер чека…");
     await recognize("header", accountingOcrRectangle(ocrCanvas, 0.02, 0.01, 0.96, 0.18), "6");
+    let visualDate = accountingParseReceiptDate([zones.header, zones.full].filter(Boolean).join("\n"));
+    if (!visualDate) {
+      progress("Дата не найдена в QR. Читаю расширенную шапку чека…");
+      await recognize("date_header", accountingOcrRectangle(ocrCanvas, 0.01, 0.00, 0.98, 0.34), "11");
+      visualDate = accountingParseReceiptDate(zones.date_header || "");
+    }
+    if (!visualDate) {
+      progress("Ищу строку даты на другом макете чека…");
+      await recognize("date_middle", accountingOcrRectangle(ocrCanvas, 0.01, 0.22, 0.98, 0.44), "11");
+    }
   } finally {
     if (reusableBundle) reusableBundle.progress = null;
     if (worker && ownsWorker) await worker.terminate();
@@ -8927,8 +8958,22 @@ async function recognizeAccountingReceiptFile(file, requestAmount = null, onProg
       });
       result._kgd_resolved = true;
       result._official_source = official.source || "kgd_qr";
-      if (result._official_source === "kaspi_qr") {
+      if (result._official_source === "kaspi_qr" && result.receipt_datetime) {
         progress("Точные данные получены из официального чека Kaspi.");
+        return result;
+      }
+      if (result._official_source === "kaspi_qr" && !result.receipt_datetime) {
+        progress("Kaspi не вернул дату. Читаю её со страницы чека…");
+        try {
+          const fallback = await accountingRecognizeCanvasText(sourceCanvas, requestAmount, progress, options);
+          result = accountingMergeReceiptFields(result, fallback);
+          result._visual_verified = true;
+        } catch (ocrError) {
+          console.warn("Kaspi receipt date visual fallback failed", ocrError);
+        }
+        progress(result.receipt_datetime
+          ? "Дата Kaspi прочитана визуально."
+          : "Дата Kaspi пока не распознана — чек оставлен в очереди проверки.");
         return result;
       }
       const missing = accountingReceiptMissingFields(result);
@@ -9382,7 +9427,7 @@ async function refreshAccountingMonthFromQr() {
     // blanking the already updated interface.
     const refreshMonth = selectedMonthValue();
     try {
-      const freshRows = await api(`/accounting/self-employed?month=${encodeURIComponent(refreshMonth)}`);
+      const freshRows = await api(`/accounting/self-employed?month=${encodeURIComponent(refreshMonth)}&include_undated=true`);
       if (selectedMonthValue() === refreshMonth) {
         state.accountingRows = freshRows;
         state.accountingLoadedMonth = refreshMonth;

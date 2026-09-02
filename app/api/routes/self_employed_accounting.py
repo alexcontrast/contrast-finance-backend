@@ -280,11 +280,34 @@ def _safe_datetime(year: int, month: int, day: int, hour: int = 0, minute: int =
         return None
 
 
+_OCR_DATE_TOKEN_RE = re.compile(
+    r"(?<![A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі\d])"
+    r"[0-9OОOoоIІil|]{1,4}"
+    r"(?![A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі\d])"
+)
+
+
+def _normalize_ocr_date_text(value: str | None) -> str:
+    """Repair OCR confusables only inside standalone numeric date/time tokens."""
+    text = str(value or "").replace("\xa0", " ")
+
+    def repair(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if not any(char.isdigit() for char in token):
+            return token
+        return token.translate(str.maketrans({
+            "O": "0", "o": "0", "О": "0", "о": "0",
+            "I": "1", "І": "1", "i": "1", "l": "1", "|": "1",
+        }))
+
+    return _OCR_DATE_TOKEN_RE.sub(repair, text)
+
+
 def _parse_report_datetime(text: str) -> datetime | None:
-    lower = str(text or "").lower()
+    lower = _normalize_ocr_date_text(text).lower()
     month_names = "|".join(sorted((re.escape(value) for value in _REPORT_MONTHS), key=len, reverse=True))
     match = re.search(
-        rf"(?:от\s*)?(\d{{1,2}})\s+({month_names})\s+(20\d{{2}})(?:\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\s*[,\-]?\s*(\d{{1,2}}):(\d{{2}}))?",
+        rf"(?:от\s*)?(\d{{1,2}})\s+({month_names})\s+(20\d{{2}})(?:\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\s*[,\-]?\s*(\d{{1,2}})[:.](\d{{2}}))?",
         lower,
         re.I,
     )
@@ -292,18 +315,25 @@ def _parse_report_datetime(text: str) -> datetime | None:
         month = _REPORT_MONTHS.get(match.group(2))
         if month:
             return _safe_datetime(int(match.group(3)), month, int(match.group(1)), int(match.group(4) or 0), int(match.group(5) or 0))
-    match = re.search(r"(20\d{2})\s*(?:жылғы|жыл)?\s*(\d{1,2})\s+([а-яёәғқңөұүһі]+)(?:\s*[,\-]?\s*(\d{1,2}):(\d{2}))?", lower, re.I)
+    match = re.search(r"(20\d{2})\s*(?:жылғы|жыл)?\s*(\d{1,2})\s+([а-яёәғқңөұүһі]+)(?:\s*[,\-]?\s*(\d{1,2})[:.](\d{2}))?", lower, re.I)
     if match:
         month = _REPORT_MONTHS.get(match.group(3))
         if month:
             return _safe_datetime(int(match.group(1)), month, int(match.group(2)), int(match.group(4) or 0), int(match.group(5) or 0))
-    match = re.search(r"(?<!\d)(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?", lower)
+    match = re.search(r"(?<!\d)(\d{1,2})[.\-/](\d{1,2})[.\-/](20\d{2})(?:[^\d]{0,10}(\d{1,2})[:.](\d{2}))?", lower)
     if match:
         return _safe_datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)), int(match.group(4) or 0), int(match.group(5) or 0))
-    match = re.search(r"(?<!\d)(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[^\d]{0,10}(\d{1,2}):(\d{2}))?", lower)
+    match = re.search(r"(?<!\d)(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?:[^\d]{0,10}(\d{1,2})[:.](\d{2}))?", lower)
     if match:
         return _safe_datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4) or 0), int(match.group(5) or 0))
     return None
+
+
+def _merge_receipt_source_text(*values: str | None) -> str | None:
+    parts = [str(value).strip() for value in values if value and str(value).strip()]
+    if not parts:
+        return None
+    return "\n\n".join(dict.fromkeys(parts))[:50000]
 
 
 def _money_from_text(value: str | None) -> Decimal | None:
@@ -819,7 +849,7 @@ def resolve_kaspi_qr(qr_payload: str) -> dict:
             timeout=KASPI_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.108 (+Kaspi self-employed receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.109 (+Kaspi self-employed receipt verification)",
                 "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
             },
         )
@@ -1829,7 +1859,7 @@ def _apply_import_metadata(
     record.contractor_full_name = clean_person_name(contractor_full_name)
     record.iin = clean_iin(iin)
     record.receipt_number = clean_receipt_number(receipt_number)
-    record.receipt_datetime = clean_datetime(receipt_datetime)
+    record.receipt_datetime = clean_datetime(receipt_datetime) or _parse_report_datetime(ocr_text or "")
     record.service_name = clean_service_name(service_name)
     record.receipt_amount = clean_decimal(receipt_amount)
     record.qr_payload = canonical_receipt_qr(qr_payload) if qr_payload else None
@@ -2005,7 +2035,13 @@ def refresh_accounting_receipt_from_qr(
         or clean_receipt_number(payload.receipt_number)
         or clean_receipt_number(record.receipt_number)
     )
-    selected_dt = official.get("receipt_datetime") or payload.receipt_datetime or record.receipt_datetime
+    combined_source_text = _merge_receipt_source_text(payload.ocr_text, official.get("source_text"), record.ocr_text)
+    selected_dt = (
+        official.get("receipt_datetime")
+        or payload.receipt_datetime
+        or _parse_report_datetime(combined_source_text or "")
+        or record.receipt_datetime
+    )
     record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
     if official_source == "kaspi_qr":
         record.service_name = (
@@ -2024,7 +2060,7 @@ def refresh_accounting_receipt_from_qr(
         selected_amount = payload.receipt_amount if payload.receipt_amount is not None else record.receipt_amount
     record.receipt_amount = clean_decimal(selected_amount)
     record.qr_payload = official.get("qr_payload") or canonical_qr or record.qr_payload
-    record.ocr_text = str(official.get("source_text") or payload.ocr_text or "")[:50000] or None
+    record.ocr_text = combined_source_text
     record.parse_confidence = Decimal(
         official.get("parse_confidence")
         or payload.parse_confidence
@@ -2085,8 +2121,9 @@ async def import_self_employed_receipt(
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
             parse_confidence = str(official.get("parse_confidence", Decimal("100.00")))
-            # Keep the official KGD report text only as diagnostics. It is not OCR.
-            ocr_text = official.get("source_text") or ocr_text
+            # Preserve both the visual OCR and the official response. When QR
+            # omits the date, the server can still recover it from the header.
+            ocr_text = _merge_receipt_source_text(ocr_text, official.get("source_text"))
         except HTTPException as exc:
             try:
                 qr_payload = canonical_receipt_qr(qr_payload)
@@ -2420,7 +2457,7 @@ async def upload_self_employed_receipt(
             receipt_amount = str(official_amount) if official_amount is not None else receipt_amount
             qr_payload = official.get("qr_payload") or qr_payload
             parse_confidence = str(official.get("parse_confidence", Decimal("100.00")))
-            ocr_text = official.get("source_text") or ocr_text
+            ocr_text = _merge_receipt_source_text(ocr_text, official.get("source_text"))
         except HTTPException as exc:
             try:
                 qr_payload = canonical_receipt_qr(qr_payload)

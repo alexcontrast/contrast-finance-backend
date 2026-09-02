@@ -36,6 +36,32 @@ class AccountingReceiptV0108Tests(unittest.TestCase):
         self.assertEqual(accounting._parse_report_datetime("2026 жылғы 28 тамыз, 13:36"), datetime(2026, 8, 28, 13, 36))
         self.assertEqual(accounting._parse_report_datetime("01.09.2026 12:52"), datetime(2026, 9, 1, 12, 52))
 
+    def test_visual_header_date_repairs_ocr_confusables(self):
+        self.assertEqual(
+            accounting._parse_report_datetime("Чек №000000000011\nот 4 мая 2O26 г., 12.08"),
+            datetime(2026, 5, 4, 12, 8),
+        )
+        self.assertEqual(
+            accounting._parse_report_datetime("Дата и время по Астане O1.O9.2O26 12:52"),
+            datetime(2026, 9, 1, 12, 52),
+        )
+
+    def test_import_metadata_recovers_date_from_visual_ocr(self):
+        record = SimpleNamespace()
+        accounting._apply_import_metadata(
+            record,
+            contractor_full_name=None,
+            iin=None,
+            receipt_number=None,
+            receipt_datetime=None,
+            service_name=None,
+            receipt_amount=None,
+            qr_payload=None,
+            ocr_text="[DATE_HEADER] Чек №000000000011 от 4 мая 2O26 г., 12.08",
+            parse_confidence="80",
+        )
+        self.assertEqual(record.receipt_datetime, datetime(2026, 5, 4, 12, 8))
+
     def test_undated_receipt_does_not_match_event_month(self):
         row = SimpleNamespace(has_receipt=True, receipt_datetime=None, event_date=date(2026, 9, 1))
         self.assertFalse(accounting._row_matches_accounting_month(row, (date(2026, 9, 1), date(2026, 10, 1))))
