@@ -8228,6 +8228,9 @@ const ACCOUNTING_RU_MONTHS = {
   сәуір: 4, сәуірі: 4, мамыр: 5, мамыры: 5, маусым: 6, маусымы: 6,
   шілде: 7, шілдесі: 7, тамыз: 8, тамызы: 8, қыркүйек: 9, қыркүйегі: 9,
   қазан: 10, қазаны: 10, қараша: 11, қарашасы: 11, желтоқсан: 12, желтоқсаны: 12,
+  // e-Salyq's font is sometimes recognized with Latin lookalikes. These are
+  // observed OCR variants of the Cyrillic word "августа".
+  aprycta: 8, abrycta: 8, avrycta: 8, avgysta: 8, avgycta: 8, avgusta: 8,
 };
 
 function accountingNormalizeOcrText(text) {
@@ -8371,7 +8374,7 @@ function accountingParseReceiptDate(text) {
     const pad = (value) => String(value).padStart(2, "0");
     return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00`;
   };
-  let m = lower.match(new RegExp(`(?:от\\s*)?(\\d{1,2})\\s+(${monthPattern})\\s+(20\\d{2})(?:\\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\\s*[,\\-]?\\s*(\\d{1,2})[:.](\\d{2}))?`, "iu"));
+  let m = lower.match(new RegExp(`(?:от\\s*)?(\\d{1,2})\\s+(${monthPattern})\\s+(20\\d{2})(?:\\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?|[rg])[.,]?)?(?:\\s*[,\\-]?\\s*(\\d{1,2})[:.](\\d{2}))?`, "iu"));
   if (m) {
     const month = ACCOUNTING_RU_MONTHS[m[2]];
     if (month) return iso(m[3], month, m[1], m[4] || 0, m[5] || 0);

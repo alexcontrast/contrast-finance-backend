@@ -27,5 +27,13 @@ assert.equal(
   context.parseReceiptDate("2026 жылғы 28 тамыз, 13:36"),
   "2026-08-28T13:36:00",
 );
+assert.equal(
+  context.parseReceiptDate("oT 3 aprycta 2026 r., 12:07"),
+  "2026-08-03T12:07:00",
+);
+assert.equal(
+  context.parseReceiptDate("oT 3 aBrycta 2026 r., 15:06"),
+  "2026-08-03T15:06:00",
+);
 
-console.log("browser receipt date parser: 3/3 passed");
+console.log("browser receipt date parser: 5/5 passed");

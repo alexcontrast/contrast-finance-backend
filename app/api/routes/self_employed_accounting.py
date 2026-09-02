@@ -270,7 +270,18 @@ _KK_MONTHS = {
     "шілде": 7, "шілдесі": 7, "тамыз": 8, "тамызы": 8, "қыркүйек": 9, "қыркүйегі": 9,
     "қазан": 10, "қазаны": 10, "қараша": 11, "қарашасы": 11, "желтоқсан": 12, "желтоқсаны": 12,
 }
-_REPORT_MONTHS = {**_RU_MONTHS, **_KK_MONTHS}
+_OCR_MONTH_ALIASES = {
+    # On the e-Salyq font, Tesseract can choose Latin glyphs for the entire
+    # Cyrillic word "августа": ``aprycta`` / ``aBrycta``. Keep these aliases
+    # limited to the month position inside a full date pattern.
+    "aprycta": 8,
+    "abrycta": 8,
+    "avrycta": 8,
+    "avgysta": 8,
+    "avgycta": 8,
+    "avgusta": 8,
+}
+_REPORT_MONTHS = {**_RU_MONTHS, **_KK_MONTHS, **_OCR_MONTH_ALIASES}
 
 
 def _safe_datetime(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime | None:
@@ -307,7 +318,7 @@ def _parse_report_datetime(text: str) -> datetime | None:
     lower = _normalize_ocr_date_text(text).lower()
     month_names = "|".join(sorted((re.escape(value) for value in _REPORT_MONTHS), key=len, reverse=True))
     match = re.search(
-        rf"(?:от\s*)?(\d{{1,2}})\s+({month_names})\s+(20\d{{2}})(?:\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?)[.,]?)?(?:\s*[,\-]?\s*(\d{{1,2}})[:.](\d{{2}}))?",
+        rf"(?:от\s*)?(\d{{1,2}})\s+({month_names})\s+(20\d{{2}})(?:\s*(?:г(?:ода)?|ж(?:ылғы|ыл)?|[rg])[.,]?)?(?:\s*[,\-]?\s*(\d{{1,2}})[:.](\d{{2}}))?",
         lower,
         re.I,
     )
@@ -849,7 +860,7 @@ def resolve_kaspi_qr(qr_payload: str) -> dict:
             timeout=KASPI_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.110 (+Kaspi self-employed receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.111 (+Kaspi self-employed receipt verification)",
                 "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
             },
         )

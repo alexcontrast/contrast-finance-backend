@@ -1,11 +1,11 @@
-Contrast Finance v0.5.110 verification
+Contrast Finance v0.5.111 verification
 
 After Railway deploy open:
 /api/status
 
 Expected JSON field:
-"version": "0.5.110"
+"version": "0.5.111"
 
 If it still shows an older version, the application files were not replaced.
 
-Then hard refresh and open Accounting. Missing IINs are restored from historical receipts only when the normalized full name has one unique known IIN.
+Then hard refresh, open Accounting and click Refresh. The three verified e-Salyq originals must resolve to 2026-08-03 with their printed times. Missing IINs are still restored from historical receipts only when the normalized full name has one unique known IIN.

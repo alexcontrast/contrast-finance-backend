@@ -46,6 +46,16 @@ class AccountingReceiptV0108Tests(unittest.TestCase):
             datetime(2026, 9, 1, 12, 52),
         )
 
+    def test_esalyq_august_date_with_latin_ocr_month(self):
+        self.assertEqual(
+            accounting._parse_report_datetime("oT 3 aprycta 2026 r., 12:07"),
+            datetime(2026, 8, 3, 12, 7),
+        )
+        self.assertEqual(
+            accounting._parse_report_datetime("oT 3 aBrycta 2026 r., 15:06"),
+            datetime(2026, 8, 3, 15, 6),
+        )
+
     def test_import_metadata_recovers_date_from_visual_ocr(self):
         record = SimpleNamespace()
         accounting._apply_import_metadata(
