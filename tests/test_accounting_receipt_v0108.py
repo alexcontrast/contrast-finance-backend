@@ -56,6 +56,34 @@ class AccountingReceiptV0108Tests(unittest.TestCase):
             datetime(2026, 8, 3, 15, 6),
         )
 
+    def test_server_date_ocr_repairs_missing_browser_result(self):
+        tesseract_result = SimpleNamespace(
+            returncode=0,
+            stdout=b"Yek N2000000000042\noT 3 aBrycta 2026 r., 15:12\n",
+            stderr=b"",
+        )
+        record = SimpleNamespace(
+            receipt_data=b"jpeg bytes",
+            receipt_content_type="image/jpeg",
+            receipt_filename="receipt.jpg",
+        )
+        with patch.object(accounting.subprocess, "run", return_value=tesseract_result) as run:
+            accounting._apply_import_metadata(
+                record,
+                contractor_full_name=None,
+                iin=None,
+                receipt_number=None,
+                receipt_datetime=None,
+                service_name=None,
+                receipt_amount=None,
+                qr_payload=None,
+                ocr_text=None,
+                parse_confidence=None,
+            )
+        self.assertEqual(record.receipt_datetime, datetime(2026, 8, 3, 15, 12))
+        self.assertIn("[SERVER_DATE_OCR]", record.ocr_text)
+        run.assert_called_once()
+
     def test_import_metadata_recovers_date_from_visual_ocr(self):
         record = SimpleNamespace()
         accounting._apply_import_metadata(

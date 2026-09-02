@@ -6,6 +6,7 @@ from html import unescape
 from io import BytesIO
 import json
 import re
+import subprocess
 import unicodedata
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -338,6 +339,52 @@ def _parse_report_datetime(text: str) -> datetime | None:
     if match:
         return _safe_datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4) or 0), int(match.group(5) or 0))
     return None
+
+
+def _read_receipt_datetime_on_server(
+    content: bytes | None,
+    content_type: str | None,
+    filename: str | None,
+) -> tuple[datetime | None, str | None]:
+    """Read the printed receipt date when browser OCR did not reach the API.
+
+    Old e-Salyq QR reports may omit their issue date. Browser OCR remains the
+    fast primary path, but a failed Tesseract.js model/CDN load previously left
+    the backend with only that incomplete QR. The original image is already
+    stored in Postgres, so use the local Tesseract binary as a final date-only
+    fallback. Fixed arguments and stdin avoid temporary files and shell input.
+    """
+    payload = bytes(content or b"")
+    media_type = str(content_type or "").lower().split(";", 1)[0].strip()
+    suffix = Path(str(filename or "")).suffix.lower()
+    if not payload or media_type == "application/pdf" or suffix == ".pdf":
+        return None, None
+    if media_type and not media_type.startswith("image/") and suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+        return None, None
+
+    recognized: list[str] = []
+    for page_mode in ("6", "11"):
+        try:
+            completed = subprocess.run(
+                ["tesseract", "stdin", "stdout", "-l", "eng", "--psm", page_mode],
+                input=payload,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=20,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            return None, None
+        if completed.returncode != 0:
+            continue
+        text = completed.stdout.decode("utf-8", errors="replace").strip()
+        if not text:
+            continue
+        recognized.append(text)
+        parsed = _parse_report_datetime(text)
+        if parsed is not None:
+            return parsed, text
+    return None, "\n".join(recognized).strip() or None
 
 
 def _merge_receipt_source_text(*values: str | None) -> str | None:
@@ -860,7 +907,7 @@ def resolve_kaspi_qr(qr_payload: str) -> dict:
             timeout=KASPI_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.111 (+Kaspi self-employed receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.112 (+Kaspi self-employed receipt verification)",
                 "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
             },
         )
@@ -1916,6 +1963,19 @@ def _apply_import_metadata(
     record.receipt_amount = clean_decimal(receipt_amount)
     record.qr_payload = canonical_receipt_qr(qr_payload) if qr_payload else None
     record.ocr_text = str(ocr_text)[:50000] if ocr_text else None
+    if record.receipt_datetime is None:
+        server_dt, server_text = _read_receipt_datetime_on_server(
+            record.receipt_data,
+            record.receipt_content_type,
+            record.receipt_filename,
+        )
+        if server_text:
+            record.ocr_text = _merge_receipt_source_text(
+                f"[SERVER_DATE_OCR]\n{server_text}",
+                record.ocr_text,
+            )
+        if server_dt is not None:
+            record.receipt_datetime = server_dt
     if parse_confidence not in {None, ""}:
         try:
             confidence = Decimal(str(parse_confidence))
@@ -2094,6 +2154,18 @@ def refresh_accounting_receipt_from_qr(
         or _parse_report_datetime(combined_source_text or "")
         or record.receipt_datetime
     )
+    if selected_dt is None:
+        server_dt, server_text = _read_receipt_datetime_on_server(
+            record.receipt_data,
+            record.receipt_content_type,
+            record.receipt_filename,
+        )
+        if server_text:
+            combined_source_text = _merge_receipt_source_text(
+                f"[SERVER_DATE_OCR]\n{server_text}",
+                combined_source_text,
+            )
+        selected_dt = server_dt or _parse_report_datetime(combined_source_text or "")
     record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
     if official_source == "kaspi_qr":
         record.service_name = (
