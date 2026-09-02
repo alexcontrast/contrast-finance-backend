@@ -1,4 +1,5 @@
-Contrast Finance v0.5.113 changed-only package
+Contrast Finance v0.5.114 changed-only package
 
-See `app/CHANGED_FILES_README.txt` for the exact changed and removed files.
-No database migration. Apps Script unchanged.
+Install over v0.5-2.113 only.
+Archive layout: one root folder `v0.5-2.114/`, then `app/`, `tests/`, README and other changed files.
+No database migration.

@@ -1,4 +1,4 @@
-Contrast Finance v0.5.113
+Contrast Finance v0.5.114
 
 Changed files:
 - app/services/sigex_signing.py
@@ -11,9 +11,10 @@ Changed files:
 - VERIFY_INSTALL.txt
 
 Behavior:
-- SIGEX's `m.egov.kz/mobileSign` web launcher is no longer opened on a phone.
-- The backend validates the nested SIGEX service URL and creates the direct `mobileSign:` URI used by the QR itself.
-- The web-only `mgovSign` marker is removed from the application URI.
-- iOS no longer receives an automatic App Store redirect; the same one-time signing session opens directly in eGov Mobile.
+- SIGEX `eGovMobileLaunchLink` is validated and preserved as the official HTTPS launcher.
+- QR payload `mobileSign:` is not exposed to Safari as an iOS URL scheme.
+- Existing active v0.5.113 sessions persisted as `mobileSign:` are reconstructed into the official HTTPS launcher without recreating the AVR.
+- `mgovSign` is preserved/restored for the eGov web launcher.
+- The mobile signing page keeps the current session alive and offers the same-session QR fallback if iOS Universal Link handling is broken on a particular device.
 
 No database migration. Alembic head remains 0021_avr_signed_ddc.

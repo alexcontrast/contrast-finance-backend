@@ -48,11 +48,13 @@
     </section>
     <section class="actions">
       <a id="egovLaunchBtn" class="button" href="#" hidden>Открыть eGov Mobile</a>
+      <button id="mobileQrFallbackBtn" class="secondary" type="button" hidden>Показать QR этой сессии</button>
       <button id="startBtn" type="button" hidden>Показать QR для eGov Mobile</button>
       <button id="ncalayerBtn" class="secondary" type="button" hidden>Подписать ЭЦП через NCALayer</button>
       <a id="previewBtn" class="button secondary preview" href="#" target="_blank" rel="noopener" hidden>Открыть АВР</a>
     </section>
     <p id="desktopNote" class="desktop-note muted" hidden>Для ЭЦП на компьютере должен быть запущен NCALayer.</p>
+    <p id="iosHelp" class="desktop-note muted" hidden>Если iPhone открыл Safari или App Store вместо eGov Mobile, вернитесь сюда: текущая сессия не потеряна. Можно удержать кнопку «Открыть eGov Mobile» и выбрать открытие в приложении либо показать QR на другом устройстве.</p>
     <section id="signBox" class="sign-box" aria-live="polite">
       <img id="qr" class="qr" alt="QR для подписания в eGov Mobile" />
       <p class="muted">Откройте eGov Mobile на телефоне и отсканируйте этот QR.</p>
@@ -73,6 +75,9 @@
       let currentInfo = null;
       let mobileLaunchUrl = "";
       let mobileSessionPreparing = null;
+      let currentSession = null;
+      let mobileLaunchAttempted = false;
+      const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.maxTouchPoints > 1 && /MacIntel/i.test(navigator.platform || ""));
 
       const money = (value) => `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value || 0))} ₸`;
       const setStatus = (text, type = "") => { $("status").textContent = text; $("status").className = `status ${type}`.trim(); };
@@ -82,12 +87,15 @@
         $("startBtn").disabled = value;
         $("ncalayerBtn").disabled = value;
         $("egovLaunchBtn").setAttribute("aria-disabled", value ? "true" : "false");
+        $("mobileQrFallbackBtn").disabled = value;
       };
 
       function clearMobileLaunch() {
         mobileLaunchUrl = "";
         $("egovLaunchBtn").href = "#";
         $("egovLaunchBtn").setAttribute("aria-disabled", "true");
+        $("mobileQrFallbackBtn").hidden = true;
+        $("iosHelp").hidden = true;
       }
 
       function setMobileLaunch(url, secondParty = false) {
@@ -149,6 +157,8 @@
         $("ncalayerBtn").disabled = false;
         $("ncalayerBtn").textContent = "Подписать ЭЦП через NCALayer";
         $("desktopNote").hidden = isMobile;
+        $("mobileQrFallbackBtn").hidden = true;
+        if (!mobileLaunchAttempted) $("iosHelp").hidden = true;
         if (isMobile) {
           setMobileLaunch(mobileLaunchUrl, secondParty);
           prepareMobileSession(secondParty);
@@ -158,6 +168,7 @@
       }
 
       function renderSession(data) {
+        currentSession = data || null;
         if (data.status === "document_building" || data.status === "document_error") {
           clearMobileLaunch();
           $("egovLaunchBtn").hidden = true;
@@ -231,6 +242,8 @@
               return;
             }
             setMobileLaunch(data.egov_mobile_url, currentInfo?.status === "partially_signed");
+            $("mobileQrFallbackBtn").hidden = !data.qr_code;
+            if (isIOS && mobileLaunchAttempted) $("iosHelp").hidden = false;
             setStatus("Нажмите кнопку, подпишите документ в eGov Mobile и вернитесь на эту страницу.");
             return;
           }
@@ -361,10 +374,20 @@
           prepareMobileSession(Boolean(currentInfo?.status === "partially_signed"));
           return;
         }
+        mobileLaunchAttempted = true;
+        if (isIOS) $("iosHelp").hidden = false;
         setStatus("Открываем eGov Mobile… После подписи вернитесь на эту страницу.");
         startPolling();
-        // Keep this as a real user click: iOS permits the direct mobileSign:
-        // application scheme only from an explicit user gesture.
+        // Keep the SIGEX HTTPS Universal Link as a real <a> user click.
+        // Do not turn QR payload (mobileSign:) into an iOS URL scheme.
+      };
+
+      $("mobileQrFallbackBtn").onclick = () => {
+        if (!currentSession?.qr_code) return;
+        $("qr").src = currentSession.qr_code;
+        $("signBox").classList.add("visible");
+        $("iosHelp").hidden = !isIOS;
+        setStatus("Покажите этот QR на экране другому устройству и отсканируйте его встроенным сканером eGov Mobile. Текущая сессия подписи остаётся той же.");
       };
 
       $("ncalayerBtn").onclick = async () => {

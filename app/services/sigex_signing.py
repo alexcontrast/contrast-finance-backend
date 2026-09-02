@@ -107,23 +107,36 @@ def _trusted_sigex_url(value: str | None) -> str:
     return candidate
 
 
-def direct_egov_mobile_url(value: str | None) -> str:
-    """Turn SIGEX's iOS web launcher into eGov Mobile's direct app URI.
+def egov_mobile_launch_url(value: str | None) -> str:
+    """Validate and preserve SIGEX's official HTTPS eGov Mobile launch link.
 
-    ``m.egov.kz/mobileSign`` currently redirects iOS browsers straight to the
-    App Store. Opening the store and pressing ``Open`` loses the one-time
-    signing URL. The application itself registers the ``mobileSign:`` scheme,
-    so pass the validated SIGEX service URL to that scheme directly.
+    SIGEX documents ``eGovMobileLaunchLink`` as the deeplink that should be
+    shown on the same mobile device.  It is an HTTPS Universal Link/web
+    launcher owned by eGov and must be used as returned.  The ``mobileSign:``
+    text encoded inside the QR is QR-scanner payload, not a public iOS URL
+    scheme.
+
+    Rows created by v0.5.113 may already contain the mistaken ``mobileSign:``
+    value.  Rebuild the equivalent official HTTPS launcher for those active
+    one-time sessions so users do not have to regenerate the AVR/session.
     """
     candidate = str(value or "").strip()
+    if not candidate:
+        raise SigexError("SIGEX не вернул ссылку запуска eGov Mobile")
+
+    # Backward compatibility for active sessions persisted by v0.5.113.
     if candidate.lower().startswith("mobilesign:"):
-        service_url = candidate[len("mobileSign:") :]
+        service_url = candidate[len("mobileSign:") :].strip()
         trusted = _trusted_sigex_url(service_url)
         parsed_service = urlparse(trusted)
-        clean_query = urlencode(
-            [(key, val) for key, val in parse_qsl(parsed_service.query, keep_blank_values=True) if key.lower() != "mgovsign"]
-        )
-        return f"mobileSign:{urlunparse(parsed_service._replace(query=clean_query))}"
+        # The QR service marker belongs to the eGov web launcher.  v0.5.113
+        # removed it when constructing the invalid custom scheme, so restore
+        # it only for this legacy conversion.
+        query = parsed_service.query
+        if not any(key.lower() == "mgovsign" for key, _ in parse_qsl(query, keep_blank_values=True)):
+            query = f"{query}&mgovSign" if query else "mgovSign"
+        service_with_marker = urlunparse(parsed_service._replace(query=query))
+        return f"https://m.egov.kz/mobileSign/?{urlencode({'link': service_with_marker})}"
 
     parsed = urlparse(candidate)
     launcher_host = str(parsed.hostname or "").lower()
@@ -133,12 +146,17 @@ def direct_egov_mobile_url(value: str | None) -> str:
     service_url = str(parse_qs(parsed.query).get("link", [""])[0]).strip()
     if service_url.lower().startswith("mobilesign:"):
         service_url = service_url[len("mobileSign:") :]
-    trusted = _trusted_sigex_url(service_url)
-    parsed_service = urlparse(trusted)
-    clean_query = urlencode(
-        [(key, val) for key, val in parse_qsl(parsed_service.query, keep_blank_values=True) if key.lower() != "mgovsign"]
-    )
-    return f"mobileSign:{urlunparse(parsed_service._replace(query=clean_query))}"
+    _trusted_sigex_url(service_url)
+
+    # Do not rewrite, strip mgovSign, decode/re-encode, or otherwise mutate the
+    # launch link.  Universal Link matching on iOS is owned by eGov/SIGEX.
+    return candidate
+
+
+# Compatibility for tests/imports from v0.5.113.  The behaviour is deliberately
+# changed: this now returns the validated official HTTPS launcher.
+def direct_egov_mobile_url(value: str | None) -> str:
+    return egov_mobile_launch_url(value)
 
 
 def create_egov_session(description: str, back_url: str) -> SigexSession:
@@ -157,7 +175,7 @@ def create_egov_session(description: str, back_url: str) -> SigexSession:
             qr_code=str(data["qrCode"]),
             data_url=_trusted_sigex_url(data.get("dataURLAuto") or data.get("dataURL")),
             sign_url=_trusted_sigex_url(data.get("signURLAuto") or data.get("signURL")),
-            egov_mobile_url=direct_egov_mobile_url(data.get("eGovMobileLaunchLink")),
+            egov_mobile_url=egov_mobile_launch_url(data.get("eGovMobileLaunchLink")),
             egov_business_url=str(data.get("eGovBusinessLaunchLink") or "").strip() or None,
         )
     except (KeyError, TypeError, ValueError) as exc:
