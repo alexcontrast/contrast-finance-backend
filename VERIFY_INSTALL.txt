@@ -1,11 +1,11 @@
-Contrast Finance v0.5.112 verification
+Contrast Finance v0.5.113 verification
 
 After Railway deploy open:
 /api/status
 
 Expected JSON field:
-"version": "0.5.112"
+"version": "0.5.113"
 
 If it still shows an older version, the application files were not replaced.
 
-Then hard refresh, open Accounting and click Refresh. The backend now reads the three saved e-Salyq JPG originals even if browser OCR fails; they must resolve to 2026-08-03 with their printed times. Missing IINs are still restored from historical receipts only when the normalized full name has one unique known IIN.
+Then open an AVR signing link on an iPhone and tap `Open eGov Mobile`. The installed application must open directly with the current signing request; Safari must not navigate to the App Store.

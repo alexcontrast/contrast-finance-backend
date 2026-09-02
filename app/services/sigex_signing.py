@@ -9,7 +9,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 from cryptography import x509
@@ -107,6 +107,40 @@ def _trusted_sigex_url(value: str | None) -> str:
     return candidate
 
 
+def direct_egov_mobile_url(value: str | None) -> str:
+    """Turn SIGEX's iOS web launcher into eGov Mobile's direct app URI.
+
+    ``m.egov.kz/mobileSign`` currently redirects iOS browsers straight to the
+    App Store. Opening the store and pressing ``Open`` loses the one-time
+    signing URL. The application itself registers the ``mobileSign:`` scheme,
+    so pass the validated SIGEX service URL to that scheme directly.
+    """
+    candidate = str(value or "").strip()
+    if candidate.lower().startswith("mobilesign:"):
+        service_url = candidate[len("mobileSign:") :]
+        trusted = _trusted_sigex_url(service_url)
+        parsed_service = urlparse(trusted)
+        clean_query = urlencode(
+            [(key, val) for key, val in parse_qsl(parsed_service.query, keep_blank_values=True) if key.lower() != "mgovsign"]
+        )
+        return f"mobileSign:{urlunparse(parsed_service._replace(query=clean_query))}"
+
+    parsed = urlparse(candidate)
+    launcher_host = str(parsed.hostname or "").lower()
+    if parsed.scheme != "https" or launcher_host not in {"m.egov.kz", "mgovsign.page.link"}:
+        raise SigexError("SIGEX вернул неожиданную ссылку запуска eGov Mobile")
+
+    service_url = str(parse_qs(parsed.query).get("link", [""])[0]).strip()
+    if service_url.lower().startswith("mobilesign:"):
+        service_url = service_url[len("mobileSign:") :]
+    trusted = _trusted_sigex_url(service_url)
+    parsed_service = urlparse(trusted)
+    clean_query = urlencode(
+        [(key, val) for key, val in parse_qsl(parsed_service.query, keep_blank_values=True) if key.lower() != "mgovsign"]
+    )
+    return f"mobileSign:{urlunparse(parsed_service._replace(query=clean_query))}"
+
+
 def create_egov_session(description: str, back_url: str) -> SigexSession:
     try:
         response = requests.post(
@@ -123,7 +157,7 @@ def create_egov_session(description: str, back_url: str) -> SigexSession:
             qr_code=str(data["qrCode"]),
             data_url=_trusted_sigex_url(data.get("dataURLAuto") or data.get("dataURL")),
             sign_url=_trusted_sigex_url(data.get("signURLAuto") or data.get("signURL")),
-            egov_mobile_url=str(data.get("eGovMobileLaunchLink") or "").strip() or None,
+            egov_mobile_url=direct_egov_mobile_url(data.get("eGovMobileLaunchLink")),
             egov_business_url=str(data.get("eGovBusinessLaunchLink") or "").strip() or None,
         )
     except (KeyError, TypeError, ValueError) as exc:

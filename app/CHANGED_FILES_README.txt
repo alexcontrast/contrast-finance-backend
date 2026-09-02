@@ -1,27 +1,19 @@
-Contrast Finance v0.5.112
+Contrast Finance v0.5.113
 
 Changed files:
-- app/api/routes/self_employed_accounting.py
+- app/services/sigex_signing.py
+- app/web/sign_avr.html
 - app/web/index.html
 - app/core/config.py
-- nixpacks.toml
-- app/README.md
-- scripts/start.sh
-- tests/test_accounting_receipt_v0108.py
+- tests/test_sigex_mobile_link_v0113.py
 - README.md
 - CHANGELOG.md
 - VERIFY_INSTALL.txt
 
 Behavior:
-- If browser OCR supplies no date, the backend reads the stored image through local Tesseract before leaving the receipt undated.
-- The observed e-Salyq OCR variants `aprycta` and `aBrycta` are parsed as August only inside a complete printed date.
-- A Latin OCR year suffix `r.` is accepted and the printed time is preserved.
-- Missing IINs are restored from historical receipts by exact full-name match.
-- Existing rows are repaired on accounting page load and before AVR generation.
-- Conflicting historical IINs never auto-fill.
-- QR date remains authoritative when present.
-- Missing QR date is recovered from the printed receipt header/image.
-- OCR date text is re-parsed on the backend with common digit-confusable repair.
-- Undated receipts remain visible after a bulk refresh.
+- SIGEX's `m.egov.kz/mobileSign` web launcher is no longer opened on a phone.
+- The backend validates the nested SIGEX service URL and creates the direct `mobileSign:` URI used by the QR itself.
+- The web-only `mgovSign` marker is removed from the application URI.
+- iOS no longer receives an automatic App Store redirect; the same one-time signing session opens directly in eGov Mobile.
 
 No database migration. Alembic head remains 0021_avr_signed_ddc.

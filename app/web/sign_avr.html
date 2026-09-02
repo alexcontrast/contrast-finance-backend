@@ -363,8 +363,8 @@
         }
         setStatus("Открываем eGov Mobile… После подписи вернитесь на эту страницу.");
         startPolling();
-        // Do not preventDefault: a real user click on SIGEX's deep-link is
-        // required for reliable Universal Link / App Link handling.
+        // Keep this as a real user click: iOS permits the direct mobileSign:
+        // application scheme only from an explicit user gesture.
       };
 
       $("ncalayerBtn").onclick = async () => {
