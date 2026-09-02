@@ -849,7 +849,7 @@ def resolve_kaspi_qr(qr_payload: str) -> dict:
             timeout=KASPI_RECEIPT_TIMEOUT,
             allow_redirects=True,
             headers={
-                "User-Agent": "ContrastFinance/0.5.109 (+Kaspi self-employed receipt verification)",
+                "User-Agent": "ContrastFinance/0.5.110 (+Kaspi self-employed receipt verification)",
                 "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
             },
         )
@@ -1132,6 +1132,33 @@ def _person_identity_key(value: str | None) -> str:
 def _valid_iin_or_none(value: object) -> str | None:
     digits = re.sub(r"\D", "", str(value or ""))
     return digits if len(digits) == 12 else None
+
+
+def _restore_missing_iins_from_exact_names(
+    records: list[SelfEmployedAccounting],
+) -> list[SelfEmployedAccounting]:
+    """Fill missing IINs only when one full normalized name maps to one IIN."""
+    iins_by_name: dict[str, set[str]] = defaultdict(set)
+    for historical in records:
+        name_key = _person_identity_key(historical.contractor_full_name)
+        iin = _valid_iin_or_none(historical.iin)
+        if name_key and iin:
+            iins_by_name[name_key].add(iin)
+
+    changed: list[SelfEmployedAccounting] = []
+    changed_at: datetime | None = None
+    for record in records:
+        if _valid_iin_or_none(record.iin):
+            continue
+        name_key = _person_identity_key(record.contractor_full_name)
+        matches = iins_by_name.get(name_key, set()) if name_key else set()
+        if len(matches) != 1:
+            continue
+        changed_at = changed_at or datetime.utcnow()
+        record.iin = next(iter(matches))
+        record.updated_at = changed_at
+        changed.append(record)
+    return changed
 
 
 def _restore_receipt_identity(db: Session, record: SelfEmployedAccounting) -> None:
@@ -1589,6 +1616,20 @@ def list_self_employed_accounting(
     current_user: User = Depends(get_current_user),
 ):
     require_accounting_access(current_user)
+
+    # Repair old rows too, not only the receipt currently being uploaded. A
+    # full exact-name match is safe for repeat contractors; conflicting IINs
+    # for the same name deliberately leave the target untouched.
+    identity_records = db.execute(
+        select(SelfEmployedAccounting).where(
+            SelfEmployedAccounting.contractor_full_name.is_not(None)
+        )
+    ).scalars().all()
+    recovered_iins = _restore_missing_iins_from_exact_names(identity_records)
+    if recovered_iins:
+        for record in recovered_iins:
+            db.add(record)
+        db.commit()
 
     query = (
         select(
@@ -2626,6 +2667,7 @@ def update_self_employed_accounting(
         iin=payload.iin,
     )
     _update_record(db, record, payload, current_user)
+    _restore_receipt_identity(db, record)
     db.add(record)
     db.commit()
     return load_group_row(db, request.id)
@@ -2688,6 +2730,7 @@ def generate_accounting_act(
     _assert_act_mutable(record)
     if record.act_filename or record.act_size or record.act_status == "generated":
         raise HTTPException(status_code=409, detail="АВР уже сформирован. Откройте его по иконке документа")
+    _restore_receipt_identity(db, record)
     member_ids = list(
         db.execute(
             select(SelfEmployedAccountingRequest.payment_request_id).where(

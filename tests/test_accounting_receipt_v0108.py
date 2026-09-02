@@ -116,6 +116,38 @@ class AccountingReceiptV0108Tests(unittest.TestCase):
             )
         self.assertEqual(record.iin, "030919651322")
 
+    def test_missing_iin_is_recovered_for_all_exact_name_rows(self):
+        source = SimpleNamespace(
+            id=1,
+            iin="030919651322",
+            contractor_full_name="АРХАРОВА АЛЁНА СЕРГЕЕВНА",
+            updated_at=None,
+        )
+        target = SimpleNamespace(
+            id=2,
+            iin=None,
+            contractor_full_name="  архарова   алёна сергеевна  ",
+            updated_at=None,
+        )
+        near_name = SimpleNamespace(
+            id=3,
+            iin=None,
+            contractor_full_name="АРХАРОВА АЛЕНА СЕРГЕЕВНА",
+            updated_at=None,
+        )
+        changed = accounting._restore_missing_iins_from_exact_names([source, target, near_name])
+        self.assertEqual(changed, [target])
+        self.assertEqual(target.iin, "030919651322")
+        self.assertIsNone(near_name.iin)
+
+    def test_missing_iin_is_not_recovered_when_history_conflicts(self):
+        first = SimpleNamespace(id=1, iin="030919651322", contractor_full_name="ИВАНОВ ИВАН ИВАНОВИЧ", updated_at=None)
+        second = SimpleNamespace(id=2, iin="990101500123", contractor_full_name="ИВАНОВ ИВАН ИВАНОВИЧ", updated_at=None)
+        target = SimpleNamespace(id=3, iin=None, contractor_full_name="ИВАНОВ ИВАН ИВАНОВИЧ", updated_at=None)
+        changed = accounting._restore_missing_iins_from_exact_names([first, second, target])
+        self.assertEqual(changed, [])
+        self.assertIsNone(target.iin)
+
     def test_special_payment_has_no_position_method_or_deductions(self):
         payload = SimpleNamespace(card_number=None, self_employed_surname="Архарова", comment=None)
         payment_requests.validate_manager_salary_payment_rules("self_employed", payload)
