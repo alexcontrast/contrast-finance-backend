@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import html as html_lib
 from hashlib import sha256
 import re
 import secrets
@@ -38,6 +39,7 @@ from app.services.sigex_signing import (
     cms_signer_identity,
     create_egov_session,
     decode_cms_signature,
+    egov_mobile_launch_url,
     finalize_document_data,
     register_document_signature,
     wait_for_egov_signature,
@@ -1003,6 +1005,115 @@ def act_session_status(token: str, db: Session = Depends(get_db)):
     elif record.act_status == "signed" and not _signed_file_ready(record):
         _start_ddc_worker(record.id)
     return _session_read(record)
+
+
+@public_router.get("/{token}/ios-open", response_class=HTMLResponse)
+def act_ios_open_page(token: str, db: Session = Depends(get_db)):
+    """iPhone recovery page using Apple's own Smart App Banner.
+
+    SIGEX's official HTTPS launcher remains the signing context. On iOS
+    devices where its Universal Link association has become stale, a normal
+    tap can fall through to App Store. The Smart App Banner opens the already
+    installed eGov Mobile app by App Store identity and passes the exact SIGEX
+    launcher as app-argument. The same one-time SIGEX session and QR are kept.
+    """
+    record = _record_by_token(db, token)
+    _public_info(record)
+    now = datetime.utcnow()
+    active = bool(
+        record.act_session_status == "signing"
+        and record.act_session_expires_at
+        and record.act_session_expires_at > now
+        and record.act_egov_mobile_url
+    )
+    back_url = f"/sign/avr/{quote(token, safe='')}"
+    if not active:
+        safe_back = html_lib.escape(back_url, quote=True)
+        expired_page = (
+            '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="robots" content="noindex,nofollow">'
+            '<title>eGov Mobile · Contrast</title>'
+            '<style>body{font-family:Inter,Arial,sans-serif;background:#eef5e9;color:#1d241b;padding:24px}'
+            'main{max-width:560px;margin:8vh auto;background:#fff;border:1px solid #cfe1c4;border-radius:24px;padding:24px}'
+            'a{display:block;text-align:center;padding:15px;border-radius:14px;background:#d9ffbf;color:#20351a;text-decoration:none;font-weight:800}</style>'
+            '</head><body><main><h1>Сессия eGov закончилась</h1>'
+            '<p>Вернитесь к АВР и создайте новую попытку подписания. Сам АВР и постоянная ссылка не потеряны.</p>'
+            f'<a href="{safe_back}">Вернуться к АВР</a></main></body></html>'
+        )
+        return HTMLResponse(
+            expired_page,
+            status_code=409,
+            headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
+        )
+
+    try:
+        launcher = egov_mobile_launch_url(record.act_egov_mobile_url)
+    except SigexError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # Heal legacy v0.5.113 values in storage so subsequent status responses use
+    # the canonical HTTPS launcher too.
+    if launcher != record.act_egov_mobile_url:
+        record.act_egov_mobile_url = launcher
+        db.add(record)
+        db.commit()
+
+    qr = str(record.act_qr_code or "").strip()
+    if qr and not qr.startswith("data:"):
+        qr = f"data:image/png;base64,{qr}"
+    safe_launcher = html_lib.escape(launcher, quote=True)
+    safe_back = html_lib.escape(back_url, quote=True)
+    safe_qr = html_lib.escape(qr, quote=True)
+    # Current Kazakhstan App Store identity for eGov Mobile.
+    app_id = "1476128386"
+    qr_block = ""
+    if qr:
+        qr_block = (
+            '<details><summary>QR этой же сессии</summary>'
+            f'<img src="{safe_qr}" alt="QR eGov Mobile">'
+            '<p>Если рядом есть второй телефон или планшет, откройте на нём eGov Mobile → eGov QR и отсканируйте код.</p>'
+            '</details>'
+        )
+
+    page = (
+        '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<meta name="robots" content="noindex,nofollow">'
+        f'<meta name="apple-itunes-app" content="app-id={app_id}, app-argument={safe_launcher}">'
+        '<title>Открыть eGov Mobile · Contrast</title>'
+        '<style>'
+        ':root{color-scheme:light;font-family:Inter,Arial,sans-serif;color:#1d241b;background:#eef5e9}'
+        '*{box-sizing:border-box}body{margin:0;min-height:100vh;padding:18px;background:radial-gradient(circle at top left,#dfffca,transparent 40%),#eef5e9}'
+        'main{width:min(560px,100%);margin:7vh auto;background:#fff;border:1px solid #cfe1c4;border-radius:24px;padding:24px;box-shadow:0 24px 70px rgba(35,63,24,.14)}'
+        '.eyebrow{color:#43a519;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}'
+        'h1{margin:8px 0 10px;font-size:30px}p{line-height:1.45}.step{padding:14px;background:#f4f7f1;border-radius:14px;margin:14px 0}'
+        'a.button{display:flex;align-items:center;justify-content:center;min-height:50px;border:1px solid #87cb65;border-radius:14px;background:#d9ffbf;color:#20351a;text-decoration:none;font-weight:850;margin-top:10px}'
+        'a.secondary{background:#fff;border-color:#cfd8ca}details{margin-top:18px;border-top:1px solid #e2e8de;padding-top:16px}'
+        'summary{cursor:pointer;font-weight:800}img{display:block;width:min(280px,85vw);height:auto;margin:16px auto;border:10px solid white;border-radius:16px;box-shadow:0 8px 26px rgba(0,0,0,.1)}'
+        'small{color:#747d70;display:block;margin-top:12px}'
+        '</style></head><body><main>'
+        '<div class="eyebrow">Contrast Finance</div><h1>Открыть eGov Mobile</h1>'
+        '<div class="step"><strong>На iPhone нажмите OPEN / «Открыть» в системном баннере eGov Mobile вверху Safari.</strong>'
+        '<p>Это системный механизм Apple: если приложение уже установлено, баннер открывает его и передаёт текущую сессию подписания.</p></div>'
+        f'<a class="button secondary" href="{safe_launcher}" rel="external">Попробовать официальный переход eGov</a>'
+        f'<a class="button secondary" href="{safe_back}">Вернуться к АВР</a>'
+        f'{qr_block}'
+        '<small>Если официальный переход снова ведёт в App Store, это известная проблема ассоциации диплинков eGov Mobile на отдельных iPhone. Текущая SIGEX-сессия при этом не теряется.</small>'
+        '</main></body></html>'
+    )
+    return HTMLResponse(
+        page,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "X-Robots-Tag": "noindex, nofollow",
+            "Referrer-Policy": "no-referrer",
+            "Content-Security-Policy": (
+                "default-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+            ),
+        },
+    )
 
 
 @public_router.get("/{token}", response_class=HTMLResponse)

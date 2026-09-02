@@ -1,13 +1,11 @@
-Contrast Finance v0.5.114 verification
+Contrast Finance v0.5.115 verification
 
 After Railway deploy open:
 /api/status
 
 Expected JSON field:
-"version": "0.5.114"
+"version": "0.5.115"
 
-If it still shows an older version, the application files were not replaced.
+Then open an AVR signing link on an iPhone. The primary `Открыть eGov Mobile` button must first open a local URL ending in `/ios-open`, not App Store and not `mobileSign:`.
 
-Then open an AVR signing link on an iPhone and tap `Open eGov Mobile`. The page must navigate via the official HTTPS launcher returned by SIGEX, not via the invalid `mobileSign:` scheme. If iOS itself still routes that Universal Link incorrectly, return to the page and use the same-session recovery controls.
-
-Expected mobile signing: /session returns egov_mobile_url beginning with https://m.egov.kz/ or https://mgovsign.page.link/, never mobileSign:.
+On the `/ios-open` page Safari should expose the eGov Mobile Smart App Banner at the top. If the application is installed, tap `OPEN / Открыть`. The page also keeps the exact official SIGEX HTTPS deeplink and QR of the same one-time session as fallbacks.

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.115 — iPhone Smart App Banner recovery for eGov Mobile
+
+- На iPhone основная кнопка больше не идёт напрямую в проблемный Universal Link, который на части устройств перенаправляется в App Store.
+- Добавлена локальная recovery-страница `/sign/avr/{token}/ios-open` с Apple Smart App Banner для актуального eGov Mobile (`app-id=1476128386`).
+- В `app-argument` системного баннера передаётся точный `eGovMobileLaunchLink` текущей SIGEX-сессии.
+- Официальный HTTPS deeplink и QR этой же сессии сохранены как резерв; неудачное открытие не пересоздаёт АВР и не уничтожает сессию.
+- Активные legacy-сессии `mobileSign:` по-прежнему восстанавливаются в официальный HTTPS launcher перед использованием.
+- Версия backend/browser: `0.5.115`; новой миграции нет.
+
 ## v0.5.114 — official SIGEX HTTPS deeplink on iOS
 
 - Удалено ошибочное преобразование `eGovMobileLaunchLink` в `mobileSign:`. Строка `mobileSign:` является содержимым QR для встроенного сканера eGov, а не публичной iOS URL-схемой.

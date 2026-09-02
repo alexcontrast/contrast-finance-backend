@@ -1,20 +1,18 @@
-Contrast Finance v0.5.114
+Contrast Finance v0.5.115
 
 Changed files:
-- app/services/sigex_signing.py
+- app/api/routes/act_signing.py
 - app/web/sign_avr.html
 - app/web/index.html
 - app/core/config.py
-- tests/test_sigex_mobile_link_v0113.py
 - README.md
 - CHANGELOG.md
 - VERIFY_INSTALL.txt
 
 Behavior:
-- SIGEX `eGovMobileLaunchLink` is validated and preserved as the official HTTPS launcher.
-- QR payload `mobileSign:` is not exposed to Safari as an iOS URL scheme.
-- Existing active v0.5.113 sessions persisted as `mobileSign:` are reconstructed into the official HTTPS launcher without recreating the AVR.
-- `mgovSign` is preserved/restored for the eGov web launcher.
-- The mobile signing page keeps the current session alive and offers the same-session QR fallback if iOS Universal Link handling is broken on a particular device.
+- iPhone primary launch uses a local Contrast recovery page with Apple Smart App Banner.
+- Smart App Banner targets current eGov Mobile App Store id 1476128386 and receives the exact active SIGEX eGovMobileLaunchLink as app-argument.
+- Official SIGEX HTTPS deeplink remains available as a secondary fallback; same-session QR remains available.
+- No mobileSign: URL is exposed to Safari and the one-time SIGEX session is never recreated merely because iOS failed to open the app.
 
 No database migration. Alembic head remains 0021_avr_signed_ddc.
