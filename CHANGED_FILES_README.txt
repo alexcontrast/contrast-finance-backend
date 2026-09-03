@@ -1,16 +1,10 @@
-Contrast Finance v0.5.117 changed-only package
+Contrast Finance v0.5.119 changed files over v0.5.118
 
-Install strictly over v0.5.116.
-Changed files:
-- app/web/app.js
-- app/web/index.html
-- app/core/config.py
-- tests/test_accounting_receipt_only_v0116.py
-- tests/test_accounting_signature_poll_v0117.py
-- README.md
-- CHANGELOG.md
-- app/README.md
-- app/CHANGED_FILES_README.txt
-- VERIFY_INSTALL.txt
+app/web/app.js
+app/web/index.html
+app/core/config.py
+README.md
+CHANGELOG.md
+CHANGED_FILES_README.txt
 
-No Alembic migration.
+No database migration.

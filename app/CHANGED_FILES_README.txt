@@ -1,4 +1,4 @@
-Contrast Finance v0.5.118
+Contrast Finance v0.5.119
 
 Changed files:
 - app/api/routes/self_employed_accounting.py

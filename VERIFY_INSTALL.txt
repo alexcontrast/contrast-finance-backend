@@ -1,10 +1,10 @@
-Contrast Finance v0.5.118 verification
+Contrast Finance v0.5.119 verification
 
 After deploy open:
 /api/status
 
 Expected version:
-"version": "0.5.118"
+"version": "0.5.119"
 
 Kaspi receipt identity check:
 - upload or refresh a Kaspi self-employed receipt that contains a 12-digit IIN but no FIO;

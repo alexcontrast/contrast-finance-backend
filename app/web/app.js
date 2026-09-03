@@ -9335,7 +9335,6 @@ async function generateAccountingAct(handle) {
     const updated = await api(`/accounting/self-employed/receipts/${row.accounting_id}/act`, { method: "POST" });
     accountingReplaceRow(updated);
     showToast(`АВР ${updated.act_number || ""} сформирован`);
-    await openAccountingAct(accountingRowHandle(updated));
   } catch (error) {
     if (Number(error?.status) === 400) {
       state.accountingExpandedRequestId = handle;
@@ -20684,7 +20683,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.118 loaded");
+  console.info("Contrast Finance web app v0.5.119 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

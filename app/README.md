@@ -1,6 +1,9 @@
-Contrast Finance v0.5.118
+Contrast Finance v0.5.119
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.5.119:
+- `Сформировать АВР` теперь формирует документ в фоне и не открывает PDF автоматически.
 
 v0.5.118:
 - Kaspi: если чек содержит ИИН без ФИО, сначала используется локальная история Contrast Finance;
