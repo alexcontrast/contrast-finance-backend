@@ -39,8 +39,9 @@ class AccountingReceiptOnlyV0116Tests(unittest.TestCase):
     def test_status_filters_are_present(self):
         source = Path("app/web/app.js").read_text(encoding="utf-8")
         self.assertIn('value="no_act"', source)
-        self.assertIn('value="unsigned"', source)
+        self.assertIn('value="no_ip_signature"', source)
         self.assertIn('value="no_sz_signature"', source)
+        self.assertNotIn('value="unsigned"', source)
 
 
 if __name__ == "__main__":

@@ -5939,6 +5939,7 @@ const state = {
   accountingRefreshErrorsById: {},
   accountingRefreshCompleted: 0,
   accountingRefreshTotal: 0,
+  accountingSignaturePollRunning: false,
   accountingDragRowKey: null,
   closingPanelData: null,
   closingEditingExpenseId: null,
@@ -7792,7 +7793,7 @@ function renderAccountingMembers(row) {
 function accountingRowMatchesStatusFilter(row) {
   const filter = String(state.accountingStatusFilter || "all");
   if (filter === "no_act") return !row?.has_act;
-  if (filter === "unsigned") return Boolean(row?.has_act) && String(row?.act_status || "") !== "signed";
+  if (filter === "no_ip_signature") return Boolean(row?.has_act) && String(row?.customer_signature?.status || "") !== "signed";
   if (filter === "no_sz_signature") return Boolean(row?.has_act) && String(row?.contractor_signature?.status || "") !== "signed";
   return true;
 }
@@ -7938,7 +7939,7 @@ function accountingStatusCounts(rows = state.accountingRows || []) {
   return {
     total: rows.length,
     noAct: rows.filter((row) => !row.has_act).length,
-    unsigned: rows.filter((row) => row.has_act && String(row.act_status || "") !== "signed").length,
+    noIp: rows.filter((row) => row.has_act && String(row.customer_signature?.status || "") !== "signed").length,
     noSz: rows.filter((row) => row.has_act && String(row.contractor_signature?.status || "") !== "signed").length,
     undated: rows.filter((row) => !row.receipt_datetime).length,
   };
@@ -7949,7 +7950,7 @@ function accountingSummaryHtml(rows = state.accountingRows || []) {
   return `
     <span><strong id="accountingCountTotal">${counts.total}</strong> чеков</span>
     <span><strong id="accountingCountNoAct">${counts.noAct}</strong> без акта</span>
-    <span><strong id="accountingCountUnsigned">${counts.unsigned}</strong> не подписано</span>
+    <span><strong id="accountingCountNoIp">${counts.noIp}</strong> без подписи ИП</span>
     <span><strong id="accountingCountNoSz">${counts.noSz}</strong> без подписи СЗ</span>
   `;
 }
@@ -7978,8 +7979,8 @@ function renderAccountingPanel() {
           <select id="accountingStatusFilter">
             <option value="all" ${state.accountingStatusFilter === "all" ? "selected" : ""}>Все</option>
             <option value="no_act" ${state.accountingStatusFilter === "no_act" ? "selected" : ""}>Без Акта</option>
-            <option value="unsigned" ${state.accountingStatusFilter === "unsigned" ? "selected" : ""}>Не подписанные</option>
-            <option value="no_sz_signature" ${state.accountingStatusFilter === "no_sz_signature" ? "selected" : ""}>Без подписи СЗ</option>
+            <option value="no_ip_signature" ${state.accountingStatusFilter === "no_ip_signature" ? "selected" : ""}>Не подписано ИП</option>
+            <option value="no_sz_signature" ${state.accountingStatusFilter === "no_sz_signature" ? "selected" : ""}>Не подписано СЗ</option>
           </select>
         </label>
         <button id="accountingRefreshBtn" class="secondary" type="button" ${state.accountingRefreshRunning ? "disabled" : ""}>${state.accountingRefreshRunning ? `Обновлено ${state.accountingRefreshCompleted}/${state.accountingRefreshTotal}` : "Обновить"}</button>
@@ -20424,14 +20425,21 @@ async function pollAccountingSignatureChanges() {
     || document.hidden
   ) return;
   const rows = state.accountingRows || [];
+  // The signature can be completed on the public AVR page or on another
+  // device/browser. Local state may therefore still say `not_sent`. Keep
+  // polling every generated AVR until both parties are signed; refreshes are
+  // row-scoped, so this does not reload the accounting ledger.
   const pending = rows.filter((row) => (
-    ["sent", "signing"].includes(String(row.customer_signature?.status || ""))
-    || ["sent", "signing"].includes(String(row.contractor_signature?.status || ""))
-    || ["signing", "finalizing"].includes(String(row.act_session_status || ""))
-    || (
-      String(row.act_status || "") === "signed"
-      && !row.has_signed_act
-      && ["pending", "building", ""].includes(String(row.act_ddc_status || ""))
+    Boolean(row?.has_act)
+    && (
+      String(row.customer_signature?.status || "") !== "signed"
+      || String(row.contractor_signature?.status || "") !== "signed"
+      || ["signing", "finalizing"].includes(String(row.act_session_status || ""))
+      || (
+        String(row.act_status || "") === "signed"
+        && !row.has_signed_act
+        && ["pending", "building", ""].includes(String(row.act_ddc_status || ""))
+      )
     )
   ));
   if (!pending.length) return;
@@ -20676,7 +20684,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.89 loaded");
+  console.info("Contrast Finance web app v0.5.117 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

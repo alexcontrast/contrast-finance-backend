@@ -1,16 +1,15 @@
-Contrast Finance v0.5.116 verification
+Contrast Finance v0.5.117 verification
 
-After Railway deploy open:
+After deploy open:
 /api/status
 
-Expected JSON field:
-"version": "0.5.116"
+Expected version:
+"version": "0.5.117"
 
-Accounting smoke check:
-1. Open Admin -> Бухгалтерия.
-2. The table must contain only uploaded receipts; payment-request-only rows must not appear.
-3. Upload one receipt: a new receipt row should appear without a full page reload.
-4. Edit receipt data or generate an AVR: only that row/statuses should change.
-5. Check filters: Без Акта / Не подписанные / Без подписи СЗ.
+In Accounting the Status filter must contain:
+- Все
+- Без Акта
+- Не подписано ИП
+- Не подписано СЗ
 
-The v0.5.115 iPhone eGov Mobile recovery flow remains unchanged.
+When either party signs an AVR, its ИП/СЗ badge must turn green automatically within the polling interval without a full page reload.
