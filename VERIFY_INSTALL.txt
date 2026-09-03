@@ -1,15 +1,15 @@
-Contrast Finance v0.5.117 verification
+Contrast Finance v0.5.118 verification
 
 After deploy open:
 /api/status
 
 Expected version:
-"version": "0.5.117"
+"version": "0.5.118"
 
-In Accounting the Status filter must contain:
-- Все
-- Без Акта
-- Не подписано ИП
-- Не подписано СЗ
+Kaspi receipt identity check:
+- upload or refresh a Kaspi self-employed receipt that contains a 12-digit IIN but no FIO;
+- if the IIN exists in Contrast Finance history, FIO must be restored locally;
+- otherwise the backend may use the fixed public lookup providers and persist the returned FIO;
+- if no provider has a usable result, FIO stays empty and remains manually editable.
 
-When either party signs an AVR, its ИП/СЗ badge must turn green automatically within the polling interval without a full page reload.
+No database migration is required.

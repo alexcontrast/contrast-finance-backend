@@ -54,6 +54,7 @@ from app.services.accounting_receipt_data_fix import (
     _find_json_receipt_datetime,
 )
 from app.services.r1_act_pdf import R1ActPayload, generate_r1_act_pdf
+from app.services.self_employed_identity_lookup import lookup_full_name_by_iin
 
 
 router = APIRouter(prefix="/accounting/self-employed", tags=["self_employed_accounting"])
@@ -1219,8 +1220,13 @@ def _restore_missing_iins_from_exact_names(
     return changed
 
 
-def _restore_receipt_identity(db: Session, record: SelfEmployedAccounting) -> None:
-    """Reuse only unambiguous identity data from receipts of the same person."""
+def _restore_receipt_identity(
+    db: Session,
+    record: SelfEmployedAccounting,
+    *,
+    allow_external: bool = False,
+) -> None:
+    """Reuse local identity first, then optionally resolve FIO by IIN externally."""
     current_name = clean_person_name(record.contractor_full_name)
     current_iin = _valid_iin_or_none(record.iin)
     historical = db.execute(
@@ -1262,6 +1268,19 @@ def _restore_receipt_identity(db: Session, record: SelfEmployedAccounting) -> No
                 contact.full_name = best_name
                 contact.updated_at = datetime.utcnow()
                 db.add(contact)
+
+        # Kaspi self-employed receipts can contain the IIN but omit FIO. Only
+        # after the local receipt/contact history has failed do we send the IIN
+        # to fixed public Kazakhstan counterparty services. A successful result
+        # is persisted on this receipt and becomes local history for next time.
+        if not record.contractor_full_name and allow_external:
+            external = lookup_full_name_by_iin(current_iin)
+            if external:
+                external_name = clean_person_name(external.full_name)
+                if external_name:
+                    record.contractor_full_name = external_name
+                    marker = f"[IIN_FIO_LOOKUP:{external.source}] {external_name}"
+                    record.ocr_text = _merge_receipt_source_text(record.ocr_text, marker)
 
 
 def clean_decimal(value: str | Decimal | None) -> Decimal | None:
@@ -2151,7 +2170,7 @@ def refresh_accounting_receipt_from_qr(
     record.confirmed_at = None
     record.confirmed_by_user_id = None
     record.updated_at = datetime.utcnow()
-    _restore_receipt_identity(db, record)
+    _restore_receipt_identity(db, record, allow_external=True)
     db.add(record)
     db.commit()
     return load_accounting_row(db, record.id)
@@ -2249,7 +2268,7 @@ async def import_self_employed_receipt(
     )
     if qr_error:
         record.parse_status = "uploaded"
-    _restore_receipt_identity(db, record)
+    _restore_receipt_identity(db, record, allow_external=True)
     db.add(record)
     db.commit()
 
@@ -2569,7 +2588,7 @@ async def upload_self_employed_receipt(
     )
     if qr_error and record.parse_status == "parsed" and not any((contractor_full_name, iin, receipt_number, receipt_datetime, service_name, receipt_amount)):
         record.parse_status = "uploaded"
-    _restore_receipt_identity(db, record)
+    _restore_receipt_identity(db, record, allow_external=True)
     db.add(record)
     db.commit()
     return load_group_row(db, request_id)
@@ -2676,7 +2695,7 @@ def update_receipt_accounting(
         iin=payload.iin,
     )
     _update_record(db, record, payload, current_user)
-    _restore_receipt_identity(db, record)
+    _restore_receipt_identity(db, record, allow_external=True)
     db.add(record)
     db.commit()
     return load_accounting_row(db, record.id)
@@ -2700,7 +2719,7 @@ def update_self_employed_accounting(
         iin=payload.iin,
     )
     _update_record(db, record, payload, current_user)
-    _restore_receipt_identity(db, record)
+    _restore_receipt_identity(db, record, allow_external=True)
     db.add(record)
     db.commit()
     return load_group_row(db, request.id)
@@ -2763,7 +2782,7 @@ def generate_accounting_act(
     _assert_act_mutable(record)
     if record.act_filename or record.act_size or record.act_status == "generated":
         raise HTTPException(status_code=409, detail="АВР уже сформирован. Откройте его по иконке документа")
-    _restore_receipt_identity(db, record)
+    _restore_receipt_identity(db, record, allow_external=True)
     member_ids = list(
         db.execute(
             select(SelfEmployedAccountingRequest.payment_request_id).where(
