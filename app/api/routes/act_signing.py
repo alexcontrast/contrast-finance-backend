@@ -233,6 +233,33 @@ def _whatsapp_message(record: SelfEmployedAccounting, role: str, signing_url: st
     )
 
 
+def _contractor_surname(full_name: str | None) -> str:
+    tokens = [token.strip(" ,.;:()[]{}") for token in re.split(r"\s+", str(full_name or "").strip())]
+    tokens = [token for token in tokens if token]
+    if tokens and tokens[0].casefold() in {"ип", "самозанятый", "самозанятая"}:
+        tokens = tokens[1:]
+    return tokens[0].capitalize() if tokens else "Самозанятый"
+
+
+def _share_amount(value: Decimal | None) -> str:
+    amount = Decimal(value or 0).quantize(Decimal("0.01"))
+    if amount == amount.to_integral_value():
+        return f"{int(amount):,}".replace(",", " ")
+    whole, fraction = f"{amount:,.2f}".split(".")
+    return f"{whole.replace(',', ' ')},{fraction}"
+
+
+def _share_preview_title(record: SelfEmployedAccounting) -> str:
+    act_date = record.act_date
+    if act_date is None and record.receipt_datetime is not None:
+        act_date = record.receipt_datetime.date()
+    date_text = act_date.strftime("%d.%m.%Y") if act_date else "—"
+    return (
+        f"АВР Contrast-{_contractor_surname(record.contractor_full_name)} "
+        f"на сумму {_share_amount(record.receipt_amount)} ₸ от {date_text}"
+    )
+
+
 @router.get(
     "/receipts/{accounting_id}/act/signing-link",
     response_model=SelfEmployedActSigningLinkRead,
@@ -1117,14 +1144,17 @@ def act_ios_open_page(token: str, db: Session = Depends(get_db)):
 
 
 @public_router.get("/{token}", response_class=HTMLResponse)
-def act_signing_page(token: str):
+def act_signing_page(token: str, db: Session = Depends(get_db)):
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,96}", token):
         raise HTTPException(status_code=404, detail="Ссылка не найдена")
+    record = _record_by_token(db, token)
     path = WEB_DIR / "sign_avr.html"
     if not path.exists():
         raise HTTPException(status_code=404, detail="Страница подписания не найдена")
+    share_title = html_lib.escape(_share_preview_title(record), quote=True)
+    page = path.read_text(encoding="utf-8").replace("{{AVR_SHARE_TITLE}}", share_title)
     return HTMLResponse(
-        path.read_text(encoding="utf-8"),
+        page,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "X-Robots-Tag": "noindex, nofollow",

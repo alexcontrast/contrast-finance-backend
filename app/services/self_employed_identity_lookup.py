@@ -11,7 +11,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 LOOKUP_TIMEOUT = (3, 6)
-USER_AGENT = "Contrast-Finance/0.5.119 self-employed-identity-lookup"
+USER_AGENT = "Contrast-Finance/0.5.120 self-employed-identity-lookup"
 
 # These providers expose public counterparty pages and are used only as a
 # best-effort fallback when Contrast Finance has no confirmed IIN -> FIO pair.
