@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.121 — surname + first name in WhatsApp AVR preview
+
+- В заголовке публичной ссылки АВР вместо одной фамилии теперь отображаются фамилия и имя самозанятого.
+- Формат: `АВР Contrast-Фамилия Имя на сумму ... ₸ от ДД.ММ.ГГГГ`; отчество не добавляется.
+- Логика суммы/даты, Open Graph, SIGEX/eGov Mobile, DDC и подписей не менялась.
+- Версия backend/browser: `0.5.121`; новой миграции нет.
+
 ## v0.5.120 — WhatsApp AVR preview and release cleanup
 
 - Публичная страница `/sign/avr/{token}` теперь отдаёт динамические `<title>` и Open Graph `og:title`.

@@ -233,12 +233,14 @@ def _whatsapp_message(record: SelfEmployedAccounting, role: str, signing_url: st
     )
 
 
-def _contractor_surname(full_name: str | None) -> str:
+def _contractor_short_name(full_name: str | None) -> str:
     tokens = [token.strip(" ,.;:()[]{}") for token in re.split(r"\s+", str(full_name or "").strip())]
     tokens = [token for token in tokens if token]
     if tokens and tokens[0].casefold() in {"ип", "самозанятый", "самозанятая"}:
         tokens = tokens[1:]
-    return tokens[0].capitalize() if tokens else "Самозанятый"
+    if not tokens:
+        return "Самозанятый"
+    return " ".join(token.capitalize() for token in tokens[:2])
 
 
 def _share_amount(value: Decimal | None) -> str:
@@ -255,7 +257,7 @@ def _share_preview_title(record: SelfEmployedAccounting) -> str:
         act_date = record.receipt_datetime.date()
     date_text = act_date.strftime("%d.%m.%Y") if act_date else "—"
     return (
-        f"АВР Contrast-{_contractor_surname(record.contractor_full_name)} "
+        f"АВР Contrast-{_contractor_short_name(record.contractor_full_name)} "
         f"на сумму {_share_amount(record.receipt_amount)} ₸ от {date_text}"
     )
 

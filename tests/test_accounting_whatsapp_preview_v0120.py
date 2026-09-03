@@ -7,7 +7,7 @@ from unittest.mock import patch
 from app.api.routes import act_signing
 
 
-class AccountingWhatsappPreviewV0120Tests(unittest.TestCase):
+class AccountingWhatsappPreviewV0121Tests(unittest.TestCase):
     def _record(self, **overrides):
         values = {
             "contractor_full_name": "СЕРІКБАЙ БЕКЗАТ НҰРЕИСАҰЛЫ",
@@ -18,16 +18,16 @@ class AccountingWhatsappPreviewV0120Tests(unittest.TestCase):
         values.update(overrides)
         return SimpleNamespace(**values)
 
-    def test_share_preview_title_uses_surname_amount_and_date(self):
+    def test_share_preview_title_uses_surname_first_name_amount_and_date(self):
         self.assertEqual(
             act_signing._share_preview_title(self._record()),
-            "АВР Contrast-Серікбай на сумму 150 000 ₸ от 03.09.2026",
+            "АВР Contrast-Серікбай Бекзат на сумму 150 000 ₸ от 03.09.2026",
         )
 
     def test_share_preview_title_keeps_fractional_tenge(self):
         self.assertEqual(
             act_signing._share_preview_title(self._record(receipt_amount=Decimal("150000.50"))),
-            "АВР Contrast-Серікбай на сумму 150 000,50 ₸ от 03.09.2026",
+            "АВР Contrast-Серікбай Бекзат на сумму 150 000,50 ₸ от 03.09.2026",
         )
 
     def test_public_page_exposes_dynamic_title_and_open_graph(self):
@@ -36,11 +36,12 @@ class AccountingWhatsappPreviewV0120Tests(unittest.TestCase):
         with patch.object(act_signing, "_record_by_token", return_value=record):
             response = act_signing.act_signing_page(token, db=object())
         html = response.body.decode("utf-8")
-        expected = "АВР Contrast-Иванов на сумму 150 000 ₸ от 03.09.2026"
+        expected = "АВР Contrast-Иванов Иван на сумму 150 000 ₸ от 03.09.2026"
         self.assertIn(f"<title>{expected}</title>", html)
         self.assertIn(f'<meta property="og:title" content="{expected}" />', html)
         self.assertNotIn("{{AVR_SHARE_TITLE}}", html)
         self.assertNotIn("Подписание АВР · Contrast", html)
+        self.assertNotIn("Иванович", html)
 
 
 if __name__ == "__main__":

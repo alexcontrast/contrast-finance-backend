@@ -1,6 +1,11 @@
-Contrast Finance v0.5.120
+Contrast Finance v0.5.121
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.5.121:
+- WhatsApp/Open Graph title для публичного АВР теперь содержит фамилию + имя самозанятого;
+- формат: `АВР Contrast-Фамилия Имя на сумму ... ₸ от ДД.ММ.ГГГГ`; отчество не выводится;
+- no database migration.
 
 v0.5.120:
 - публичная ссылка АВР теперь отдаёт динамический `<title>` и `og:title` для WhatsApp: `АВР Contrast-Фамилия на сумму ... ₸ от ДД.ММ.ГГГГ`;

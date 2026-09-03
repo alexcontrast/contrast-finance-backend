@@ -1,7 +1,6 @@
-Contrast Finance v0.5.120 changed files over v0.5.119
+Contrast Finance v0.5.121 changed files over v0.5.120
 
 app/api/routes/act_signing.py
-app/web/sign_avr.html
 app/web/app.js
 app/web/index.html
 app/core/config.py
@@ -14,6 +13,5 @@ VERIFY_INSTALL.txt
 app/README.md
 app/CHANGED_FILES_README.txt
 
-Change: WhatsApp/link preview title for a public AVR is generated from the contractor surname, AVR amount and AVR date.
-Packaging/docs cleanup: stale v0.5.118 verification text removed; release archive contains one top-level folder only.
+Change: WhatsApp/Open Graph AVR preview now uses contractor surname + first name instead of surname only. Patronymic is not included.
 No database migration.

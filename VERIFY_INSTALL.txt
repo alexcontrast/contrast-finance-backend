@@ -1,16 +1,16 @@
-Contrast Finance v0.5.120 verification
+Contrast Finance v0.5.121 verification
 
 After deploy open:
 /api/status
 
 Expected version:
-"version": "0.5.120"
+"version": "0.5.121"
 
 WhatsApp AVR preview check:
 - form an AVR for a receipt with contractor FIO, amount and date;
 - send/copy the public /sign/avr/{token} link to WhatsApp;
 - the link preview title must be similar to:
-  АВР Contrast-Иванов на сумму 150 000 ₸ от 03.09.2026
+  АВР Contrast-Иванов Иван на сумму 150 000 ₸ от 03.09.2026
 - opening the link must still show the same signing page and existing eGov/SIGEX flow.
 
 The "Сформировать АВР" action must still update only the accounting row and must not auto-open the PDF.

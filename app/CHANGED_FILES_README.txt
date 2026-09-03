@@ -1,8 +1,7 @@
-Contrast Finance v0.5.120
+Contrast Finance v0.5.121
 
 Changed files:
 - app/api/routes/act_signing.py
-- app/web/sign_avr.html
 - app/web/app.js
 - app/web/index.html
 - app/core/config.py
@@ -10,11 +9,12 @@ Changed files:
 - tests/test_accounting_whatsapp_preview_v0120.py
 - README.md
 - CHANGELOG.md
+- CHANGED_FILES_README.txt
 - VERIFY_INSTALL.txt
 - app/README.md
 - app/CHANGED_FILES_README.txt
 
-Feature: dynamic WhatsApp/Open Graph title for public AVR signing links.
-Title format: АВР Contrast-{Фамилия} на сумму {Сумма} ₸ от {ДД.ММ.ГГГГ}.
-Packaging/docs cleanup included.
+Feature: WhatsApp/Open Graph title for public AVR signing links now contains contractor surname + first name.
+Title format: АВР Contrast-{Фамилия} {Имя} на сумму {Сумма} ₸ от {ДД.ММ.ГГГГ}.
+Patronymic is not included.
 No database migration.
