@@ -1,6 +1,11 @@
-Contrast Finance v0.5.121
+Contrast Finance v0.5.122
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.5.122:
+- в `Закрыть месяц` расходы сортируются по времени создания от новых к старым;
+- при одинаковом времени используется `id DESC`;
+- no database migration.
 
 v0.5.121:
 - WhatsApp/Open Graph title для публичного АВР теперь содержит фамилию + имя самозанятого;

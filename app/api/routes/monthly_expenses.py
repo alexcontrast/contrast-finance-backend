@@ -225,7 +225,21 @@ def list_monthly_expenses(month: str | None = None, db: Session = Depends(get_db
         # filter is enough and lets PostgreSQL use a normal index if one exists.
         query = query.where(MonthlyExpense.month == month_date)
 
-    result = db.execute(query.order_by(MonthlyExpense.month.desc(), MonthlyExpense.id.desc()))
+    if month_date:
+        # The "Close month" tab requests one month at a time. Keep the newest
+        # expense at the top by its actual creation timestamp; id is a stable
+        # tie-breaker for rows created in the same clock tick.
+        query = query.order_by(MonthlyExpense.created_at.desc(), MonthlyExpense.id.desc())
+    else:
+        # Preserve month grouping for callers that request the complete list,
+        # while applying the same newest-first order inside every month.
+        query = query.order_by(
+            MonthlyExpense.month.desc(),
+            MonthlyExpense.created_at.desc(),
+            MonthlyExpense.id.desc(),
+        )
+
+    result = db.execute(query)
     expenses = result.scalars().all()
 
     plans_by_month: dict[date, MonthlyPlan | None] = {}

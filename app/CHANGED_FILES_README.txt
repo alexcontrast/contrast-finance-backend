@@ -1,12 +1,10 @@
-Contrast Finance v0.5.121
+Contrast Finance v0.5.122
 
 Changed files:
-- app/api/routes/act_signing.py
-- app/web/app.js
+- app/api/routes/monthly_expenses.py
 - app/web/index.html
 - app/core/config.py
-- app/services/self_employed_identity_lookup.py
-- tests/test_accounting_whatsapp_preview_v0120.py
+- tests/test_monthly_expense_order_v0122.py
 - README.md
 - CHANGELOG.md
 - CHANGED_FILES_README.txt
@@ -14,7 +12,6 @@ Changed files:
 - app/README.md
 - app/CHANGED_FILES_README.txt
 
-Feature: WhatsApp/Open Graph title for public AVR signing links now contains contractor surname + first name.
-Title format: АВР Contrast-{Фамилия} {Имя} на сумму {Сумма} ₸ от {ДД.ММ.ГГГГ}.
-Patronymic is not included.
+Feature: expenses in `Закрыть месяц` are sorted by creation time from newest to oldest.
+Stable tie-breaker: id DESC.
 No database migration.
