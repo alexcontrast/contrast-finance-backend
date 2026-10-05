@@ -1223,7 +1223,11 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
                     if not item_has_locked_invoice_payment(item):
                         raise RuntimeError("Для По счету сначала проверь БИН/ИИН")
             elif method == "self_employed":
-                base = item.amount_fact if item.amount_fact is not None else item.external_amount
+                # Самозанятый получает вычет только от фактического расхода.
+                # Сумма внешней сметы не подставляется при пустом/нулевом факте.
+                base = item.amount_fact if item.amount_fact is not None else Decimal("0.00")
+                if base < 0:
+                    base = Decimal("0.00")
                 item.tax_check_status = "self_employed"
                 item.iin_bin = None
                 item.iin_bin_locked = False

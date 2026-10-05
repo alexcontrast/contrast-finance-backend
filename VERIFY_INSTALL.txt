@@ -1,16 +1,16 @@
-Contrast Finance v0.5.122 verification
+Contrast Finance 2.0 v0.6.1 verification
 
 After deploy open:
 /api/status
 
 Expected version:
-"version": "0.5.122"
+"version": "0.6.1"
 
-Then make Ctrl+F5, open admin -> Закрыть месяц and verify:
-- the most recently created expense is at the top;
-- the earliest created expense is at the bottom;
-- after adding a new expense and reloading the page, it remains at the top;
-- editing an amount does not move the row because ordering uses created_at, not updated_at.
+Then make Ctrl+F5, open an internal estimate and verify:
+- set payment method to Самозанятый while Факт is 0: Вычеты must be 0;
+- set Факт to 40 000: Вычеты must be 4 000;
+- set Факт back to 0: Вычеты must immediately return to 0;
+- the external estimate amount must not be used as the deduction base.
 
 No database migration is required.
 Alembic head: 0021_avr_signed_ddc.

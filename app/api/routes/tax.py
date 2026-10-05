@@ -90,7 +90,10 @@ def calculate_tax_values(amount_base: Decimal, tax_status: str) -> tuple[Decimal
 
     return Decimal("0.00"), Decimal("0.00")
 
-def get_amount_base(item: EventItem) -> Decimal:
+def get_amount_base(item: EventItem, tax_status: str | None = None) -> Decimal:
+    if tax_status == "self_employed":
+        fact = item.amount_fact if item.amount_fact is not None else Decimal("0.00")
+        return max(fact, Decimal("0.00"))
     return item.amount_fact if item.amount_fact is not None else item.external_amount
 
 
@@ -306,7 +309,7 @@ def check_event_item_tax(
         "deduction_amount": str(item.deduction_amount),
     }
 
-    amount_base = get_amount_base(item)
+    amount_base = get_amount_base(item, kgd_result.tax_status)
     vat_amount, deduction_amount = calculate_tax_values(amount_base, kgd_result.tax_status)
     mark_perf("tax_values")
 
@@ -563,7 +566,7 @@ def set_event_item_tax_manual(
         "deduction_amount": str(item.deduction_amount),
     }
 
-    amount_base = get_amount_base(item)
+    amount_base = get_amount_base(item, payload.tax_status)
     vat_amount, deduction_amount = calculate_tax_values(amount_base, payload.tax_status)
 
     contractor = upsert_contractor(

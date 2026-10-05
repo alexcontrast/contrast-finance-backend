@@ -46,17 +46,17 @@ def item_deduction(item: EventItem) -> Decimal:
     """
     Вычеты подрядчиков:
     - По счету: из позиции/КГД
-    - Самозанятый: 10%, если не записано явно
+    - Самозанятый: процент только от фактического расхода
     - Налик/карта: 0
     """
     if is_invoice_item(item):
         return money(item.deduction_amount)
 
     if is_self_employed_item(item):
-        stored = money(item.deduction_amount)
-        if stored > 0:
-            return stored
-        return q(item_fact_or_plan(item) * Decimal("0.10"))
+        fact = money(item.amount_fact)
+        if fact <= 0:
+            return Decimal("0.00")
+        return q(fact * get_settings().CONTRACTOR_DEDUCTION_RATE)
 
     return Decimal("0.00")
 

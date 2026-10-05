@@ -1,6 +1,19 @@
-Contrast Finance v0.5.122
+Contrast Finance 2.0 v0.6.1
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.6.1:
+- для `Самозанятого` вычет считается только от `amount_fact`;
+- пустой/нулевой `amount_fact` всегда даёт нулевой вычет и не подменяется внешней сметой;
+- правило одинаково в browser/backend/payment requests/tax/Telegram;
+- backend/browser version: `0.6.1`;
+- no database migration.
+
+v0.6:
+- стабильная базовая сборка зафиксирована из полностью проверенной v0.5.122;
+- backend/browser version: `0.6`;
+- функциональная логика не менялась;
+- no database migration.
 
 v0.5.122:
 - в `Закрыть месяц` расходы сортируются по времени создания от новых к старым;

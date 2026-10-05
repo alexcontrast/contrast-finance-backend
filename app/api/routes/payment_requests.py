@@ -414,9 +414,13 @@ def apply_payment_context_to_item(
         item.iin_bin_locked = False
         item.tax_check_status = "self_employed"
         item.vat_amount = Decimal("0.00")
-        amount_base = item.amount_fact if item.amount_fact is not None else item.external_amount
+        # Для самозанятого вычет возникает только из фактического расхода.
+        # Внешняя смета не является оплатой и не может служить запасной базой.
+        amount_base = item.amount_fact if item.amount_fact is not None else Decimal("0.00")
+        if amount_base < 0:
+            amount_base = Decimal("0.00")
         item.deduction_amount = (
-            (amount_base or Decimal("0.00")) * get_settings().CONTRACTOR_DEDUCTION_RATE
+            amount_base * get_settings().CONTRACTOR_DEDUCTION_RATE
         ).quantize(Decimal("0.01"))
         item.internal_note = f"Самозанятый: {surname}"
 

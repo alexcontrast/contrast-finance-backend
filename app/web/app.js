@@ -6680,10 +6680,7 @@ function itemDeductionVisible(item) {
   }
 
   if (isSelfEmployedMethod(item.payment_method)) {
-    const stored = asNumber(item.deduction_amount);
-    if (stored > 0) return stored;
-
-    const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : asNumber(item.external_amount);
+    const base = selfEmployedDeductionBase(item);
     return Math.round(base * 0.10 * 100) / 100;
   }
 
@@ -14916,7 +14913,7 @@ function internalCommissionValue(item) {
 
 function internalDeductionValue(item) {
   if (item.payment_method === "self_employed") {
-    const base = asNumber(item.amount_fact) > 0 ? asNumber(item.amount_fact) : externalRowAmount(item);
+    const base = selfEmployedDeductionBase(item);
     return Math.round(base * 0.10);
   }
   if (item.payment_method === "invoice") return asNumber(item.deduction_amount);
@@ -15716,9 +15713,10 @@ function calcItemTaxFields(paymentMethod, taxStatus, amountFact, externalAmount)
   }
 
   if (paymentMethod === "self_employed") {
+    const factBase = Math.max(0, asNumber(amountFact));
     return {
       vat_amount: 0,
-      deduction_amount: Math.round(base * 0.10 * 100) / 100,
+      deduction_amount: Math.round(factBase * 0.10 * 100) / 100,
     };
   }
 
@@ -16622,9 +16620,7 @@ function paidAmountCellHtml(item, requestsSource = null) {
 
 function selfEmployedDeductionBase(item) {
   const fact = asNumber(item?.amount_fact);
-  if (fact > 0) return fact;
-  const external = externalRowAmount(item || {});
-  return external > 0 ? external : asNumber(item?.external_amount);
+  return fact > 0 ? fact : 0;
 }
 
 function ensureSelfEmployedItemTax(item) {
