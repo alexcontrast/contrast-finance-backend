@@ -27,6 +27,10 @@ class ManagerDashboardEventRead(BaseModel):
     is_coauthored: bool = False
     coauthor_name: str | None = None
     coauthor_user_id: int | None = None
+    coauthor_names: list[str] = Field(default_factory=list)
+    coauthor_user_ids: list[int] = Field(default_factory=list)
+    participant_names: list[str] = Field(default_factory=list)
+    participant_user_ids: list[int] = Field(default_factory=list)
     owner_manager_id: int | None = None
     owner_manager_name: str | None = None
 

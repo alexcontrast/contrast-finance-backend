@@ -17,6 +17,11 @@ from app.services.auth import get_current_user
 from app.services.authorization import get_event_or_404, require_event_edit, require_event_view
 from app.models.event_item import EventItem
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.event_collaboration import (
+    MAX_EVENT_PARTICIPANTS,
+    equal_event_share_allocations,
+    ordered_event_participant_ids,
+)
 
 
 router = APIRouter(tags=["events"])
@@ -113,6 +118,29 @@ def clear_event_shares(db: Session, event_id: int) -> None:
     shares = db.execute(select(EventShare).where(EventShare.event_id == event_id)).scalars().all()
     for share in shares:
         db.delete(share)
+
+
+def replace_event_participant_shares(
+    db: Session,
+    event: Event,
+    participant_ids: list[int],
+) -> None:
+    allocations = equal_event_share_allocations(participant_ids)
+    clear_event_shares(db, event.id)
+    db.flush()
+
+    # A single owner is represented by Event.manager_id without event_shares.
+    if len(allocations) <= 1:
+        return
+
+    for user_id, share_percent in allocations:
+        db.add(
+            EventShare(
+                event_id=event.id,
+                user_id=user_id,
+                share_percent=share_percent,
+            )
+        )
 
 
 @router.get("/events/action-managers", response_model=list[EventActionManagerRead])
@@ -659,26 +687,17 @@ def add_event_coauthor(
     require_event_edit(current_user, event)
 
     coauthor = get_active_manager_or_404(db, payload.manager_id)
-    if coauthor.id == event.manager_id:
-        raise HTTPException(status_code=400, detail="Этот менеджер уже основной менеджер мероприятия")
-
-    clear_event_shares(db, event.id)
-    db.flush()
-
-    db.add(
-        EventShare(
-            event_id=event.id,
-            user_id=event.manager_id,
-            share_percent=Decimal("50.00"),
+    participant_ids = ordered_event_participant_ids(event)
+    if coauthor.id in participant_ids:
+        raise HTTPException(status_code=400, detail="Этот менеджер уже участвует в мероприятии")
+    if len(participant_ids) >= MAX_EVENT_PARTICIPANTS:
+        raise HTTPException(
+            status_code=409,
+            detail="В мероприятии может быть не более трёх менеджеров",
         )
-    )
-    db.add(
-        EventShare(
-            event_id=event.id,
-            user_id=coauthor.id,
-            share_percent=Decimal("50.00"),
-        )
-    )
+
+    participant_ids.append(coauthor.id)
+    replace_event_participant_shares(db, event, participant_ids)
     event.updated_at = datetime.utcnow()
 
     db.add(event)

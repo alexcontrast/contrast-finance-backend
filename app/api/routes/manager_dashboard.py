@@ -31,6 +31,7 @@ from app.schemas.payment_request import PaymentRequestRead
 from app.api.routes.payment_requests import enrich_payment_request_read_fast
 from app.services.auth import get_current_user
 from app.services.event_calculator import calculate_event_summary_values, q
+from app.services.event_collaboration import ordered_event_participant_ids
 
 
 router = APIRouter(tags=["manager_dashboard"])
@@ -152,18 +153,32 @@ def event_share_percent_for_manager(event: Event, manager: User) -> Decimal:
     return Decimal("0.00")
 
 
-def coauthor_info(event: Event, manager: User, user_by_id: dict[int, User]) -> tuple[bool, str | None, int | None, int | None, str | None]:
-    shares = list(event.shares or [])
-    if not shares:
-        owner = user_by_id.get(event.manager_id)
-        return False, None, None, event.manager_id, owner.name if owner else None
-
-    share_user_ids = [share.user_id for share in shares]
-    other_ids = [user_id for user_id in share_user_ids if user_id != manager.id]
-    other_id = other_ids[0] if other_ids else None
-    other_user = user_by_id.get(other_id) if other_id else None
+def coauthor_info(event: Event, manager: User, user_by_id: dict[int, User]) -> dict[str, object]:
+    participant_user_ids = ordered_event_participant_ids(event)
+    participant_names = [
+        user_by_id[user_id].name
+        for user_id in participant_user_ids
+        if user_id in user_by_id
+    ]
+    other_ids = [user_id for user_id in participant_user_ids if user_id != manager.id]
+    other_names = [
+        user_by_id[user_id].name
+        for user_id in other_ids
+        if user_id in user_by_id
+    ]
     owner = user_by_id.get(event.manager_id)
-    return True, other_user.name if other_user else None, other_id, event.manager_id, owner.name if owner else None
+    return {
+        "is_coauthored": len(participant_user_ids) > 1,
+        # Keep the original scalar fields for old browser caches/clients.
+        "coauthor_name": other_names[0] if other_names else None,
+        "coauthor_user_id": other_ids[0] if other_ids else None,
+        "coauthor_names": other_names,
+        "coauthor_user_ids": other_ids,
+        "participant_names": participant_names,
+        "participant_user_ids": participant_user_ids,
+        "owner_manager_id": event.manager_id,
+        "owner_manager_name": owner.name if owner else None,
+    }
 
 
 @router.get("/manager-dashboard", response_model=ManagerDashboardRead)
@@ -272,7 +287,7 @@ def get_manager_dashboard(
         payment_requests_total += requests_count
         active_payment_requests_total += active_requests_count
 
-        is_coauthored, coauthor_name, coauthor_user_id, owner_manager_id, owner_manager_name = coauthor_info(event, manager, user_by_id)
+        collaboration = coauthor_info(event, manager, user_by_id)
 
         event_rows.append(
             ManagerDashboardEventRead(
@@ -292,11 +307,7 @@ def get_manager_dashboard(
                 payment_requests_count=requests_count,
                 active_payment_requests_count=active_requests_count,
                 share_percent=q(share_percent),
-                is_coauthored=is_coauthored,
-                coauthor_name=coauthor_name,
-                coauthor_user_id=coauthor_user_id,
-                owner_manager_id=owner_manager_id,
-                owner_manager_name=owner_manager_name,
+                **collaboration,
             )
         )
 
@@ -526,7 +537,7 @@ def get_manager_dashboard_bundle(
         payment_requests_total += requests_count
         active_payment_requests_total += active_requests_count
 
-        is_coauthored, coauthor_name, coauthor_user_id, owner_manager_id, owner_manager_name = coauthor_info(event, manager, user_by_id)
+        collaboration = coauthor_info(event, manager, user_by_id)
         event_rows.append(
             ManagerDashboardEventRead(
                 id=event.id,
@@ -545,11 +556,7 @@ def get_manager_dashboard_bundle(
                 payment_requests_count=requests_count,
                 active_payment_requests_count=active_requests_count,
                 share_percent=q(share_percent),
-                is_coauthored=is_coauthored,
-                coauthor_name=coauthor_name,
-                coauthor_user_id=coauthor_user_id,
-                owner_manager_id=owner_manager_id,
-                owner_manager_name=owner_manager_name,
+                **collaboration,
             )
         )
 
@@ -762,7 +769,7 @@ def get_manager_dashboard_compact(
         requests_count, active_requests_count = request_counts.get(int(event.id), (0, 0))
         payment_requests_total += requests_count
         active_payment_requests_total += active_requests_count
-        is_coauthored, coauthor_name, coauthor_user_id, owner_manager_id, owner_manager_name = coauthor_info(event, manager, user_by_id)
+        collaboration = coauthor_info(event, manager, user_by_id)
 
         event_rows.append(
             ManagerDashboardEventRead(
@@ -782,11 +789,7 @@ def get_manager_dashboard_compact(
                 payment_requests_count=requests_count,
                 active_payment_requests_count=active_requests_count,
                 share_percent=q(share_percent),
-                is_coauthored=is_coauthored,
-                coauthor_name=coauthor_name,
-                coauthor_user_id=coauthor_user_id,
-                owner_manager_id=owner_manager_id,
-                owner_manager_name=owner_manager_name,
+                **collaboration,
             )
         )
 

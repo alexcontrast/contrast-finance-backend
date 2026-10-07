@@ -1,12 +1,12 @@
-Contrast Finance 2.0 v0.6.1 patch over v0.6
+Contrast Finance 2.0 v0.6.2 patch over v0.6.1
 
 Functional files:
-- app/services/event_calculator.py
-- app/api/routes/payment_requests.py
-- app/api/routes/tax.py
+- app/services/event_collaboration.py
+- app/api/routes/events.py
+- app/api/routes/manager_dashboard.py
+- app/schemas/manager_dashboard.py
 - app/web/app.js
-- app/telegram_bot/main.py
-- tests/test_self_employed_deduction_v061.py
+- tests/test_three_manager_collaboration_v062.py
 
 Version and documentation:
 - app/web/index.html
@@ -18,5 +18,5 @@ Version and documentation:
 - app/README.md
 - app/CHANGED_FILES_README.txt
 
-Change: self-employed deductions are calculated strictly from amount_fact. Empty or zero fact never falls back to the external estimate.
+Change: an event can have one primary manager and up to two coauthors. Two participants split 50/50; three split 33.34/33.33/33.33, and every personal plan receives only its own share.
 No database migration. Alembic head: 0021_avr_signed_ddc.

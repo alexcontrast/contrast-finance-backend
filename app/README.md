@@ -1,6 +1,14 @@
-Contrast Finance 2.0 v0.6.1
+Contrast Finance 2.0 v0.6.2
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.6.2:
+- мероприятие поддерживает основного менеджера и до двух соавторов;
+- два участника делят доход 50/50, три — 33.34/33.33/33.33;
+- доля каждого участника учитывается в его плане, бонусах, статистике и закрытии месяца;
+- Dashboard API и browser показывают обоих соавторов и не позволяют добавить четвёртого участника;
+- backend/browser version: `0.6.2`;
+- no database migration.
 
 v0.6.1:
 - для `Самозанятого` вычет считается только от `amount_fact`;

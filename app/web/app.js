@@ -6264,6 +6264,10 @@ function getDraftEvent(event) {
     "is_coauthored",
     "coauthor_name",
     "coauthor_user_id",
+    "coauthor_names",
+    "coauthor_user_ids",
+    "participant_names",
+    "participant_user_ids",
     "owner_manager_id",
     "owner_manager_name",
     "share_percent",
@@ -13193,8 +13197,8 @@ function updateCurrentManagerMiniCardLive() {
         badgeRow.insertAdjacentHTML("beforeend", coauthorBadgeHtml(state.currentManagerEvent, "data-mini-coauthor"));
         coauthorEl = card.querySelector("[data-mini-coauthor]");
       } else {
-        const name = state.currentManagerEvent.coauthor_name || state.currentManagerEvent.owner_manager_name || "менеджер";
-        coauthorEl.textContent = `Соавтор: ${name}`;
+        coauthorEl.textContent = coauthorBadgeText(state.currentManagerEvent);
+        coauthorEl.title = coauthorBadgeTitle(state.currentManagerEvent);
       }
     } else if (coauthorEl) {
       coauthorEl.remove();
@@ -13222,6 +13226,10 @@ function updateCurrentManagerMiniCardLive() {
       dashboardEvent.is_coauthored = state.currentManagerEvent.is_coauthored;
       dashboardEvent.coauthor_name = state.currentManagerEvent.coauthor_name;
       dashboardEvent.coauthor_user_id = state.currentManagerEvent.coauthor_user_id;
+      dashboardEvent.coauthor_names = state.currentManagerEvent.coauthor_names;
+      dashboardEvent.coauthor_user_ids = state.currentManagerEvent.coauthor_user_ids;
+      dashboardEvent.participant_names = state.currentManagerEvent.participant_names;
+      dashboardEvent.participant_user_ids = state.currentManagerEvent.participant_user_ids;
       dashboardEvent.share_percent = state.currentManagerEvent.share_percent;
     }
   } catch (error) {
@@ -13869,8 +13877,47 @@ function eventSharePercent(event) {
   return Math.min(100, value);
 }
 
+const MAX_EVENT_PARTICIPANTS = 3;
+
+function eventParticipantUserIds(event) {
+  const ids = [];
+  const append = (value) => {
+    const normalized = Number(value || 0);
+    if (normalized > 0 && !ids.includes(normalized)) ids.push(normalized);
+  };
+
+  (Array.isArray(event?.participant_user_ids) ? event.participant_user_ids : []).forEach(append);
+  if (!ids.length) {
+    append(event?.manager_id || event?.owner_manager_id);
+    (Array.isArray(event?.coauthor_user_ids) ? event.coauthor_user_ids : []).forEach(append);
+    append(event?.coauthor_user_id);
+  }
+  return ids;
+}
+
+function eventCoauthorNames(event) {
+  const names = [];
+  const append = (value) => {
+    const normalized = String(value || "").trim();
+    if (normalized && !names.includes(normalized)) names.push(normalized);
+  };
+
+  (Array.isArray(event?.coauthor_names) ? event.coauthor_names : []).forEach(append);
+  if (!names.length) append(event?.coauthor_name || event?.owner_manager_name);
+  return names;
+}
+
+function eventParticipantCount(event) {
+  const idsCount = eventParticipantUserIds(event).length;
+  const namesCount = eventCoauthorNames(event).length + 1;
+  return Math.max(idsCount || 1, event?.is_coauthored ? namesCount : 1);
+}
+
 function eventIsCoauthored(event) {
-  return Boolean(event?.is_coauthored) || eventSharePercent(event) < 100 || Boolean(event?.coauthor_name);
+  return eventParticipantCount(event) > 1
+    || Boolean(event?.is_coauthored)
+    || eventSharePercent(event) < 100
+    || Boolean(event?.coauthor_name);
 }
 
 function applyEventShareToSummaryValues(summary, event) {
@@ -13885,10 +13932,23 @@ function applyEventShareToSummaryValues(summary, event) {
   };
 }
 
+function coauthorBadgeText(event) {
+  const names = eventCoauthorNames(event);
+  if (!names.length) return "Соавтор";
+  return `${names.length > 1 ? "Соавторы" : "Соавтор"}: ${names.join(", ")}`;
+}
+
+function coauthorBadgeTitle(event) {
+  const participantNames = (Array.isArray(event?.participant_names) ? event.participant_names : [])
+    .map((name) => String(name || "").trim())
+    .filter(Boolean);
+  if (participantNames.length > 1) return `Менеджеры: ${participantNames.join(", ")}`;
+  return coauthorBadgeText(event);
+}
+
 function coauthorBadgeHtml(event, attrs = "") {
   if (!eventIsCoauthored(event)) return "";
-  const name = event?.coauthor_name || event?.owner_manager_name || "менеджер";
-  return `<span class="coauthor-badge" title="Соавтор: ${name}" ${attrs}>Соавтор: ${name}</span>`;
+  return `<span class="coauthor-badge" title="${escapeHtml(coauthorBadgeTitle(event))}" ${attrs}>${escapeHtml(coauthorBadgeText(event))}</span>`;
 }
 
 
@@ -15497,6 +15557,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
   const eventDeleteTitle = eventDeleteDisabledReason(event);
   const isReadonlyReview = !isAdminEditMode && event?.status === "review";
   const readonlyAttrs = canEdit ? "" : "disabled";
+  const participantCount = eventParticipantCount(event);
+  const canAddCoauthor = participantCount < MAX_EVENT_PARTICIPANTS;
 
 
   const activeTab = isAdminEditMode ? "internal" : (state.managerEstimateTab || "external");
@@ -15523,9 +15585,8 @@ function renderManagerEventCard(event, items = [], summary = null) {
             </div>
             <div class="manager-event-actions-row manager-event-actions-row-secondary-v118">
               <button class="ghost" data-manager-event-transfer="${event.id}">Передать</button>
-              ${eventIsCoauthored(event)
-                ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Удалить соавтора</button>`
-                : `<button class="ghost" data-manager-event-coauthor="${event.id}">Соавтор</button>`}
+              ${canAddCoauthor ? `<button class="ghost" data-manager-event-coauthor="${event.id}">+ Соавтор</button>` : ""}
+              ${eventIsCoauthored(event) ? `<button class="ghost" data-manager-event-remove-coauthor="${event.id}">Убрать соавторов</button>` : ""}
             </div>
           `}
         </div>
@@ -16323,43 +16384,35 @@ async function getActionManagers() {
 
 
 
-function setCoauthorStateForEvent(eventId, managerId, managerName) {
-  const patch = {
-    is_coauthored: true,
-    coauthor_name: managerName || null,
-    coauthor_user_id: Number(managerId),
-    share_percent: 50,
-  };
+function syncCollaborationStateForEvent(eventId) {
+  const dashboardEvent = getManagerDashboardEvent(eventId);
+  if (!dashboardEvent) return null;
+
+  const fields = [
+    "is_coauthored",
+    "coauthor_name",
+    "coauthor_user_id",
+    "coauthor_names",
+    "coauthor_user_ids",
+    "participant_names",
+    "participant_user_ids",
+    "owner_manager_id",
+    "owner_manager_name",
+    "share_percent",
+  ];
+  const patch = {};
+  fields.forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(dashboardEvent, field)) patch[field] = dashboardEvent[field];
+  });
 
   const key = String(eventId);
-
   if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
     state.currentManagerEvent = { ...state.currentManagerEvent, ...patch };
-    state.managerDraftEventsById[key] = { ...(state.managerDraftEventsById[key] || state.currentManagerEvent), ...patch };
   }
-
-  const dashboardEvent = getManagerDashboardEvent(eventId);
-  if (dashboardEvent) Object.assign(dashboardEvent, patch);
-}
-
-
-function clearCoauthorStateForEvent(eventId) {
-  const patch = {
-    is_coauthored: false,
-    coauthor_name: null,
-    coauthor_user_id: null,
-    share_percent: 100,
-  };
-
-  const key = String(eventId);
-
-  if (state.currentManagerEvent && Number(state.currentManagerEvent.id) === Number(eventId)) {
-    state.currentManagerEvent = { ...state.currentManagerEvent, ...patch };
-    state.managerDraftEventsById[key] = { ...(state.managerDraftEventsById[key] || state.currentManagerEvent), ...patch };
+  if (state.managerDraftEventsById?.[key]) {
+    state.managerDraftEventsById[key] = { ...state.managerDraftEventsById[key], ...patch };
   }
-
-  const dashboardEvent = getManagerDashboardEvent(eventId);
-  if (dashboardEvent) Object.assign(dashboardEvent, patch);
+  return patch;
 }
 
 
@@ -16372,9 +16425,12 @@ function closeManagerActionDropdown() {
 
 function renderManagerActionDropdown(eventId, action, managers) {
   const event = managerActionEventById(eventId);
-  const title = action === "transfer" ? "Передать" : "Соавтор";
+  const title = action === "transfer" ? "Передать" : "Добавить соавтора";
+  const participantIds = eventParticipantUserIds(event);
   const filteredManagers = (managers || [])
-    .filter((manager) => Number(manager.id) !== Number(event?.manager_id))
+    .filter((manager) => action === "coauthor"
+      ? !participantIds.includes(Number(manager.id))
+      : Number(manager.id) !== Number(event?.manager_id))
     .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ru"));
 
   return `
@@ -16485,8 +16541,6 @@ async function openManagerActionDropdown(button, eventId, action) {
               method: "POST",
               body: JSON.stringify({ manager_id: managerId }),
             });
-            const managerName = choice.querySelector(".manager-action-choice-name")?.textContent?.trim() || "";
-            setCoauthorStateForEvent(selectedEventId, managerId, managerName);
           }
 
           closeManagerActionDropdown();
@@ -16494,9 +16548,9 @@ async function openManagerActionDropdown(button, eventId, action) {
           await loadDashboard();
 
           if (selectedAction === "coauthor" && Number(state.selectedManagerEventId) === Number(selectedEventId)) {
-            const managerName = choice.querySelector(".manager-action-choice-name")?.textContent?.trim() || "";
-            setCoauthorStateForEvent(selectedEventId, managerId, managerName);
+            syncCollaborationStateForEvent(selectedEventId);
             await renderManagerEventDetail(selectedEventId, { useDraft: true, noLoading: true });
+            showToast("Соавтор добавлен");
           }
         }, selectedAction === "transfer" ? "Передаём мероприятие…" : "Добавляем соавтора…");
       });
@@ -18142,20 +18196,20 @@ function attachManagerCreateWorkspaceActions() {
       event.preventDefault();
       event.stopPropagation();
       const eventId = button.getAttribute("data-manager-event-remove-coauthor");
-      if (!confirm("Удалить соавтора? Мероприятие полностью перейдёт тебе.")) return;
+      if (!confirm("Убрать всех соавторов? Мероприятие полностью перейдёт тебе.")) return;
 
       await withLoading(async () => {
         await api(`/events/${eventId}/coauthor/remove`, { method: "POST" });
         closeManagerActionDropdown();
-        clearCoauthorStateForEvent(eventId);
         state.selectedManagerEventId = Number(eventId);
         await loadDashboard();
 
         if (Number(state.selectedManagerEventId) === Number(eventId)) {
-          clearCoauthorStateForEvent(eventId);
+          syncCollaborationStateForEvent(eventId);
           await renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+          showToast("Соавторы удалены");
         }
-      }, "Удаляем соавтора…");
+      }, "Удаляем соавторов…");
     });
   });
 
@@ -20679,7 +20733,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.5.121 loaded");
+  console.info("Contrast Finance web app v0.6.2 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
