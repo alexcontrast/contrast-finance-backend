@@ -13935,7 +13935,9 @@ function applyEventShareToSummaryValues(summary, event) {
 function coauthorBadgeText(event) {
   const names = eventCoauthorNames(event);
   if (!names.length) return "Соавтор";
-  return `${names.length > 1 ? "Соавторы" : "Соавтор"}: ${names.join(", ")}`;
+  const share = eventSharePercent(event);
+  const shareSuffix = share < 100 ? ` · ${formatPercentValue(share)}%` : "";
+  return `${names.length > 1 ? "Соавторы" : "Соавтор"}: ${names.join(", ")}${shareSuffix}`;
 }
 
 function coauthorBadgeTitle(event) {
@@ -16530,29 +16532,35 @@ async function openManagerActionDropdown(button, eventId, action) {
         const selectedAction = choice.getAttribute("data-manager-action");
         const selectedEventId = choice.getAttribute("data-manager-action-event");
 
-        await withLoading(async () => {
-          if (selectedAction === "transfer") {
-            await api(`/events/${selectedEventId}/transfer`, {
-              method: "POST",
-              body: JSON.stringify({ manager_id: managerId }),
-            });
-          } else {
-            await api(`/events/${selectedEventId}/coauthor`, {
-              method: "POST",
-              body: JSON.stringify({ manager_id: managerId }),
-            });
-          }
+        try {
+          await withLoading(async () => {
+            if (selectedAction === "transfer") {
+              await api(`/events/${selectedEventId}/transfer`, {
+                method: "POST",
+                body: JSON.stringify({ manager_id: managerId }),
+              });
+            } else {
+              await api(`/events/${selectedEventId}/coauthor`, {
+                method: "POST",
+                body: JSON.stringify({ manager_id: managerId }),
+              });
+            }
 
-          closeManagerActionDropdown();
-          state.selectedManagerEventId = Number(selectedEventId);
-          await loadDashboard();
+            closeManagerActionDropdown();
+            state.selectedManagerEventId = Number(selectedEventId);
+            await loadDashboard();
 
-          if (selectedAction === "coauthor" && Number(state.selectedManagerEventId) === Number(selectedEventId)) {
-            syncCollaborationStateForEvent(selectedEventId);
-            await renderManagerEventDetail(selectedEventId, { useDraft: true, noLoading: true });
-            showToast("Соавтор добавлен");
-          }
-        }, selectedAction === "transfer" ? "Передаём мероприятие…" : "Добавляем соавтора…");
+            if (selectedAction === "coauthor" && Number(state.selectedManagerEventId) === Number(selectedEventId)) {
+              syncCollaborationStateForEvent(selectedEventId);
+              await renderManagerEventDetail(selectedEventId, { useDraft: true, noLoading: true });
+              showToast("Соавтор добавлен, доли пересчитаны");
+            }
+          }, selectedAction === "transfer" ? "Передаём мероприятие…" : "Добавляем соавтора…");
+        } catch (error) {
+          showToast(error.message || (selectedAction === "transfer"
+            ? "Не удалось передать мероприятие"
+            : "Не удалось добавить соавтора"), 5000);
+        }
       });
     });
   } catch (error) {
@@ -20733,7 +20741,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.6.2 loaded");
+  console.info("Contrast Finance web app v0.6.3 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

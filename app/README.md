@@ -1,6 +1,13 @@
-Contrast Finance 2.0 v0.6.2
+Contrast Finance 2.0 v0.6.3
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.6.3:
+- исправлено фактическое сохранение второго соавтора поверх существующих долей 50/50;
+- после операции БД содержит 33.34/33.33/33.33;
+- browser показывает долю рядом с именами соавторов и больше не проглатывает ошибку;
+- backend/browser version: `0.6.3`;
+- no database migration.
 
 v0.6.2:
 - мероприятие поддерживает основного менеджера и до двух соавторов;

@@ -1,14 +1,15 @@
-Contrast Finance 2.0 v0.6.2 verification
+Contrast Finance 2.0 v0.6.3 verification
 
 After deploy open:
 /api/status
 
 Expected version:
-"version": "0.6.2"
+"version": "0.6.3"
 
 Then make Ctrl+F5 and verify:
 - add the first coauthor to an event: both shares must be 50.00%, and + Соавтор must remain available;
-- add the second coauthor: the card must show both names and shares must be 33.34%, 33.33%, 33.33%;
+- add the second coauthor: the card must show both names, the success message must say that shares were recalculated, and shares must be 33.34%, 33.33%, 33.33%;
+- reopen the event or reload the page: the third manager and the same shares must remain persisted;
 - with three participants, + Соавтор must be hidden;
 - an already participating manager must not appear in the coauthor selector;
 - each of the three manager accounts must receive only its own event-income share in its personal plan;

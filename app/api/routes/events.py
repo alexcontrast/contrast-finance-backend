@@ -126,7 +126,13 @@ def replace_event_participant_shares(
     participant_ids: list[int],
 ) -> None:
     allocations = equal_event_share_allocations(participant_ids)
-    clear_event_shares(db, event.id)
+
+    # ``ordered_event_participant_ids`` loads this relationship. Deleting the
+    # same rows through a separate query leaves deleted ORM objects inside
+    # ``event.shares``; a later ``db.add(event)`` then tries to cascade them
+    # back into the session and the request fails. Replace the relationship
+    # itself so SQLAlchemy sees one coherent old -> new collection.
+    event.shares.clear()
     db.flush()
 
     # A single owner is represented by Event.manager_id without event_shares.
@@ -134,9 +140,8 @@ def replace_event_participant_shares(
         return
 
     for user_id, share_percent in allocations:
-        db.add(
+        event.shares.append(
             EventShare(
-                event_id=event.id,
                 user_id=user_id,
                 share_percent=share_percent,
             )
