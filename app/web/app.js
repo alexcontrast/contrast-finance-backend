@@ -11902,6 +11902,28 @@ function managerBonusPreviewAmount(incomeAmount) {
 }
 
 
+function overviewTaxBreakdownRow(label, total, accrued, deductions) {
+  const fullyCovered = accrued > 0 && deductions >= accrued;
+  return `
+    <div
+      class="overview-finance-row overview-finance-breakdown"
+      tabindex="0"
+      role="button"
+      aria-label="${escapeHtml(label)}. Нажмите, чтобы увидеть начисления и вычеты"
+    >
+      <span class="overview-finance-breakdown-label">${escapeHtml(label)} <i aria-hidden="true">i</i></span>
+      <strong>${formatMoney(total)} ₸</strong>
+      <div class="overview-tax-tooltip" role="tooltip">
+        <div><span>Начислено</span><strong>${formatMoney(accrued)} ₸</strong></div>
+        <div><span>Вычеты</span><strong>− ${formatMoney(deductions)} ₸</strong></div>
+        <div class="overview-tax-tooltip-total"><span>Итого к уплате</span><strong>${formatMoney(total)} ₸</strong></div>
+        ${fullyCovered ? `<p>Вычеты полностью перекрыли начисленную сумму.</p>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+
 function renderAdminOverview(data) {
   const managers = getOverviewManagers();
   const bonusesByManagerId = new Map(
@@ -11943,7 +11965,11 @@ function renderAdminOverview(data) {
   const companyPercent = companyPlan > 0 ? Math.round((companyFact / companyPlan) * 10000) / 100 : 0;
   const companyEventCount = new Set((data.events || []).map((event) => Number(event.id)).filter(Boolean)).size;
   const monthTurnover = asNumber(data.company_turnover_amount || 0);
+  const monthVatAccrued = asNumber(data.company_vat_accrued_amount || 0);
+  const monthVatDeductions = asNumber(data.company_vat_deductions_amount || 0);
   const monthVatToPay = asNumber(data.company_vat_to_pay_amount || 0);
+  const monthTaxAccrued = asNumber(data.company_tax_accrued_amount || 0);
+  const monthTaxDeductions = asNumber(data.company_tax_deductions_amount || 0);
   const monthTaxToPay = asNumber(data.company_tax_to_pay_amount || 0);
 
   return `
@@ -11970,14 +11996,8 @@ function renderAdminOverview(data) {
             <span>Оборот</span>
             <strong>${formatMoney(monthTurnover)} ₸</strong>
           </div>
-          <div class="overview-finance-row">
-            <span>НДС к уплате</span>
-            <strong>${formatMoney(monthVatToPay)} ₸</strong>
-          </div>
-          <div class="overview-finance-row">
-            <span>Налоги к уплате</span>
-            <strong>${formatMoney(monthTaxToPay)} ₸</strong>
-          </div>
+          ${overviewTaxBreakdownRow("НДС к уплате", monthVatToPay, monthVatAccrued, monthVatDeductions)}
+          ${overviewTaxBreakdownRow("Налоги к уплате", monthTaxToPay, monthTaxAccrued, monthTaxDeductions)}
         </div>
       </aside>
     </section>
@@ -12525,7 +12545,11 @@ function emptyAdminDashboard(month) {
     company_remaining_to_plan: 0,
     company_expenses_amount: 0,
     company_turnover_amount: 0,
+    company_vat_accrued_amount: 0,
+    company_vat_deductions_amount: 0,
     company_vat_to_pay_amount: 0,
+    company_tax_accrued_amount: 0,
+    company_tax_deductions_amount: 0,
     company_tax_to_pay_amount: 0,
     manager_bonuses: [],
     departments: [],
@@ -20744,7 +20768,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.6.4 loaded");
+  console.info("Contrast Finance web app v0.6.5 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

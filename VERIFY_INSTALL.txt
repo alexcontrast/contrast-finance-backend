@@ -1,16 +1,16 @@
-Contrast Finance 2.0 v0.6.4 verification
+Contrast Finance 2.0 v0.6.5 verification
 
 After deploy open:
 /api/status
 
 Expected version:
-"version": "0.6.4"
+"version": "0.6.5"
 
 Then make Ctrl+F5 and verify:
-- the admin header contains `+ Менеджер` beside `Сменить PIN`;
-- the form contains only name, phone, department and PIN;
-- after saving, the manager can log in by name and the assigned PIN;
-- managers and department heads do not see the `+ Менеджер` button.
+- open the admin `Обзор` tab for October;
+- hover over `НДС к уплате` and `Налоги к уплате` to see accrued, deductions and total;
+- on a phone, tap either row to open the same breakdown;
+- verify that deductions covering accrued amounts leave the final payable amount at zero.
 
 No database migration is required.
 Alembic head: 0021_avr_signed_ddc.

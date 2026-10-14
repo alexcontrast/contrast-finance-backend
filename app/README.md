@@ -1,6 +1,13 @@
-Contrast Finance 2.0 v0.6.4
+Contrast Finance 2.0 v0.6.5
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.6.5:
+- НДС и налоги в обзоре показывают начисления, вычеты и итог во всплывающей подсказке;
+- подсказка работает по наведению/фокусу на ПК и по нажатию на телефоне;
+- backend/browser version: `0.6.5`;
+- test suite: `54 passed`;
+- no database migration.
 
 v0.6.4:
 - в админке рядом со сменой PIN добавлена единственная кнопка `+ Менеджер`;

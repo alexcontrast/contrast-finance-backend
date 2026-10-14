@@ -84,7 +84,11 @@ class AdminDashboardRead(BaseModel):
     company_completion_percent: Decimal
     company_expenses_amount: Decimal
     company_turnover_amount: Decimal = Decimal("0.00")
+    company_vat_accrued_amount: Decimal = Decimal("0.00")
+    company_vat_deductions_amount: Decimal = Decimal("0.00")
     company_vat_to_pay_amount: Decimal = Decimal("0.00")
+    company_tax_accrued_amount: Decimal = Decimal("0.00")
+    company_tax_deductions_amount: Decimal = Decimal("0.00")
     company_tax_to_pay_amount: Decimal = Decimal("0.00")
     manager_personal_plan_amount: Decimal
     manager_bonuses: list[ManagerBonusRead] = Field(default_factory=list)

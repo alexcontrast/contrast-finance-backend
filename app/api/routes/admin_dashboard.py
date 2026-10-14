@@ -349,17 +349,26 @@ def add_event_to_monthly_tax_totals(
 
 
 def finalize_monthly_tax_totals(totals: dict[str, Decimal]) -> dict[str, Decimal]:
-    vat_to_pay = q0(money(totals.get("client_vat")) - money(totals.get("contractor_vat_credit")))
+    vat_accrued = q0(money(totals.get("client_vat")))
+    vat_deductions = q0(money(totals.get("contractor_vat_credit")))
+    tax_accrued = q0(money(totals.get("ip_contrast_tax")))
+    tax_deductions = q0(money(totals.get("tax_deductions")))
+
+    vat_to_pay = q0(vat_accrued - vat_deductions)
     if vat_to_pay < 0:
         vat_to_pay = Decimal("0.00")
 
-    tax_to_pay = q0(money(totals.get("ip_contrast_tax")) - money(totals.get("tax_deductions")))
+    tax_to_pay = q0(tax_accrued - tax_deductions)
     if tax_to_pay < 0:
         tax_to_pay = Decimal("0.00")
 
     return {
         "turnover": q0(money(totals.get("turnover"))),
+        "vat_accrued": vat_accrued,
+        "vat_deductions": vat_deductions,
         "vat_to_pay": q0(vat_to_pay),
+        "tax_accrued": tax_accrued,
+        "tax_deductions": tax_deductions,
         "tax_to_pay": q0(tax_to_pay),
     }
 
@@ -601,7 +610,11 @@ def get_admin_dashboard(
         company_completion_percent=completion_percent(company_fact, money(plan.company_plan_amount)),
         company_expenses_amount=q(company_expenses),
         company_turnover_amount=monthly_tax_totals["turnover"],
+        company_vat_accrued_amount=monthly_tax_totals["vat_accrued"],
+        company_vat_deductions_amount=monthly_tax_totals["vat_deductions"],
         company_vat_to_pay_amount=monthly_tax_totals["vat_to_pay"],
+        company_tax_accrued_amount=monthly_tax_totals["tax_accrued"],
+        company_tax_deductions_amount=monthly_tax_totals["tax_deductions"],
         company_tax_to_pay_amount=monthly_tax_totals["tax_to_pay"],
         manager_personal_plan_amount=manager_personal_plan_amount(plan),
         manager_bonuses=manager_bonuses,
@@ -912,7 +925,11 @@ def get_admin_dashboard_bundle(
         company_completion_percent=completion_percent(company_fact, money(plan.company_plan_amount)),
         company_expenses_amount=q(company_expenses),
         company_turnover_amount=monthly_tax_totals["turnover"],
+        company_vat_accrued_amount=monthly_tax_totals["vat_accrued"],
+        company_vat_deductions_amount=monthly_tax_totals["vat_deductions"],
         company_vat_to_pay_amount=monthly_tax_totals["vat_to_pay"],
+        company_tax_accrued_amount=monthly_tax_totals["tax_accrued"],
+        company_tax_deductions_amount=monthly_tax_totals["tax_deductions"],
         company_tax_to_pay_amount=monthly_tax_totals["tax_to_pay"],
         manager_personal_plan_amount=manager_personal_plan_amount(plan),
         manager_bonuses=manager_bonuses,

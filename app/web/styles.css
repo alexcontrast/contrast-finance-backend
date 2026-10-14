@@ -3506,6 +3506,103 @@ button.soft-loading::after {
   white-space: nowrap;
 }
 
+.overview-finance-breakdown {
+  position: relative;
+  cursor: help;
+  outline: none;
+}
+
+.overview-finance-breakdown:focus {
+  border-color: rgba(76, 175, 80, .58);
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, .13);
+}
+
+.overview-finance-breakdown-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overview-finance-breakdown-label i {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border-radius: 50%;
+  background: rgba(76, 175, 80, .13);
+  border: 1px solid rgba(76, 175, 80, .34);
+  color: #397c2d;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.overview-tax-tooltip {
+  position: absolute;
+  z-index: 40;
+  right: 0;
+  top: calc(100% + 8px);
+  display: none;
+  width: min(300px, calc(100vw - 44px));
+  padding: 13px 14px;
+  border: 1px solid rgba(90, 120, 75, .25);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .985);
+  box-shadow: 0 18px 50px rgba(31, 48, 22, .20);
+}
+
+.overview-finance-breakdown:hover .overview-tax-tooltip,
+.overview-finance-breakdown:focus .overview-tax-tooltip,
+.overview-finance-breakdown:focus-within .overview-tax-tooltip {
+  display: grid;
+  gap: 8px;
+}
+
+.overview-finance-row .overview-tax-tooltip > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.overview-finance-row .overview-tax-tooltip span,
+.overview-finance-row .overview-tax-tooltip strong {
+  overflow: visible;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.overview-finance-row .overview-tax-tooltip span {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.overview-finance-row .overview-tax-tooltip strong {
+  font-weight: 950;
+}
+
+.overview-finance-row .overview-tax-tooltip-total {
+  margin-top: 2px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(148, 163, 184, .22);
+}
+
+.overview-tax-tooltip p {
+  margin: 2px 0 0;
+  color: #397c2d;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
 @media (max-width: 1080px) {
   .overview-top-grid {
     grid-template-columns: 1fr;
