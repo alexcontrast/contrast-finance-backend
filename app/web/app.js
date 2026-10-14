@@ -7066,6 +7066,8 @@ function updateHeaderUserInfo(user) {
   document.body.classList.toggle("department-head-mode", user.role === "department_head");
   document.body.classList.toggle("manager-mode", user.role === "manager");
   document.body.classList.toggle("accountant-mode", user.role === "accountant");
+  const addManagerButton = $("addManagerOpenBtn");
+  if (addManagerButton) addManagerButton.classList.toggle("hidden", user.role !== "admin");
   $("pageTitle").textContent = user.role === "department_head" ? "ГЛАВДЕП" : roleLabel(user.role);
   $("pageSubtitle").textContent = user.role === "admin"
     ? "Проверка мероприятий, заявки, планы и закрытие месяца"
@@ -10641,6 +10643,7 @@ function resetEventModalModes() {
       "pin-modal-mode",
       "manager-bonus-modal-mode",
       "profile-modal-mode",
+      "manager-create-user-modal",
       "manager-requests-modal-mode",
       "admin-event-edit-mode"
     );
@@ -20741,7 +20744,7 @@ async function loadDashboard() {
 }
 
 async function boot() {
-  console.info("Contrast Finance web app v0.6.3 loaded");
+  console.info("Contrast Finance web app v0.6.4 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
@@ -20763,11 +20766,15 @@ async function boot() {
     resetDashboardUiAndRoleState("Загружаем данные месяца…");
 
     const pinBtn = document.getElementById("changePinOpenBtn");
+    const addManagerBtn = document.getElementById("addManagerOpenBtn");
     const logoutBtn = document.getElementById("logoutBtn");
     if (pinBtn && logoutBtn && pinBtn.parentElement !== logoutBtn.parentElement) {
       pinBtn.classList.remove("ghost");
       pinBtn.classList.add("ghost");
       logoutBtn.parentElement.insertBefore(pinBtn, logoutBtn);
+    }
+    if (addManagerBtn && logoutBtn && addManagerBtn.parentElement !== logoutBtn.parentElement) {
+      logoutBtn.parentElement.insertBefore(addManagerBtn, logoutBtn);
     }
     setupMonthYearSelectors();
     attachMonthYearSelectors();
@@ -20885,6 +20892,135 @@ function openChangePinModal() {
 }
 
 
+function openAddManagerModal() {
+  if (state.bootstrap?.user?.role !== "admin") return;
+
+  const backdrop = $("eventModalBackdrop");
+  const title = $("eventModalTitle");
+  const content = $("eventModalContent");
+  if (!backdrop || !title || !content) return;
+
+  const departments = managerEditableDepartments();
+  resetEventModalModes();
+  backdrop.classList.add("pin-modal-mode", "manager-create-user-modal");
+  backdrop.classList.remove("hidden");
+
+  const eyebrow = backdrop.querySelector(".modal-head .eyebrow");
+  if (eyebrow) eyebrow.textContent = "Доступ в систему";
+  title.textContent = "Новый менеджер";
+  content.innerHTML = `
+    <div class="pin-modal-content">
+      <div class="form-grid manager-create-user-form">
+        <label>Имя
+          <input id="newManagerNameInput" autocomplete="off" placeholder="Имя менеджера" />
+        </label>
+        <label>Телефон
+          <input id="newManagerPhoneInput" autocomplete="off" inputmode="tel" placeholder="+7 (___) ___ __ __" />
+        </label>
+        <label>Отдел
+          <select id="newManagerDepartmentInput">
+            ${departments.map((department) => `
+              <option value="${Number(department.id)}">${escapeHtml(department.name || "")}</option>
+            `).join("")}
+          </select>
+        </label>
+        <label>PIN
+          <input id="newManagerPinInput" type="password" inputmode="numeric" autocomplete="new-password" maxlength="12" placeholder="4–12 цифр" />
+        </label>
+      </div>
+
+      <div class="modal-actions pin-actions">
+        <button class="secondary" id="newManagerSaveBtn" type="button">Добавить</button>
+        <button class="ghost" id="newManagerCancelBtn" type="button">Отмена</button>
+      </div>
+      <div id="newManagerMessage" class="muted"></div>
+    </div>
+  `;
+
+  const close = () => {
+    backdrop.classList.add("hidden");
+    backdrop.classList.remove("pin-modal-mode", "manager-create-user-modal");
+  };
+
+  $("newManagerCancelBtn")?.addEventListener("click", close);
+
+  const phoneInput = $("newManagerPhoneInput");
+  if (phoneInput) {
+    phoneInput.addEventListener("input", () => formatPhoneInputLive(phoneInput));
+    phoneInput.addEventListener("blur", () => formatPhoneInputLive(phoneInput));
+  }
+
+  const save = async () => {
+    const message = $("newManagerMessage");
+    const saveButton = $("newManagerSaveBtn");
+    const name = String($("newManagerNameInput")?.value || "").trim();
+    const phoneDigits = phoneDigitsForKz($("newManagerPhoneInput")?.value || "");
+    const departmentId = Number($("newManagerDepartmentInput")?.value || 0);
+    const pin = String($("newManagerPinInput")?.value || "").trim();
+
+    if (message) message.textContent = "";
+    if (!name) {
+      if (message) message.textContent = "Укажите имя менеджера.";
+      $("newManagerNameInput")?.focus();
+      return;
+    }
+    if (phoneDigits.length !== 11) {
+      if (message) message.textContent = "Укажите полный номер телефона.";
+      $("newManagerPhoneInput")?.focus();
+      return;
+    }
+    if (!departmentId) {
+      if (message) message.textContent = "Выберите отдел.";
+      return;
+    }
+    if (!/^\d{4,12}$/.test(pin)) {
+      if (message) message.textContent = "PIN должен содержать от 4 до 12 цифр.";
+      $("newManagerPinInput")?.focus();
+      return;
+    }
+
+    try {
+      setButtonLoading(saveButton, true, "Добавляем…");
+      const created = await api("/users/native", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          phone: phoneDigits,
+          department_id: departmentId,
+          pin,
+          role: "manager",
+          is_active: true,
+        }),
+      });
+
+      state.users = [...(state.users || []).filter((user) => Number(user.id) !== Number(created.id)), created];
+      state.usersCacheLoadedAt = Date.now();
+      saveUsersToCache(state.users);
+      if (message) message.textContent = `${created.name} добавлен в систему.`;
+      showToast(`Менеджер ${created.name} добавлен`);
+      window.setTimeout(close, 650);
+      loadDashboard().catch((error) => console.warn("Не удалось обновить кабинет после добавления менеджера", error));
+    } catch (error) {
+      if (message) message.textContent = error.message || "Не удалось добавить менеджера.";
+    } finally {
+      setButtonLoading(saveButton, false);
+    }
+  };
+
+  $("newManagerSaveBtn")?.addEventListener("click", save);
+  ["newManagerNameInput", "newManagerPhoneInput", "newManagerDepartmentInput", "newManagerPinInput"].forEach((id) => {
+    $(id)?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        save();
+      }
+    });
+  });
+
+  $("newManagerNameInput")?.focus();
+}
+
+
 async function changePin() {
   const msg = $("pinMessage") || $("changePinMessage");
   const button = $("pinSaveBtn") || $("changePinBtn");
@@ -20956,6 +21092,7 @@ $("reloadBtn").addEventListener("click", () => {
 });
 
 $("changePinOpenBtn").addEventListener("click", openChangePinModal);
+$("addManagerOpenBtn").addEventListener("click", openAddManagerModal);
 
 const legacyChangePinBtn = $("changePinBtn");
 if (legacyChangePinBtn) legacyChangePinBtn.addEventListener("click", changePin);
@@ -20966,6 +21103,7 @@ $("eventModalCloseBtn").addEventListener("click", () => {
   $("eventModalBackdrop").classList.remove("pin-modal-mode");
   $("eventModalBackdrop").classList.remove("manager-bonus-modal-mode");
   $("eventModalBackdrop").classList.remove("profile-modal-mode");
+  $("eventModalBackdrop").classList.remove("manager-create-user-modal");
   $("eventModalBackdrop").classList.remove("payment-modal-mode");
   $("eventModalBackdrop").classList.remove("admin-event-edit-mode");
 });

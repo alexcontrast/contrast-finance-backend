@@ -1390,8 +1390,17 @@ select:focus {
   margin-right: 8px;
 }
 
-.toolbar #changePinOpenBtn {
+.topbar-actions #addManagerOpenBtn {
+  margin-right: 8px;
+}
+
+.toolbar #changePinOpenBtn,
+.toolbar #addManagerOpenBtn {
   display: none;
+}
+
+.manager-create-user-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 
@@ -3945,7 +3954,7 @@ button.soft-loading::after {
   /* Toolbar: month and year always share the first row. */
   body.admin-mode #dashboardScreen > .toolbar {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: end;
     gap: 7px !important;
     margin-bottom: 9px !important;
@@ -4253,13 +4262,14 @@ button.soft-loading::after {
   body.admin-mode .topbar-actions {
     grid-area: actions;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     width: 100% !important;
     gap: 8px !important;
     margin-left: 0 !important;
   }
 
   body.admin-mode .topbar-actions #changePinOpenBtn,
+  body.admin-mode .topbar-actions #addManagerOpenBtn,
   body.admin-mode .topbar-actions #logoutBtn {
     width: 100% !important;
     min-height: 34px !important;
@@ -4297,6 +4307,14 @@ button.soft-loading::after {
 
   body.admin-mode #changePinOpenBtn {
     width: 100% !important;
+  }
+
+  body.admin-mode #addManagerOpenBtn {
+    width: 100% !important;
+  }
+
+  .manager-create-user-form {
+    grid-template-columns: 1fr;
   }
 
   /* Event count badges: make room for the full word. */

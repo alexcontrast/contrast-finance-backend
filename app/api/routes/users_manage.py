@@ -100,8 +100,8 @@ def create_native_user(
         raise HTTPException(status_code=400, detail="name is required")
 
     pin = str(payload.pin or "").strip()
-    if len(pin) < 4:
-        raise HTTPException(status_code=400, detail="PIN должен быть минимум 4 символа")
+    if len(pin) < 4 or len(pin) > 12 or not pin.isdigit():
+        raise HTTPException(status_code=400, detail="PIN должен содержать от 4 до 12 цифр")
 
     phone = normalize_phone(payload.phone) or None
 

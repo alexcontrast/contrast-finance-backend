@@ -1,9 +1,10 @@
-Contrast Finance 2.0 v0.6.3 patch over v0.6.2
+Contrast Finance 2.0 v0.6.4 patch over v0.6.3
 
 Functional files:
-- app/api/routes/events.py
+- app/api/routes/users_manage.py
 - app/web/app.js
-- tests/test_three_manager_collaboration_v062.py
+- app/web/styles.css
+- tests/test_add_manager_v064.py
 
 Version and documentation:
 - app/web/index.html
@@ -15,5 +16,5 @@ Version and documentation:
 - app/README.md
 - app/CHANGED_FILES_README.txt
 
-Change: fix the SQLAlchemy relationship replacement that prevented the third manager from being persisted. The UI now shows the recalculated share and reports failures instead of swallowing them.
+Change: add one `+ Менеджер` action beside `Сменить PIN`; name, phone, department and PIN are entered while the manager role is assigned automatically.
 No database migration. Alembic head: 0021_avr_signed_ddc.

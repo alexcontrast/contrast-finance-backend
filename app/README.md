@@ -1,6 +1,13 @@
-Contrast Finance 2.0 v0.6.3
+Contrast Finance 2.0 v0.6.4
 
 Main deployment and verification instructions are in the root `README.md`.
+
+v0.6.4:
+- в админке рядом со сменой PIN добавлена единственная кнопка `+ Менеджер`;
+- форма содержит имя, телефон, отдел и PIN, роль `manager` назначается автоматически;
+- backend/browser version: `0.6.4`;
+- test suite: `51 passed`;
+- no database migration.
 
 v0.6.3:
 - исправлено фактическое сохранение второго соавтора поверх существующих долей 50/50;
