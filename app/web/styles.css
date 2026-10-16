@@ -21640,3 +21640,7 @@ body.admin-mode #adminTabs .admin-statistics-tab.active {
         font-size: 11px !important;
       }
     }
+
+.tax-check-feedback {font-size:11px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;margin-top:4px;color:#476a32;}
+.tax-check-feedback:empty {display:none;}
+.tax-check-feedback.is-error {color:#b42318;}

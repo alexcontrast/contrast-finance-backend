@@ -484,6 +484,58 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(remote.call_count,1)
         self.assertEqual(checked_out[0],0)
 
+    def test_combined_kgd_releases_connection_and_reports_name(self):
+        from sqlalchemy import event as sql_event
+        from app.api.routes import tax
+        from app.services.kgd.client import KgdTaxpayerResult
+        eid=self.event();headers=self.auth();checked_out=[0]
+        sql_event.listen(self.engine,"checkout",lambda *_:checked_out.__setitem__(0,checked_out[0]+1))
+        sql_event.listen(self.engine,"checkin",lambda *_:checked_out.__setitem__(0,checked_out[0]-1))
+        def kgd(_):
+            self.assertEqual(checked_out[0],0)
+            return KgdTaxpayerResult(iin_bin="770100000001",tax_status="our_vat",message="Test / ОУР",source="kgd",contractor_name="Test")
+        with patch.object(tax,"check_taxpayer",side_effect=kgd):
+            response=self.client.post(f"/events/{eid}/items/tax/check",headers=headers,json={"item":self.item_body(),"iin_bin":"770100000001"})
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()["tax"]["contractor_name"],"Test")
+
+    def test_not_found_response_does_not_lock_or_grant_deductions(self):
+        from app.api.routes import tax
+        from app.services.kgd.client import KgdTaxpayerResult
+        eid=self.event();row=self.item(eid)
+        result=KgdTaxpayerResult(iin_bin="770100000001",tax_status="not_found",message="КГД не нашёл БИН/ИИН",source="kgd")
+        with patch.object(tax,"check_taxpayer",return_value=result):
+            response=self.client.post(f'/event-items/{row["id"]}/tax/check',headers=self.auth(),json={"iin_bin":"770100000001"})
+        self.assertEqual(response.status_code,200,response.text)
+        body=response.json();self.assertFalse(body["iin_bin_locked"])
+        self.assertEqual(body["tax_check_status"],"not_found")
+        self.assertIn("не нашёл",body["message"])
+        self.assertEqual(Decimal(body["deduction_amount"]),0)
+
+    def test_technical_kgd_failure_is_503_and_does_not_modify_item(self):
+        from app.api.routes import tax
+        from app.services.kgd.client import KgdServiceError
+        eid=self.event();row=self.item(eid)
+        with patch.object(tax,"check_taxpayer",side_effect=KgdServiceError("КГД временно недоступен")):
+            response=self.client.post(f'/event-items/{row["id"]}/tax/check',headers=self.auth(),json={"iin_bin":"770100000001"})
+        self.assertEqual(response.status_code,503,response.text)
+        with self.factory() as db:
+            item=db.get(EventItem,row["id"])
+            self.assertFalse(item.iin_bin_locked)
+            self.assertIsNone(item.tax_check_status)
+
+    def test_payment_combined_retry_reuses_the_same_created_item(self):
+        from app.api.routes import tax
+        from app.services.kgd.client import KgdTaxpayerResult
+        eid=self.event();body={"item":self.item_body(client_create_token="payment-bin-retry-token"),"iin_bin":"770100000001","payment_context":True}
+        result=KgdTaxpayerResult(iin_bin="770100000001",tax_status="our_vat",message="Test",source="kgd")
+        with patch.object(tax,"check_taxpayer",return_value=result):
+            first=self.client.post(f"/events/{eid}/items/tax/check",headers=self.auth(),json=body)
+            second=self.client.post(f"/events/{eid}/items/tax/check",headers=self.auth(),json=body)
+        self.assertEqual(first.status_code,200,first.text)
+        self.assertEqual(second.status_code,200,second.text)
+        self.assertEqual(first.json()["item"]["id"],second.json()["item"]["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

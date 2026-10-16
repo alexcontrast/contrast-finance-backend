@@ -30,3 +30,4 @@ class TaxResult(BaseModel):
     event_updated_at: datetime
     source: str
     message: str
+    contractor_name: str | None = None

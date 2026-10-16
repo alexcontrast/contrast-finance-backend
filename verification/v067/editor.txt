@@ -1,0 +1,22 @@
+{"id":"M01","title":"typing survives temporary ID materialization","dom_id":"101","model_id":101,"visible":"Фотограф","stored_draft":"Фотограф"}
+{"id":"M02","title":"payment change retains row text","typed_name":"Новый ведущий","rendered_name":"Новый ведущий","selected_method":"card","rendered_method":"card"}
+{"id":"M03","title":"older live response is rejected","applied_older_response":false,"remaining_regular_rows":1,"revision":"2026-10-15T07:05:00"}
+{"id":"M04","title":"BIN control remains addressable after rendering","active_requests":0,"model_unlocked":true,"visible_input_still_disabled":false,"rendered_input":"<input placeholder=\"12 цифр\" class=\"\" data-item-field=\"iin_bin\" data-item-id=\"11\" disabled value=\"770100000001\" />"}
+{"id":"M05","title":"BIN unlock is saved","dirty":false,"api_calls":2,"local_snapshots":2}
+{"id":"M06","title":"verified BIN alone does not fix payment method","active_requests":0,"payment_method_locked":false}
+{"id":"M07","title":"KGD reply retains concurrent edits","typed_name":"Исправленное имя","result_name":"Исправленное имя","typed_price":200000,"result_price":200000,"edit_version":2}
+{"id":"M08","title":"saving A cannot replace the open event B","selected_event":2,"global_editor_event":2}
+{"id":"M09","title":"deletion during creation is persisted","hidden_locally":true,"exists_on_server":false,"queued_server_deletions":[]}
+{"id":"M10","title":"deletions added during a save remain queued","exists_on_server":false,"deletion_dropped":false,"requests":["PATCH /event-items/11","POST /events/1/items/bulk-delete"]}
+{"id":"M11","title":"read after a write never joins an older read","server_revision":"new","requested_fresh_revision":"new","actual_gets":2}
+{"id":"M12","title":"one row save skips unchanged header write","requests":["PATCH /event-items/11","GET /events/1?_=1792141278011"],"writes":1}
+{"id":"M13","title":"quantity-only row is retained in recovery copy","typed_quantity":7,"regular_rows_in_recovery_copy":1}
+{"id":"M15","title":"explicit zero expense is stored as zero","typed_fact":0,"payload_fact":0,"current_commission":100000,"intended_commission":100000}
+{"id":"M16","title":"late detail response cannot replace a new selection","selected_event":2,"rendered_event":"2"}
+{"id":"M17","title":"replayed create preserves edits and patches the existing row","existing_id":777,"stored_name":"Новое имя"}
+{"id":"M18","title":"failed cleanup of a deleted new row is retried","deleted_on_retry":true}
+{"id":"M19","title":"reply from an earlier login cannot enter the new session","stale_session_rejected":true}
+{"id":"M20","title":"a burst of numeric input calculates once in the next frame","input_events":3,"summary_calculations":1}
+{"id":"M21","title":"file uploads share session protection and a response-body timeout","multipart_boundary_left_to_browser":true,"response_body_timeout":true}
+{"id":"M14","title":"input work amplification, simulated DOM; no layout/network","measurements":[{"regular_rows":20,"getDraftItems":1,"find_comparisons":21,"local_storage_writes":0,"snapshot_bytes":0,"raf_scheduled":0,"document_queries":0,"html_blocks_replaced":0,"node_cpu_median_ms":0.02,"node_cpu_max_ms":0.21},{"regular_rows":100,"getDraftItems":1,"find_comparisons":101,"local_storage_writes":0,"snapshot_bytes":0,"raf_scheduled":0,"document_queries":0,"html_blocks_replaced":0,"node_cpu_median_ms":0.07,"node_cpu_max_ms":0.19},{"regular_rows":300,"getDraftItems":1,"find_comparisons":301,"local_storage_writes":0,"snapshot_bytes":0,"raf_scheduled":0,"document_queries":0,"html_blocks_replaced":0,"node_cpu_median_ms":0.11,"node_cpu_max_ms":0.17}]}
+{"summary":{"passed":20,"performance_cases":3,"source_version":"0.6.7","production_access":false,"browser_rendering":false}}

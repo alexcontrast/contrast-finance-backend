@@ -4,6 +4,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -94,7 +95,7 @@ def check_taxpayer_stub(iin_bin: str) -> KgdTaxpayerResult:
     return KgdTaxpayerResult(
         iin_bin=iin_bin,
         tax_status="not_found",
-        message="Не найден / КГД не ответил",
+        message="КГД не нашёл БИН/ИИН. Проверьте номер и повторите проверку.",
         source="kgd_stub",
         contractor_name=None,
         vat_status="Неизвестно",
@@ -237,6 +238,47 @@ def _pick_contractor_name(snr_body: Any, vat_body: Any) -> str:
     )
 
 
+def _kgd_business_error(body: Any) -> bool:
+    """HTTP 200 can carry a service/authentication error instead of tax data."""
+    if not isinstance(body, dict):
+        return False
+    code = str(body.get("status") or body.get("code") or "")
+    if body.get("message") and code.isdigit() and int(code) >= 400:
+        return True
+    if body.get("success") is False or body.get("error") or body.get("errors"):
+        return True
+    if str(body.get("status") or "").lower() in {"error", "failed", "failure"}:
+        return True
+    # A plain message envelope does not confirm any taxpayer/regime.
+    return bool(body.get("message") and not any(k in body for k in (
+        "xin", "taxpayerCode", "taxMode", "regimeName", "taxRegimeName", "nameRu", "type", "code", "data", "result"
+    )))
+
+
+def _kgd_body(response: dict) -> Any:
+    if not response.get("ok") or _kgd_business_error(response.get("body")):
+        raise KgdServiceError("КГД временно не предоставил сведения. Повторите проверку.", {
+            "label": response.get("label"), "status_code": response.get("status_code"),
+            "error": response.get("error") or "Некорректный ответ сервиса",
+        })
+    body = response.get("body")
+    # Some service versions wrap their result; never use wrapper metadata as
+    # a tax regime or as an indication that a taxpayer was found.
+    for _ in range(3):
+        if isinstance(body, dict) and set(body).issubset({"data", "result", "success", "message", "status", "total", "count"}):
+            if "data" in body:
+                body = body["data"]
+            elif "result" in body:
+                body = body["result"]
+            else:
+                break
+        else:
+            break
+        if _kgd_business_error(body):
+            raise KgdServiceError("КГД вернул ошибку вместо данных налогоплательщика. Повторите проверку.")
+    return body
+
+
 def _detect_snr_regime(snr_body: Any) -> dict:
     if not snr_body:
         return {
@@ -280,6 +322,14 @@ def _detect_snr_regime(snr_body: Any) -> dict:
             "regime_source": regime_source or "snr_simplified",
             "deduction_percent": 0,
         }
+
+    has_regime_code = any(
+        str(key).lower() in {"type", "code", "regimetype", "taxregimetype", "regimename", "taxregimename", "taxregimetyperu"}
+        and child not in (None, "")
+        for obj in _iter_nested(snr_body) for key, child in obj.items()
+    )
+    if not has_regime_code and not any(token in joined for token in ("снр", "специальн", "snr_", "special", "патент", "розничн")):
+        raise KgdServiceError("КГД не подтвердил налоговый режим. Повторите проверку; вычеты не рассчитаны.")
 
     # Любой другой спецрежим: НДС 0, вычеты 0.
     return {
@@ -408,7 +458,7 @@ def _detect_open_data_vat(vat_info: str, vat_date: Any) -> bool | None:
 
 
 def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | None:
-    if not isinstance(body, dict):
+    if not isinstance(body, dict) or _kgd_business_error(body):
         return None
 
     returned_xin = normalize_iin_bin(str(body.get("xin") or body.get("taxpayerCode") or ""))
@@ -420,6 +470,9 @@ def _detect_open_data_result(body: Any, iin_bin: str) -> KgdTaxpayerResult | Non
     vat_info = _localized_text(body.get("vatInfo"))
     vat_date = body.get("vatDate")
     joined_mode = tax_mode.lower()
+
+    if any(token in joined_mode for token in ("не найден", "нет данных", "not found", "мәлімет жоқ", "дерек жоқ")):
+        return None
 
     # Пустой объект / явное отсутствие данных не считаем найденным контрагентом.
     meaningful = contractor_name or tax_mode or vat_info or vat_date or body.get("regDate")
@@ -512,7 +565,11 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
         method="POST",
         json_payload={"xin": iin_bin},
     )
-    open_data_result = _detect_open_data_result(open_data.get("body") if open_data.get("ok") else None, iin_bin)
+    try:
+        open_data_body = _kgd_body(open_data)
+    except KgdServiceError:
+        open_data_body = None
+    open_data_result = _detect_open_data_result(open_data_body, iin_bin)
     if open_data_result is not None:
         elapsed = time.perf_counter() - started_at
         open_data_result.perf = {
@@ -536,10 +593,14 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     vat_url = f"{host}/services/isnaportalsync/public/search-payer-data?taxpayerCode={encoded}"
 
     fetch_started_at = time.perf_counter()
-    snr = _fetch_json("SNR налоговый режим", snr_url, headers)
-    snr_done_at = time.perf_counter()
-    vat = _fetch_json("VAT НДС статус", vat_url, headers)
-    vat_done_at = time.perf_counter()
+    # Independent read-only lookups run together. Do not serialize their
+    # network waits, and do not retry document/estimate mutations.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        snr_future = pool.submit(_fetch_json, "SNR налоговый режим", snr_url, headers)
+        vat_future = pool.submit(_fetch_json, "VAT НДС статус", vat_url, headers)
+        snr = snr_future.result()
+        vat = vat_future.result()
+    snr_done_at = vat_done_at = time.perf_counter()
 
     detect_started_at = time.perf_counter()
     if not snr.get("ok") and not vat.get("ok"):
@@ -577,8 +638,15 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
             diagnostics,
         )
 
-    snr_detected = _detect_snr_regime(snr.get("body") if snr.get("ok") else None)
-    vat_detected = _detect_vat_status(vat.get("body") if vat.get("ok") else None)
+    snr_body = _kgd_body(snr)
+    returned_xin = normalize_iin_bin(_find_first_by_keys(snr_body, {"xin", "taxpayerCode", "binIin", "uin"}))
+    if returned_xin and returned_xin != iin_bin:
+        raise KgdServiceError("КГД вернул сведения для другого БИН/ИИН. Повторите проверку.")
+    snr_detected = _detect_snr_regime(snr_body)
+    # A VAT failure must never silently turn an OУR payer into "without VAT".
+    # For other regimes VAT does not affect the deductions calculated here.
+    vat_body = _kgd_body(vat) if snr_detected["tax_status"] == "our_no_vat" else (vat.get("body") if vat.get("ok") and not _kgd_business_error(vat.get("body")) else None)
+    vat_detected = _detect_vat_status(vat_body)
 
     if snr_detected["tax_status"] == "not_found":
         tax_status = "not_found"
@@ -587,14 +655,14 @@ def check_taxpayer_live(iin_bin: str) -> KgdTaxpayerResult:
     else:
         tax_status = snr_detected["tax_status"]
 
-    contractor_name = _pick_contractor_name(snr.get("body"), vat.get("body"))
+    contractor_name = _pick_contractor_name(snr_body, vat_body)
 
     message_parts = []
     if contractor_name:
         message_parts.append(contractor_name)
     message_parts.append(snr_detected["regime"])
     message_parts.append(vat_detected["vat_status"])
-    message = " / ".join(part for part in message_parts if part)
+    message = ("КГД не нашёл БИН/ИИН. Проверьте номер и повторите проверку." if tax_status == "not_found" else " / ".join(part for part in message_parts if part))
 
     detect_done_at = time.perf_counter()
     total_sec = detect_done_at - started_at

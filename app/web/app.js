@@ -7518,7 +7518,8 @@ async function renderManagerEventDetailImpl(eventId, options = {}) {
       updated_at: event?.updated_at || dashboardEvent?.updated_at || null,
     };
     const hasMemoryDraft = Boolean(state.managerDraftDirtyByEventId?.[String(eventId)]);
-    if (!hasMemoryDraft) {
+    const hasPendingTaxCheck = getDraftItems(eventId).some((item) => item.__tax_check_pending);
+    if (!hasMemoryDraft && !hasPendingTaxCheck && !options.useDraft) {
       resetManagerDraftFromServer(eventId, serverEvent, items || []);
       restoreManagerAutosaveSnapshot(eventId, serverEvent, items || []);
     }
@@ -8449,6 +8450,8 @@ function setDraftItemValue(eventId, itemId, field, value) {
     item[field] = value;
   }
 
+  if (field === "iin_bin" || field === "payment_method") delete item.__tax_check_message;
+
   if (field === "iin_bin") {
     item.iin_bin = value ? String(value).replace(/\D/g, "") : null;
     item.iin_bin_locked = false;
@@ -8780,14 +8783,13 @@ function updateInternalRowCells(itemId) {
   const oldCheckButton = row.querySelector(`[data-check-tax-item="${itemId}"]`);
   const oldUnlockButton = row.querySelector(`[data-unlock-tax-item="${itemId}"]`);
   const oldButton = oldCheckButton || oldUnlockButton;
-  if (oldButton) {
-    const lockedByRequest = itemHasActiveInvoicePaymentRequest(item);
-    oldButton.outerHTML = adminCanEditBin
-      ? `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД заново">✓</button>`
-      : (item.iin_bin_locked
-        ? `<button class="icon-btn" data-unlock-tax-item="${itemId}" title="${lockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${lockedByRequest ? "disabled" : ""}>✎</button>`
-        : `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${itemId}" title="Проверить КГД">✓</button>`);
+  if (oldButton) oldButton.outerHTML = taxCheckButtonHtml(item, adminCanEditBin);
+  const feedback = row.querySelector(".tax-check-feedback");
+  if (feedback) {
+    feedback.textContent = taxCheckFeedback(item);
+    feedback.classList.toggle("is-error", isTaxProblem(item));
   }
+  if (binInput && item.__tax_check_pending) binInput.disabled = true;
 
   row.classList.toggle("tax-problem-row", isTaxProblem(item));
   bindTaxButtons();
@@ -8942,7 +8944,7 @@ function restoreManagerAutosaveSnapshot(eventId, serverEvent = null, serverItems
 
   state.managerDraftEventsById[String(eventId)] = snapshot.event;
   state.currentManagerEvent = { ...(state.currentManagerEvent || {}), ...snapshot.event };
-  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = sanitizeDraftItems(snapshot.items, { dropBlankTemps: true });
+  state.managerDraftItemsByEventId[draftKeyForEvent(eventId)] = sanitizeDraftItems(snapshot.items.map((item) => ({ ...item, __tax_check_pending: false })), { dropBlankTemps: true });
   state.managerDraftDeletedByEventId[draftKeyForEvent(eventId)] = Array.isArray(snapshot.deletedIds) ? snapshot.deletedIds : [];
   state.managerDraftDirtyByEventId[String(eventId)] = true;
   state.managerDraftGenerationByEventId[String(eventId)] = Math.max(1, asNumber(state.managerDraftGenerationByEventId[String(eventId)]));
@@ -9715,7 +9717,7 @@ function renderInternalEstimate(items, event, summary = null) {
             const invoiceLockedByRequest = itemHasActiveInvoicePaymentRequest(item);
             const adminCanEditBin = adminCanOverrideItemBin(item, effectivePaymentMethod);
             const binDisabled = isCoordinatorItem(item) || effectivePaymentMethod !== "invoice";
-            const binInputDisabled = binDisabled || (!adminCanEditBin && (item.iin_bin_locked || invoiceLockedByRequest));
+            const binInputDisabled = binDisabled || item.__tax_check_pending || (!adminCanEditBin && (item.iin_bin_locked || invoiceLockedByRequest));
             return `
               <tr data-event-item-row="${item.id}" class="${isTaxProblem(item) ? "tax-problem-row" : ""}">
                 <td class="drag-col">${draggableHandle(item)}</td>
@@ -9736,17 +9738,9 @@ function renderInternalEstimate(items, event, summary = null) {
                     </select>
                   `}
                 </td>
-                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" data-item-field="iin_bin" data-item-id="${item.id}" ${binInputDisabled ? "disabled" : ""}`)}</td>
+                <td>${rowInput(binDisabled ? "" : (item.iin_bin || ""), `placeholder="12 цифр" class="${isTaxProblem(item) ? "tax-problem-input" : ""}" data-item-field="iin_bin" data-item-id="${item.id}" ${binInputDisabled ? "disabled" : ""}`)}${effectivePaymentMethod === "invoice" ? taxCheckFeedbackHtml(item) : ""}</td>
                 <td class="kgd-col">
-                  ${isCoordinatorItem(item) ? "—" : (effectivePaymentMethod === "invoice" ? `
-                    ${adminCanEditBin ? `
-                      <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="Проверить КГД заново">✓</button>
-                    ` : (item.iin_bin_locked ? `
-                      <button class="icon-btn" data-unlock-tax-item="${item.id}" title="${invoiceLockedByRequest ? "BIN закреплён активной заявкой" : "Изменить BIN"}" ${invoiceLockedByRequest ? "disabled" : ""}>✎</button>
-                    ` : `
-                      <button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" data-check-tax-item="${item.id}" title="Проверить КГД">✓</button>
-                    `)}
-                  ` : "—")}
+                  ${isCoordinatorItem(item) || effectivePaymentMethod !== "invoice" ? "—" : taxCheckButtonHtml(item, adminCanEditBin)}
                 </td>
                 <td class="vat-col">${manualTaxInputHtml(internalVatValue(item), "vat_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
                 <td class="deduction-col">${manualTaxInputHtml(internalDeductionValue(item), "deduction_amount", item.id, manualTaxEnabled && effectivePaymentMethod === "invoice")}</td>
@@ -10160,7 +10154,7 @@ function itemNeedsSave(eventId, item, payload = null) {
 }
 
 function draftItemSaveOperationKey(eventId, item) {
-  const createToken = ensureDraftItemCreateToken(item);
+  const createToken = String(item?.__client_create_token || "") || ensureDraftItemCreateToken(item);
   return createToken
     ? `${String(eventId)}:new:${createToken}`
     : `${String(eventId)}:item:${String(item?.id || "")}`;
@@ -10414,6 +10408,7 @@ function unlockTaxForItem(itemId) {
     return;
   }
 
+  delete item.__tax_check_message;
   item.iin_bin_locked = false;
   item.tax_check_status = null;
   item.vat_amount = 0;
@@ -10490,100 +10485,99 @@ function syncDraftItemFromRowBeforeTax(itemId) {
   return item;
 }
 
+function taxCheckFeedback(item) {
+  if (item.__tax_check_pending) return "Проверяем БИН в КГД…";
+  if (item.__tax_check_message) return item.__tax_check_message;
+  if (item.tax_check_status === "not_found") return "КГД не нашёл БИН/ИИН. Проверьте номер и повторите проверку.";
+  if (item.tax_check_status === "error") return "Не удалось проверить БИН. Повторите проверку.";
+  return "";
+}
+
+function taxCheckFeedbackHtml(item) {
+  return `<div class="tax-check-feedback ${isTaxProblem(item) ? "is-error" : ""}" role="status" aria-live="polite">${escapeHtml(taxCheckFeedback(item))}</div>`;
+}
+
+function taxCheckButtonHtml(item, adminCanEditBin = false) {
+  if (item.__tax_check_pending) return `<button class="icon-btn is-loading" type="button" data-check-tax-item="${item.id}" disabled title="Проверяем БИН в КГД">…</button>`;
+  const lockedByRequest = itemHasActiveInvoicePaymentRequest(item);
+  if (item.iin_bin_locked && !adminCanEditBin) return `<button class="icon-btn" type="button" data-unlock-tax-item="${item.id}" title="${lockedByRequest ? "БИН закреплён активной заявкой" : "Изменить БИН"}" ${lockedByRequest ? "disabled" : ""}>✎</button>`;
+  return `<button class="icon-btn ${isTaxProblem(item) ? "danger" : ""}" type="button" data-check-tax-item="${item.id}" title="Проверить КГД">✓</button>`;
+}
+
+function runDraftItemTaxCheck(eventId, item, task) {
+  state.managerDraftTaxPromises ||= new Map();
+  state.managerDraftItemSavePromises ||= new Map();
+  const key = draftItemSaveOperationKey(eventId, item);
+  const existing = state.managerDraftTaxPromises.get(key);
+  if (existing) return existing;
+  const previousSave = state.managerDraftItemSavePromises.get(key);
+  item.__tax_check_pending = true;
+  delete item.__tax_check_message;
+  // Register before yielding: autosave and another click must join this same
+  // row operation, including after a temporary ID becomes a database ID.
+  const operation = Promise.resolve().then(async () => {
+    if (previousSave) await previousSave;
+    if (item.__deleted_locally) throw new Error("Позиция удалена во время проверки");
+    return task();
+  }).finally(() => {
+    item.__tax_check_pending = false;
+    if (state.managerDraftTaxPromises.get(key) === operation) state.managerDraftTaxPromises.delete(key);
+    if (state.managerDraftItemSavePromises.get(key) === operation) state.managerDraftItemSavePromises.delete(key);
+    if (Number(state.selectedManagerEventId) === Number(eventId)) updateTaxUiInPlace(item.id);
+  });
+  state.managerDraftTaxPromises.set(key, operation);
+  state.managerDraftItemSavePromises.set(key, operation);
+  if (Number(state.selectedManagerEventId) === Number(eventId)) updateTaxUiInPlace(item.id);
+  return operation;
+}
+
 async function checkTaxForItem(itemId) {
-  const kgdStartedAt = perfNow();
   const eventId = state.selectedManagerEventId;
-  const originalItemId = String(itemId);
-  let item = syncDraftItemFromRowBeforeTax(itemId);
-
+  itemId = resolveDraftItemId(eventId, itemId);
+  const item = syncDraftItemFromRowBeforeTax(itemId);
   if (!item || item.payment_method !== "invoice") {
-    alert("КГД проверка доступна только для способа оплаты “По счету”");
+    alert("КГД проверка доступна только для способа оплаты «По счету»");
     return;
   }
-
-  const row = document.querySelector(`tr[data-event-item-row="${originalItemId}"]`);
-  const input = row?.querySelector(`[data-item-field="iin_bin"][data-item-id="${originalItemId}"]`)
-    || document.querySelector(`[data-item-field="iin_bin"][data-item-id="${originalItemId}"]`);
-
-  const iinBin = (input?.value || item.iin_bin || "").trim();
-
-  if (!iinBin) {
-    alert("Сначала укажи БИН/ИИН");
-    return;
-  }
-
-  const normalized = iinBin.replace(/\D/g, "");
+  const normalized = String(item.iin_bin || "").replace(/\D/g, "");
   if (normalized.length !== 12) {
-    alert("БИН/ИИН должен содержать 12 цифр");
+    item.__tax_check_message = "БИН/ИИН должен содержать 12 цифр";
+    updateTaxUiInPlace(item.id);
     return;
   }
-
   item.iin_bin = normalized;
-  item.payment_method = "invoice";
-
   try {
-    // Для новой строки создаём позицию и проверяем live-КГД одним запросом.
-    // Кэш КГД не используется: экономим только лишний HTTP round-trip.
-    const wasTemp = item.is_temp || String(item.id || "").startsWith("tmp-");
-    let result = null;
-
-    if (wasTemp) {
-      const combined = await createDraftItemAndCheckTax(
-        eventId,
-        item,
-        normalized,
-        "kgd-estimate-create-check-api"
-      );
-      item = combined.item;
-      result = combined.taxResult;
-    } else {
-      await timedAction("kgd-estimate-item-save", () => saveSingleDraftItem(eventId, item, { force: false }));
-      await refreshManagerEventRevision(eventId);
-
-      if (String(item.id).startsWith("tmp-")) {
-        throw new Error("Не удалось сохранить позицию перед проверкой КГД");
+    await runDraftItemTaxCheck(eventId, item, async () => {
+      let result;
+      if (item.is_temp || String(item.id).startsWith("tmp-")) {
+        ({ taxResult: result } = await createDraftItemAndCheckTax(eventId, item, normalized, "kgd-estimate-create-check-api"));
+      } else {
+        // The queue already owns this row. Calling saveSingleDraftItem here
+        // would wait on our own operation; persist directly under its barrier.
+        await performSingleDraftItemSave(eventId, item, { force: false });
+        if (item.__deleted_locally || item.iin_bin !== normalized || item.payment_method !== "invoice") throw new Error("Данные позиции изменились. Проверьте актуальный БИН.");
+        const sentVersion = asNumber(item.__edit_version);
+        result = await timedApi("kgd-estimate-check-api", `/event-items/${item.id}/tax/check`, {
+          method: "POST",
+          body: JSON.stringify({ iin_bin: normalized, expected_updated_at: item.updated_at || null }),
+        });
+        applyTaxResultPreservingEdits(item, result, normalized, sentVersion);
+        patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
       }
-
-      const sentVersion = asNumber(item.__edit_version);
-      result = await timedApi("kgd-estimate-check-api", `/event-items/${item.id}/tax/check`, {
-        method: "POST",
-        body: JSON.stringify({ iin_bin: normalized, expected_updated_at: item.updated_at || null }),
-      });
-      applyTaxResultPreservingEdits(item, result, normalized, sentVersion);
-      patchManagerEventPayloadItems(eventId, getDraftItems(eventId));
-    }
-
-    itemId = item.id;
-    if (Number(state.selectedManagerEventId) !== Number(eventId)) return;
-
-    // После сохранения tmp→real id DOM обязан получить новые data-item-id.
-    // Для существующей строки достаточно точечного обновления.
-    if (wasTemp) {
-      rerenderCurrentManagerCard();
-    } else {
-      updateTaxUiInPlace(itemId);
-    }
-    updateCurrentManagerMiniCardLive();
-    showDraftSavedHint();
+      if (item.iin_bin === normalized && item.payment_method === "invoice") {
+        item.__tax_check_message = result?.message || taxCheckFeedback(item);
+      }
+    });
   } catch (error) {
-    if (item.iin_bin === normalized && item.payment_method === "invoice") {
+    if (item.iin_bin === normalized && item.payment_method === "invoice" && !item.__deleted_locally) {
       item.iin_bin_locked = false;
       item.tax_check_status = "error";
       item.vat_amount = 0;
       item.deduction_amount = 0;
+      item.__tax_check_message = error.message || "КГД временно недоступен. Повторите проверку.";
     }
-    if (Number(state.selectedManagerEventId) !== Number(eventId)) return;
-
-    if (String(itemId).startsWith("tmp-")) {
-      rerenderCurrentManagerCard();
-    } else {
-      updateTaxUiInPlace(itemId);
-    }
-
-    alert(error.message || "КГД не ответил");
-  } finally {
-    if (CF_PERF_LOGS_ENABLED) console.info(`PERF web kgd-estimate-check total=${perfSeconds(kgdStartedAt)}s item=${originalItemId}`);
   }
+  if (Number(state.selectedManagerEventId) === Number(eventId)) updateTaxUiInPlace(item.id);
 }
 
 function rerenderCurrentManagerCard() {
@@ -11512,13 +11506,23 @@ function renderPaymentExtraFields(eventId) {
       const message = $("paymentMessage");
       if (message) message.textContent = "";
 
+      const controls = [$("paymentBinInput"), $("paymentItemSelect"), $("paymentMethodSelect"), $("paymentCreateBtn")];
+      const previouslyDisabled = controls.map((node) => Boolean(node?.disabled));
+      let checked = false;
       try {
+        controls.forEach((node) => { if (node) node.disabled = true; });
+        if (message) message.textContent = "Проверяем БИН в КГД…";
         setButtonLoading(checkBtn, true, "Проверяем…");
         await checkPaymentInvoiceBin(eventId);
+        checked = true;
       } catch (error) {
         if (message) message.textContent = error.message || "Не удалось проверить БИН";
       } finally {
-        if (checkBtn?.isConnected) setButtonLoading(checkBtn, false);
+        if (checkBtn?.isConnected) {
+          setButtonLoading(checkBtn, false);
+          checkBtn.disabled = checked;
+        }
+        controls.forEach((node, index) => { if (node?.isConnected) node.disabled = checked && (index === 0 || index === 2) ? true : previouslyDisabled[index]; });
       }
     });
     return;
@@ -11600,7 +11604,7 @@ function applyTaxResultToDraftItem(item, taxResult, fallbackBin = null) {
   if (!item || !taxResult) return item;
   const checkedStatus = taxResult.tax_check_status || taxResult.tax_status || null;
   item.iin_bin = taxResult.iin_bin || fallbackBin || item.iin_bin || null;
-  item.iin_bin_locked = taxResult.iin_bin_locked === undefined ? true : Boolean(taxResult.iin_bin_locked);
+  item.iin_bin_locked = Boolean(checkedStatus && !["not_found", "error"].includes(checkedStatus) && taxResult.iin_bin_locked !== false);
   item.tax_check_status = checkedStatus;
   item.vat_amount = taxResult.vat_amount || 0;
   item.deduction_amount = taxResult.deduction_amount || 0;
@@ -11688,27 +11692,39 @@ async function createDraftItemAndCheckTax(eventId, item, normalizedBin, perfLabe
 }
 
 async function checkPaymentInvoiceBin(eventId) {
-  const kgdStartedAt = perfNow();
   let item = selectedPaymentItem(eventId);
+  if (!item || item.item_type === "manager_salary") throw new Error("Выбери позицию из сметы");
+  const modalInput = $("paymentBinInput");
+  const bin = String(modalInput?.value || "").replace(/\D/g, "");
+  if (bin.length !== 12) throw new Error("Для оплаты по счету укажи БИН/ИИН из 12 цифр");
+  if (item.is_new_payment_position) {
+    item = createDraftItemFromPaymentModal(eventId, "invoice");
+    item.iin_bin = bin;
+    item.__payment_tax_new = true;
+    ensurePaymentSelectOptionForItem(item);
+  }
+  try {
+    return await runDraftItemTaxCheck(eventId, item, () => performPaymentInvoiceBinCheck(eventId, item, bin, modalInput));
+  } catch (error) {
+    item.__tax_check_message = error.message || "Не удалось проверить БИН";
+    if (!item.tax_check_status) item.tax_check_status = "error";
+    if (Number(state.selectedManagerEventId) === Number(eventId)) updateTaxUiInPlace(item.id);
+    throw error;
+  }
+}
+
+async function performPaymentInvoiceBinCheck(eventId, item, bin, modalInput) {
+  const kgdStartedAt = perfNow();
   if (!item || item.item_type === "manager_salary") {
     throw new Error("Выбери позицию из сметы");
   }
 
-  const amountInput = $("paymentAmountInput");
-  const amountValueBeforeCheck = amountInput?.value || "";
-
-  const bin = ($("paymentBinInput")?.value || "").replace(/\D/g, "");
-  if (bin.length !== 12) {
-    throw new Error("Для оплаты по счету укажи БИН/ИИН из 12 цифр");
-  }
-
   let taxResult = null;
 
-  if (item.is_new_payment_position) {
-    const created = createDraftItemFromPaymentModal(eventId, "invoice");
+  if (item.__payment_tax_new) {
     const combined = await timedAction("kgd-payment-create-check", () => createDraftItemAndCheckTax(
       eventId,
-      Object.assign(created, {
+      Object.assign(item, {
         payment_method: "invoice",
         iin_bin: bin,
         iin_bin_locked: false,
@@ -11719,8 +11735,9 @@ async function checkPaymentInvoiceBin(eventId) {
       true
     ));
     item = combined.item;
+    delete item.__payment_tax_new;
     taxResult = combined.taxResult;
-    ensurePaymentSelectOptionForItem(item);
+    if ($("paymentBinInput") === modalInput) ensurePaymentSelectOptionForItem(item);
   } else {
     item.payment_method = "invoice";
     item.iin_bin = bin;
@@ -11732,12 +11749,12 @@ async function checkPaymentInvoiceBin(eventId) {
     // accepted events the estimate stays locked and the tax endpoint changes
     // only payment-specific fields.
     if (paymentEstimateEditable(eventId)) {
-      await timedAction("kgd-payment-persist-item", () => saveSingleDraftItem(eventId, item, { force: false }));
-      await refreshManagerEventRevision(eventId);
+      await performSingleDraftItemSave(eventId, item, { force: false });
     }
   }
 
   if (!taxResult) {
+    const sentVersion = asNumber(item.__edit_version);
     taxResult = await timedApi("kgd-payment-check-api", `/event-items/${item.id}/tax/check`, {
       method: "POST",
       body: JSON.stringify({
@@ -11746,16 +11763,17 @@ async function checkPaymentInvoiceBin(eventId) {
         payment_context: true,
       }),
     });
-    applyTaxResultToDraftItem(item, taxResult, bin);
+    applyTaxResultPreservingEdits(item, taxResult, bin, sentVersion);
   }
 
+  item.__tax_check_message = taxResult?.message || "КГД не подтвердил БИН/ИИН";
   const checkedStatus = taxResult?.tax_check_status || taxResult?.tax_status;
 
-  if (!taxResult || !checkedStatus || checkedStatus === "not_found") {
+  if (!taxResult || !checkedStatus || ["not_found", "error"].includes(checkedStatus)) {
     throw new Error(taxResult?.message || "КГД не подтвердил БИН/ИИН");
   }
 
-  applyTaxResultToDraftItem(item, taxResult, bin);
+  item.__tax_check_message = taxResult.message || "БИН проверен";
 
   // /tax/check already persisted BIN, method and tax values. No ordinary
   // estimate PATCH is needed here, including for events already on review.
@@ -11763,12 +11781,8 @@ async function checkPaymentInvoiceBin(eventId) {
   updateInternalRowCells(item.id);
   updateInternalSummaryCards();
   updateCurrentManagerMiniCardLive();
-  updatePaymentInvoiceUiAfterCheck(eventId, item);
+  if ($("paymentBinInput") === modalInput) updatePaymentInvoiceUiAfterCheck(eventId, item);
 
-  const amountInputAfterCheck = $("paymentAmountInput");
-  if (amountInputAfterCheck && amountValueBeforeCheck) {
-    amountInputAfterCheck.value = amountValueBeforeCheck;
-  }
 
   if (CF_PERF_LOGS_ENABLED) console.info(`PERF web kgd-payment-check total=${perfSeconds(kgdStartedAt)}s item=${item.id}`);
   return item.contractor_name || `БИН ${bin}`;
@@ -15052,7 +15066,7 @@ async function loadDashboard() {
 
 async function boot() {
   const bootToken = state.token;
-  console.info("Contrast Finance web app v0.6.5 loaded");
+  console.info("Contrast Finance web app v0.6.7 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

@@ -21,6 +21,7 @@ from app.schemas.tax import ManualTaxRequest, TaxCheckRequest, TaxResult
 from app.schemas.event_item import EventItemCreate, EventItemRead
 from app.schemas.payment_request import PaymentItemCreate
 from app.services.kgd.client import KgdServiceError, check_taxpayer
+from app.services.mutation_locks import lock_business_keys
 from app.services.auth import get_current_user
 from app.services.authorization import (
     get_event_or_404,
@@ -34,6 +35,7 @@ from app.api.routes.event_items import (
     lock_event_for_estimate_write,
     require_estimate_editable,
     require_item_revision,
+    web_draft_item_key,
 )
 
 
@@ -106,6 +108,7 @@ def upsert_contractor(
     source: str,
     contractor_name: str | None = None,
 ) -> Contractor:
+    lock_business_keys(db, "contractor-iin-bin", iin_bin)
     contractor = db.query(Contractor).filter(Contractor.iin_bin == iin_bin).first()
 
     if contractor is None:
@@ -413,6 +416,7 @@ def _check_event_item_tax(
         event_updated_at=event.updated_at,
         source=kgd_result.source,
         message=kgd_result.message,
+        contractor_name=kgd_result.contractor_name,
     )
 
     db.add(item)
@@ -483,6 +487,9 @@ def create_event_item_and_check_tax(
     if len(normalized_iin_bin) != 12:
         raise HTTPException(status_code=400, detail="BIN / ИИН должен содержать 12 цифр")
 
+    # Release the authentication/read transaction too: no pooled connection
+    # should be held while waiting for a remote service. Reauthorize below.
+    db.rollback()
     # Perform network I/O before creating or locking any estimate row. Failed
     # KGD calls still leave no orphan, without blocking other saves for seconds.
     try:
@@ -492,20 +499,36 @@ def create_event_item_and_check_tax(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    event = get_event_or_404(db, event_id)
+    if payload.payment_context:
+        require_payment_request_create(current_user, event)
+    else:
+        require_event_edit(current_user, event)
+        require_estimate_editable(current_user, event)
+
     if payload.payment_context:
         # Payment-created rows expose only name/fact/method. Keep this narrow so
         # review/accepted estimates cannot be modified through the combined KGD
         # endpoint. The transaction is intentionally left uncommitted until the
         # live KGD call succeeds, preserving the anti-orphan behavior.
-        item = create_payment_item_record(
-            db,
-            event,
-            PaymentItemCreate(
-                external_name=item_payload.external_name,
-                amount_fact=item_payload.amount_fact or Decimal("0.00"),
-                payment_method="invoice",
-            ),
-        )
+        event = lock_event_for_estimate_write(db, event_id)
+        require_payment_request_create(current_user, event)
+        create_key = web_draft_item_key(event_id, item_payload.client_create_token)
+        item = db.execute(select(EventItem).where(EventItem.legacy_item_key == create_key)).scalar_one_or_none() if create_key else None
+        if item is not None and (item.event_id != event_id or item.is_deleted):
+            raise HTTPException(status_code=409, detail="Эта временная позиция уже была обработана")
+        if item is None:
+            item = create_payment_item_record(
+                db, event,
+                PaymentItemCreate(
+                    external_name=item_payload.external_name,
+                    amount_fact=item_payload.amount_fact or Decimal("0.00"),
+                    payment_method="invoice",
+                ),
+            )
+            item.legacy_item_key = create_key
+            db.flush()
+
     else:
         # Reuse the ordinary idempotent create path. The old combined endpoint
         # ignored client_create_token, so a double click or concurrent autosave
