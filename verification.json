@@ -1,0 +1,26 @@
+[
+  {
+    "old_shadow": false,
+    "unknown_branch": false,
+    "outcome": "startup graph passed",
+    "genuine_migrations_unchanged": true
+  },
+  {
+    "old_shadow": true,
+    "unknown_branch": false,
+    "outcome": "startup graph passed",
+    "genuine_migrations_unchanged": true
+  },
+  {
+    "old_shadow": false,
+    "unknown_branch": true,
+    "outcome": "stopped safely",
+    "genuine_migrations_unchanged": true
+  },
+  {
+    "old_shadow": true,
+    "unknown_branch": true,
+    "outcome": "stopped safely",
+    "genuine_migrations_unchanged": true
+  }
+]
