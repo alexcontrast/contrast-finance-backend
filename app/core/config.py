@@ -39,8 +39,11 @@ class Settings:
 
 @lru_cache
 def get_settings() -> Settings:
-    settings = Settings()
+    return Settings()
+
+
+def validate_jwt_settings(settings: Settings) -> None:
+    """JWT is required by the web/auth service, not by database/bot imports."""
     production = settings.ENVIRONMENT.lower() in {"prod", "production"} or bool(os.getenv("RAILWAY_ENVIRONMENT_ID"))
     if production and (settings.JWT_SECRET_KEY == "dev-change-me" or len(settings.JWT_SECRET_KEY) < 32):
         raise RuntimeError("Set JWT_SECRET_KEY to a private random value of at least 32 characters before production startup")
-    return settings

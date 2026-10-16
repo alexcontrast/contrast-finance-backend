@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import and_, case, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import get_settings, validate_jwt_settings
 from app.db.session import get_db
 from app.models.user import User
 from app.models.auth_attempt import AuthAttempt
@@ -69,6 +69,7 @@ def verify_pin(user: User, pin: str) -> bool:
 
 def create_access_token(user: User) -> str:
     settings = get_settings()
+    validate_jwt_settings(settings)
     now = datetime.now(timezone.utc)
     expires = now + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
 
@@ -87,6 +88,7 @@ def create_access_token(user: User) -> str:
 
 def decode_access_token(token: str) -> dict:
     settings = get_settings()
+    validate_jwt_settings(settings)
     try:
         return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
     except jwt.ExpiredSignatureError as exc:

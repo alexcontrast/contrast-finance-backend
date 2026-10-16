@@ -29,13 +29,14 @@ from app.api.routes.google_sheets_export import router as google_sheets_export_r
 from app.api.routes.manager_bonuses import router as manager_bonuses_router
 from app.api.routes.self_employed_accounting import router as self_employed_accounting_router
 from app.api.routes.act_signing import router as act_signing_router, public_router as public_act_signing_router
-from app.core.config import get_settings
+from app.core.config import get_settings, validate_jwt_settings
 from app.services.google_sheets_daily_export import (
     start_daily_google_sheets_export_scheduler,
     stop_daily_google_sheets_export_scheduler,
 )
 
 settings = get_settings()
+validate_jwt_settings(settings)
 
 
 @asynccontextmanager
