@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -9,6 +9,7 @@ from app.db.base import Base
 
 class EventShare(Base):
     __tablename__ = "event_shares"
+    __table_args__ = (Index("uq_event_shares_event_user", "event_id", "user_id", unique=True),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 

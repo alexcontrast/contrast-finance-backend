@@ -2,7 +2,8 @@ from pathlib import Path
 from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import Response
+from app.services.web_security import SecureHTMLResponse as HTMLResponse
 
 
 router = APIRouter(tags=["web"])

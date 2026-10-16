@@ -351,6 +351,8 @@ def update_monthly_closing_head_percent(
             raise HTTPException(status_code=400, detail="percent must be between 0 and 100")
 
     closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
+    if closing and closing.status == "closed":
+        raise HTTPException(status_code=409, detail="Сначала откройте месяц для изменения процента главы отдела")
     now = datetime.utcnow()
     if closing is None:
         closing = MonthlyClosing(month=month_date, status="draft", created_at=now, updated_at=now)
@@ -383,6 +385,8 @@ def close_month(
     current_admin: User = Depends(require_roles("admin")),
 ):
     month_date = parse_month(month)
+    from app.services.month_integrity import lock_months
+    lock_months(db, {month_date})
     calculated = calculate_closing(db, month_date)
 
     existing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()
@@ -401,7 +405,7 @@ def close_month(
     apply_calculated_to_closing(closing, calculated)
 
     closing.status = "closed"
-    closing.closed_by_user_id = closed_by_user_id or current_admin.id
+    closing.closed_by_user_id = current_admin.id
     closing.closed_at = now
 
     db.add(closing)
@@ -432,12 +436,12 @@ def reopen_month(
     return closing
 
 
-@router.get("/monthly-closings", response_model=list[MonthlyClosingRead])
+@router.get("/monthly-closings", response_model=list[MonthlyClosingRead], dependencies=[Depends(require_roles("admin"))])
 def list_monthly_closings(db: Session = Depends(get_db)):
     return db.execute(select(MonthlyClosing).order_by(MonthlyClosing.month.desc())).scalars().all()
 
 
-@router.get("/monthly-closings/by-month", response_model=MonthlyClosingRead)
+@router.get("/monthly-closings/by-month", response_model=MonthlyClosingRead, dependencies=[Depends(require_roles("admin"))])
 def get_monthly_closing(month: str, db: Session = Depends(get_db)):
     month_date = parse_month(month)
     closing = db.execute(select(MonthlyClosing).where(MonthlyClosing.month == month_date)).scalar_one_or_none()

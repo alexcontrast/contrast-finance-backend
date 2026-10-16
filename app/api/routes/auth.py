@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.department import Department
 from app.models.user import User
 from app.schemas.auth import AuthChangePinRequest, AuthLoginRequest, AuthPermissionsRead, AuthProfileUpdateRequest, AuthTokenRead, AuthUserRead
-from app.services.auth import create_access_token, find_login_user, get_current_user, native_pin_hash, verify_pin
+from app.services.auth import create_access_token, find_login_user, get_current_user, native_pin_hash, verify_pin, consume_login_attempt, normalize_phone, require_unique_user_identity
 
 
 def permissions_for_user(user: User) -> AuthPermissionsRead:
@@ -80,20 +80,19 @@ def find_department_head_user(db: Session, name: str | None) -> User | None:
     if not name_clean:
         return None
 
-    return db.execute(
-        select(User).where(
-            User.role == "department_head",
-            User.is_active == True,  # noqa: E712
-            User.name.ilike(name_clean),
-        )
-    ).scalars().first()
+    user = find_login_user(db, name_clean, None)
+    return user if user and user.role == "department_head" else None
 
 
 @router.post("/login", response_model=AuthTokenRead)
-def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
+def login(payload: AuthLoginRequest, request: Request, db: Session = Depends(get_db)):
     auth_mode = str(payload.auth_mode or "manager").strip()
-    if auth_mode not in {"manager", "admin", "department_head"}:
+    if auth_mode not in {"manager", "admin", "department_head", "accountant"}:
         raise HTTPException(status_code=401, detail="Неверный тип входа")
+    peer = request.client.host if request.client else "unknown"
+    consume_login_attempt(db, f"ip:{peer}", 100)
+    identity = normalize_phone(payload.phone) or str(payload.name or "").strip().casefold()
+    consume_login_attempt(db, f"account:{auth_mode}:{identity}", 12)
 
     if auth_mode == "admin":
         user = find_admin_by_pin(db, payload.pin)
@@ -112,10 +111,15 @@ def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
         "manager": "manager",
         "admin": "admin",
         "department_head": "department_head",
+        "accountant": "accountant",
     }
     if user.role != expected_role_by_mode[auth_mode]:
         raise HTTPException(status_code=401, detail="Неверное имя/телефон или PIN")
 
+    if not (user.pin_hash or "").startswith("pbkdf2_sha256$"):
+        user.pin_hash = native_pin_hash(payload.pin, user.id)
+        user.auth_source = "native"
+        db.commit()
     token = create_access_token(user)
 
     return AuthTokenRead(
@@ -141,6 +145,7 @@ def change_pin(
 
     if not old_pin:
         raise HTTPException(status_code=400, detail="Укажи старый PIN")
+    consume_login_attempt(db, f"change-pin:{current_user.id}", 12)
 
     if not verify_pin(current_user, old_pin):
         raise HTTPException(status_code=400, detail="Старый PIN неверный")
@@ -153,12 +158,13 @@ def change_pin(
 
     current_user.pin_hash = native_pin_hash(new_pin, current_user.id)
     current_user.auth_source = "native"
+    current_user.token_version = (current_user.token_version or 0) + 1
     current_user.updated_at = datetime.utcnow()
 
     db.add(current_user)
     db.commit()
 
-    return {"ok": True, "message": "PIN изменён"}
+    return {"ok": True, "message": "PIN изменён", "access_token": create_access_token(current_user)}
 
 
 def clean_optional_text(value: str | None) -> str | None:
@@ -175,6 +181,7 @@ def update_my_profile(
     name = str(payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Имя не может быть пустым")
+    require_unique_user_identity(db, name, payload.phone, exclude_id=current_user.id)
 
     if payload.department_id is None:
         raise HTTPException(status_code=400, detail="Выбери отдел")
@@ -187,10 +194,12 @@ def update_my_profile(
     if "санжар" not in department_name and "рауф" not in department_name:
         raise HTTPException(status_code=400, detail="Можно выбрать только отдел Санжар или Рауфаль")
 
+    if current_user.role == "department_head" and department.id != current_user.department_id:
+        raise HTTPException(status_code=403, detail="Отдел главдепа может изменить только администратор")
     current_user.department_id = department.id
 
     current_user.name = name
-    current_user.phone = clean_optional_text(payload.phone)
+    current_user.phone = normalize_phone(payload.phone) or None
     current_user.email = clean_optional_text(payload.email)
     current_user.updated_at = datetime.utcnow()
 

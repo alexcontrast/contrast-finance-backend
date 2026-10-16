@@ -18,7 +18,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 import requests
 from pypdf import PdfReader
-from sqlalchemy import exists, select
+from sqlalchemy import and_, or_, exists, select
+from app.services.act_archive import signed_archive_response
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
@@ -358,8 +359,18 @@ def _read_receipt_datetime_on_server(
     payload = bytes(content or b"")
     media_type = str(content_type or "").lower().split(";", 1)[0].strip()
     suffix = Path(str(filename or "")).suffix.lower()
-    if not payload or media_type == "application/pdf" or suffix == ".pdf":
+    if not payload:
         return None, None
+    if media_type == "application/pdf" or suffix == ".pdf":
+        try:
+            raster = subprocess.run(["pdftoppm", "-f", "1", "-singlefile", "-scale-to", "1800", "-png", "-"],
+                input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, check=False)
+            if raster.returncode or not raster.stdout:
+                return None, None
+            payload = raster.stdout
+            media_type, suffix = "image/png", ".png"
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            return None, None
     if media_type and not media_type.startswith("image/") and suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
         return None, None
 
@@ -367,7 +378,7 @@ def _read_receipt_datetime_on_server(
     for page_mode in ("6", "11"):
         try:
             completed = subprocess.run(
-                ["tesseract", "stdin", "stdout", "-l", "eng", "--psm", page_mode],
+                ["tesseract", "stdin", "stdout", "-l", "rus+kaz+eng", "--psm", page_mode],
                 input=payload,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -978,6 +989,10 @@ def assert_receipt_metadata_unique(
     receipt_number: str | None = None,
     iin: str | None = None,
 ) -> None:
+    from app.services.mutation_locks import lock_business_keys
+    number = clean_receipt_number(receipt_number)
+    key_iin = re.sub(r"\D", "", str(iin or ""))
+    lock_business_keys(db, "receipt", str(qr_payload or "").strip(), f"{key_iin}:{number}" if number and len(key_iin) == 12 else None)
     duplicate = _duplicate_receipt_id(
         db,
         exclude_id=exclude_id,
@@ -999,7 +1014,9 @@ ACT_MUTABLE_STATUSES = {None, "", "not_created", "generated"}
 
 def _assert_act_mutable(record: SelfEmployedAccounting) -> None:
     """Generated drafts may be replaced; signature workflow states are immutable."""
-    if record.act_status not in ACT_MUTABLE_STATUSES:
+    if (record.act_status not in ACT_MUTABLE_STATUSES
+        or record.act_session_status in {"signing", "finalizing"}
+        or record.act_sigex_document_id or record.act_pending_signature_sha256):
         raise HTTPException(status_code=409, detail="Нельзя менять данные после отправки АВР на подпись")
 
 
@@ -1025,6 +1042,10 @@ def _discard_generated_act(record: SelfEmployedAccounting) -> None:
     record.act_ddc_generated_at = None
     record.act_ddc_last_attempt_at = None
     record.act_ddc_error = None
+    for field in ("act_signing_token", "act_signing_token_expires_at", "act_session_started_at", "act_session_expires_at",
+                  "act_sigex_data_url", "act_sigex_sign_url", "act_egov_mobile_url", "act_egov_business_url", "act_qr_code"):
+        setattr(record, field, None)
+    record.act_session_status = "idle"
 
 
 def clean_text(value: str | None, max_length: int | None = None) -> str | None:
@@ -1076,12 +1097,12 @@ def prefer_full_person_name(primary: str | None, visual: str | None) -> str | No
         return official
     official_words = official.casefold().split()
     fallback_words = fallback.casefold().split()
-    if official_words[0] != fallback_words[0]:
-        return official
-
-    kazakh_map = str.maketrans("әғқңөұүһі", "агкноууhi")
+    kazakh_map = str.maketrans("әғқңөұүһі", "агкноуухи")
     def comparable(value: str) -> str:
         return re.sub(r"[^a-zа-яё]", "", value.casefold().translate(kazakh_map))
+
+    if comparable(official_words[0]) != comparable(fallback_words[0]):
+        return official
 
     similarity = SequenceMatcher(None, comparable(official), comparable(fallback)).ratio()
     if similarity < 0.64:
@@ -1227,6 +1248,9 @@ def _restore_receipt_identity(
     allow_external: bool = False,
 ) -> None:
     """Reuse local identity first, then optionally resolve FIO by IIN externally."""
+    if (getattr(record, "act_status", None) not in ACT_MUTABLE_STATUSES or getattr(record, "act_sigex_document_id", None)
+        or getattr(record, "act_session_status", None) in {"signing", "finalizing"}):
+        return
     current_name = clean_person_name(record.contractor_full_name)
     current_iin = _valid_iin_or_none(record.iin)
     historical = db.execute(
@@ -1234,7 +1258,8 @@ def _restore_receipt_identity(
             SelfEmployedAccounting.id,
             SelfEmployedAccounting.iin,
             SelfEmployedAccounting.contractor_full_name,
-        ).where(SelfEmployedAccounting.id != record.id)
+        ).where(SelfEmployedAccounting.id != record.id,
+            SelfEmployedAccounting.iin == current_iin if current_iin else SelfEmployedAccounting.contractor_full_name.is_not(None))
     ).all()
 
     if current_iin is None and current_name:
@@ -1263,6 +1288,8 @@ def _restore_receipt_identity(
         for candidate in (name for name in names if name):
             best_name = prefer_full_person_name(best_name, candidate)
         if best_name:
+            if best_name != record.contractor_full_name and getattr(record, "act_status", None) == "generated":
+                _discard_generated_act(record)
             record.contractor_full_name = best_name
             if contact and contact.full_name != best_name:
                 contact.full_name = best_name
@@ -1299,10 +1326,10 @@ def clean_decimal(value: str | Decimal | None) -> Decimal | None:
 def clean_datetime(value: str | datetime | None) -> datetime | None:
     if value is None or value == "":
         return None
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
+    from zoneinfo import ZoneInfo
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        result = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return result.astimezone(ZoneInfo("Asia/Almaty")).replace(tzinfo=None) if result.tzinfo else result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Некорректная дата чека") from exc
 
@@ -1703,20 +1730,14 @@ def list_self_employed_accounting(
     """
     require_accounting_access(current_user)
 
-    identity_records = db.execute(
-        select(SelfEmployedAccounting).where(
-            SelfEmployedAccounting.contractor_full_name.is_not(None)
-        )
-    ).scalars().all()
-    recovered_iins = _restore_missing_iins_from_exact_names(identity_records)
-    if recovered_iins:
-        for record in recovered_iins:
-            db.add(record)
-        db.commit()
-
     query = select(SelfEmployedAccounting).where(
         SelfEmployedAccounting.receipt_filename.is_not(None)
     )
+    month_bounds = _month_bounds(month) if month else None
+    if month_bounds:
+        dated = and_(SelfEmployedAccounting.receipt_datetime >= datetime.combine(month_bounds[0], datetime.min.time()),
+                     SelfEmployedAccounting.receipt_datetime < datetime.combine(month_bounds[1], datetime.min.time()))
+        query = query.where(or_(dated, SelfEmployedAccounting.receipt_datetime.is_(None)) if include_undated else dated)
     records = db.execute(query).scalars().all()
     _hydrate_contact_phones(db, list(records))
 
@@ -1887,6 +1908,8 @@ def _save_receipt_binary(
     _assert_act_mutable(record)
     _discard_generated_act(record)
     digest = sha256(content).hexdigest()
+    from app.services.mutation_locks import lock_business_keys
+    lock_business_keys(db, "receipt-file", digest)
     duplicate = db.execute(
         select(SelfEmployedAccounting.id).where(
             SelfEmployedAccounting.receipt_sha256 == digest,
@@ -2142,7 +2165,7 @@ def refresh_accounting_receipt_from_qr(
                 combined_source_text,
             )
         selected_dt = server_dt or _parse_report_datetime(combined_source_text or "")
-    record.receipt_datetime = selected_dt.replace(tzinfo=None) if isinstance(selected_dt, datetime) else clean_datetime(selected_dt)
+    record.receipt_datetime = clean_datetime(selected_dt)
     if official_source == "kaspi_qr":
         record.service_name = (
             clean_service_name(official.get("service_name"))
@@ -2177,7 +2200,7 @@ def refresh_accounting_receipt_from_qr(
 
 
 @router.post("/receipts/import", response_model=SelfEmployedReceiptImportRead)
-async def import_self_employed_receipt(
+def import_self_employed_receipt(
     file: UploadFile = File(...),
     contractor_full_name: str | None = Form(default=None),
     iin: str | None = Form(default=None),
@@ -2195,7 +2218,7 @@ async def import_self_employed_receipt(
     content_type = (file.content_type or "").lower().split(";", 1)[0].strip()
     if content_type not in ALLOWED_RECEIPT_TYPES:
         raise HTTPException(status_code=400, detail="Поддерживаются JPG, PNG, WEBP и PDF")
-    content = await file.read(MAX_RECEIPT_BYTES + 1)
+    content = file.file.read(MAX_RECEIPT_BYTES + 1)
     if not content:
         raise HTTPException(status_code=400, detail="Файл пустой")
     if len(content) > MAX_RECEIPT_BYTES:
@@ -2507,7 +2530,7 @@ def delete_accounting_receipt(
 
 
 @router.post("/{request_id}/receipt", response_model=SelfEmployedAccountingRead)
-async def upload_self_employed_receipt(
+def upload_self_employed_receipt(
     request_id: int,
     file: UploadFile = File(...),
     contractor_full_name: str | None = Form(default=None),
@@ -2527,7 +2550,7 @@ async def upload_self_employed_receipt(
     content_type = (file.content_type or "").lower().split(";", 1)[0].strip()
     if content_type not in ALLOWED_RECEIPT_TYPES:
         raise HTTPException(status_code=400, detail="Поддерживаются JPG, PNG, WEBP и PDF")
-    content = await file.read(MAX_RECEIPT_BYTES + 1)
+    content = file.file.read(MAX_RECEIPT_BYTES + 1)
     if not content:
         raise HTTPException(status_code=400, detail="Файл пустой")
     if len(content) > MAX_RECEIPT_BYTES:
@@ -2628,7 +2651,7 @@ def _update_record(
     if payload.receipt_number is not None:
         record.receipt_number = clean_receipt_number(payload.receipt_number)
     if payload.receipt_datetime is not None:
-        record.receipt_datetime = payload.receipt_datetime.replace(tzinfo=None)
+        record.receipt_datetime = clean_datetime(payload.receipt_datetime)
     if payload.service_name is not None:
         record.service_name = clean_service_name(payload.service_name)
     if payload.receipt_amount is not None:
@@ -2690,9 +2713,9 @@ def update_receipt_accounting(
     assert_receipt_metadata_unique(
         db,
         exclude_id=record.id,
-        qr_payload=payload.qr_payload,
-        receipt_number=payload.receipt_number,
-        iin=payload.iin,
+        qr_payload=payload.qr_payload if payload.qr_payload is not None else record.qr_payload,
+        receipt_number=payload.receipt_number if payload.receipt_number is not None else record.receipt_number,
+        iin=payload.iin if payload.iin is not None else record.iin,
     )
     _update_record(db, record, payload, current_user)
     _restore_receipt_identity(db, record, allow_external=True)
@@ -2714,9 +2737,9 @@ def update_self_employed_accounting(
     assert_receipt_metadata_unique(
         db,
         exclude_id=record.id,
-        qr_payload=payload.qr_payload,
-        receipt_number=payload.receipt_number,
-        iin=payload.iin,
+        qr_payload=payload.qr_payload if payload.qr_payload is not None else record.qr_payload,
+        receipt_number=payload.receipt_number if payload.receipt_number is not None else record.receipt_number,
+        iin=payload.iin if payload.iin is not None else record.iin,
     )
     _update_record(db, record, payload, current_user)
     _restore_receipt_identity(db, record, allow_external=True)
@@ -2842,10 +2865,7 @@ def _act_response(db: Session, record: SelfEmployedAccounting) -> Response:
     filename = row.act_filename or "AVR.pdf"
     if record.act_status == "signed":
         if row.act_ddc_status != "ready" or row.act_ddc_data is None:
-            detail = "Подписанный PDF ещё формируется. Повторите открытие через несколько секунд"
-            if row.act_ddc_status == "error" and row.act_ddc_error:
-                detail = f"Обе подписи сохранены, но SIGEX пока не сформировал PDF: {row.act_ddc_error}"
-            raise HTTPException(status_code=409, detail=detail)
+            return signed_archive_response(db, record)
         content = row.act_ddc_data
         filename = row.act_ddc_filename or f"{Path(filename).stem}_SIGNED_SIGEX.pdf"
     filename = Path(filename).name.replace('"', "")

@@ -1,14 +1,14 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class NativeUserCreate(BaseModel):
-    name: str
-    phone: str | None = None
+    name: str = Field(max_length=150)
+    phone: str | None = Field(default=None, max_length=64)
     department_id: int | None = None
     role: str = "manager"
-    pin: str
+    pin: str = Field(min_length=4, max_length=12)
     is_active: bool = True
 
 

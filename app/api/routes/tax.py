@@ -195,6 +195,17 @@ def check_event_item_tax(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    return _check_event_item_tax(item_id, payload, db, current_user)
+
+
+def _check_event_item_tax(
+    item_id: int,
+    payload: TaxCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    *,
+    verified_kgd_result=None,
+):
     """
     Проверка BIN / ИИН через KGD service.
 
@@ -212,7 +223,7 @@ def check_event_item_tax(
 
     item = db.get(EventItem, item_id)
     mark_perf("item_sql")
-    if item is None:
+    if item is None or item.is_deleted:
         raise HTTPException(status_code=404, detail="Event item not found")
 
     event = require_item_event_edit(db, current_user, item)
@@ -238,8 +249,15 @@ def check_event_item_tax(
                 detail="БИН нельзя изменить или перепроверить, пока по позиции есть активная заявка",
             )
 
+    event_id = item.event_id
+    if verified_kgd_result is None:
+        # The ordinary endpoint has only read/authenticated so far. Release
+        # that transaction and its pooled connection before the slow KGD I/O.
+        # The combined endpoint already has a verified result and pending row
+        # changes, so its write transaction must remain intact.
+        db.rollback()
     try:
-        kgd_result = check_taxpayer(payload.iin_bin)
+        kgd_result = verified_kgd_result if verified_kgd_result is not None else check_taxpayer(payload.iin_bin)
     except KgdServiceError as exc:
         mark_perf("kgd_error")
         logger.error(
@@ -271,7 +289,7 @@ def check_event_item_tax(
     # item, after the response arrives. This keeps lock ordering identical to
     # ordinary estimate saves and rechecks ownership/status against the latest
     # committed state before applying the authoritative tax result.
-    event = lock_event_for_estimate_write(db, item.event_id)
+    event = lock_event_for_estimate_write(db, event_id)
     if payload.payment_context:
         require_payment_request_create(current_user, event)
     else:
@@ -284,6 +302,8 @@ def check_event_item_tax(
         .execution_options(populate_existing=True)
     ).scalar_one()
     require_item_revision(item, payload.expected_updated_at)
+    if item.is_deleted:
+        raise HTTPException(status_code=404, detail="Event item not found")
 
     if current_user.role != "admin":
         active_invoice_request = db.execute(
@@ -463,6 +483,15 @@ def create_event_item_and_check_tax(
     if len(normalized_iin_bin) != 12:
         raise HTTPException(status_code=400, detail="BIN / ИИН должен содержать 12 цифр")
 
+    # Perform network I/O before creating or locking any estimate row. Failed
+    # KGD calls still leave no orphan, without blocking other saves for seconds.
+    try:
+        verified_kgd_result = check_taxpayer(normalized_iin_bin)
+    except KgdServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if payload.payment_context:
         # Payment-created rows expose only name/fact/method. Keep this narrow so
         # review/accepted estimates cannot be modified through the combined KGD
@@ -505,11 +534,12 @@ def create_event_item_and_check_tax(
     create_flush_sec = time.perf_counter() - started_at - auth_sec
 
     tax_started_at = time.perf_counter()
-    tax_result = check_event_item_tax(
+    tax_result = _check_event_item_tax(
         item.id,
         TaxCheckRequest(iin_bin=normalized_iin_bin, payment_context=payload.payment_context),
         db,
         current_user,
+        verified_kgd_result=verified_kgd_result,
     )
     tax_sec = time.perf_counter() - tax_started_at
 

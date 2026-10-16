@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.department import Department
 from app.models.user import User
 from app.schemas.users_import import LegacyUsersImportRequest, LegacyUsersImportResult
-from app.services.auth import normalize_phone, require_roles
+from app.services.auth import normalize_phone, require_roles, require_unique_user_identity
 
 
 router = APIRouter(tags=["users_import"])
@@ -70,7 +70,10 @@ def import_legacy_users(
 
         department_id = get_department_id(db, row.department_id, row.department_name)
 
-        user = db.execute(select(User).where(User.legacy_user_id == legacy_user_id)).scalar_one_or_none()
+        user = db.execute(select(User).where(User.legacy_user_id == legacy_user_id).with_for_update()).scalar_one_or_none()
+        phone = normalize_phone(row.phone) or (user.phone if user else None)
+        if active_from_legacy(row.is_active):
+            require_unique_user_identity(db, name, phone, exclude_id=user.id if user else None)
         if user is None:
             user = User(
                 legacy_user_id=legacy_user_id,
@@ -87,6 +90,10 @@ def import_legacy_users(
             db.add(user)
             created += 1
         else:
+            if (user.role != role_from_legacy(row.role)
+                or user.is_active != active_from_legacy(row.is_active)
+                or user.legacy_pin_hash != legacy_pin_hash):
+                user.token_version = (user.token_version or 0) + 1
             user.name = name
             user.phone = normalize_phone(row.phone) or user.phone
             user.department_id = department_id

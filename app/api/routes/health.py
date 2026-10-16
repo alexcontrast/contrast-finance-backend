@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.services.auth import require_roles
 from sqlalchemy import text
 
 from app.core.config import get_settings
@@ -20,7 +21,7 @@ def health_check():
     }
 
 
-@router.get("/db/health")
+@router.get("/db/health", dependencies=[Depends(require_roles("admin"))])
 def database_health_check():
     if engine is None:
         return {
@@ -42,11 +43,11 @@ def database_health_check():
         return {
             "ok": False,
             "database_connected": False,
-            "error": str(exc),
+            "error": "Database unavailable; see server logs",
         }
 
 
-@router.get("/db/tables")
+@router.get("/db/tables", dependencies=[Depends(require_roles("admin"))])
 def database_tables_check():
     if engine is None:
         return {
@@ -77,5 +78,5 @@ def database_tables_check():
         return {
             "ok": False,
             "tables": [],
-            "error": str(exc),
+            "error": "Database unavailable; see server logs",
         }

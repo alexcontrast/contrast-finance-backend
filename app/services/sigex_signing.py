@@ -368,7 +368,28 @@ def cms_signer_identity(
     """Read the IIN from the certificate before assigning a signature to a side."""
     try:
         der = decode_cms_signature(signature_b64)
-        certificates: list[x509.Certificate] = load_der_pkcs7_certificates(der)
+        from asn1crypto import cms
+        content = cms.ContentInfo.load(der, strict=True)
+        signed = content["content"]
+        signers = signed["signer_infos"]
+        if len(signers) != 1:
+            raise SigexError("Ожидается CMS с одной подписью")
+        sid = signers[0]["sid"]
+        matching = []
+        for choice in signed["certificates"]:
+            if choice.name != "certificate":
+                continue
+            cert = choice.chosen
+            if sid.name == "issuer_and_serial_number":
+                selector = sid.chosen
+                match = cert.serial_number == selector["serial_number"].native and cert.issuer.dump() == selector["issuer"].dump()
+            else:
+                match = cert.key_identifier == sid.native
+            if match:
+                matching.append(x509.load_der_x509_certificate(cert.dump()))
+        if len(matching) != 1:
+            raise SigexError("Не найден однозначный сертификат фактического подписанта CMS")
+        certificates = matching
     except Exception as exc:
         if isinstance(exc, SigexError):
             raise
@@ -394,8 +415,6 @@ def cms_signer_identity(
             match = re.search(r"(?:^|[^A-Z])IIN\s*([0-9]{12})(?:\D|$)", value, re.I)
             if match:
                 candidate = (match.group(1), name)
-                if candidate[0] in expected:
-                    return candidate
                 candidates.append(candidate)
     if candidates:
         return candidates[0]

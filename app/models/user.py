@@ -29,6 +29,7 @@ class User(Base):
 
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
 
     # Legacy Apps Script auth compatibility.
     legacy_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)

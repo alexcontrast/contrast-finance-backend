@@ -2,24 +2,25 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 class EventCreate(BaseModel):
-    client_name: str = Field(description="Заказчик")
-    title: str = Field(description="Название мероприятия")
+    client_name: str = Field(min_length=1, max_length=255, description="Заказчик")
+    title: str = Field(min_length=1, max_length=255, description="Название мероприятия")
     event_date: date
     department_id: int
     manager_id: int
-    status: str = "draft"
+    status: Literal["draft", "review", "revision", "accepted", "completed", "cancelled", "cash_received"] = "draft"
 
     # ip_contrast_event / our_no_vat / simplified / cash
-    client_calc_type: str
+    client_calc_type: Literal["ip_contrast_event", "our_no_vat", "simplified", "cash"]
 
     manager_percent: Decimal = Decimal("21.00")
     agency_commission_amount: Decimal = Decimal("0.00")
     customer_paid_amount: Decimal = Decimal("0.00")
     agency_commission_spread_enabled: bool = False
-    simplified_bank_tax_percent: Decimal | None = None
+    simplified_bank_tax_percent: Decimal | None = Field(default=None, ge=0, le=100)
     # Optional optimistic-concurrency guard used by the web draft editor.
     # Older clients may omit it and keep the legacy last-write-wins behavior.
     expected_updated_at: datetime | None = None

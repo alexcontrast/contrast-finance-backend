@@ -6,13 +6,16 @@ from hashlib import sha256
 import re
 import secrets
 import threading
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import Response
+from app.services.web_security import SecureHTMLResponse as HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,6 +24,7 @@ from app.core.r1_profile import R1_CUSTOMER_PROFILE
 from app.db.session import SessionLocal, get_db
 from app.models.self_employed_accounting import SelfEmployedAccounting
 from app.models.self_employed_act_signature import SelfEmployedActSignature
+from app.models.pending_act_signature import PendingActSignature
 from app.models.self_employed_contact import SelfEmployedContact
 from app.models.user import User
 from app.schemas.self_employed_accounting import (
@@ -32,6 +36,13 @@ from app.schemas.self_employed_accounting import (
     SelfEmployedActSigningLinkRead,
 )
 from app.services.auth import get_current_user
+from app.services.act_archive import signed_archive_response
+from app.services.job_leases import job_lease
+
+_egov_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="egov")
+_finalize_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="avr-finalize")
+_ddc_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="avr-ddc")
+_recovery_task = None
 from app.services.sigex_signing import (
     SigexError,
     add_document_signature,
@@ -66,6 +77,23 @@ STALE_CMS_MESSAGE = (
 def _require_accounting_access(user: User) -> None:
     if user.role not in {"admin", "accountant"}:
         raise HTTPException(status_code=403, detail="Бухгалтерия доступна только администратору и бухгалтеру")
+
+
+@router.get("/acts/status-batch")
+def accounting_signature_status_batch(ids: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_accounting_access(current_user)
+    from sqlalchemy.orm import selectinload
+    from app.api.routes.self_employed_accounting import build_row, _hydrate_contact_phones
+    try:
+        accounting_ids = list(dict.fromkeys(int(value) for value in ids.split(",")))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Некорректный список АВР") from exc
+    if len(accounting_ids) > 100 or any(value <= 0 for value in accounting_ids):
+        raise HTTPException(status_code=400, detail="За один запрос можно проверить до 100 АВР")
+    records = db.execute(select(SelfEmployedAccounting).options(selectinload(SelfEmployedAccounting.act_signatures))
+        .where(SelfEmployedAccounting.id.in_(accounting_ids))).scalars().all()
+    _hydrate_contact_phones(db, records)
+    return [build_row([], record) for record in records]
 
 
 def _digits(value: str | None) -> str:
@@ -437,10 +465,7 @@ def act_public_file(token: str, download: bool = False, db: Session = Depends(ge
     if record.act_status == "signed":
         if row.act_ddc_status != "ready" or row.act_ddc_data is None:
             _start_ddc_worker(record.id)
-            detail = "Обе подписи сохранены. Подписанный PDF ещё формируется — повторите через несколько секунд"
-            if row.act_ddc_status == "error" and row.act_ddc_error:
-                detail = f"Обе подписи сохранены, но SIGEX пока не сформировал PDF: {row.act_ddc_error}"
-            raise HTTPException(status_code=409, detail=detail)
+            return signed_archive_response(db, record)
         content = row.act_ddc_data
         filename = row.act_ddc_filename or f"{Path(filename).stem}_SIGNED_SIGEX.pdf"
     filename = Path(filename).name.replace('"', "")
@@ -471,7 +496,7 @@ def _session_read(record: SelfEmployedAccounting, message: str | None = None) ->
     signed_file_ready = _signed_file_ready(record)
     signed_file_status = str(record.act_ddc_status or "pending")
     if record.act_status == "signed" and not signed_file_ready:
-        status = "document_error" if signed_file_status == "error" else "document_building"
+        status = "document_error" if signed_file_status in {"error", "unavailable"} else "document_building"
     else:
         status = (
             "signing"
@@ -486,8 +511,8 @@ def _session_read(record: SelfEmployedAccounting, message: str | None = None) ->
         message = "Обе подписи проверены. SIGEX формирует PDF с подписями и QR…"
     elif status == "document_error" and message is None:
         message = (
-            "Обе подписи сохранены. Не удалось сразу сформировать подписанный PDF; "
-            f"сайт повторит попытку. {record.act_ddc_error or ''}"
+            "Обе подписи сохранены. Доступен ZIP: исходный АВР и две CMS-подписи. "
+            f"PDF-карточка пока недоступна. {record.act_ddc_error or ''}"
         ).strip()
     return SelfEmployedActSessionRead(
         status=status,
@@ -509,8 +534,9 @@ def _session_read(record: SelfEmployedAccounting, message: str | None = None) ->
 def _discard_stale_pending_signature(
     db: Session,
     record: SelfEmployedAccounting,
-) -> None:
+) -> bool:
     """Discard only a CMS that SIGEX can no longer validate against a fresh OCSP response."""
+    completed_hash = record.act_pending_signature_sha256
     target: SelfEmployedActSignature | None = None
     if record.act_pending_signature_data:
         try:
@@ -521,11 +547,17 @@ def _discard_stale_pending_signature(
             target = None
     if target is not None and target.status != "signed":
         target.status = "sent"
+        target.sigex_sign_id = None
         target.last_error = None
         target.updated_at = datetime.utcnow()
         db.add(target)
     # The old eGov operation and its CMS must not be reused: TSP time is fixed
     # inside the CMS, while SIGEX obtains a new OCSP status during registration.
+    queued = db.execute(select(PendingActSignature).where(
+        PendingActSignature.accounting_id == record.id,
+        PendingActSignature.signature_sha256 == record.act_pending_signature_sha256)).scalar_one_or_none()
+    if queued:
+        queued.status = "stale"
     record.act_pending_signature_data = None
     record.act_pending_signature_sha256 = None
     record.act_pending_signature_received_at = None
@@ -539,8 +571,13 @@ def _discard_stale_pending_signature(
     record.act_session_status = "idle"
     record.act_signing_error = None
     record.updated_at = datetime.utcnow()
+    if not any(signature.status == "signed" for signature in record.act_signatures):
+        record.act_sigex_document_id = None
+        record.act_sigex_registered_at = None
+    more = _advance_pending_signature(db, record, completed_hash or "", "stale")
     _signature_status(record, target)
     db.add(record)
+    return more
 
 
 def _phone_for_inferred_role(db: Session, record: SelfEmployedAccounting, role: str) -> str:
@@ -581,14 +618,44 @@ def _stage_pending_signature(
     signature_b64: str,
 ) -> bytes:
     raw_signature = _decode_signature(signature_b64)
+    signature_hash = sha256(raw_signature).hexdigest()
+    queued = db.execute(select(PendingActSignature).where(
+        PendingActSignature.accounting_id == record.id,
+        PendingActSignature.signature_sha256 == signature_hash)).scalar_one_or_none()
+    if queued is None:
+        db.add(PendingActSignature(accounting_id=record.id, document_sha256=record.act_sha256,
+            signature_sha256=signature_hash, signature_data=raw_signature, status="queued"))
+    if record.act_pending_signature_data:
+        # The second CMS is durable too; registration drains this queue in order.
+        return raw_signature
     record.act_pending_signature_data = raw_signature
-    record.act_pending_signature_sha256 = sha256(raw_signature).hexdigest()
+    record.act_pending_signature_sha256 = signature_hash
     record.act_pending_signature_received_at = datetime.utcnow()
     record.act_session_status = "finalizing"
     record.act_signing_error = None
     record.updated_at = datetime.utcnow()
     db.add(record)
     return raw_signature
+
+
+def _advance_pending_signature(db: Session, record: SelfEmployedAccounting, completed_hash: str, final_status="completed") -> bool:
+    queued = db.execute(select(PendingActSignature).where(
+        PendingActSignature.accounting_id == record.id,
+        PendingActSignature.status == "queued").order_by(PendingActSignature.id)).scalars().all()
+    next_signature = None
+    for candidate in queued:
+        if candidate.signature_sha256 == completed_hash:
+            candidate.status = final_status
+        elif candidate.document_sha256 != record.act_sha256:
+            candidate.status = "stale"
+        elif next_signature is None:
+            next_signature = candidate
+    if next_signature:
+        record.act_pending_signature_data = next_signature.signature_data
+        record.act_pending_signature_sha256 = next_signature.signature_sha256
+        record.act_pending_signature_received_at = next_signature.created_at
+        record.act_session_status = "finalizing"
+    return next_signature is not None
 
 
 def _build_signed_ddc(accounting_id: int, *, force: bool = False) -> None:
@@ -603,6 +670,8 @@ def _build_signed_ddc(accounting_id: int, *, force: bool = False) -> None:
             .with_for_update()
         ).scalar_one_or_none()
         if record is None or record.act_status != "signed" or _signed_file_ready(record):
+            return
+        if record.act_ddc_status == "unavailable" and not force:
             return
         last_attempt = record.act_ddc_last_attempt_at
         if (
@@ -663,7 +732,8 @@ def _build_signed_ddc(accounting_id: int, *, force: bool = False) -> None:
                 .with_for_update()
             ).scalar_one_or_none()
             if record is not None and not _signed_file_ready(record):
-                record.act_ddc_status = "error"
+                terminal = "subscription level" in message.lower() or "feature is not available" in message.lower()
+                record.act_ddc_status = "unavailable" if terminal else "error"
                 record.act_ddc_error = message
                 record.updated_at = datetime.utcnow()
                 db.add(record)
@@ -694,7 +764,9 @@ def _build_signed_ddc(accounting_id: int, *, force: bool = False) -> None:
 
 def _ddc_worker(accounting_id: int, force: bool) -> None:
     try:
-        _build_signed_ddc(accounting_id, force=force)
+        with job_lease(f"ddc:{accounting_id}", factory=SessionLocal, delay=30) as owned:
+            if owned:
+                _build_signed_ddc(accounting_id, force=force)
     finally:
         with _worker_lock:
             _active_ddc_workers.discard(accounting_id)
@@ -702,13 +774,22 @@ def _ddc_worker(accounting_id: int, force: bool) -> None:
 
 def _start_ddc_worker(accounting_id: int, *, force: bool = False) -> None:
     with _worker_lock:
-        if accounting_id in _active_ddc_workers:
+        if accounting_id in _active_ddc_workers or len(_active_ddc_workers) >= 16:
             return
         _active_ddc_workers.add(accounting_id)
-    threading.Thread(target=_ddc_worker, args=(accounting_id, force), daemon=True).start()
+    _ddc_executor.submit(_ddc_worker, accounting_id, force)
 
 
 def _finalize_pending_signature(accounting_id: int) -> None:
+    with job_lease(f"avr-finalize:{accounting_id}", factory=SessionLocal, delay=10) as owned:
+        if not owned:
+            return
+        for _ in range(20):
+            if not _finalize_one_pending_signature(accounting_id):
+                break
+
+
+def _finalize_one_pending_signature(accounting_id: int) -> bool:
     if SessionLocal is None:
         return
     with SessionLocal() as db:
@@ -721,7 +802,25 @@ def _finalize_pending_signature(accounting_id: int) -> None:
             return
         raw_signature = bytes(record.act_pending_signature_data)
         signature_b64 = base64.b64encode(raw_signature).decode("ascii")
-        signer_role, signer_iin, signer_name = _signer_role(record, signature_b64)
+        try:
+            signer_role, signer_iin, signer_name = _signer_role(record, signature_b64)
+        except SigexError as exc:
+            # An unrelated/invalid signer must not permanently block a valid
+            # CMS already queued for the other party. Retain the raw bytes in
+            # the durable queue for diagnosis, then advance independently.
+            pending_hash = sha256(raw_signature).hexdigest()
+            record.act_pending_signature_data = None
+            record.act_pending_signature_sha256 = None
+            record.act_pending_signature_received_at = None
+            record.act_session_status = "error"
+            record.act_signing_error = str(exc)[:1000]
+            more = _advance_pending_signature(db, record, pending_hash, "rejected")
+            if more:
+                record.act_signing_error = None
+            _signature_status(record)
+            db.add(record)
+            db.commit()
+            return more
         target = db.execute(
             select(SelfEmployedActSignature)
             .where(
@@ -738,12 +837,20 @@ def _finalize_pending_signature(accounting_id: int) -> None:
                 record.act_pending_signature_received_at = None
                 record.act_session_status = "idle"
                 record.act_signing_error = None
+                more = _advance_pending_signature(db, record, pending_hash)
                 db.add(record)
                 db.commit()
                 if record.act_status == "signed" and not _signed_file_ready(record):
                     _start_ddc_worker(record.id, force=True)
-                return
-            raise SigexError("Эта сторона уже подписала АВР")
+                return more
+            record.act_pending_signature_data = None
+            record.act_pending_signature_sha256 = None
+            record.act_pending_signature_received_at = None
+            record.act_session_status = "idle"
+            more = _advance_pending_signature(db, record, pending_hash, "duplicate")
+            db.add(record)
+            db.commit()
+            return more
         now = datetime.utcnow()
         if target is None:
             target = SelfEmployedActSignature(
@@ -762,6 +869,10 @@ def _finalize_pending_signature(accounting_id: int) -> None:
         pdf_data = db.execute(
             select(SelfEmployedAccounting.act_data).where(SelfEmployedAccounting.id == record.id)
         ).scalar_one()
+        document_hash = record.act_sha256
+        # A shared lease serializes registration; release SQL locks before I/O.
+        # Source edits are separately forbidden after signing has started.
+        db.commit()
         if not record.act_sigex_document_id:
             document_id, sign_id = register_document_signature(
                 signature_b64=signature_b64,
@@ -787,6 +898,10 @@ def _finalize_pending_signature(accounting_id: int) -> None:
             finalize_document_data(record.act_sigex_document_id, bytes(pdf_data))
         else:
             sign_id = add_document_signature(record.act_sigex_document_id, signature_b64)
+        record = db.execute(select(SelfEmployedAccounting).where(SelfEmployedAccounting.id == accounting_id)
+            .with_for_update().execution_options(populate_existing=True)).scalar_one()
+        if record.act_sha256 != document_hash or record.act_pending_signature_sha256 != pending_hash:
+            raise SigexError("Данные АВР изменились во время регистрации подписи")
         target.signature_data = raw_signature
         target.signature_sha256 = pending_hash
         target.sigex_sign_id = sign_id
@@ -801,13 +916,15 @@ def _finalize_pending_signature(accounting_id: int) -> None:
         record.act_pending_signature_received_at = None
         record.act_session_status = "idle"
         record.act_signing_error = None
+        more = _advance_pending_signature(db, record, pending_hash)
         _signature_status(record, target)
         fully_signed = record.act_status == "signed"
         record.updated_at = now
         db.add_all([target, record])
         db.commit()
         if fully_signed:
-            _build_signed_ddc(record.id, force=True)
+            _start_ddc_worker(record.id)
+        return more
 
 
 def _mark_signature_error(accounting_id: int, exc: Exception) -> None:
@@ -824,7 +941,13 @@ def _mark_signature_error(accounting_id: int, exc: Exception) -> None:
             return
         stale_cms = _fresh_signature_required(message)
         if stale_cms:
-            _discard_stale_pending_signature(db, record)
+            more = _discard_stale_pending_signature(db, record)
+            if more:
+                # The other received CMS must not inherit the expired CMS's
+                # error, otherwise recovery would discard a valid signature.
+                db.add(record)
+                db.commit()
+                return
             message = STALE_CMS_MESSAGE
         record.act_session_status = "error"
         record.act_signing_error = message
@@ -846,51 +969,61 @@ def _mark_signature_error(accounting_id: int, exc: Exception) -> None:
 
 
 def _process_signature(accounting_id: int) -> None:
-    if SessionLocal is None:
-        return
     try:
-        with SessionLocal() as db:
-            record = db.get(SelfEmployedAccounting, accounting_id)
-            if record is None:
+        if SessionLocal is None:
+            return
+        with job_lease(f"egov-wait:{accounting_id}", factory=SessionLocal, delay=10) as owned:
+            if not owned:
                 return
-            if record.act_pending_signature_data:
-                signature_b64 = base64.b64encode(bytes(record.act_pending_signature_data)).decode("ascii")
-            elif record.act_session_status == "signing":
-                pdf_row = db.execute(
-                    select(SelfEmployedAccounting.act_data).where(SelfEmployedAccounting.id == record.id)
-                ).scalar_one_or_none()
-                signature_b64 = wait_for_egov_signature(
-                    data_url=str(record.act_sigex_data_url or ""),
-                    sign_url=str(record.act_sigex_sign_url or ""),
-                    pdf_data=bytes(pdf_row or b""),
-                    act_number=str(record.act_number or "АВР"),
-                    contractor_name=str(record.contractor_full_name or "Самозанятый"),
-                    amount_text=f"{Decimal(record.receipt_amount or 0):,.2f} ₸".replace(",", " "),
-                    session_expires_at=record.act_session_expires_at,
-                )
-            else:
-                return
-
-        with SessionLocal() as db:
-            record = db.execute(
-                select(SelfEmployedAccounting)
-                .where(SelfEmployedAccounting.id == accounting_id)
-                .with_for_update()
-            ).scalar_one_or_none()
-            if record is None:
-                return
-            if not record.act_pending_signature_data:
-                if record.act_session_status != "signing":
+            wait_args = None
+            with SessionLocal() as db:
+                record = db.get(SelfEmployedAccounting, accounting_id)
+                if record is None:
                     return
-                # Persist first. Certificate parsing and SIGEX registration are
-                # deliberately performed only after this commit so neither an
-                # unfamiliar certificate profile nor a temporary SIGEX error
-                # can discard the CMS already returned by eGov.
-                _stage_pending_signature(db, record, signature_b64)
-                db.commit()
-        _finalize_pending_signature(accounting_id)
+                source_hash = record.act_sha256
+                source_session_url = record.act_sigex_data_url
+                if record.act_pending_signature_data:
+                    signature_b64 = base64.b64encode(bytes(record.act_pending_signature_data)).decode("ascii")
+                elif record.act_session_status == "signing":
+                    pdf_row = db.execute(select(SelfEmployedAccounting.act_data).where(
+                        SelfEmployedAccounting.id == record.id)).scalar_one_or_none()
+                    wait_args = dict(
+                        data_url=str(record.act_sigex_data_url or ""),
+                        sign_url=str(record.act_sigex_sign_url or ""),
+                        pdf_data=bytes(pdf_row or b""),
+                        act_number=str(record.act_number or "АВР"),
+                        contractor_name=str(record.contractor_full_name or "Самозанятый"),
+                        amount_text=f"{Decimal(record.receipt_amount or 0):,.2f} ₸".replace(",", " "),
+                        session_expires_at=record.act_session_expires_at,
+                    )
+                else:
+                    return
+            # The eGov wait can take minutes. It must not reserve a database
+            # connection while the user opens and signs in the mobile app.
+            if wait_args is not None:
+                signature_b64 = wait_for_egov_signature(**wait_args)
+
+            with SessionLocal() as db:
+                record = db.execute(select(SelfEmployedAccounting).where(
+                    SelfEmployedAccounting.id == accounting_id).with_for_update()).scalar_one_or_none()
+                if record is None:
+                    return
+                if record.act_sha256 != source_hash or record.act_sigex_data_url != source_session_url:
+                    raise SigexError("Сессия относится к предыдущей версии АВР")
+                if not record.act_pending_signature_data:
+                    if record.act_session_status != "signing":
+                        return
+                    # Save the returned CMS before certificate parsing or
+                    # registration so a temporary SIGEX failure cannot lose it.
+                    _stage_pending_signature(db, record, signature_b64)
+                    db.commit()
+            _finalize_pending_signature(accounting_id)
     except Exception as exc:
-        _mark_signature_error(accounting_id, exc)
+        try:
+            _mark_signature_error(accounting_id, exc)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Failed to persist AVR worker error")
     finally:
         with _worker_lock:
             _active_workers.discard(accounting_id)
@@ -908,18 +1041,64 @@ def _finalize_worker(accounting_id: int) -> None:
 
 def _start_worker(accounting_id: int) -> None:
     with _worker_lock:
-        if accounting_id in _active_workers:
+        if accounting_id in _active_workers or len(_active_workers) >= 16:
             return
         _active_workers.add(accounting_id)
-    threading.Thread(target=_process_signature, args=(accounting_id,), daemon=True).start()
+    _egov_executor.submit(_process_signature, accounting_id)
 
 
 def _start_finalize_worker(accounting_id: int) -> None:
     with _worker_lock:
-        if accounting_id in _active_finalizers:
+        if accounting_id in _active_finalizers or len(_active_finalizers) >= 16:
             return
         _active_finalizers.add(accounting_id)
-    threading.Thread(target=_finalize_worker, args=(accounting_id,), daemon=True).start()
+    _finalize_executor.submit(_finalize_worker, accounting_id)
+
+
+def recover_signing_jobs_once():
+    if SessionLocal is None:
+        return
+    from sqlalchemy import or_, and_
+    with SessionLocal() as db:
+        rows = db.execute(select(SelfEmployedAccounting.id, SelfEmployedAccounting.act_pending_signature_sha256,
+            SelfEmployedAccounting.act_session_status, SelfEmployedAccounting.act_status).where(or_(
+            SelfEmployedAccounting.act_pending_signature_sha256.is_not(None),
+            and_(SelfEmployedAccounting.act_session_status == "signing", SelfEmployedAccounting.act_session_expires_at > datetime.utcnow()),
+            and_(SelfEmployedAccounting.act_status == "signed", SelfEmployedAccounting.act_ddc_status.in_(["pending", "building", "error"]))
+        )).order_by(SelfEmployedAccounting.updated_at).limit(100)).all()
+    for row in rows:
+        if row.act_pending_signature_sha256:
+            _start_finalize_worker(row.id)
+        elif row.act_session_status == "signing":
+            _start_worker(row.id)
+        elif row.act_status == "signed":
+            _start_ddc_worker(row.id)
+
+
+async def start_signing_recovery():
+    global _recovery_task
+    if SessionLocal is None or (_recovery_task and not _recovery_task.done()):
+        return
+    async def loop():
+        import logging
+        while True:
+            try:
+                await asyncio.to_thread(recover_signing_jobs_once)
+            except Exception:
+                logging.getLogger(__name__).exception("AVR recovery scan failed")
+            await asyncio.sleep(30)
+    _recovery_task = asyncio.create_task(loop())
+
+
+async def stop_signing_recovery():
+    global _recovery_task
+    if _recovery_task:
+        _recovery_task.cancel()
+        try:
+            await _recovery_task
+        except asyncio.CancelledError:
+            pass
+        _recovery_task = None
 
 
 @public_router.post("/{token}/session", response_model=SelfEmployedActSessionRead)

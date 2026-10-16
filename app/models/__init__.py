@@ -1,4 +1,7 @@
 from app.models.department import Department
+from app.models.auth_attempt import AuthAttempt
+from app.models.background_state import BackgroundState
+from app.models.pending_act_signature import PendingActSignature
 from app.models.user import User
 from app.models.event import Event
 from app.models.event_item import EventItem
@@ -17,3 +20,4 @@ from app.models.self_employed_act_signature import SelfEmployedActSignature
 from app.models.self_employed_contact import SelfEmployedContact
 
 from app.models.self_employed_accounting_request import SelfEmployedAccountingRequest
+from app.services import month_integrity  # noqa: F401 — shared API/bot write guard

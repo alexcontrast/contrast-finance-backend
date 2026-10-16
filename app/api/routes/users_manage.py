@@ -9,7 +9,7 @@ from app.models.department import Department
 from app.models.monthly_closing import MonthlyClosing
 from app.models.user import User
 from app.schemas.users_manage import NativeUserCreate, UserPinUpdate, UserRead, UserRoleUpdate
-from app.services.auth import native_pin_hash, normalize_phone, require_roles
+from app.services.auth import native_pin_hash, normalize_phone, require_roles, require_unique_user_identity
 
 
 router = APIRouter(tags=["users_manage"])
@@ -56,11 +56,11 @@ def ensure_department_exists(db: Session, department_id: int | None) -> None:
 
 
 def find_user_by_name_or_phone(db: Session, name: str, phone: str | None) -> User | None:
-    conditions = [User.name == name]
-    if phone:
-        conditions.append(User.phone == phone)
-
-    return db.execute(select(User).where(or_(*conditions))).scalars().first()
+    from app.services.mutation_locks import lock_business_keys
+    lock_business_keys(db, "user-identity", name.strip().casefold(), normalize_phone(phone))
+    return next((u for u in db.execute(select(User)).scalars()
+                 if u.name.strip().casefold() == name.strip().casefold()
+                 or (phone and normalize_phone(u.phone) == normalize_phone(phone))), None)
 
 
 @router.get("/users", response_model=list[UserRead])
@@ -111,6 +111,7 @@ def create_native_user(
         raise HTTPException(status_code=400, detail="Активный пользователь с таким именем или телефоном уже есть")
 
     if existing is not None and not existing.is_active:
+        require_unique_user_identity(db, name, phone, exclude_id=existing.id)
         user = existing
         user.name = name
         user.phone = phone or user.phone
@@ -127,6 +128,7 @@ def create_native_user(
         db.flush()
 
         user.pin_hash = native_pin_hash(pin, user.id)
+        user.token_version = (user.token_version or 0) + 1
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -174,6 +176,7 @@ def update_user_role(
 
     user.role = role
     user.department_id = payload.department_id
+    user.token_version = (user.token_version or 0) + 1
 
     if payload.is_active is not None:
         user.is_active = payload.is_active
@@ -205,6 +208,7 @@ def update_user_pin(
         raise HTTPException(status_code=400, detail="PIN должен содержать только цифры")
 
     user.pin_hash = native_pin_hash(pin, user.id)
+    user.token_version = (user.token_version or 0) + 1
     # Admin reset must switch legacy users to the native PIN as well.
     # Otherwise verify_pin() keeps checking legacy_pin_hash and the newly saved
     # PIN cannot be used to log in.
@@ -273,6 +277,7 @@ def restore_manager(
     if closing is not None and closing.status == "closed":
         raise HTTPException(status_code=400, detail="Месяц уже закрыт. Восстановить менеджера нельзя")
 
+    require_unique_user_identity(db, user.name, user.phone, exclude_id=user.id)
     user.is_active = True
     user.updated_at = datetime.utcnow()
 

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -9,6 +9,8 @@ from app.db.base import Base
 
 class MonthlyExpense(Base):
     __tablename__ = "monthly_expenses"
+    __table_args__ = (Index("uq_monthly_expenses_manager_bonus", "manager_id", "month", unique=True,
+        postgresql_where=text("source_type = 'manager_bonus'"), sqlite_where=text("source_type = 'manager_bonus'")),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     month: Mapped[date] = mapped_column(Date, nullable=False, index=True)

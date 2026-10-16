@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.department import Department
 from app.schemas.department import DepartmentCreate, DepartmentRead
+from app.services.auth import require_roles
 
 
 router = APIRouter(prefix="/departments", tags=["departments"])
@@ -18,7 +19,7 @@ def list_departments(db: Session = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.post("", response_model=DepartmentRead)
+@router.post("", response_model=DepartmentRead, dependencies=[Depends(require_roles("admin"))])
 def create_department(payload: DepartmentCreate, db: Session = Depends(get_db)):
     department = Department(
         name=payload.name,
@@ -32,7 +33,7 @@ def create_department(payload: DepartmentCreate, db: Session = Depends(get_db)):
     return department
 
 
-@router.post("/seed", response_model=list[DepartmentRead])
+@router.post("/seed", response_model=list[DepartmentRead], dependencies=[Depends(require_roles("admin"))])
 def seed_departments(db: Session = Depends(get_db)):
     """
     Creates the default Contrast departments:

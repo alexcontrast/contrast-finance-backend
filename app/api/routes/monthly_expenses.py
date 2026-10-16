@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.monthly_expense import MonthlyExpense
 from app.models.monthly_plan import MonthlyPlan
+from app.models.user import User
+from app.services.auth import require_roles
 from app.schemas.monthly_expense import (
     MonthlyExpenseCreate,
     MonthlyExpenseRead,
@@ -16,7 +18,7 @@ from app.schemas.monthly_expense import (
 )
 
 
-router = APIRouter(tags=["monthly_expenses"])
+router = APIRouter(tags=["monthly_expenses"], dependencies=[Depends(require_roles("admin"))])
 
 
 def money(value) -> Decimal:
@@ -190,7 +192,7 @@ def expense_to_read(db: Session, expense: MonthlyExpense) -> MonthlyExpenseRead:
 
 
 @router.post("/monthly-expenses", response_model=MonthlyExpenseRead)
-def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(get_db)):
+def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin"))):
     month = normalize_month(payload.month)
     sanzhar_amount, raufal_amount = calculate_allocation(payload, db, month)
 
@@ -202,7 +204,7 @@ def create_monthly_expense(payload: MonthlyExpenseCreate, db: Session = Depends(
         sanzhar_amount=sanzhar_amount,
         raufal_amount=raufal_amount,
         comment=payload.comment,
-        created_by_user_id=payload.created_by_user_id,
+        created_by_user_id=current_user.id,
         source_type="manual",
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
@@ -287,7 +289,7 @@ def get_monthly_expenses_summary(month: str, db: Session = Depends(get_db)):
 
 @router.patch("/monthly-expenses/{expense_id}", response_model=MonthlyExpenseRead)
 def update_monthly_expense(expense_id: int, payload: MonthlyExpenseUpdate, db: Session = Depends(get_db)):
-    expense = db.get(MonthlyExpense, expense_id)
+    expense = db.execute(select(MonthlyExpense).where(MonthlyExpense.id == expense_id).with_for_update()).scalar_one_or_none()
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
     if expense.source_type == "manager_bonus":
@@ -308,7 +310,7 @@ def update_monthly_expense(expense_id: int, payload: MonthlyExpenseUpdate, db: S
 
 @router.delete("/monthly-expenses/{expense_id}")
 def delete_monthly_expense(expense_id: int, db: Session = Depends(get_db)):
-    expense = db.get(MonthlyExpense, expense_id)
+    expense = db.execute(select(MonthlyExpense).where(MonthlyExpense.id == expense_id).with_for_update()).scalar_one_or_none()
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
     if expense.source_type == "manager_bonus":

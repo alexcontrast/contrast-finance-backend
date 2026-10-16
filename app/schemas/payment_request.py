@@ -2,17 +2,19 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 class PaymentRequestCreate(BaseModel):
-    amount_requested: Decimal = Field(description="Сумма заявки — главное поле карточки")
+    amount_requested: Decimal = Field(gt=0, le=Decimal("100000000000"), description="Сумма заявки — главное поле карточки")
+    client_request_token: str | None = Field(default=None, max_length=96, pattern=r"^[A-Za-z0-9._:-]+$")
     comment: str | None = None
     # Separate service field for website: surname is required for self-employed,
     # while comment remains an optional manager comment for Telegram/card display.
     self_employed_surname: str | None = None
 
     # Optional override. If empty, system uses payment_method from event item.
-    payment_method: str | None = Field(default=None, description="invoice / card / cash / self_employed")
+    payment_method: Literal["invoice", "card", "cash", "self_employed"] | None = None
 
     # Required for card payments.
     card_number: str | None = None
@@ -26,12 +28,12 @@ class PaymentItemCreate(BaseModel):
 
 class PaymentRequestStatusUpdate(BaseModel):
     # new / to_pay / paid / rejected / tax_check_needed
-    status: str
+    status: Literal["new", "to_pay", "paid", "rejected", "tax_check_needed", "cash_received"]
 
 
 class PaymentRequestMoneyStatusUpdate(BaseModel):
     # waiting_money / cash_received / cancelled
-    money_status: str
+    money_status: Literal["waiting_money", "cash_received", "cancelled"]
 
 
 class PaymentRequestRead(BaseModel):

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal
+from app.services.job_leases import job_lease
 from app.services.google_sheets_archive_export import build_year_export_payloads, post_payload_sequence
 
 logger = logging.getLogger("contrast.performance")
@@ -33,12 +34,17 @@ def run_daily_google_sheets_export_once() -> dict:
         raise RuntimeError("DATABASE_URL is not configured")
 
     current_year = datetime.now(ARCHIVE_TZ).year
-    db = SessionLocal()
-    try:
-        payloads = build_year_export_payloads(db, current_year, None)
-        return post_payload_sequence(payloads)
-    finally:
-        db.close()
+    day_key = f"daily-export:{datetime.now(ARCHIVE_TZ):%Y-%m-%d}"
+    succeeded = False
+    with job_lease(day_key, seconds=180, delay=lambda: 86400 if succeeded else 60,
+                   factory=SessionLocal) as owned:
+        if not owned:
+            return {"ok": True, "skipped": "another worker already owns this daily export"}
+        with SessionLocal() as db:
+            payloads = build_year_export_payloads(db, current_year, None)
+        result = post_payload_sequence(payloads)
+        succeeded = bool(result.get("ok"))
+        return result
 
 
 async def _daily_google_sheets_export_loop() -> None:
@@ -49,7 +55,12 @@ async def _daily_google_sheets_export_loop() -> None:
         settings.GOOGLE_SHEETS_DAILY_EXPORT_MINUTE,
     )
     while True:
-        await asyncio.sleep(seconds_until_next_daily_run())
+        now = datetime.now(ARCHIVE_TZ)
+        due = now.replace(hour=max(0,min(23,settings.GOOGLE_SHEETS_DAILY_EXPORT_HOUR)),
+            minute=max(0,min(59,settings.GOOGLE_SHEETS_DAILY_EXPORT_MINUTE)),second=0,microsecond=0)
+        if now < due:
+            await asyncio.sleep(min(60, max(1,(due-now).total_seconds())))
+            continue
         try:
             result = await asyncio.to_thread(run_daily_google_sheets_export_once)
             logger.info("google-sheets-daily-export completed ok=%s sheets=%s", result.get("ok"), result.get("updated_sheets"))
@@ -57,6 +68,7 @@ async def _daily_google_sheets_export_loop() -> None:
             raise
         except Exception as exc:
             logger.exception("google-sheets-daily-export failed: %s", exc)
+        await asyncio.sleep(60)
 
 
 def start_daily_google_sheets_export_scheduler() -> None:

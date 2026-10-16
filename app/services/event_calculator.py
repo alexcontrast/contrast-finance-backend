@@ -75,9 +75,9 @@ def client_vat_amount(event: Event, client_base_amount: Decimal) -> Decimal:
 
 def tax_rate_percent(event: Event) -> Decimal:
     if event.client_calc_type in {"ip_contrast_event", "our_no_vat"}:
-        return Decimal("12.00")
+        return get_settings().CONTRAST_INTERNAL_TAX_RATE * 100
     if event.client_calc_type == "simplified":
-        return Decimal("5.00")
+        return get_settings().SIMPLIFIED_TAX_RATE * 100
     return Decimal("0.00")
 
 
@@ -151,7 +151,7 @@ def calculate_event_summary_values(event: Event, items: list[EventItem]) -> dict
 
     coordinator_external_total = sum((money(item.external_amount) for item in coordinator_items), Decimal("0.00"))
     coordinator_fact_amount = q0(coordinator_external_total * Decimal("0.50"))
-    coordinator_company_share = q0(coordinator_external_total * Decimal("0.50"))
+    coordinator_company_share = coordinator_external_total - coordinator_fact_amount
 
     client_base_amount = q0(items_external_total + agency_commission_amount)
     simplified_markup_amount = calculate_simplified_bank_tax(event, client_base_amount)

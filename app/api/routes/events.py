@@ -14,7 +14,7 @@ from app.models.telegram_message import TelegramMessage
 from app.models.user import User
 from app.schemas.event import EventCreate, EventRead
 from app.services.auth import get_current_user
-from app.services.authorization import get_event_or_404, require_event_edit, require_event_view
+from app.services.authorization import get_event_or_404, get_event_for_update, require_event_edit, require_event_view
 from app.models.event_item import EventItem
 from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.event_collaboration import (
@@ -304,6 +304,8 @@ def create_event(
     if current_user.role == "manager":
         manager_id = current_user.id
         department_id = current_user.department_id
+        if payload.status not in {"draft", "review"}:
+            raise HTTPException(status_code=403, detail="Менеджер может создать черновик или отправить его на проверку")
 
     event = Event(
         client_name=payload.client_name,
@@ -314,9 +316,9 @@ def create_event(
         status="accepted" if payload.status == "cash_received" else payload.status,
         money_status="cash_received" if payload.status == "cash_received" else "waiting_money",
         client_calc_type=payload.client_calc_type,
-        manager_percent=normalize_manager_percent(payload.manager_percent),
+        manager_percent=normalize_manager_percent(payload.manager_percent if current_user.role == "admin" else Decimal("21")),
         agency_commission_amount=payload.agency_commission_amount,
-        customer_paid_amount=getattr(payload, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00"),
+        customer_paid_amount=(getattr(payload, "customer_paid_amount", Decimal("0.00")) or Decimal("0.00")) if current_user.role == "admin" else Decimal("0"),
         agency_commission_spread_enabled=payload.agency_commission_spread_enabled,
         simplified_bank_tax_percent=payload.simplified_bank_tax_percent,
     )
@@ -366,6 +368,8 @@ def update_event(
         )
 
     require_event_revision(event, payload.expected_updated_at)
+    if current_user.role == "manager" and payload.status not in {"draft", "review", "revision"}:
+        raise HTTPException(status_code=403, detail="Принять мероприятие может только администратор")
 
     event.client_name = payload.client_name
     event.title = payload.title
@@ -412,7 +416,7 @@ def update_event_manager_percent(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     if event.status == "cancelled":
         raise HTTPException(status_code=400, detail="Нельзя менять процент менеджера у отменённого мероприятия")
@@ -433,7 +437,7 @@ def accept_event(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     if event.status != "review":
         raise HTTPException(status_code=400, detail="Принять можно только мероприятие на проверке")
@@ -454,7 +458,7 @@ def send_event_to_revision(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     if event.status not in {"review", "accepted", "cash_received"}:
         raise HTTPException(status_code=400, detail="На доработку можно отправить только мероприятие на проверке, принятое или архивное")
@@ -489,7 +493,7 @@ def add_event_customer_payment(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     amount = q(payload.amount)
     if amount <= 0:
@@ -519,7 +523,7 @@ def set_event_customer_payment(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     amount = q(payload.amount)
     if amount < 0:
@@ -548,7 +552,7 @@ def mark_event_cash_received(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     payment_requests = db.execute(
         select(PaymentRequest).where(
@@ -585,7 +589,7 @@ def delete_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
     require_event_edit(current_user, event)
 
     if event.status not in {"draft", "revision"}:
@@ -626,7 +630,7 @@ def admin_force_delete_event(
     current_user: User = Depends(get_current_user),
 ):
     require_admin_event_action(current_user)
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
 
     now = datetime.utcnow()
     requests = db.execute(
@@ -665,7 +669,7 @@ def transfer_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = get_event_or_404(db, event_id)
+    event = get_event_for_update(db, event_id)
     require_event_edit(current_user, event)
 
     target_manager = get_active_manager_or_404(db, payload.manager_id)
@@ -688,7 +692,9 @@ def add_event_coauthor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = get_event_or_404(db, event_id)
+    event = db.execute(select(Event).where(Event.id == event_id).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
     require_event_edit(current_user, event)
 
     coauthor = get_active_manager_or_404(db, payload.manager_id)
@@ -717,12 +723,13 @@ def remove_event_coauthor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = get_event_or_404(db, event_id)
+    event = db.execute(select(Event).where(Event.id == event_id).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
     require_event_edit(current_user, event)
 
-    if current_user.role == "manager":
-        event.manager_id = current_user.id
-        event.department_id = current_user.department_id
+    if current_user.role != "admin" and event.manager_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Убрать соавторов может владелец мероприятия или администратор")
 
     clear_event_shares(db, event.id)
     event.updated_at = datetime.utcnow()

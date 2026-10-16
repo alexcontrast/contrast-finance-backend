@@ -22,7 +22,8 @@ class AccountingSignaturePollV0117Tests(unittest.TestCase):
         self.assertIn('String(row.customer_signature?.status || "") !== "signed"', block)
         self.assertIn('String(row.contractor_signature?.status || "") !== "signed"', block)
         self.assertNotIn('["sent", "signing"].includes(String(row.customer_signature', block)
-        self.assertIn('await refreshAccountingRow(row.accounting_id)', block)
+        self.assertIn('/acts/status-batch?ids=', block)
+        self.assertIn('accountingReplaceRow(updated', block)
 
     def test_signed_badge_still_uses_row_scoped_refresh(self):
         self.assertIn('const statusClass = status === "signed"', self.source)

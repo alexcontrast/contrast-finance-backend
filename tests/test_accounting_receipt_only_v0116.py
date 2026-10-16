@@ -19,11 +19,7 @@ class AccountingReceiptOnlyV0116Tests(unittest.TestCase):
         self.assertIn('match_status = "unmatched"', source)
 
     def test_single_receipt_endpoint_exists(self):
-        paths = {
-            route.path
-            for route in __import__("app.main", fromlist=["app"]).app.routes
-            if getattr(route, "path", None)
-        }
+        paths = set(__import__("app.main", fromlist=["app"]).app.openapi()["paths"])
         self.assertIn("/accounting/self-employed/receipts/{accounting_id}", paths)
 
     def test_frontend_actions_are_in_place(self):

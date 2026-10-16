@@ -1,24 +1,24 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuthLoginRequest(BaseModel):
     # Manager / department head: name + PIN.
     # Admin: auth_mode=admin and PIN only.
-    name: str | None = None
-    phone: str | None = None
-    pin: str
+    name: str | None = Field(default=None, max_length=150)
+    phone: str | None = Field(default=None, max_length=64)
+    pin: str = Field(min_length=4, max_length=32)
     auth_mode: str | None = None
 
 
 class AuthChangePinRequest(BaseModel):
-    old_pin: str
-    new_pin: str
+    old_pin: str = Field(max_length=32)
+    new_pin: str = Field(min_length=4, max_length=32)
 
 
 class AuthProfileUpdateRequest(BaseModel):
-    name: str
-    phone: str | None = None
-    email: str | None = None
+    name: str = Field(max_length=150)
+    phone: str | None = Field(default=None, max_length=64)
+    email: str | None = Field(default=None, max_length=255)
     department_id: int | None = None
 
 

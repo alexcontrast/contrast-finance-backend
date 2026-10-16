@@ -129,6 +129,9 @@ def require_payment_request_create(user: User, event: Event) -> None:
     """
     require_event_edit(user, event)
 
+    if event.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Нельзя создавать оплаты для отменённого мероприятия")
+
     if (
         event.status == "accepted"
         and getattr(event, "money_status", "waiting_money") == "cash_received"
@@ -146,9 +149,17 @@ def get_event_or_404(db: Session, event_id: int) -> Event:
     return event
 
 
+def get_event_for_update(db: Session, event_id: int) -> Event:
+    event = db.execute(select(Event).where(Event.id == int(event_id)).with_for_update()
+        .execution_options(populate_existing=True)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event
+
+
 def get_item_or_404(db: Session, item_id: int) -> EventItem:
     item = db.get(EventItem, item_id)
-    if item is None:
+    if item is None or item.is_deleted:
         raise HTTPException(status_code=404, detail="Event item not found")
     return item
 

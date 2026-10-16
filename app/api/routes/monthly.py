@@ -155,7 +155,7 @@ def list_monthly_plans(
     return db.execute(query.order_by(MonthlyPlan.month.desc())).scalars().all()
 
 
-@router.get("/monthly-dashboard", response_model=CompanyDashboardRead)
+@router.get("/monthly-dashboard", response_model=CompanyDashboardRead, dependencies=[Depends(require_roles("admin"))])
 def get_monthly_dashboard(month: str, include_drafts: bool = True, db: Session = Depends(get_db)):
     """
     month format: YYYY-MM-01 or YYYY-MM-DD.

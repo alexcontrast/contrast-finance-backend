@@ -1,2 +1,2 @@
 [phases.setup]
-aptPkgs = ["fonts-dejavu-core", "tesseract-ocr", "tesseract-ocr-eng"]
+aptPkgs = ["fonts-dejavu-core", "tesseract-ocr", "tesseract-ocr-eng", "tesseract-ocr-rus", "tesseract-ocr-kaz", "poppler-utils"]

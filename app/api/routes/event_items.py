@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.db.session import get_db
+from app.core.config import get_settings
 from app.models.event import Event
 from app.models.event_item import EventItem
 from app.models.payment_request import PaymentRequest
@@ -158,18 +159,7 @@ def protected_invoice_tax_context(
     A complete, freshly checked payload is accepted when there is no active
     invoice request. With an active request only an admin override is accepted.
     """
-    payload_is_complete = (
-        payload.payment_method == "invoice"
-        and valid_invoice_tax_context(
-            payload.iin_bin,
-            payload.iin_bin_locked,
-            payload.tax_check_status,
-        )
-    )
-    if payload_is_complete and (
-        invoice_request is None
-        or allow_complete_override
-    ):
+    if payload.reset_tax_context and invoice_request is None:
         return None
 
     current_is_complete = (
@@ -182,7 +172,7 @@ def protected_invoice_tax_context(
     )
     if current_is_complete and (
         invoice_request is not None
-        or payload.payment_method == "invoice"
+        or (payload.payment_method == "invoice" and normalized_iin_bin(payload.iin_bin) == normalized_iin_bin(item.iin_bin))
     ):
         return {
             "iin_bin": item.iin_bin,
@@ -205,6 +195,34 @@ def protected_invoice_tax_context(
         }
 
     return None
+
+
+def authoritative_item_payload(payload: EventItemCreate, item: EventItem | None = None,
+                               invoice_request: PaymentRequest | None = None) -> EventItemCreate:
+    """Browser inputs are not evidence of a tax check or of a payment."""
+    values = {"paid_amount": Decimal("0"), "iin_bin_locked": False,
+              "tax_check_status": None, "vat_amount": Decimal("0"), "deduction_amount": Decimal("0")}
+    if payload.item_type == COORDINATOR_ITEM_TYPE:
+        values.update(payment_method=None, iin_bin=None,
+                      amount_fact=(calculate_external_amount(payload) / 2).quantize(Decimal("1")))
+    elif payload.payment_method == "invoice":
+        if invoice_request and (normalized_iin_bin(payload.iin_bin) != normalized_iin_bin(invoice_request.iin_bin_snapshot)):
+            raise HTTPException(status_code=409, detail="БИН закреплён активной заявкой. Сначала отмените заявку")
+        context = protected_invoice_tax_context(item, payload, invoice_request) if item else None
+        if context:
+            # Recalculate from this payload's actual amount, including explicit zero.
+            from app.api.routes.tax import calculate_tax_values
+            base = payload.amount_fact if payload.amount_fact is not None else calculate_external_amount(payload)
+            vat, deduction = calculate_tax_values(base, context["tax_check_status"])
+            values.update(iin_bin=context["iin_bin"], iin_bin_locked=True, tax_check_status=context["tax_check_status"], vat_amount=vat, deduction_amount=deduction)
+    elif payload.payment_method == "self_employed":
+        base = max(money(payload.amount_fact), Decimal("0"))
+        values.update(iin_bin=None, tax_check_status="self_employed", deduction_amount=(base * get_settings().CONTRACTOR_DEDUCTION_RATE).quantize(Decimal("0.01")))
+    else:
+        values["iin_bin"] = None
+    if invoice_request and payload.payment_method != "invoice":
+        raise HTTPException(status_code=409, detail="Способ оплаты закреплён активной заявкой")
+    return payload.model_copy(update=values)
 
 
 def lock_event_for_estimate_write(db: Session, event_id: int) -> Event:
@@ -306,6 +324,12 @@ def create_event_item(
                     detail="Эта временная позиция уже была обработана",
                 )
             idempotent_reused = True
+            # A repeated POST acknowledges the original creation. It must not
+            # reapply an old body over later edits or a completed KGD check.
+            result = EventItemRead.model_validate(item).model_copy(update={"creation_replayed": True})
+            if not db.info.get("defer_event_item_create_commit"):
+                db.commit()
+            return result
 
     if item is None and payload.item_type == COORDINATOR_ITEM_TYPE:
         # Coordinator remains a singleton even for old cached clients that do
@@ -314,6 +338,7 @@ def create_event_item(
         coordinator_reused = item is not None
 
     if item is None:
+        payload = authoritative_item_payload(payload)
         item = EventItem(
             legacy_item_key=create_key,
             event_id=event_id,
@@ -340,12 +365,8 @@ def create_event_item(
         )
     else:
         invoice_request = latest_active_invoice_request(db, item.id)
-        invoice_context = protected_invoice_tax_context(
-            item,
-            payload,
-            invoice_request,
-            allow_complete_override=current_user.role == "admin",
-        )
+        payload = authoritative_item_payload(payload, item, invoice_request)
+        invoice_context = None
         item.item_type = payload.item_type
         item.external_name = payload.external_name
         item.external_price = payload.external_price
@@ -532,13 +553,11 @@ def update_event_item(
         .execution_options(populate_existing=True)
     ).scalar_one()
     require_item_revision(item, payload.expected_updated_at)
+    if item.is_deleted:
+        raise HTTPException(status_code=404, detail="Event item not found")
     invoice_request = latest_active_invoice_request(db, item.id)
-    invoice_context = protected_invoice_tax_context(
-        item,
-        payload,
-        invoice_request,
-        allow_complete_override=current_user.role == "admin",
-    )
+    payload = authoritative_item_payload(payload, item, invoice_request)
+    invoice_context = None  # Tax amounts above were derived from the authoritative context.
 
     if payload.item_type == COORDINATOR_ITEM_TYPE:
         conflicting_coordinator = active_coordinator_item(db, item.event_id, exclude_item_id=item.id)

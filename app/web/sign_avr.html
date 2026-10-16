@@ -34,9 +34,7 @@
     .status.ok { color: #175d25; background: #e0f8d8; }
     .status.bad { color: #8a2b22; background: #fff0ec; }
     @media (max-width: 500px) { .card { padding: 18px; border-radius: 18px; } .summary { grid-template-columns: 1fr; } }
-    @media (max-width: 820px), (hover: none) and (pointer: coarse) {
-      #startBtn, #ncalayerBtn, #desktopNote { display: none !important; }
-    }
+    .mobile-device #startBtn, .mobile-device #ncalayerBtn, .mobile-device #desktopNote { display: none !important; }
   </style>
 </head>
 <body>
@@ -72,9 +70,8 @@
       const ua = navigator.userAgent || "";
       const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
         || (navigator.maxTouchPoints > 1 && /MacIntel/i.test(navigator.platform || ""))
-        || matchMedia("(max-width: 820px) and (pointer: coarse)").matches
-        || window.innerWidth <= 820
-        || Math.min(Number(screen.width || 9999), Number(screen.height || 9999)) <= 820;
+        || (navigator.maxTouchPoints > 1 && matchMedia("(pointer: coarse)").matches);
+      document.documentElement.classList.toggle("mobile-device", isMobile);
       let timer = null;
       let currentInfo = null;
       let mobileLaunchUrl = "";
@@ -129,7 +126,7 @@
         $("lead").textContent = data.status === "signed"
           ? (data.signed_file_ready
             ? "Документ подписан обеими сторонами. PDF с ЭЦП и QR готов."
-            : "Обе подписи сохранены. Формируем итоговый PDF с ЭЦП и QR.")
+            : "Обе подписи сохранены. Можно скачать комплект: исходный PDF и две CMS-подписи.")
           : "Проверьте АВР и подпишите его. Сторона определится автоматически по ИИН вашей ЭЦП.";
         $("actNumber").textContent = `${data.act_number} от ${new Date(`${data.act_date}T00:00:00`).toLocaleDateString("ru-RU")}`;
         $("amount").textContent = money(data.amount);
@@ -137,11 +134,11 @@
         $("contractorLabel").textContent = data.contractor_name || "Самозанятый";
         $("contractorStatus").textContent = partyStatus(data.contractor_status);
         $("summary").hidden = false;
-        $("previewBtn").hidden = data.status === "signed" && !data.signed_file_ready;
+        $("previewBtn").hidden = false;
         $("previewBtn").href = `/sign/avr/${encodeURIComponent(token)}/file${data.status === "signed" && data.signed_file_ready ? "?download=1" : ""}`;
         $("previewBtn").textContent = data.status === "signed" && data.signed_file_ready
           ? "Скачать подписанный АВР"
-          : "Открыть АВР";
+          : (data.status === "signed" ? "Скачать АВР и две ЭЦП (ZIP)" : "Открыть АВР");
         if (data.status === "signed" && data.signed_file_ready) {
           $("previewBtn").setAttribute("download", `${data.act_number || "АВР"}_SIGNED_SIGEX.pdf`);
         } else {
@@ -183,7 +180,7 @@
           $("ncalayerBtn").hidden = true;
           $("desktopNote").hidden = true;
           $("signBox").classList.remove("visible");
-          $("previewBtn").hidden = true;
+          $("previewBtn").hidden = false;
           refreshInfo().catch(() => {});
           setStatus(
             data.message || "Обе подписи сохранены. Формируем подписанный PDF с ЭЦП и QR…",

@@ -1,0 +1,37 @@
+{
+  "version": "0.6.6",
+  "date": "2026-10-15",
+  "base_version": "0.6.5",
+  "python_tests": 92,
+  "python_subtests": 2291,
+  "editor_scenarios": 20,
+  "editor_performance_row_counts": [
+    20,
+    100,
+    300
+  ],
+  "finance_parity_cases": 120,
+  "finance_parity_fields_per_case": 19,
+  "dom": "passed: jsdom, not browser rendering",
+  "date_parser_cases": 5,
+  "dependency_packages_audited": 42,
+  "known_advisories": 0,
+  "migration_head": "0023_durable_signing",
+  "new_migrations": 2,
+  "migration_checks": [
+    "SQLite populated-schema upgrade/downgrade",
+    "PostgreSQL offline SQL for 0021:head"
+  ],
+  "http_smoke": {
+    "server": "uvicorn",
+    "version": "0.6.6",
+    "status": "passed",
+    "unique_openapi_paths": 110
+  },
+  "not_run": [
+    "real PostgreSQL concurrency/migration CI",
+    "real Chromium/Safari rendering and CSP",
+    "real eGov/NCALayer/KGD/Telegram/Google interactions"
+  ],
+  "production_modified": false
+}

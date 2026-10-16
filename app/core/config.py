@@ -5,14 +5,14 @@ from functools import lru_cache
 
 class Settings:
     SERVICE_NAME: str = "contrast-finance-api"
-    VERSION: str = "0.6.5"
+    VERSION: str = "0.6.6"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev")
 
     DATABASE_URL: str | None = os.getenv("DATABASE_URL")
 
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-change-me")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "43200"))
+    JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "720"))
     KGD_MODE: str = os.getenv("KGD_MODE", "live")
     KGD_API_KEY: str | None = os.getenv("KGD_API_KEY")
     KGD_BASE_URL: str = os.getenv("KGD_BASE_URL", "https://portal.kgd.gov.kz")
@@ -39,4 +39,8 @@ class Settings:
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    production = settings.ENVIRONMENT.lower() in {"prod", "production"} or bool(os.getenv("RAILWAY_ENVIRONMENT_ID"))
+    if production and (settings.JWT_SECRET_KEY == "dev-change-me" or len(settings.JWT_SECRET_KEY) < 32):
+        raise RuntimeError("Set JWT_SECRET_KEY to a private random value of at least 32 characters before production startup")
+    return settings

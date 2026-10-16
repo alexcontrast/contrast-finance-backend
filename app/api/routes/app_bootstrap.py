@@ -15,6 +15,7 @@ from app.schemas.app_bootstrap import (
 )
 from app.schemas.auth import AuthPermissionsRead, AuthUserRead
 from app.services.auth import get_current_user
+from app.api.routes.auth import permissions_for_user as auth_permissions_for_user
 
 
 router = APIRouter(tags=["app"])
@@ -41,14 +42,7 @@ def user_to_read(user: User) -> AuthUserRead:
 
 
 def permissions_for_user(user: User) -> AuthPermissionsRead:
-    return AuthPermissionsRead(
-        role=user.role,
-        department_id=user.department_id,
-        can_view_admin_dashboard=user.role == "admin",
-        can_manage_users=user.role == "admin",
-        can_view_department_dashboard=user.role in {"admin", "department_head"},
-        can_edit=user.role in {"admin", "manager"},
-    )
+    return auth_permissions_for_user(user)
 
 
 def default_screen_for_role(role: str) -> str:

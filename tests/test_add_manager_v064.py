@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -50,21 +51,17 @@ class AddManagerV064Tests(unittest.TestCase):
         finally:
             engine.dispose()
 
-    def test_create_endpoint_rejects_non_numeric_or_long_pin(self):
-        for pin in ("12ab", "1234567890123"):
-            with self.subTest(pin=pin), self.assertRaises(HTTPException) as raised:
-                create_native_user(
-                    NativeUserCreate(
-                        name="Новый менеджер",
-                        phone="+7 701 123 45 67",
-                        department_id=None,
-                        pin=pin,
-                    ),
-                    _NoopDb(),
-                    object(),
-                )
-            self.assertEqual(raised.exception.status_code, 400)
-            self.assertIn("от 4 до 12 цифр", raised.exception.detail)
+    def test_create_endpoint_rejects_non_numeric_pin(self):
+        with self.assertRaises(HTTPException) as raised:
+            create_native_user(NativeUserCreate(name="Новый менеджер",phone="+7 701 123 45 67",
+                department_id=None,pin="12ab"),_NoopDb(),object())
+        self.assertEqual(raised.exception.status_code,400)
+        self.assertIn("от 4 до 12 цифр",raised.exception.detail)
+
+    def test_long_pin_is_rejected_before_reaching_database(self):
+        with self.assertRaises(ValidationError) as raised:
+            NativeUserCreate(name="Новый менеджер",pin="1234567890123")
+        self.assertEqual(raised.exception.errors()[0]["loc"],("pin",))
 
     def test_admin_ui_has_single_add_manager_action_and_fixed_role(self):
         root = Path(__file__).parents[1]

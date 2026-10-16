@@ -1,5 +1,8 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from app.api.routes.act_signing import start_signing_recovery, stop_signing_recovery
 from fastapi.middleware.gzip import GZipMiddleware
+from app.services.web_security import RequestBoundsMiddleware
 from app.api.routes.departments import router as departments_router
 from app.api.routes.events import router as events_router
 from app.api.routes.event_summary import router as event_summary_router
@@ -34,21 +37,26 @@ from app.services.google_sheets_daily_export import (
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(app):
+    start_daily_google_sheets_export_scheduler()
+    await start_signing_recovery()
+    try:
+        yield
+    finally:
+        await stop_signing_recovery()
+        await stop_daily_google_sheets_export_scheduler()
+
 app = FastAPI(
     title="Contrast Finance API",
     version=settings.VERSION,
+    lifespan=lifespan,
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
+app.add_middleware(RequestBoundsMiddleware)
 
 
-@app.on_event("startup")
-async def start_background_jobs():
-    start_daily_google_sheets_export_scheduler()
-
-
-@app.on_event("shutdown")
-async def stop_background_jobs():
-    await stop_daily_google_sheets_export_scheduler()
 app.include_router(health_router)
 app.include_router(google_sheets_export_router)
 app.include_router(manager_bonuses_router)

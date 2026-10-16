@@ -1,4 +1,6 @@
 from datetime import datetime
+import hashlib
+import json
 import time
 from decimal import Decimal
 
@@ -24,6 +26,7 @@ from app.schemas.payment_request import (
     PaymentRequestRead,
     PaymentRequestStatusUpdate,
 )
+from app.services.payment_method_rules import active_payment_methods_for_item, validate_payment_method_lock
 from app.services.auth import get_current_user
 from app.core.config import get_settings
 from app.services.event_calculator import calculate_event_summary_values, q
@@ -330,51 +333,6 @@ def ensure_invoice_item_context_from_legacy(db: Session, item: EventItem) -> Eve
 
     return item
 
-
-def active_payment_methods_for_item(db: Session, item_id: int) -> list[str]:
-    return [
-        str(method)
-        for method in db.execute(
-            select(PaymentRequest.payment_method)
-            .where(
-                PaymentRequest.event_item_id == int(item_id),
-                PaymentRequest.status.notin_(["cancelled", "rejected"]),
-                PaymentRequest.money_status != "cancelled",
-            )
-            .order_by(PaymentRequest.id.desc())
-        ).scalars().all()
-        if method
-    ]
-
-
-def validate_payment_method_lock(db: Session, item: EventItem, payment_method: str) -> None:
-    if item.item_type in {"coordinator", "manager_salary"}:
-        if payment_method not in {"cash", "card", "self_employed"}:
-            raise HTTPException(
-                status_code=400,
-                detail="Для Координатора и ЗП менеджера доступны Нал, На карту и Самозанятый",
-            )
-        return
-
-    active_methods = active_payment_methods_for_item(db, item.id)
-    if active_methods:
-        non_simple = next((method for method in active_methods if method not in {"cash", "card"}), None)
-        if non_simple and payment_method != non_simple:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Способ оплаты уже закреплён за этой позицией: {payment_method_label(non_simple)}",
-            )
-        if non_simple is None and payment_method not in {"cash", "card"}:
-            raise HTTPException(
-                status_code=409,
-                detail="По позиции уже есть заявки Нал/На карту. Можно выбирать только между этими двумя способами",
-            )
-
-    if item.iin_bin and item.iin_bin_locked and payment_method != "invoice":
-        raise HTTPException(
-            status_code=409,
-            detail="Способ оплаты уже закреплён за этой позицией: По счету",
-        )
 
 
 def apply_payment_context_to_item(
@@ -781,6 +739,29 @@ def create_payment_item(
     return result
 
 
+def payment_operation_key(user: User, payload: PaymentRequestCreate) -> str | None:
+    return f"web:{user.id}:{payload.client_request_token}" if payload.client_request_token else None
+
+
+def payment_operation_hash(payload: PaymentRequestCreate, target: str) -> str:
+    body = payload.model_dump(mode="json", exclude={"client_request_token"})
+    body["amount_requested"] = str(payload.amount_requested.quantize(Decimal("0.01")))
+    body["target"] = target
+    return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+
+
+def existing_payment_operation(db: Session, user: User, payload: PaymentRequestCreate, target: str) -> PaymentRequest | None:
+    key = payment_operation_key(user, payload)
+    if not key:
+        return None
+    from app.services.mutation_locks import lock_business_keys
+    lock_business_keys(db, "payment-operation", key)
+    existing = db.execute(select(PaymentRequest).where(PaymentRequest.operation_key == key)).scalar_one_or_none()
+    if existing and existing.operation_hash != payment_operation_hash(payload, target):
+        raise HTTPException(status_code=409, detail="Эта операция уже отправлена с другими данными. Проверьте список оплат")
+    return existing
+
+
 @router.post("/event-items/{item_id}/payment-requests", response_model=PaymentRequestRead)
 def create_payment_request(
     item_id: int,
@@ -809,7 +790,7 @@ def create_payment_request(
         .with_for_update()
         .execution_options(populate_existing=True)
     ).scalar_one_or_none()
-    if item is None:
+    if item is None or item.is_deleted:
         raise HTTPException(status_code=404, detail="Event item not found")
     item_elapsed = time.perf_counter() - item_started_at
 
@@ -818,6 +799,9 @@ def create_payment_request(
     # whether the estimate is still editable.
     event = get_event_or_404(db, item.event_id)
     require_payment_request_create(current_user, event)
+    reused = existing_payment_operation(db, current_user, payload, f"item:{item_id}")
+    if reused:
+        return enrich_payment_request_for_event_fast(reused, event, db, current_user)
     auth_elapsed = time.perf_counter() - auth_started_at
 
     build_started_at = time.perf_counter()
@@ -849,6 +833,8 @@ def create_payment_request(
         contractor_name_snapshot = (getattr(payload, "self_employed_surname", None) or payload.comment or "").strip() or None
 
     request = PaymentRequest(
+        operation_key=payment_operation_key(current_user, payload),
+        operation_hash=payment_operation_hash(payload, f"item:{item_id}"),
         event_id=event.id,
         event_item_id=item.id,
         created_by_user_id=current_user.id,
@@ -916,7 +902,9 @@ def create_manager_salary_payment_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    event = get_event_or_404(db, event_id)
+    event = db.execute(select(Event).where(Event.id == event_id).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
 
     if current_user.role == "department_head":
         raise HTTPException(status_code=403, detail="Department head is read-only")
@@ -928,6 +916,9 @@ def create_manager_salary_payment_request(
         raise HTTPException(status_code=403, detail="Only admin or manager can create manager salary request")
 
     require_payment_request_create(current_user, event)
+    reused = existing_payment_operation(db, current_user, payload, f"salary:{event_id}")
+    if reused:
+        return enrich_payment_request_for_event_fast(reused, event, db, current_user)
 
     payment_method = normalize_payment_method(payload.payment_method)
     if not payment_method:
@@ -950,6 +941,8 @@ def create_manager_salary_payment_request(
     warning_over_remaining = payload.amount_requested > remaining
 
     request = PaymentRequest(
+        operation_key=payment_operation_key(current_user, payload),
+        operation_hash=payment_operation_hash(payload, f"salary:{event_id}"),
         event_id=event.id,
         event_item_id=salary_item.id,
         created_by_user_id=current_user.id,
@@ -994,6 +987,13 @@ def create_manager_salary_payment_request(
     return enrich_payment_request_for_event_fast(request, event, db, current_user)
 
 
+def lock_payment_request_context(db: Session, request_id: int) -> PaymentRequest:
+    hint = get_request_or_404(db, request_id)
+    db.execute(select(Event).where(Event.id == hint.event_id).with_for_update().execution_options(populate_existing=True)).scalar_one()
+    db.execute(select(EventItem).where(EventItem.id == hint.event_item_id).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+    return db.execute(select(PaymentRequest).where(PaymentRequest.id == request_id).with_for_update().execution_options(populate_existing=True)).scalar_one()
+
+
 @router.patch("/payment-requests/{request_id}/status", response_model=PaymentRequestRead)
 def update_payment_request_status(
     request_id: int,
@@ -1001,7 +1001,7 @@ def update_payment_request_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    request = get_request_or_404(db, request_id)
+    request = lock_payment_request_context(db, request_id)
 
     allowed = {"new", "to_pay", "paid", "rejected", "tax_check_needed", "cash_received"}
     if payload.status not in allowed:
@@ -1145,7 +1145,7 @@ def update_payment_request_money_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    request = get_request_or_404(db, request_id)
+    request = lock_payment_request_context(db, request_id)
 
     if payload.money_status not in {"waiting_money", "cash_received", "cancelled"}:
         raise HTTPException(status_code=400, detail="money_status должен быть waiting_money, cash_received или cancelled")

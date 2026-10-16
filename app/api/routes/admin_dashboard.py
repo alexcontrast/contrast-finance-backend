@@ -354,11 +354,11 @@ def finalize_monthly_tax_totals(totals: dict[str, Decimal]) -> dict[str, Decimal
     tax_accrued = q0(money(totals.get("ip_contrast_tax")))
     tax_deductions = q0(money(totals.get("tax_deductions")))
 
-    vat_to_pay = q0(vat_accrued - vat_deductions)
+    vat_to_pay = q0(money(totals.get("client_vat")) - money(totals.get("contractor_vat_credit")))
     if vat_to_pay < 0:
         vat_to_pay = Decimal("0.00")
 
-    tax_to_pay = q0(tax_accrued - tax_deductions)
+    tax_to_pay = q0(money(totals.get("ip_contrast_tax")) - money(totals.get("tax_deductions")))
     if tax_to_pay < 0:
         tax_to_pay = Decimal("0.00")
 

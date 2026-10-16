@@ -14,6 +14,8 @@ import logging
 import os
 import re
 import secrets
+import hashlib
+import json
 import time
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -52,13 +54,16 @@ from app.models.payment_request import PaymentRequest
 from app.models.taxpayer_check import TaxpayerCheck
 from app.models.telegram_message import TelegramMessage
 from app.models.user import User
-from app.services.auth import verify_pin
+from app.services.auth import verify_pin, native_pin_hash, consume_login_attempt
 from app.services.event_calculator import calculate_event_summary_values, q
 from app.services.kgd.client import KgdServiceError, check_taxpayer
 from app.services.payment_totals import sync_item_paid_amount_from_requests
+from app.services.authorization import can_edit_event, require_payment_request_create
+from app.services.payment_method_rules import validate_payment_method_lock, allowed_payment_methods
+from app.services.job_leases import persistent_watermark, job_lease
 
 
-BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.40.90_CANCEL_ANY_STAGE_AMOUNT_HIGHLIGHT"
+BOT_VERSION = "CONTRAST_FINANCE_BOT_V0.6.6"
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID") or os.getenv("ADMIN_CHAT_ID") or "0")
@@ -517,6 +522,8 @@ def set_cached_bound_user(user: User) -> None:
 
 
 def bind_user_by_phone_pin(db: Session, telegram_user, phone_digits: str, pin: str) -> User:
+    consume_login_attempt(db, f"telegram-bind:{telegram_user.id}", 12)
+    consume_login_attempt(db, f"telegram-phone:{phone_digits}", 12)
     users = db.execute(
         select(User).where(
             User.role.in_(["manager", "admin"]),
@@ -524,9 +531,12 @@ def bind_user_by_phone_pin(db: Session, telegram_user, phone_digits: str, pin: s
         )
     ).scalars().all()
     candidates = [u for u in users if normalize_phone(u.phone or "") == phone_digits]
-    user = next((u for u in candidates if verify_pin(u, pin)), None)
+    user = candidates[0] if len(candidates) == 1 and verify_pin(candidates[0], pin) else None
     if user is None:
         raise RuntimeError("Неверный телефон или PIN")
+    if not str(user.pin_hash or "").startswith("pbkdf2_sha256$"):
+        user.pin_hash = native_pin_hash(pin, user.id)
+        user.auth_source = "native"
     user.telegram_id = str(telegram_user.id)
     user.telegram_username = telegram_user.username or user.telegram_username
     user.updated_at = datetime.utcnow()
@@ -793,14 +803,8 @@ def fixed_payment_method_for_item(db: Session, item: EventItem | None, is_salary
     if item.item_type in {"coordinator", "manager_salary"}:
         return None
 
-    active_request = active_payment_requests_for_item(db, int(item.id))[0:1]
-    if active_request:
-        return active_request[0].payment_method
-
-    if item_has_locked_invoice_payment(item):
-        return "invoice"
-
-    return None
+    allowed = allowed_payment_methods(db, item)
+    return allowed[0] if len(allowed) == 1 else None
 
 
 def payment_method_locked_for_item(db: Session, item: EventItem | None, is_salary: bool = False) -> bool:
@@ -872,6 +876,7 @@ def event_items_for_bot(db: Session, event: Event) -> List[Dict[str, Any]]:
             "paymentMethodLocked": bool(fixed_method),
             "iinBin": item.iin_bin,
             "iinBinLocked": bool(item.iin_bin_locked),
+            "allowedPaymentMethods": allowed_payment_methods(db, item),
             "taxCheckStatus": item.tax_check_status,
             "internalNote": item.internal_note,
             "selfEmployedSurname": self_employed_surname_from_item(item),
@@ -971,9 +976,9 @@ def write_taxpayer_check(db: Session, contractor: Contractor | None, iin_bin: st
     ))
 
 
-def apply_invoice_tax_to_item(db: Session, item: EventItem, iin_bin: str) -> Dict[str, Any]:
+def apply_invoice_tax_to_item(db: Session, item: EventItem, iin_bin: str, verified_result=None) -> Dict[str, Any]:
     try:
-        result = check_taxpayer(iin_bin)
+        result = verified_result if verified_result is not None else check_taxpayer(iin_bin)
     except KgdServiceError as exc:
         logger.error(
             "KGD technical failure bot item_id=%s iin_bin=%s diagnostics=%s",
@@ -1152,13 +1157,25 @@ def validate_bot_request(item: EventItem, method: str, amount: Decimal, card_num
 
 
 def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -> PaymentRequest:
+    verified_result = None
+    if payment_method_code(payload.get("payment_method")) == "invoice" and payload.get("bin_iin"):
+        verified_result = check_taxpayer(str(payload["bin_iin"]))
     with db_session() as db:
         user = get_user_by_telegram_id(db, telegram_id)
         if user is None:
             raise RuntimeError("Аккаунт Telegram не привязан к менеджеру")
-        event = db.get(Event, int(payload["event_id"]))
+        event = db.execute(select(Event).where(Event.id == int(payload["event_id"])).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
         if event is None:
             raise RuntimeError("Мероприятие не найдено")
+        require_payment_request_create(user, event)
+        operation_key = f"bot:{user.id}:{payload['client_request_token']}" if payload.get("client_request_token") else None
+        operation_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+        if operation_key:
+            existing = db.execute(select(PaymentRequest).where(PaymentRequest.operation_key == operation_key)).scalar_one_or_none()
+            if existing:
+                if existing.operation_hash != operation_hash:
+                    raise RuntimeError("Операция уже отправлена с другими данными")
+                return existing
         shared = db.execute(select(EventShare).where(EventShare.event_id == event.id, EventShare.user_id == user.id)).scalar_one_or_none()
         if event.manager_id != user.id and shared is None:
             raise RuntimeError("Нет доступа к мероприятию")
@@ -1175,12 +1192,14 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
         if item_token == EXTRA_ITEM_ID:
             item = create_extra_item(db, event, str(payload.get("new_position_name") or "Допрасход").strip(), amount, method)
             if method == "invoice":
-                apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin") or ""))
+                apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin") or ""), verified_result)
             elif method == "self_employed" and comment_has_surname(comment):
                 item.internal_note = f"Самозанятый: {comment}"
                 db.add(item)
                 db.flush()
         elif item_token == SALARY_ITEM_ID:
+            if event.manager_id != user.id:
+                raise RuntimeError("ЗП менеджера может запросить только владелец мероприятия")
             if method not in {"card", "cash", "self_employed"}:
                 raise RuntimeError("ЗП менеджера можно оформить только На карту, Нал или Самозанятый")
             items = db.execute(
@@ -1196,10 +1215,11 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             item.deduction_amount = Decimal("0.00")
             db.add(item)
         else:
-            item = db.get(EventItem, int(item_token))
+            item = db.execute(select(EventItem).where(EventItem.id == int(item_token)).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
             if item is None or item.event_id != event.id or item.is_deleted:
                 raise RuntimeError("Позиция не найдена")
 
+            validate_payment_method_lock(db, item, method)
             fixed_method = fixed_payment_method_for_item(db, item)
             if fixed_method and method != fixed_method:
                 raise RuntimeError(f"Способ оплаты уже закреплён за этой позицией: {payment_method_label(fixed_method)}")
@@ -1217,7 +1237,7 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
                 item.deduction_amount = Decimal("0.00")
             elif method == "invoice":
                 if payload.get("bin_iin"):
-                    apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin")))
+                    apply_invoice_tax_to_item(db, item, str(payload.get("bin_iin")), verified_result)
                 else:
                     item = ensure_bot_invoice_legacy_context(db, item)
                     if not item_has_locked_invoice_payment(item):
@@ -1250,6 +1270,8 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
         remaining = remaining_for_item(item)
 
         request = PaymentRequest(
+            operation_key=operation_key,
+            operation_hash=operation_hash,
             event_id=event.id,
             event_item_id=item.id,
             created_by_user_id=user.id,
@@ -1284,6 +1306,8 @@ def create_payment_request_from_bot(telegram_id: Any, payload: Dict[str, Any]) -
             updated_at=datetime.utcnow(),
         )
         db.add(request)
+        event.updated_at = datetime.utcnow()
+        db.add(event)
         db.commit()
         db.refresh(request)
         return request
@@ -1410,11 +1434,13 @@ def items_keyboard(items: List[Dict[str, Any]], allow_extra: bool) -> InlineKeyb
     return InlineKeyboardMarkup(rows)
 
 
-def payment_method_keyboard(is_salary: bool = False, fixed_method: str | None = None, is_untracked_special: bool = False) -> InlineKeyboardMarkup:
+def payment_method_keyboard(is_salary: bool = False, fixed_method: str | None = None, is_untracked_special: bool = False, allowed_methods=None) -> InlineKeyboardMarkup:
     if fixed_method:
         methods = [payment_method_label(fixed_method)]
     else:
         methods = ["Самозанятый", "На карту", "Нал"] if (is_salary or is_untracked_special) else PAYMENT_METHODS
+    if allowed_methods:
+        methods = [label for label in methods if payment_method_code(label) in allowed_methods]
     return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=f"paymethod:{label}")] for label in methods])
 
 
@@ -1557,6 +1583,12 @@ async def sync_tatyana_message(bot, request: PaymentRequest, title: str) -> None
 
 
 async def publish_created_request_cards(bot, manager_chat_id: Any, request_id: int, title_for_manager: str = "🧾 Заявка создана") -> None:
+    with job_lease(f"telegram-publish:{int(request_id)}", factory=SessionLocal, delay=2) as owned:
+        if owned:
+            await _publish_created_request_cards(bot, manager_chat_id, request_id, title_for_manager)
+
+
+async def _publish_created_request_cards(bot, manager_chat_id: Any, request_id: int, title_for_manager: str) -> None:
     """Publish initial Telegram cards once per request.
 
     The bot can reach this function from two paths at almost the same time:
@@ -1901,6 +1933,7 @@ async def choose_item(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_salary=is_salary,
             fixed_method=fixed_method,
             is_untracked_special=is_untracked_special,
+            allowed_methods=(item or {}).get("allowedPaymentMethods"),
         ),
     )
     return PAYMENT_METHOD
@@ -1927,6 +1960,9 @@ async def choose_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
 
     selected_item = context.user_data.get("selected_item") or {}
     fixed_method = selected_item.get("fixedPaymentMethod")
+    if selected_item.get("allowedPaymentMethods") and method not in selected_item["allowedPaymentMethods"]:
+        await safe_query_answer(query, "По этой позиции уже есть заявки с другим способом оплаты.", show_alert=True)
+        return PAYMENT_METHOD
     if fixed_method:
         if method != fixed_method:
             await safe_query_answer(query, "Способ оплаты уже закреплён за этой позицией.", show_alert=True)
@@ -2034,7 +2070,9 @@ async def submit_payment_request_now(update: Update, context: ContextTypes.DEFAU
     progress_msg = await update.message.reply_text("⏳ Отправляю заявку…")
     track_message_id(context, progress_msg.message_id)
     event = context.user_data.get("selected_event", {})
+    context.user_data.setdefault("client_request_token", secrets.token_urlsafe(24))
     payload = {
+        "client_request_token": context.user_data["client_request_token"],
         "event_id": event.get("eventId"),
         "item_id": context.user_data.get("item_id"),
         "amount": context.user_data.get("amount"),
@@ -2089,13 +2127,17 @@ async def my_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Не удалось загрузить заявки: {err}")
 
 
-def update_request_status_in_db(payment_id: int, action: str, actor: str) -> PaymentRequest:
+def update_request_status_in_db(payment_id: int, action: str, actor: str, telegram_id: Any) -> PaymentRequest:
     with db_session() as db:
         request = db.get(PaymentRequest, int(payment_id))
         if request is None:
             raise RuntimeError("Заявка не найдена")
-        item = db.get(EventItem, request.event_item_id)
-        event = db.get(Event, request.event_id)
+        event = db.execute(select(Event).where(Event.id == request.event_id).with_for_update().execution_options(populate_existing=True)).scalar_one()
+        item = db.execute(select(EventItem).where(EventItem.id == request.event_item_id).with_for_update().execution_options(populate_existing=True)).scalar_one_or_none()
+        request = db.execute(select(PaymentRequest).where(PaymentRequest.id == int(payment_id)).with_for_update().execution_options(populate_existing=True)).scalar_one()
+        user = get_effective_active_user_by_telegram_id(db, telegram_id)
+        if not user or (actor == "admin" and user.role != "admin") or (actor != "admin" and (action != "cancel" or user.role != "manager" or not can_edit_event(user,event))):
+            raise RuntimeError("Нет доступа к этой заявке")
         previous_status = request.status
         now = datetime.utcnow()
         if action == "paid":
@@ -2122,6 +2164,8 @@ def update_request_status_in_db(payment_id: int, action: str, actor: str) -> Pay
         else:
             raise RuntimeError("Неизвестное действие")
         request.updated_at = now
+        event.updated_at = now
+        db.add(event)
         db.add(request)
         db.flush()
         if item is not None:
@@ -2269,7 +2313,9 @@ async def handle_expense_action(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    if query.from_user.id != ADMIN_CHAT_ID:
+    with db_session() as db:
+        admin = get_quick_expense_admin_by_telegram_id(db, query.from_user.id)
+    if admin is None:
         await safe_query_answer(query, "Эта кнопка только для админа.", show_alert=True)
         return
     _, action, payment_id = query.data.split(":", 2)
@@ -2286,7 +2332,7 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Сначала показываем пользователю, что действие принято, но не теряем исходные кнопки:
         # при любой ошибке ниже карточка будет восстановлена из текущего состояния БД.
         await query.edit_message_reply_markup(reply_markup=None)
-        request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), action, "admin")
+        request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), action, "admin", query.from_user.id)
         await sync_request_cards(
             context.bot,
             request,
@@ -2318,6 +2364,14 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     _, action, payment_id = query.data.split(":", 2)
+    with db_session() as db:
+        user = get_user_by_telegram_id(db, query.from_user.id)
+        payment = db.get(PaymentRequest, int(payment_id))
+        event = db.get(Event, payment.event_id) if payment else None
+        allowed = user is not None and event is not None and can_edit_event(user, event)
+    if not allowed:
+        await safe_query_answer(query, "Нет доступа к этой заявке", show_alert=True)
+        return
     if action == "restore":
         try:
             await restore_clicked_card(query, int(payment_id), is_admin=False)
@@ -2331,7 +2385,7 @@ async def handle_manager_action(update: Update, context: ContextTypes.DEFAULT_TY
     await safe_query_answer(query, "Отменяю заявку…")
     try:
         await query.edit_message_reply_markup(reply_markup=None)
-        request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), "cancel", "manager")
+        request = await asyncio.to_thread(update_request_status_in_db, int(payment_id), "cancel", "manager", query.from_user.id)
         await sync_request_cards(
             context.bot,
             request,
@@ -2370,7 +2424,8 @@ async def poll_site_requests(context: ContextTypes.DEFAULT_TYPE):
             PaymentRequest.status.in_(["new", "to_pay", "tax_check_needed"]),
         )
         if not TELEGRAM_PUBLISH_EXISTING_REQUESTS_ON_START:
-            query = query.where(PaymentRequest.created_at >= BOT_STARTED_AT)
+            cutover = persistent_watermark(db, "telegram-publication-cutover", BOT_STARTED_AT)
+            query = query.where(PaymentRequest.created_at >= cutover)
         requests = db.execute(
             query.order_by(PaymentRequest.id.desc()).limit(POLL_BATCH_LIMIT)
         ).scalars().all()
