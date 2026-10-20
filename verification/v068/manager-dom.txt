@@ -1,0 +1,1 @@
+DOM: full page initialization, typing during POST, stable row IDs, payment switch, BIN unlock, escaped names, deletion during POST: PASS

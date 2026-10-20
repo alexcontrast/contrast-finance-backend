@@ -589,6 +589,16 @@ function withCurrentMonthIfNeeded(path) {
   return `${raw}${separator}month=${encodeURIComponent(month)}`;
 }
 
+function apiErrorMessage(data, status) {
+  const describe = (value) => {
+    if (typeof value === "string") return value.trim();
+    if (Array.isArray(value)) return value.map(describe).filter(Boolean).join("; ");
+    if (!value || typeof value !== "object") return "";
+    return describe(value.msg || value.message || value.detail || value.errors);
+  };
+  return describe(data?.detail) || describe(data) || `Сервер отклонил запрос (код ${status}).`;
+}
+
 async function api(path, options = {}) {
   const sessionToken = state.token;
   const method = String(options.method || "GET").toUpperCase();
@@ -631,8 +641,9 @@ async function api(path, options = {}) {
         throw error;
       }
       if (!response.ok) {
-        const error = new Error(data?.detail || (data ? JSON.stringify(data) : `Ошибка ${response.status}`));
+        const error = new Error(apiErrorMessage(data, response.status));
         error.status = response.status;
+        error.detail = data?.detail;
         throw error;
       }
       if (method !== "GET" && adminDashboardMutationAffectsCache(safePath)) {
@@ -12127,11 +12138,15 @@ async function prepareSimplePaymentItem(eventId, item, method) {
 }
 
 async function refreshDraftRevisionsAfterExternalMutation(eventId, itemId = null) {
-  const before = getDraftItems(eventId).find((candidate) => Number(candidate.id) === Number(itemId));
+  const numericItemId = Number(itemId);
+  const validItemId = Number.isSafeInteger(numericItemId) && numericItemId > 0;
+  const before = validItemId ? getDraftItems(eventId).find((candidate) => Number(candidate.id) === numericItemId) : null;
   const sentVersion = asNumber(before?.__edit_version);
   const tasks = [refreshManagerEventRevision(eventId)];
-  if (itemId && !String(itemId).startsWith("tmp-")) {
-    tasks.push(api(`/event-items/${itemId}?_=${Date.now()}`).then((freshItem) => {
+  // Salary is a virtual selector entry and has no editable draft row. Its
+  // real server item ID is carried by the created payment request.
+  if (before) {
+    tasks.push(api(`/event-items/${numericItemId}?_=${Date.now()}`).then((freshItem) => {
       const item = getDraftItems(eventId).find((candidate) => Number(candidate.id) === Number(itemId));
       if (!item || !freshItem) return;
       if (item.__dirty_after_save || asNumber(item.__edit_version) !== sentVersion) {
@@ -12164,7 +12179,7 @@ async function submitManagerPayment(eventId) {
   const message = $("paymentMessage");
   const button = $("paymentCreateBtn");
   const startedAt = perfNow();
-  if (state.managerPaymentSubmitting) return;
+  if (state.managerPaymentSubmitting || button?.dataset.requestCreated === "1") return;
   if (message) message.textContent = "";
 
   let item = selectedPaymentItem(eventId);
@@ -12245,25 +12260,31 @@ async function submitManagerPayment(eventId) {
         }),
       }));
 
-      updateInternalRowCells(item.id);
-      updateInternalSummaryCards();
     }
 
+    // The POST has succeeded. Nothing in the following UI refresh may turn
+    // that committed operation into a "creation failed" message or a retry.
     state.managerPaymentOperationToken = null;
-    patchManagerPaymentRequestCreated(eventId, createdRequest);
-    await refreshDraftRevisionsAfterExternalMutation(eventId, item?.id || null);
-    updateCurrentManagerMiniCardLive();
-
+    if (button) button.dataset.requestCreated = "1";
     $("eventModalBackdrop")?.classList.add("hidden");
     $("eventModalBackdrop")?.classList.remove("payment-modal-mode");
     showToast("Заявка отправлена");
-
-    if (Number(state.selectedManagerEventId) === Number(eventId)) {
-      await renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+    try {
+      patchManagerPaymentRequestCreated(eventId, createdRequest);
+      await refreshDraftRevisionsAfterExternalMutation(eventId, createdRequest?.event_item_id || null);
+      updateCurrentManagerMiniCardLive();
+      if (Number(state.selectedManagerEventId) === Number(eventId)) {
+        await renderManagerEventDetail(eventId, { useDraft: true, noLoading: true });
+      }
+    } catch (refreshError) {
+      console.warn("Заявка создана, но интерфейс не удалось обновить", refreshError);
+      showToast("Заявка создана. Не удалось обновить данные на экране — обновите страницу. Повторно отправлять заявку не нужно.", "warning", 8000);
     }
+
   } finally {
     state.managerPaymentSubmitting = false;
     setButtonLoading(button, false);
+    if (button?.dataset.requestCreated === "1") button.disabled = true;
     if (CF_PERF_LOGS_ENABLED) console.info(`PERF web manager-payment-create total=${perfSeconds(startedAt)}s`);
   }
 }
@@ -15066,7 +15087,7 @@ async function loadDashboard() {
 
 async function boot() {
   const bootToken = state.token;
-  console.info("Contrast Finance web app v0.6.7 loaded");
+  console.info("Contrast Finance web app v0.6.8 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");

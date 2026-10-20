@@ -1,0 +1,9 @@
+PASS not found is visible after the first click and remains editable
+PASS technical failure stays visible and cannot lock the BIN
+PASS double click makes one tax request even after DOM rerender
+PASS autosave waits for tax result and uses its new revision
+PASS pending temporary POST finishes before tax and no duplicate is created
+PASS new combined check blocks autosave through temporary ID replacement
+PASS changing the BIN discards the previous failure message
+PASS invalid length gives visible feedback and sends no tax request
+{"passed":8}

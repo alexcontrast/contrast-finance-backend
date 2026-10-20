@@ -1,0 +1,2 @@
+Contrast Finance web app v0.6.8 loaded
+DOM BIN: first-click not-found feedback, editable BIN, visible pending state, rerender protection, success, login tabs PASS

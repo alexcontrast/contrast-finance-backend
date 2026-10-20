@@ -1,0 +1,6 @@
+PASS cash success
+PASS card success
+PASS self_employed success
+PASS self_employed refresh
+PASS cash post
+{"passed":5}
