@@ -37,7 +37,7 @@ const names = [
   'adminManualTaxOverrideEnabled','isTaxProblem','canEditManagerEvent',
   'calculateDraftSummaryPreview','itemPayloadForSave','draftItemConflictSnapshot',
   'setDraftItemServerSnapshot','sameDraftSnapshotValue','markDraftItemSaved','originalItemForSave',
-  'itemNeedsSave','draftItemSaveOperationKey','performSingleDraftItemSave','saveSingleDraftItem',
+  'isSystemManagerSalaryItem','itemNeedsSave','draftItemSaveOperationKey','performSingleDraftItemSave','saveSingleDraftItem',
   'saveDraftItems','deleteDraftItem','managerMonthCacheRecord','patchManagerEventPayloadItems',
   'applyDraftEventRevision','draftEventConflictSnapshot','setDraftEventServerSnapshot',
   'eventPayloadForSave','comparablePayloadString','eventNeedsSave','saveDraftEvent',
@@ -389,5 +389,5 @@ if (require.main === module) (async()=>{
   }
   assert(performanceRows.every(x=>!x.calculateDraftSummaryPreview && x.local_storage_writes===0 && x.find_comparisons<=4*x.regular_rows));
   console.log(JSON.stringify({id:'M14',title:'input work amplification, simulated DOM; no layout/network',measurements:performanceRows}));
-  console.log(JSON.stringify({summary:{passed:results.length,performance_cases:performanceRows.length,source_version:'0.6.8',production_access:false,browser_rendering:false}}));
+  console.log(JSON.stringify({summary:{passed:results.length,performance_cases:performanceRows.length,source_version:'0.6.9',production_access:false,browser_rendering:false}}));
 })().catch(error=>{console.error(error.stack);process.exitCode=1;});

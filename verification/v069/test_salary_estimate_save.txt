@@ -1,0 +1,7 @@
+PASS system salary remains untouched during a regular bulk save
+PASS direct forced save cannot PATCH salary as a regular item
+PASS virtual salary with an accidental regular type is also excluded
+PASS regular edits and coordinator still save alongside a salary
+PASS full save action completes to draft after salary payment
+PASS full save action completes to review after salary payment
+{"passed":6}

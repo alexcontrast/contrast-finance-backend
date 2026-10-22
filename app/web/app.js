@@ -10152,8 +10152,12 @@ function originalItemForSave(eventId, itemId) {
   return (payload?.items || []).find((candidate) => String(candidate.id) === String(itemId)) || null;
 }
 
+function isSystemManagerSalaryItem(item) {
+  return item?.item_type === "manager_salary" || Boolean(item?.is_manager_salary_virtual) || String(item?.id || "") === "manager_salary";
+}
+
 function itemNeedsSave(eventId, item, payload = null) {
-  if (!item) return false;
+  if (!item || isSystemManagerSalaryItem(item)) return false;
   if (item.__dirty_after_save) return true;
   if (item.is_temp || String(item.id || "").startsWith("tmp-")) return true;
   const nextPayload = payload || itemPayloadForSave(item);
@@ -10173,9 +10177,12 @@ function draftItemSaveOperationKey(eventId, item) {
 
 async function performSingleDraftItemSave(eventId, item, options = {}) {
   if (!item) throw new Error("Не выбрана позиция");
+  // System salary is owned by the salary/payment endpoints, never by the
+  // regular estimate write route (which accepts regular/coordinator only).
+  if (isSystemManagerSalaryItem(item)) return item;
 
   const items = compactDraftItems(eventId);
-  const saveableItems = items.filter((candidate) => !isBlankTemporaryDraftItem(candidate));
+  const saveableItems = items.filter((candidate) => !isSystemManagerSalaryItem(candidate) && !isBlankTemporaryDraftItem(candidate));
   let regularOrder = 0;
   saveableItems.forEach((candidate) => {
     candidate.sort_order = candidate.item_type === "coordinator" ? -100 : regularOrder++;
@@ -10254,6 +10261,9 @@ async function performSingleDraftItemSave(eventId, item, options = {}) {
 
 async function saveSingleDraftItem(eventId, item, options = {}) {
   if (!item) throw new Error("Не выбрана позиция");
+  // System salary is owned by the salary/payment endpoints, never by the
+  // regular estimate write route (which accepts regular/coordinator only).
+  if (isSystemManagerSalaryItem(item)) return item;
   if (!state.managerDraftItemSavePromises) state.managerDraftItemSavePromises = new Map();
 
   const operationKey = draftItemSaveOperationKey(eventId, item);
@@ -10281,7 +10291,7 @@ async function saveSingleDraftItem(eventId, item, options = {}) {
 async function saveDraftItems(eventId, options = {}) {
   const pruneBlankTemps = Boolean(options.pruneBlankTemps);
   const items = compactDraftItems(eventId);
-  const saveableItems = items.filter((item) => !isBlankTemporaryDraftItem(item));
+  const saveableItems = items.filter((item) => !isSystemManagerSalaryItem(item) && !isBlankTemporaryDraftItem(item));
   let regularOrder = 0;
   saveableItems.forEach((item) => {
     item.sort_order = item.item_type === "coordinator" ? -100 : regularOrder++;
@@ -10317,7 +10327,7 @@ async function saveDraftItems(eventId, options = {}) {
   if (pruneBlankTemps) {
     currentItems = compactDraftItems(eventId, { dropBlankTemps: true });
   } else {
-    const ordinaryItems = currentItems.filter((item) => item.item_type !== "coordinator" && !isBlankTemporaryDraftItem(item));
+    const ordinaryItems = currentItems.filter((item) => !isSystemManagerSalaryItem(item) && item.item_type !== "coordinator" && !isBlankTemporaryDraftItem(item));
     currentItems.filter((item) => isBlankTemporaryDraftItem(item)).forEach((item, index) => {
       item.sort_order = ordinaryItems.length + 1000 + index;
     });
@@ -15087,7 +15097,7 @@ async function loadDashboard() {
 
 async function boot() {
   const bootToken = state.token;
-  console.info("Contrast Finance web app v0.6.8 loaded");
+  console.info("Contrast Finance web app v0.6.9 loaded");
   if (!state.token) {
     stopLiveEventSync();
     resetDashboardUiAndRoleState("");
